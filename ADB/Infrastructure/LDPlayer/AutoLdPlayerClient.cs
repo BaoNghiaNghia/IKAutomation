@@ -2,9 +2,11 @@ using ADB_Tool_Automation_Post_FB.Core.Abstractions;
 using Auto_LDPlayer;
 using Auto_LDPlayer.Enums;
 using System;
+using System.Collections.Generic;
 using System.Drawing;
 using System.Drawing.Imaging;
 using System.IO;
+using System.Linq;
 using System.Threading;
 using System.Threading.Tasks;
 
@@ -17,6 +19,50 @@ namespace ADB_Tool_Automation_Post_FB.Infrastructure.LDPlayer
     /// </summary>
     public sealed class AutoLdPlayerClient : ILdPlayerClient
     {
+        public static string ConfigureLdConsolePath(string configuredPath)
+        {
+            string expandedPath = string.IsNullOrWhiteSpace(configuredPath)
+                ? null
+                : Environment.ExpandEnvironmentVariables(configuredPath.Trim());
+            string[] candidates =
+            {
+                expandedPath,
+                @"C:\LDPlayer\LDPlayer9\ldconsole.exe",
+                @"D:\LDPlayer\LDPlayer9\ldconsole.exe"
+            };
+
+            string resolvedPath = candidates.FirstOrDefault(path =>
+                !string.IsNullOrWhiteSpace(path) && File.Exists(path));
+            if (resolvedPath == null)
+            {
+                throw new FileNotFoundException(
+                    "LDPlayer console was not found. Configure 'LDCONSOLE_PATH' in App.config.",
+                    expandedPath);
+            }
+
+            Auto_LDPlayer.LDPlayer.PathLD = resolvedPath;
+            return resolvedPath;
+        }
+
+        public Task<IReadOnlyList<string>> GetDeviceNamesAsync(CancellationToken cancellationToken)
+        {
+            cancellationToken.ThrowIfCancellationRequested();
+
+            var runningDevices = Auto_LDPlayer.LDPlayer.GetDevicesRunning()
+                ?? new List<string>();
+            var allDevices = Auto_LDPlayer.LDPlayer.GetDevices()
+                ?? new List<string>();
+
+            cancellationToken.ThrowIfCancellationRequested();
+            IReadOnlyList<string> deviceNames = runningDevices
+                .Concat(allDevices)
+                .Where(name => !string.IsNullOrWhiteSpace(name))
+                .Select(name => name.Trim())
+                .Distinct(StringComparer.OrdinalIgnoreCase)
+                .ToArray();
+            return Task.FromResult(deviceNames);
+        }
+
         public Task<bool> IsRunningAsync(string deviceName, CancellationToken cancellationToken)
         {
             cancellationToken.ThrowIfCancellationRequested();

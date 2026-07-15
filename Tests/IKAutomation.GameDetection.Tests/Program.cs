@@ -278,6 +278,7 @@ namespace IKAutomation.GameDetection.Tests
             public int CaptureCalls { get; private set; }
             public int InputCalls { get; private set; }
             public CancellationToken CaptureToken { get; private set; }
+            public Task<IReadOnlyList<string>> GetDeviceNamesAsync(CancellationToken t) => Task.FromResult<IReadOnlyList<string>>(new[] { "LDPlayer" });
             public Task<byte[]> CaptureScreenshotPngAsync(string d, CancellationToken t) { CaptureCalls++; CaptureToken = t; if (CaptureException != null) throw CaptureException; return Task.FromResult(Screenshot); }
             public Task<bool> IsRunningAsync(string d, CancellationToken t) => Task.FromResult(true);
             public Task OpenAsync(string d, CancellationToken t) => Task.CompletedTask;

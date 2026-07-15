@@ -23,7 +23,17 @@
                 </Grid.RowDefinitions>
 
                 <TextBlock Grid.Row="0" Grid.Column="0" Text="Device name" VerticalAlignment="Center"/>
-                <TextBox x:Name="DeviceNameTextBox" Grid.Row="0" Grid.Column="1" Margin="0,4"/>
+                <Grid Grid.Row="0" Grid.Column="1" Margin="0,4">
+                    <Grid.ColumnDefinitions>
+                        <ColumnDefinition Width="*"/>
+                        <ColumnDefinition Width="Auto"/>
+                    </Grid.ColumnDefinitions>
+                    <ComboBox x:Name="DeviceNameComboBox" Grid.Column="0"
+                              IsEditable="True" IsTextSearchEnabled="True"
+                              ToolTip="Select an LDPlayer instance or enter its exact name"/>
+                    <Button Grid.Column="1" Content="Refresh" Click="RefreshDevices_Click"
+                            Padding="12,3" Margin="8,0,0,0"/>
+                </Grid>
 
                 <TextBlock Grid.Row="1" Grid.Column="0" Text="Package name" VerticalAlignment="Center"/>
                 <TextBox x:Name="PackageNameTextBox" Grid.Row="1" Grid.Column="1" Margin="0,4"

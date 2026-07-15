@@ -3,6 +3,7 @@ using ADB_Tool_Automation_Post_FB.Helpers;
 using ADB_Tool_Automation_Post_FB.Models;
 using ADB_Tool_Automation_Post_FB.Infrastructure.Diagnostics;
 using ADB_Tool_Automation_Post_FB.Infrastructure.GameDetection;
+using ADB_Tool_Automation_Post_FB.Infrastructure.LDPlayer;
 using ADB_Tool_Automation_Post_FB.Infrastructure.Navigation;
 using ADB_Tool_Automation_Post_FB.UI;
 using Auto_LDPlayer;
@@ -10,6 +11,7 @@ using Auto_LDPlayer.Enums;
 using KAutoHelper;
 using System;
 using System.Collections.Generic;
+using System.Configuration;
 using System.Drawing;
 using System.IO;
 using System.Linq;
@@ -141,7 +143,16 @@ namespace ADB_Tool_Automation_Post_FB
 
         public static void LoadStaticLDConsole()
         {
-            Auto_LDPlayer.LDPlayer.PathLD = @"D:\LDPlayer\LDPlayer9\ldconsole.exe";
+            try
+            {
+                string configuredPath = ConfigurationManager.AppSettings["LDCONSOLE_PATH"];
+                string resolvedPath = AutoLdPlayerClient.ConfigureLdConsolePath(configuredPath);
+                Logger.LogInfo($"LDPlayer console configured: {resolvedPath}");
+            }
+            catch (Exception exception)
+            {
+                Logger.LogWarning($"LDPlayer console configuration failed: {exception.Message}");
+            }
         }
 
         private void LoadDataImage()

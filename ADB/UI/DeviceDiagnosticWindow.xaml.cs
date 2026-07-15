@@ -2,7 +2,9 @@ using ADB_Tool_Automation_Post_FB.Core.Diagnostics;
 using ADB_Tool_Automation_Post_FB.Core.GameDetection;
 using ADB_Tool_Automation_Post_FB.Core.Navigation;
 using System;
+using System.Collections.Generic;
 using System.Globalization;
+using System.Linq;
 using System.Threading;
 using System.Threading.Tasks;
 using System.Windows;
@@ -33,7 +35,32 @@ namespace ADB_Tool_Automation_Post_FB.UI
             PackageNameTextBox.Text = string.IsNullOrWhiteSpace(diagnosticService.Configuration.PackageName)
                 ? "(not configured)"
                 : diagnosticService.Configuration.PackageName;
+            Loaded += async (sender, args) => await RefreshDeviceListAsync();
             Closed += (sender, args) => lifetimeCancellation.Cancel();
+        }
+
+        private async void RefreshDevices_Click(object sender, RoutedEventArgs e)
+        {
+            await RefreshDeviceListAsync();
+        }
+
+        private async Task RefreshDeviceListAsync()
+        {
+            string currentDevice = DeviceNameComboBox.Text?.Trim();
+            await RunOperationAsync(async cancellationToken =>
+            {
+                IReadOnlyList<string> deviceNames = await diagnosticService.GetDeviceNamesAsync(cancellationToken);
+                DeviceNameComboBox.ItemsSource = deviceNames;
+
+                string selectedDevice = deviceNames.FirstOrDefault(name =>
+                    string.Equals(name, currentDevice, StringComparison.OrdinalIgnoreCase))
+                    ?? deviceNames.FirstOrDefault();
+                DeviceNameComboBox.Text = selectedDevice ?? currentDevice ?? string.Empty;
+
+                return deviceNames.Count == 0
+                    ? "No LDPlayer instances were found. Check LDCONSOLE_PATH and create an instance in LDPlayer."
+                    : $"Found {deviceNames.Count} LDPlayer instance(s). Selected: {DeviceNameComboBox.Text}.";
+            });
         }
 
         private async void CheckDevice_Click(object sender, RoutedEventArgs e)
@@ -41,7 +68,7 @@ namespace ADB_Tool_Automation_Post_FB.UI
             await RunOperationAsync(async cancellationToken =>
             {
                 DeviceDiagnosticResult result = await diagnosticService.CheckDeviceAsync(
-                    DeviceNameTextBox.Text,
+                    GetSelectedDeviceName(),
                     cancellationToken);
                 return FormatCheckResult(result);
             });
@@ -51,7 +78,7 @@ namespace ADB_Tool_Automation_Post_FB.UI
         {
             await RunOperationAsync(async cancellationToken =>
             {
-                await diagnosticService.LaunchGameAsync(DeviceNameTextBox.Text, cancellationToken);
+                await diagnosticService.LaunchGameAsync(GetSelectedDeviceName(), cancellationToken);
                 return "Game launch command sent. Use Capture Screenshot when the desired screen is visible.";
             });
         }
@@ -61,7 +88,7 @@ namespace ADB_Tool_Automation_Post_FB.UI
             await RunOperationAsync(async cancellationToken =>
             {
                 ScreenshotCaptureResult result = await diagnosticService.CaptureScreenshotAsync(
-                    DeviceNameTextBox.Text,
+                    GetSelectedDeviceName(),
                     StateNameComboBox.Text,
                     NoteTextBox.Text,
                     cancellationToken);
@@ -76,7 +103,7 @@ namespace ADB_Tool_Automation_Post_FB.UI
             await RunOperationAsync(async cancellationToken =>
             {
                 GameDetectionResult result = await gameStateDetector.DetectAsync(
-                    DeviceNameTextBox.Text,
+                    GetSelectedDeviceName(),
                     cancellationToken);
                 return FormatDetectionResult(result);
             });
@@ -85,13 +112,13 @@ namespace ADB_Tool_Automation_Post_FB.UI
         private async void EnsureWorldMap_Click(object sender, RoutedEventArgs e)
         {
             await RunOperationAsync(async cancellationToken => FormatNavigationResult(
-                await navigationService.EnsureWorldMapAsync(DeviceNameTextBox.Text, cancellationToken)));
+                await navigationService.EnsureWorldMapAsync(GetSelectedDeviceName(), cancellationToken)));
         }
 
         private async void OpenSearchPanel_Click(object sender, RoutedEventArgs e)
         {
             await RunOperationAsync(async cancellationToken => FormatNavigationResult(
-                await navigationService.OpenResourceSearchPanelAsync(DeviceNameTextBox.Text, cancellationToken)));
+                await navigationService.OpenResourceSearchPanelAsync(GetSelectedDeviceName(), cancellationToken)));
         }
 
 
@@ -102,7 +129,7 @@ namespace ADB_Tool_Automation_Post_FB.UI
                 if (TapModeComboBox.SelectedIndex == 0)
                 {
                     await diagnosticService.TapAsync(
-                        DeviceNameTextBox.Text,
+                        GetSelectedDeviceName(),
                         ParseInteger(TapXTextBox.Text, "Tap X"),
                         ParseInteger(TapYTextBox.Text, "Tap Y"),
                         cancellationToken);
@@ -110,7 +137,7 @@ namespace ADB_Tool_Automation_Post_FB.UI
                 }
 
                 await diagnosticService.TapByPercentAsync(
-                    DeviceNameTextBox.Text,
+                    GetSelectedDeviceName(),
                     ParseDouble(TapXTextBox.Text, "Tap X percent"),
                     ParseDouble(TapYTextBox.Text, "Tap Y percent"),
                     cancellationToken);
@@ -123,7 +150,7 @@ namespace ADB_Tool_Automation_Post_FB.UI
             await RunOperationAsync(async cancellationToken =>
             {
                 await diagnosticService.SwipeByPercentAsync(
-                    DeviceNameTextBox.Text,
+                    GetSelectedDeviceName(),
                     ParseDouble(SwipeStartXTextBox.Text, "Swipe start X"),
                     ParseDouble(SwipeStartYTextBox.Text, "Swipe start Y"),
                     ParseDouble(SwipeEndXTextBox.Text, "Swipe end X"),
@@ -138,7 +165,7 @@ namespace ADB_Tool_Automation_Post_FB.UI
         {
             await RunOperationAsync(async cancellationToken =>
             {
-                await diagnosticService.BackAsync(DeviceNameTextBox.Text, cancellationToken);
+                await diagnosticService.BackAsync(GetSelectedDeviceName(), cancellationToken);
                 return "Back command sent.";
             });
         }
@@ -179,6 +206,18 @@ namespace ADB_Tool_Automation_Post_FB.UI
                 + $"Current foreground package: {result.CurrentForegroundPackage ?? "unavailable"}{Environment.NewLine}"
                 + $"Package matches: {packageStatus}{Environment.NewLine}"
                 + $"Error: {result.ErrorMessage ?? string.Empty}";
+        }
+
+        private string GetSelectedDeviceName()
+        {
+            string deviceName = DeviceNameComboBox.Text?.Trim();
+            if (string.IsNullOrWhiteSpace(deviceName))
+            {
+                throw new InvalidOperationException(
+                    "No LDPlayer instance is selected. Start LDPlayer, click Refresh, then select a device.");
+            }
+
+            return deviceName;
         }
 
         private static string FormatDetectionResult(GameDetectionResult result)
