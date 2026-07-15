@@ -26,13 +26,14 @@ namespace IKAutomation.GameDetection.Tests
             Run("ResourceSearchPanel requires both signals", PanelRequiresBothSignals);
             Run("ResourceSearchPanel has priority over WorldMap", PanelHasPriority);
             Run("WorldMap from WorldMapAnchor only", WorldMapFromAnchor);
+            Run("ContinentMap from ContinentMapTitle", ContinentMapFromTitle);
             Run("Unknown when no template matches", UnknownWhenNoMatches);
             Run("Unknown is not an exception", UnknownIsSuccessful);
             Run("Capture failure returns ErrorMessage", CaptureFailureReturnsError);
             Run("Empty device name is rejected", EmptyDeviceRejected);
             Run("Cancellation is respected and propagated", CancellationRespected);
             Run("Wrong resolution stops matching", WrongResolutionStopsMatching);
-            Run("Evidence contains all three templates", EvidenceContainsThreeTemplates);
+            Run("Evidence contains all four templates", EvidenceContainsThreeTemplates);
             Run("Unknown screenshot path is correct", UnknownScreenshotPathIsCorrect);
             Run("Unknown screenshot save failure does not crash", UnknownSaveFailureDoesNotCrash);
             Run("Detector never sends input", DetectorNeverSendsInput);
@@ -73,6 +74,11 @@ namespace IKAutomation.GameDetection.Tests
         private static void WorldMapFromAnchor()
         {
             Equal(GameState.WorldMap, DetectWithMatches(TemplateId.WorldMapAnchor).State, "World map rule failed.");
+        }
+
+        private static void ContinentMapFromTitle()
+        {
+            Equal(GameState.ContinentMap, DetectWithMatches(TemplateId.ContinentMapTitle).State, "Continent map rule failed.");
         }
 
 
@@ -133,7 +139,7 @@ namespace IKAutomation.GameDetection.Tests
         private static void EvidenceContainsThreeTemplates()
         {
             GameDetectionResult result = DetectWithMatches();
-            Equal(3, result.Evidence.Count, "Detector must check exactly three templates.");
+            Equal(4, result.Evidence.Count, "Detector must check exactly four templates.");
             foreach (TemplateId id in RequiredIds())
                 Assert(result.Evidence.Any(item => item.TemplateId == id), "Missing evidence for " + id);
         }
@@ -185,6 +191,7 @@ namespace IKAutomation.GameDetection.Tests
         {
             var registry = new TemplateRegistry(DataRoot());
             Equal("Global/world_map_anchor.png", registry.GetDefinition(TemplateId.WorldMapAnchor).RelativePath, "World template path mismatch.");
+            Equal("Global/continent_map_title.png", registry.GetDefinition(TemplateId.ContinentMapTitle).RelativePath, "Continent template path mismatch.");
             Equal("Search/resource_search_panel_anchor.png", registry.GetDefinition(TemplateId.ResourceSearchPanelAnchor).RelativePath, "Panel template path mismatch.");
             Equal("Search/search_button_enabled.png", registry.GetDefinition(TemplateId.SearchButtonEnabled).RelativePath, "Button template path mismatch.");
             foreach (TemplateId id in RequiredIds())
@@ -221,7 +228,7 @@ namespace IKAutomation.GameDetection.Tests
 
         private static GameDetectionOptions Options(bool saveUnknown)
             => new GameDetectionOptions(1280, 720, true, saveUnknown, "Diagnostics/UnknownStates");
-        private static TemplateId[] RequiredIds() => new[] { TemplateId.ResourceSearchPanelAnchor, TemplateId.SearchButtonEnabled, TemplateId.WorldMapAnchor };
+        private static TemplateId[] RequiredIds() => new[] { TemplateId.ResourceSearchPanelAnchor, TemplateId.SearchButtonEnabled, TemplateId.ContinentMapTitle, TemplateId.WorldMapAnchor };
         private static string DataRoot() => Path.Combine(AppContext.BaseDirectory, "Data", "InfinityKingdom", "1280x720", "vi");
         private static string TempDirectory() { string path = Path.Combine(Path.GetTempPath(), "IKGameDetectionTests", Guid.NewGuid().ToString("N")); Directory.CreateDirectory(path); return path; }
 

@@ -87,6 +87,10 @@
     <Compile Include="Core\GameDetection\GameState.cs" />
     <Compile Include="Core\GameDetection\IGameStateDetector.cs" />
     <Compile Include="Core\GameDetection\IUnknownScreenshotStore.cs" />
+    <Compile Include="Core\Navigation\IWorldMapNavigationService.cs" />
+    <Compile Include="Core\Navigation\NavigationResult.cs" />
+    <Compile Include="Core\Navigation\NavigationTransition.cs" />
+    <Compile Include="Core\Navigation\WorldMapNavigationOptions.cs" />
     <Compile Include="Core\Vision\IImageMatcher.cs" />
     <Compile Include="Core\Vision\ImageMatchResult.cs" />
     <Compile Include="Core\Vision\ImageRegion.cs" />
@@ -117,6 +121,9 @@
     <Compile Include="Infrastructure\GameDetection\GameStateDetector.cs" />
     <Compile Include="Infrastructure\GameDetection\GameStateDetectorFactory.cs" />
     <Compile Include="Infrastructure\GameDetection\UnknownScreenshotStore.cs" />
+    <Compile Include="Infrastructure\Navigation\AppConfigWorldMapNavigationOptionsProvider.cs" />
+    <Compile Include="Infrastructure\Navigation\WorldMapNavigationService.cs" />
+    <Compile Include="Infrastructure\Navigation\WorldMapNavigationServiceFactory.cs" />
     <Compile Include="Infrastructure\Vision\KAutoImageMatcher.cs" />
     <Compile Include="Infrastructure\Vision\TemplateMatchDiagnosticService.cs" />
     <Compile Include="Infrastructure\Vision\TemplateRegistry.cs" />

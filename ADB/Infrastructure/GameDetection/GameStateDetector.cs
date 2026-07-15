@@ -19,6 +19,7 @@ namespace ADB_Tool_Automation_Post_FB.Infrastructure.GameDetection
         {
             TemplateId.ResourceSearchPanelAnchor,
             TemplateId.SearchButtonEnabled,
+            TemplateId.ContinentMapTitle,
             TemplateId.WorldMapAnchor
         };
 
@@ -165,10 +166,13 @@ namespace ADB_Tool_Automation_Post_FB.Infrastructure.GameDetection
             GameDetectionEvidence panelAnchor = FindEvidence(evidence, TemplateId.ResourceSearchPanelAnchor);
             GameDetectionEvidence searchButton = FindEvidence(evidence, TemplateId.SearchButtonEnabled);
             GameDetectionEvidence worldAnchor = FindEvidence(evidence, TemplateId.WorldMapAnchor);
+            GameDetectionEvidence continentTitle = FindEvidence(evidence, TemplateId.ContinentMapTitle);
             bool panelConfirmed = panelAnchor.Found && searchButton.Found;
             GameState state = panelConfirmed
                 ? GameState.ResourceSearchPanel
-                : worldAnchor.Found ? GameState.WorldMap : GameState.Unknown;
+                : continentTitle.Found
+                    ? GameState.ContinentMap
+                    : worldAnchor.Found ? GameState.WorldMap : GameState.Unknown;
 
             panelAnchor.Message += panelConfirmed
                 ? " Rule ResourceSearchPanel satisfied with SearchButtonEnabled."
@@ -180,7 +184,14 @@ namespace ADB_Tool_Automation_Post_FB.Infrastructure.GameDetection
                 ? " Rule WorldMap selected because ResourceSearchPanel was not confirmed."
                 : panelConfirmed
                     ? " ResourceSearchPanel has priority over WorldMap."
-                    : " Rule WorldMap not satisfied.";
+                    : continentTitle.Found
+                        ? " ContinentMap has priority over WorldMap."
+                        : " Rule WorldMap not satisfied.";
+            continentTitle.Message += state == GameState.ContinentMap
+                ? " Rule ContinentMap selected because ResourceSearchPanel was not confirmed."
+                : panelConfirmed
+                    ? " ResourceSearchPanel has priority over ContinentMap."
+                    : " Rule ContinentMap not satisfied.";
 
             return new GameDetectionResult
             {

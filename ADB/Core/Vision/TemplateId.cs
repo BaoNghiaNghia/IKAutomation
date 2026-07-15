@@ -3,6 +3,7 @@ namespace ADB_Tool_Automation_Post_FB.Core.Vision
     public enum TemplateId
     {
         WorldMapAnchor,
+        ContinentMapTitle,
         ResourceSearchPanelAnchor,
         SearchButtonEnabled,
         CheckboxChecked,

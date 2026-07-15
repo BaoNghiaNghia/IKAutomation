@@ -1,5 +1,6 @@
 using ADB_Tool_Automation_Post_FB.Core.Diagnostics;
 using ADB_Tool_Automation_Post_FB.Core.GameDetection;
+using ADB_Tool_Automation_Post_FB.Core.Navigation;
 using System;
 using System.Globalization;
 using System.Threading;
@@ -13,16 +14,20 @@ namespace ADB_Tool_Automation_Post_FB.UI
     {
         private readonly IDeviceDiagnosticService diagnosticService;
         private readonly IGameStateDetector gameStateDetector;
+        private readonly IWorldMapNavigationService navigationService;
         private readonly CancellationTokenSource lifetimeCancellation = new CancellationTokenSource();
 
         public DeviceDiagnosticWindow(
             IDeviceDiagnosticService diagnosticService,
-            IGameStateDetector gameStateDetector)
+            IGameStateDetector gameStateDetector,
+            IWorldMapNavigationService navigationService)
         {
             this.diagnosticService = diagnosticService
                 ?? throw new ArgumentNullException(nameof(diagnosticService));
             this.gameStateDetector = gameStateDetector
                 ?? throw new ArgumentNullException(nameof(gameStateDetector));
+            this.navigationService = navigationService
+                ?? throw new ArgumentNullException(nameof(navigationService));
 
             InitializeComponent();
             PackageNameTextBox.Text = string.IsNullOrWhiteSpace(diagnosticService.Configuration.PackageName)
@@ -75,6 +80,18 @@ namespace ADB_Tool_Automation_Post_FB.UI
                     cancellationToken);
                 return FormatDetectionResult(result);
             });
+        }
+
+        private async void EnsureWorldMap_Click(object sender, RoutedEventArgs e)
+        {
+            await RunOperationAsync(async cancellationToken => FormatNavigationResult(
+                await navigationService.EnsureWorldMapAsync(DeviceNameTextBox.Text, cancellationToken)));
+        }
+
+        private async void OpenSearchPanel_Click(object sender, RoutedEventArgs e)
+        {
+            await RunOperationAsync(async cancellationToken => FormatNavigationResult(
+                await navigationService.OpenResourceSearchPanelAsync(DeviceNameTextBox.Text, cancellationToken)));
         }
 
 
@@ -178,6 +195,17 @@ namespace ADB_Tool_Automation_Post_FB.UI
                 + $"Unknown screenshot: {result.ScreenshotPath ?? string.Empty}{Environment.NewLine}"
                 + $"Error: {result.ErrorMessage ?? string.Empty}{Environment.NewLine}"
                 + $"Evidence:{Environment.NewLine}{evidence}";
+        }
+
+        private static string FormatNavigationResult(NavigationResult result)
+        {
+            string evidence = string.Join(Environment.NewLine,
+                System.Linq.Enumerable.Select(result.FinalEvidence, item =>
+                    $"- {item.TemplateId}: found={item.Found}; {item.Message}"));
+            return $"Success: {result.Success}{Environment.NewLine}Initial: {result.InitialState}{Environment.NewLine}"
+                + $"Final: {result.FinalState}{Environment.NewLine}Attempts: {result.Attempts}{Environment.NewLine}"
+                + $"Duration: {result.Duration.TotalMilliseconds:F0} ms{Environment.NewLine}Message: {result.Message}{Environment.NewLine}"
+                + $"Error: {result.ErrorMessage ?? string.Empty}{Environment.NewLine}Evidence:{Environment.NewLine}{evidence}";
         }
 
 

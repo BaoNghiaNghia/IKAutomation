@@ -13,6 +13,7 @@ namespace ADB_Tool_Automation_Post_FB.Infrastructure.Vision
             new Dictionary<TemplateId, TemplateDefinition>
             {
                 { TemplateId.WorldMapAnchor, Define(TemplateId.WorldMapAnchor, "Global/world_map_anchor.png") },
+                { TemplateId.ContinentMapTitle, Define(TemplateId.ContinentMapTitle, "Global/continent_map_title.png") },
                 { TemplateId.ResourceSearchPanelAnchor, Define(TemplateId.ResourceSearchPanelAnchor, "Search/resource_search_panel_anchor.png") },
                 { TemplateId.SearchButtonEnabled, Define(TemplateId.SearchButtonEnabled, "Search/search_button_enabled.png") },
                 { TemplateId.CheckboxChecked, Define(TemplateId.CheckboxChecked, "Search/checkbox_checked.png") },

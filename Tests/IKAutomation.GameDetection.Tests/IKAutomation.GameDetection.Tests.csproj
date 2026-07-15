@@ -35,6 +35,9 @@
     <Content Include="..\..\ADB\Data\InfinityKingdom\1280x720\vi\Global\world_map_anchor.png" Link="Data\InfinityKingdom\1280x720\vi\Global\world_map_anchor.png">
       <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
     </Content>
+    <Content Include="..\..\ADB\Data\InfinityKingdom\1280x720\vi\Global\continent_map_title.png" Link="Data\InfinityKingdom\1280x720\vi\Global\continent_map_title.png">
+      <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
+    </Content>
     <Content Include="..\..\ADB\Data\InfinityKingdom\1280x720\vi\Search\resource_search_panel_anchor.png" Link="Data\InfinityKingdom\1280x720\vi\Search\resource_search_panel_anchor.png">
       <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
     </Content>
