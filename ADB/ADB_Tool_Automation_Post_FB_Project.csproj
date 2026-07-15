@@ -70,6 +70,7 @@
       <DependentUpon>App.xaml</DependentUpon>
       <SubType>Code</SubType>
     </Compile>
+    <Compile Include="Core\Abstractions\ILdPlayerClient.cs" />
     <Compile Include="Exceptions\TaskExepction.cs" />
     <Compile Include="Helpers\ApiHelper.cs" />
     <Compile Include="Helpers\BitmapHelper.cs" />
@@ -80,6 +81,8 @@
     <Compile Include="Helpers\Logger.cs" />
     <Compile Include="Helpers\RealisticCommentGenerator.cs" />
     <Compile Include="Helpers\UIInteractionHelper.cs" />
+    <Compile Include="Infrastructure\LDPlayer\AutoLdPlayerClient.cs" />
+    <Compile Include="Infrastructure\LDPlayer\LdPlayerDiagnosticService.cs" />
     <Compile Include="MainWindow.xaml.cs">
       <DependentUpon>MainWindow.xaml</DependentUpon>
       <SubType>Code</SubType>
