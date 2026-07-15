@@ -3,3 +3,6 @@
 ADB/bin/Debug/log.txt
 /ADB/bin/Debug/log.txt
 ADB/bin/Debug/Shared_images_ldplayer/
+
+Tests/**/bin/
+Tests/**/obj/

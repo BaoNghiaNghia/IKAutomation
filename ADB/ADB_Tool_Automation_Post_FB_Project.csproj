@@ -71,6 +71,12 @@
       <SubType>Code</SubType>
     </Compile>
     <Compile Include="Core\Abstractions\ILdPlayerClient.cs" />
+    <Compile Include="Core\Vision\IImageMatcher.cs" />
+    <Compile Include="Core\Vision\ImageMatchResult.cs" />
+    <Compile Include="Core\Vision\ImageRegion.cs" />
+    <Compile Include="Core\Vision\ITemplateRegistry.cs" />
+    <Compile Include="Core\Vision\TemplateDefinition.cs" />
+    <Compile Include="Core\Vision\TemplateId.cs" />
     <Compile Include="Exceptions\TaskExepction.cs" />
     <Compile Include="Helpers\ApiHelper.cs" />
     <Compile Include="Helpers\BitmapHelper.cs" />
@@ -83,6 +89,9 @@
     <Compile Include="Helpers\UIInteractionHelper.cs" />
     <Compile Include="Infrastructure\LDPlayer\AutoLdPlayerClient.cs" />
     <Compile Include="Infrastructure\LDPlayer\LdPlayerDiagnosticService.cs" />
+    <Compile Include="Infrastructure\Vision\KAutoImageMatcher.cs" />
+    <Compile Include="Infrastructure\Vision\TemplateMatchDiagnosticService.cs" />
+    <Compile Include="Infrastructure\Vision\TemplateRegistry.cs" />
     <Compile Include="MainWindow.xaml.cs">
       <DependentUpon>MainWindow.xaml</DependentUpon>
       <SubType>Code</SubType>
@@ -142,6 +151,16 @@
   </ItemGroup>
   <ItemGroup>
     <Resource Include="logo_1.ico" />
+  </ItemGroup>
+  <ItemGroup>
+    <Content Include="Data\InfinityKingdom\**\*.png">
+      <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
+    </Content>
+    <None Include="Data\InfinityKingdom\1280x720\vi\Errors\.gitkeep" />
+    <None Include="Data\InfinityKingdom\1280x720\vi\Global\.gitkeep" />
+    <None Include="Data\InfinityKingdom\1280x720\vi\Resources\.gitkeep" />
+    <None Include="Data\InfinityKingdom\1280x720\vi\Search\.gitkeep" />
+    <None Include="Data\InfinityKingdom\1280x720\vi\Teams\.gitkeep" />
   </ItemGroup>
   <ItemGroup />
   <Import Project="$(MSBuildToolsPath)\Microsoft.CSharp.targets" />
