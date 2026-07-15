@@ -81,6 +81,12 @@
     <Compile Include="Core\Diagnostics\IDeviceDiagnosticService.cs" />
     <Compile Include="Core\Diagnostics\IDiagnosticLogger.cs" />
     <Compile Include="Core\Diagnostics\ScreenshotCaptureResult.cs" />
+    <Compile Include="Core\GameDetection\GameDetectionEvidence.cs" />
+    <Compile Include="Core\GameDetection\GameDetectionOptions.cs" />
+    <Compile Include="Core\GameDetection\GameDetectionResult.cs" />
+    <Compile Include="Core\GameDetection\GameState.cs" />
+    <Compile Include="Core\GameDetection\IGameStateDetector.cs" />
+    <Compile Include="Core\GameDetection\IUnknownScreenshotStore.cs" />
     <Compile Include="Core\Vision\IImageMatcher.cs" />
     <Compile Include="Core\Vision\ImageMatchResult.cs" />
     <Compile Include="Core\Vision\ImageRegion.cs" />
@@ -107,6 +113,10 @@
     <Compile Include="Infrastructure\Diagnostics\ScreenshotMetadata.cs" />
     <Compile Include="Infrastructure\Diagnostics\ScreenshotMetadataJson.cs" />
     <Compile Include="Infrastructure\Diagnostics\ScreenshotPathPolicy.cs" />
+    <Compile Include="Infrastructure\GameDetection\AppConfigGameDetectionOptionsProvider.cs" />
+    <Compile Include="Infrastructure\GameDetection\GameStateDetector.cs" />
+    <Compile Include="Infrastructure\GameDetection\GameStateDetectorFactory.cs" />
+    <Compile Include="Infrastructure\GameDetection\UnknownScreenshotStore.cs" />
     <Compile Include="Infrastructure\Vision\KAutoImageMatcher.cs" />
     <Compile Include="Infrastructure\Vision\TemplateMatchDiagnosticService.cs" />
     <Compile Include="Infrastructure\Vision\TemplateRegistry.cs" />

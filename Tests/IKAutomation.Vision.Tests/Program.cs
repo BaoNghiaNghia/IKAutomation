@@ -77,13 +77,13 @@ namespace IKAutomation.Vision.Tests
 
                 try
                 {
-                    registry.LoadBytes(TemplateId.SearchButton);
+                    registry.LoadBytes(TemplateId.SearchButtonEnabled);
                     throw new Exception("Expected FileNotFoundException was not thrown.");
                 }
                 catch (FileNotFoundException ex)
                 {
-                    AssertTrue(ex.Message.Contains(nameof(TemplateId.SearchButton)), "Error must contain TemplateId.");
-                    AssertTrue(ex.Message.Contains(registry.GetPath(TemplateId.SearchButton)), "Error must contain path.");
+                    AssertTrue(ex.Message.Contains(nameof(TemplateId.SearchButtonEnabled)), "Error must contain TemplateId.");
+                    AssertTrue(ex.Message.Contains(registry.GetPath(TemplateId.SearchButtonEnabled)), "Error must contain path.");
                 }
             }
             finally

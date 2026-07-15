@@ -6,3 +6,7 @@ ADB/bin/Debug/Shared_images_ldplayer/
 
 Tests/**/bin/
 Tests/**/obj/
+
+# Runtime diagnostic output
+**/Diagnostics/
+**/Logs/

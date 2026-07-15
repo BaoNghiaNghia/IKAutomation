@@ -1,4 +1,5 @@
 using ADB_Tool_Automation_Post_FB.Core.Diagnostics;
+using ADB_Tool_Automation_Post_FB.Core.GameDetection;
 using System;
 using System.Globalization;
 using System.Threading;
@@ -11,12 +12,17 @@ namespace ADB_Tool_Automation_Post_FB.UI
     public partial class DeviceDiagnosticWindow : Window
     {
         private readonly IDeviceDiagnosticService diagnosticService;
+        private readonly IGameStateDetector gameStateDetector;
         private readonly CancellationTokenSource lifetimeCancellation = new CancellationTokenSource();
 
-        public DeviceDiagnosticWindow(IDeviceDiagnosticService diagnosticService)
+        public DeviceDiagnosticWindow(
+            IDeviceDiagnosticService diagnosticService,
+            IGameStateDetector gameStateDetector)
         {
             this.diagnosticService = diagnosticService
                 ?? throw new ArgumentNullException(nameof(diagnosticService));
+            this.gameStateDetector = gameStateDetector
+                ?? throw new ArgumentNullException(nameof(gameStateDetector));
 
             InitializeComponent();
             PackageNameTextBox.Text = string.IsNullOrWhiteSpace(diagnosticService.Configuration.PackageName)
@@ -59,6 +65,18 @@ namespace ADB_Tool_Automation_Post_FB.UI
                     + $"Resolution: {result.Width}x{result.Height}";
             });
         }
+
+        private async void DetectCurrentState_Click(object sender, RoutedEventArgs e)
+        {
+            await RunOperationAsync(async cancellationToken =>
+            {
+                GameDetectionResult result = await gameStateDetector.DetectAsync(
+                    DeviceNameTextBox.Text,
+                    cancellationToken);
+                return FormatDetectionResult(result);
+            });
+        }
+
 
         private async void TapTest_Click(object sender, RoutedEventArgs e)
         {
@@ -145,6 +163,23 @@ namespace ADB_Tool_Automation_Post_FB.UI
                 + $"Package matches: {packageStatus}{Environment.NewLine}"
                 + $"Error: {result.ErrorMessage ?? string.Empty}";
         }
+
+        private static string FormatDetectionResult(GameDetectionResult result)
+        {
+            string evidence = string.Join(
+                Environment.NewLine,
+                System.Linq.Enumerable.Select(result.Evidence, item =>
+                    $"- {item.TemplateId}: exists={item.TemplateExists}, found={item.Found}, "
+                    + $"confidence={(item.Confidence.HasValue ? item.Confidence.Value.ToString("F3") : "n/a")}; "
+                    + item.Message));
+            return $"Detected state: {result.State}{Environment.NewLine}"
+                + $"Successful: {result.IsSuccessful}{Environment.NewLine}"
+                + $"Resolution: {result.ScreenshotWidth}x{result.ScreenshotHeight}{Environment.NewLine}"
+                + $"Unknown screenshot: {result.ScreenshotPath ?? string.Empty}{Environment.NewLine}"
+                + $"Error: {result.ErrorMessage ?? string.Empty}{Environment.NewLine}"
+                + $"Evidence:{Environment.NewLine}{evidence}";
+        }
+
 
         private static int ParseInteger(string value, string fieldName)
         {

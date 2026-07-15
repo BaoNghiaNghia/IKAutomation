@@ -54,6 +54,7 @@
                 <Button Content="Check Device" Click="CheckDevice_Click" Padding="14,7" Margin="0,0,8,8"/>
                 <Button Content="Launch Game" Click="LaunchGame_Click" Padding="14,7" Margin="0,0,8,8"/>
                 <Button Content="Capture Screenshot" Click="CaptureScreenshot_Click" Padding="14,7" Margin="0,0,8,8"/>
+                <Button Content="Detect Current State" Click="DetectCurrentState_Click" Padding="14,7" Margin="0,0,8,8"/>
                 <Button Content="Back Test" Click="BackTest_Click" Padding="14,7" Margin="0,0,8,8"/>
             </WrapPanel>
 
