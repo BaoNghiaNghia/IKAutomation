@@ -1,0 +1,25 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <OutputType>Exe</OutputType>
+    <TargetFramework>net481</TargetFramework>
+    <AssemblyName>IKAutomation.DeviceDiagnostics.Tests</AssemblyName>
+    <RootNamespace>IKAutomation.DeviceDiagnostics.Tests</RootNamespace>
+  </PropertyGroup>
+  <ItemGroup>
+    <Compile Include="..\..\ADB\Core\Abstractions\ILdPlayerClient.cs" Link="Production\ILdPlayerClient.cs" />
+    <Compile Include="..\..\ADB\Core\Diagnostics\DeviceDiagnosticOptions.cs" Link="Production\DeviceDiagnosticOptions.cs" />
+    <Compile Include="..\..\ADB\Core\Diagnostics\DeviceDiagnosticResult.cs" Link="Production\DeviceDiagnosticResult.cs" />
+    <Compile Include="..\..\ADB\Core\Diagnostics\IDeviceDiagnosticService.cs" Link="Production\IDeviceDiagnosticService.cs" />
+    <Compile Include="..\..\ADB\Core\Diagnostics\IDiagnosticLogger.cs" Link="Production\IDiagnosticLogger.cs" />
+    <Compile Include="..\..\ADB\Core\Diagnostics\ScreenshotCaptureResult.cs" Link="Production\ScreenshotCaptureResult.cs" />
+    <Compile Include="..\..\ADB\Infrastructure\Diagnostics\DeviceDiagnosticService.cs" Link="Production\DeviceDiagnosticService.cs" />
+    <Compile Include="..\..\ADB\Infrastructure\Diagnostics\ScreenshotFileStore.cs" Link="Production\ScreenshotFileStore.cs" />
+    <Compile Include="..\..\ADB\Infrastructure\Diagnostics\ScreenshotMetadata.cs" Link="Production\ScreenshotMetadata.cs" />
+    <Compile Include="..\..\ADB\Infrastructure\Diagnostics\ScreenshotMetadataJson.cs" Link="Production\ScreenshotMetadataJson.cs" />
+    <Compile Include="..\..\ADB\Infrastructure\Diagnostics\ScreenshotPathPolicy.cs" Link="Production\ScreenshotPathPolicy.cs" />
+  </ItemGroup>
+  <ItemGroup>
+    <Reference Include="System.Drawing" />
+    <Reference Include="System.Runtime.Serialization" />
+  </ItemGroup>
+</Project>

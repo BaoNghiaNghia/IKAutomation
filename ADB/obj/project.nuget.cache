@@ -1,8 +1,8 @@
 {
   "version": 2,
-  "dgSpecHash": "mkBOhUfmXRU=",
+  "dgSpecHash": "wlSkCcLTCuE=",
   "success": true,
-  "projectFilePath": "D:\\Bot_Tool_Auto_Game\\adb_fb_post\\ADB\\ADB_Tool_Automation_Post_FB_Project.csproj",
+  "projectFilePath": "D:\\Bot_Tool_Auto_Game\\IKAutomation\\ADB\\ADB_Tool_Automation_Post_FB_Project.csproj",
   "expectedPackageFiles": [
     "C:\\Users\\baong\\.nuget\\packages\\auto_ldplayer\\1.1.0\\auto_ldplayer.1.1.0.nupkg.sha512",
     "C:\\Users\\baong\\.nuget\\packages\\emgu.cv\\4.1.1.3497\\emgu.cv.4.1.1.3497.nupkg.sha512",
@@ -25,9 +25,9 @@
       "code": "NU1605",
       "level": "Warning",
       "message": "Detected package downgrade: Emgu.CV from 4.8.1.5350 to 4.1.1.3497. Reference the package directly from the project to select a different version. \r\n ADB_Tool_Automation_Post_FB -> Auto_LDPlayer 1.1.0 -> Emgu.CV (>= 4.8.1.5350) \r\n ADB_Tool_Automation_Post_FB -> EMGU.CV (>= 4.1.1.3497)",
-      "projectPath": "D:\\Bot_Tool_Auto_Game\\adb_fb_post\\ADB\\ADB_Tool_Automation_Post_FB_Project.csproj",
+      "projectPath": "D:\\Bot_Tool_Auto_Game\\IKAutomation\\ADB\\ADB_Tool_Automation_Post_FB_Project.csproj",
       "warningLevel": 1,
-      "filePath": "D:\\Bot_Tool_Auto_Game\\adb_fb_post\\ADB\\ADB_Tool_Automation_Post_FB_Project.csproj",
+      "filePath": "D:\\Bot_Tool_Auto_Game\\IKAutomation\\ADB\\ADB_Tool_Automation_Post_FB_Project.csproj",
       "libraryId": "Emgu.CV",
       "targetGraphs": [
         ".NETFramework,Version=v4.8.1",

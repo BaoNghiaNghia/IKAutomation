@@ -2030,11 +2030,11 @@
   "project": {
     "version": "1.0.0",
     "restore": {
-      "projectUniqueName": "D:\\Bot_Tool_Auto_Game\\adb_fb_post\\ADB\\ADB_Tool_Automation_Post_FB_Project.csproj",
+      "projectUniqueName": "D:\\Bot_Tool_Auto_Game\\IKAutomation\\ADB\\ADB_Tool_Automation_Post_FB_Project.csproj",
       "projectName": "ADB_Tool_Automation_Post_FB",
-      "projectPath": "D:\\Bot_Tool_Auto_Game\\adb_fb_post\\ADB\\ADB_Tool_Automation_Post_FB_Project.csproj",
+      "projectPath": "D:\\Bot_Tool_Auto_Game\\IKAutomation\\ADB\\ADB_Tool_Automation_Post_FB_Project.csproj",
       "packagesPath": "C:\\Users\\baong\\.nuget\\packages\\",
-      "outputPath": "D:\\Bot_Tool_Auto_Game\\adb_fb_post\\ADB\\obj\\",
+      "outputPath": "D:\\Bot_Tool_Auto_Game\\IKAutomation\\ADB\\obj\\",
       "projectStyle": "PackageReference",
       "skipContentFileWrite": true,
       "UsingMicrosoftNETSdk": false,
@@ -2055,6 +2055,7 @@
       },
       "frameworks": {
         "net481": {
+          "framework": "net481",
           "projectReferences": {}
         }
       },
@@ -2066,6 +2067,7 @@
     },
     "frameworks": {
       "net481": {
+        "framework": "net481",
         "dependencies": {
           "Auto_LDPlayer": {
             "target": "Package",

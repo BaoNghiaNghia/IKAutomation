@@ -43,6 +43,7 @@
     <Reference Include="System.Configuration" />
     <Reference Include="System.Data" />
     <Reference Include="System.Drawing" />
+    <Reference Include="System.Runtime.Serialization" />
     <Reference Include="System.Xml" />
     <Reference Include="Microsoft.CSharp" />
     <Reference Include="System.Core" />
@@ -66,11 +67,20 @@
       <SubType>Designer</SubType>
       <CopyToOutputDirectory>Always</CopyToOutputDirectory>
     </Page>
+    <Page Include="UI\DeviceDiagnosticWindow.xaml">
+      <Generator>MSBuild:Compile</Generator>
+      <SubType>Designer</SubType>
+    </Page>
     <Compile Include="App.xaml.cs">
       <DependentUpon>App.xaml</DependentUpon>
       <SubType>Code</SubType>
     </Compile>
     <Compile Include="Core\Abstractions\ILdPlayerClient.cs" />
+    <Compile Include="Core\Diagnostics\DeviceDiagnosticOptions.cs" />
+    <Compile Include="Core\Diagnostics\DeviceDiagnosticResult.cs" />
+    <Compile Include="Core\Diagnostics\IDeviceDiagnosticService.cs" />
+    <Compile Include="Core\Diagnostics\IDiagnosticLogger.cs" />
+    <Compile Include="Core\Diagnostics\ScreenshotCaptureResult.cs" />
     <Compile Include="Core\Vision\IImageMatcher.cs" />
     <Compile Include="Core\Vision\ImageMatchResult.cs" />
     <Compile Include="Core\Vision\ImageRegion.cs" />
@@ -89,6 +99,14 @@
     <Compile Include="Helpers\UIInteractionHelper.cs" />
     <Compile Include="Infrastructure\LDPlayer\AutoLdPlayerClient.cs" />
     <Compile Include="Infrastructure\LDPlayer\LdPlayerDiagnosticService.cs" />
+    <Compile Include="Infrastructure\Diagnostics\AppConfigDiagnosticOptionsProvider.cs" />
+    <Compile Include="Infrastructure\Diagnostics\ApplicationDiagnosticLogger.cs" />
+    <Compile Include="Infrastructure\Diagnostics\DeviceDiagnosticService.cs" />
+    <Compile Include="Infrastructure\Diagnostics\DeviceDiagnosticServiceFactory.cs" />
+    <Compile Include="Infrastructure\Diagnostics\ScreenshotFileStore.cs" />
+    <Compile Include="Infrastructure\Diagnostics\ScreenshotMetadata.cs" />
+    <Compile Include="Infrastructure\Diagnostics\ScreenshotMetadataJson.cs" />
+    <Compile Include="Infrastructure\Diagnostics\ScreenshotPathPolicy.cs" />
     <Compile Include="Infrastructure\Vision\KAutoImageMatcher.cs" />
     <Compile Include="Infrastructure\Vision\TemplateMatchDiagnosticService.cs" />
     <Compile Include="Infrastructure\Vision\TemplateRegistry.cs" />
@@ -96,6 +114,10 @@
       <DependentUpon>MainWindow.xaml</DependentUpon>
       <SubType>Code</SubType>
       <CopyToOutputDirectory>Always</CopyToOutputDirectory>
+    </Compile>
+    <Compile Include="UI\DeviceDiagnosticWindow.xaml.cs">
+      <DependentUpon>DeviceDiagnosticWindow.xaml</DependentUpon>
+      <SubType>Code</SubType>
     </Compile>
   </ItemGroup>
   <ItemGroup>

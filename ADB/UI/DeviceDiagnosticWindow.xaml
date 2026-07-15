@@ -1,0 +1,117 @@
+<Window x:Class="ADB_Tool_Automation_Post_FB.UI.DeviceDiagnosticWindow"
+        xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        Title="IKAutomation - Device Diagnostic"
+        Width="620" Height="720"
+        MinWidth="560" MinHeight="640"
+        WindowStartupLocation="CenterOwner">
+    <ScrollViewer VerticalScrollBarVisibility="Auto">
+        <StackPanel Margin="20">
+            <TextBlock Text="Infinity Kingdom Device Diagnostic"
+                       FontSize="20" FontWeight="Bold" Margin="0,0,0,16"/>
+
+            <Grid>
+                <Grid.ColumnDefinitions>
+                    <ColumnDefinition Width="150"/>
+                    <ColumnDefinition Width="*"/>
+                </Grid.ColumnDefinitions>
+                <Grid.RowDefinitions>
+                    <RowDefinition Height="Auto"/>
+                    <RowDefinition Height="Auto"/>
+                    <RowDefinition Height="Auto"/>
+                    <RowDefinition Height="Auto"/>
+                </Grid.RowDefinitions>
+
+                <TextBlock Grid.Row="0" Grid.Column="0" Text="Device name" VerticalAlignment="Center"/>
+                <TextBox x:Name="DeviceNameTextBox" Grid.Row="0" Grid.Column="1" Margin="0,4"/>
+
+                <TextBlock Grid.Row="1" Grid.Column="0" Text="Package name" VerticalAlignment="Center"/>
+                <TextBox x:Name="PackageNameTextBox" Grid.Row="1" Grid.Column="1" Margin="0,4"
+                         IsReadOnly="True" Background="#FFF2F2F2"/>
+
+                <TextBlock Grid.Row="2" Grid.Column="0" Text="State name" VerticalAlignment="Center"/>
+                <ComboBox x:Name="StateNameComboBox" Grid.Row="2" Grid.Column="1" Margin="0,4"
+                          IsEditable="True" Text="world_map">
+                    <ComboBoxItem Content="world_map"/>
+                    <ComboBoxItem Content="search_panel"/>
+                    <ComboBoxItem Content="resource_not_found"/>
+                    <ComboBoxItem Content="resource_found"/>
+                    <ComboBoxItem Content="resource_popup"/>
+                    <ComboBoxItem Content="team_panel"/>
+                    <ComboBoxItem Content="team_free"/>
+                    <ComboBoxItem Content="team_busy"/>
+                    <ComboBoxItem Content="march_started"/>
+                    <ComboBoxItem Content="network_error"/>
+                    <ComboBoxItem Content="unknown_popup"/>
+                </ComboBox>
+
+                <TextBlock Grid.Row="3" Grid.Column="0" Text="Note" VerticalAlignment="Top" Margin="0,8,0,0"/>
+                <TextBox x:Name="NoteTextBox" Grid.Row="3" Grid.Column="1" Margin="0,4"
+                         Height="56" AcceptsReturn="True" TextWrapping="Wrap"/>
+            </Grid>
+
+            <WrapPanel Margin="0,12,0,8">
+                <Button Content="Check Device" Click="CheckDevice_Click" Padding="14,7" Margin="0,0,8,8"/>
+                <Button Content="Launch Game" Click="LaunchGame_Click" Padding="14,7" Margin="0,0,8,8"/>
+                <Button Content="Capture Screenshot" Click="CaptureScreenshot_Click" Padding="14,7" Margin="0,0,8,8"/>
+                <Button Content="Back Test" Click="BackTest_Click" Padding="14,7" Margin="0,0,8,8"/>
+            </WrapPanel>
+
+            <GroupBox Header="Tap Test (only runs when clicked)" Margin="0,4,0,8">
+                <Grid Margin="10">
+                    <Grid.ColumnDefinitions>
+                        <ColumnDefinition Width="110"/>
+                        <ColumnDefinition Width="*"/>
+                        <ColumnDefinition Width="40"/>
+                        <ColumnDefinition Width="*"/>
+                        <ColumnDefinition Width="Auto"/>
+                    </Grid.ColumnDefinitions>
+                    <ComboBox x:Name="TapModeComboBox" Grid.Column="0" SelectedIndex="0" Margin="0,0,8,0">
+                        <ComboBoxItem Content="Pixel"/>
+                        <ComboBoxItem Content="Percent"/>
+                    </ComboBox>
+                    <TextBox x:Name="TapXTextBox" Grid.Column="1" ToolTip="X coordinate or percent"/>
+                    <TextBlock Grid.Column="2" Text="X / Y" HorizontalAlignment="Center" VerticalAlignment="Center"/>
+                    <TextBox x:Name="TapYTextBox" Grid.Column="3" ToolTip="Y coordinate or percent"/>
+                    <Button Grid.Column="4" Content="Tap Test" Click="TapTest_Click" Padding="12,5" Margin="8,0,0,0"/>
+                </Grid>
+            </GroupBox>
+
+            <GroupBox Header="Swipe Test by percent (only runs when clicked)" Margin="0,4,0,8">
+                <Grid Margin="10">
+                    <Grid.ColumnDefinitions>
+                        <ColumnDefinition Width="Auto"/>
+                        <ColumnDefinition Width="*"/>
+                        <ColumnDefinition Width="Auto"/>
+                        <ColumnDefinition Width="*"/>
+                    </Grid.ColumnDefinitions>
+                    <Grid.RowDefinitions>
+                        <RowDefinition Height="Auto"/>
+                        <RowDefinition Height="Auto"/>
+                        <RowDefinition Height="Auto"/>
+                    </Grid.RowDefinitions>
+                    <TextBlock Grid.Row="0" Grid.Column="0" Text="Start X / Y" Margin="0,5,8,5"/>
+                    <StackPanel Grid.Row="0" Grid.Column="1" Orientation="Horizontal">
+                        <TextBox x:Name="SwipeStartXTextBox" Width="70"/>
+                        <TextBox x:Name="SwipeStartYTextBox" Width="70" Margin="8,0,0,0"/>
+                    </StackPanel>
+                    <TextBlock Grid.Row="1" Grid.Column="0" Text="End X / Y" Margin="0,5,8,5"/>
+                    <StackPanel Grid.Row="1" Grid.Column="1" Orientation="Horizontal">
+                        <TextBox x:Name="SwipeEndXTextBox" Width="70"/>
+                        <TextBox x:Name="SwipeEndYTextBox" Width="70" Margin="8,0,0,0"/>
+                    </StackPanel>
+                    <TextBlock Grid.Row="0" Grid.Column="2" Text="Duration ms" Margin="20,5,8,5"/>
+                    <TextBox x:Name="SwipeDurationTextBox" Grid.Row="0" Grid.Column="3" Text="500"/>
+                    <Button Grid.Row="1" Grid.Column="3" Content="Swipe Test" Click="SwipeTest_Click"
+                            HorizontalAlignment="Right" Padding="12,5"/>
+                </Grid>
+            </GroupBox>
+
+            <TextBlock Text="Status" FontWeight="Bold" Margin="0,8,0,4"/>
+            <Border BorderBrush="#FFBDBDBD" BorderThickness="1" Padding="10" MinHeight="90">
+                <TextBlock x:Name="StatusTextBlock" Text="Ready. No input action runs automatically."
+                           TextWrapping="Wrap"/>
+            </Border>
+        </StackPanel>
+    </ScrollViewer>
+</Window>
