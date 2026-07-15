@@ -1,0 +1,41 @@
+{
+  "version": 2,
+  "dgSpecHash": "mkBOhUfmXRU=",
+  "success": true,
+  "projectFilePath": "D:\\Bot_Tool_Auto_Game\\adb_fb_post\\ADB\\ADB_Tool_Automation_Post_FB_Project.csproj",
+  "expectedPackageFiles": [
+    "C:\\Users\\baong\\.nuget\\packages\\auto_ldplayer\\1.1.0\\auto_ldplayer.1.1.0.nupkg.sha512",
+    "C:\\Users\\baong\\.nuget\\packages\\emgu.cv\\4.1.1.3497\\emgu.cv.4.1.1.3497.nupkg.sha512",
+    "C:\\Users\\baong\\.nuget\\packages\\kautohelper_kteam\\1.0.1.2\\kautohelper_kteam.1.0.1.2.nupkg.sha512",
+    "C:\\Users\\baong\\.nuget\\packages\\microsoft.bcl.asyncinterfaces\\9.0.4\\microsoft.bcl.asyncinterfaces.9.0.4.nupkg.sha512",
+    "C:\\Users\\baong\\.nuget\\packages\\system.buffers\\4.5.1\\system.buffers.4.5.1.nupkg.sha512",
+    "C:\\Users\\baong\\.nuget\\packages\\system.io.pipelines\\9.0.4\\system.io.pipelines.9.0.4.nupkg.sha512",
+    "C:\\Users\\baong\\.nuget\\packages\\system.memory\\4.5.5\\system.memory.4.5.5.nupkg.sha512",
+    "C:\\Users\\baong\\.nuget\\packages\\system.numerics.vectors\\4.5.0\\system.numerics.vectors.4.5.0.nupkg.sha512",
+    "C:\\Users\\baong\\.nuget\\packages\\system.runtime.compilerservices.unsafe\\6.0.0\\system.runtime.compilerservices.unsafe.6.0.0.nupkg.sha512",
+    "C:\\Users\\baong\\.nuget\\packages\\system.text.encodings.web\\9.0.4\\system.text.encodings.web.9.0.4.nupkg.sha512",
+    "C:\\Users\\baong\\.nuget\\packages\\system.text.json\\9.0.4\\system.text.json.9.0.4.nupkg.sha512",
+    "C:\\Users\\baong\\.nuget\\packages\\system.threading.tasks.extensions\\4.5.4\\system.threading.tasks.extensions.4.5.4.nupkg.sha512",
+    "C:\\Users\\baong\\.nuget\\packages\\system.valuetuple\\4.5.0\\system.valuetuple.4.5.0.nupkg.sha512",
+    "C:\\Users\\baong\\.nuget\\packages\\tesseract\\4.1.1\\tesseract.4.1.1.nupkg.sha512",
+    "C:\\Users\\baong\\.nuget\\packages\\zedgraph\\5.1.7\\zedgraph.5.1.7.nupkg.sha512"
+  ],
+  "logs": [
+    {
+      "code": "NU1605",
+      "level": "Warning",
+      "message": "Detected package downgrade: Emgu.CV from 4.8.1.5350 to 4.1.1.3497. Reference the package directly from the project to select a different version. \r\n ADB_Tool_Automation_Post_FB -> Auto_LDPlayer 1.1.0 -> Emgu.CV (>= 4.8.1.5350) \r\n ADB_Tool_Automation_Post_FB -> EMGU.CV (>= 4.1.1.3497)",
+      "projectPath": "D:\\Bot_Tool_Auto_Game\\adb_fb_post\\ADB\\ADB_Tool_Automation_Post_FB_Project.csproj",
+      "warningLevel": 1,
+      "filePath": "D:\\Bot_Tool_Auto_Game\\adb_fb_post\\ADB\\ADB_Tool_Automation_Post_FB_Project.csproj",
+      "libraryId": "Emgu.CV",
+      "targetGraphs": [
+        ".NETFramework,Version=v4.8.1",
+        ".NETFramework,Version=v4.8.1/win",
+        ".NETFramework,Version=v4.8.1/win-arm64",
+        ".NETFramework,Version=v4.8.1/win-x64",
+        ".NETFramework,Version=v4.8.1/win-x86"
+      ]
+    }
+  ]
+}

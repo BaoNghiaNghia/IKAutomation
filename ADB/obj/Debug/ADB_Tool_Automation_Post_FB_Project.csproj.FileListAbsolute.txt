@@ -1,0 +1,118 @@
+D:\Bot - Tool Auto Game\adb_fb_post\ADB\obj\Debug\ADB_Tool_Automation_Post_FB_Project.csproj.AssemblyReference.cache
+D:\Bot - Tool Auto Game\adb_fb_post\ADB\obj\Debug\MainWindow.g.cs
+D:\Bot - Tool Auto Game\adb_fb_post\ADB\obj\Debug\App.g.cs
+D:\Bot - Tool Auto Game\adb_fb_post\ADB\obj\Debug\ADB_Tool_Automation_Post_FB_MarkupCompile.cache
+D:\Bot - Tool Auto Game\adb_fb_post\ADB\obj\Debug\ADB_Tool_Automation_Post_FB_MarkupCompile.lref
+D:\Bot - Tool Auto Game\adb_fb_post\ADB\bin\Debug\ADB_Tool_Automation_Post_FB.exe.config
+D:\Bot - Tool Auto Game\adb_fb_post\ADB\bin\Debug\ADB_Tool_Automation_Post_FB.exe
+D:\Bot - Tool Auto Game\adb_fb_post\ADB\bin\Debug\ADB_Tool_Automation_Post_FB.pdb
+D:\Bot - Tool Auto Game\adb_fb_post\ADB\bin\Debug\Auto_LDPlayer.dll
+D:\Bot - Tool Auto Game\adb_fb_post\ADB\bin\Debug\KAutoHelper.dll
+D:\Bot - Tool Auto Game\adb_fb_post\ADB\bin\Debug\Microsoft.Bcl.AsyncInterfaces.dll
+D:\Bot - Tool Auto Game\adb_fb_post\ADB\bin\Debug\System.Buffers.dll
+D:\Bot - Tool Auto Game\adb_fb_post\ADB\bin\Debug\System.IO.Pipelines.dll
+D:\Bot - Tool Auto Game\adb_fb_post\ADB\bin\Debug\System.Memory.dll
+D:\Bot - Tool Auto Game\adb_fb_post\ADB\bin\Debug\System.Numerics.Vectors.dll
+D:\Bot - Tool Auto Game\adb_fb_post\ADB\bin\Debug\System.Runtime.CompilerServices.Unsafe.dll
+D:\Bot - Tool Auto Game\adb_fb_post\ADB\bin\Debug\System.Text.Encodings.Web.dll
+D:\Bot - Tool Auto Game\adb_fb_post\ADB\bin\Debug\System.Text.Json.dll
+D:\Bot - Tool Auto Game\adb_fb_post\ADB\bin\Debug\System.Threading.Tasks.Extensions.dll
+D:\Bot - Tool Auto Game\adb_fb_post\ADB\bin\Debug\System.ValueTuple.dll
+D:\Bot - Tool Auto Game\adb_fb_post\ADB\obj\Debug\ADB_Tool_Automation_Post_FB_Project.csproj.SuggestedBindingRedirects.cache
+D:\Bot - Tool Auto Game\adb_fb_post\ADB\obj\Debug\ADB_Tool_Automation_Post_FB.exe.config
+D:\Bot - Tool Auto Game\adb_fb_post\ADB\obj\Debug\MainWindow.baml
+D:\Bot - Tool Auto Game\adb_fb_post\ADB\obj\Debug\ADB_Tool_Automation_Post_FB.g.resources
+D:\Bot - Tool Auto Game\adb_fb_post\ADB\obj\Debug\ADB_Tool_Automation_Post_FB.Properties.Resources.resources
+D:\Bot - Tool Auto Game\adb_fb_post\ADB\obj\Debug\ADB_Tool_Automation_Post_FB_Project.csproj.GenerateResource.cache
+D:\Bot - Tool Auto Game\adb_fb_post\ADB\obj\Debug\ADB_Tool_Automation_Post_FB_Project.csproj.CoreCompileInputs.cache
+D:\Bot - Tool Auto Game\adb_fb_post\ADB\obj\Debug\ADB_Tool.B37E936E.Up2Date
+D:\Bot - Tool Auto Game\adb_fb_post\ADB\obj\Debug\ADB_Tool_Automation_Post_FB.exe
+D:\Bot - Tool Auto Game\adb_fb_post\ADB\obj\Debug\ADB_Tool_Automation_Post_FB.pdb
+D:\Bot - Tool Auto Game\adb_fb_post\ADB\bin\Debug\MainWindow.xaml.cs
+D:\Bot - Tool Auto Game\adb_fb_post\ADB\bin\Debug\x64\concrt140.dll
+D:\Bot - Tool Auto Game\adb_fb_post\ADB\bin\Debug\x64\cvextern.dll
+D:\Bot - Tool Auto Game\adb_fb_post\ADB\bin\Debug\x64\msvcp140.dll
+D:\Bot - Tool Auto Game\adb_fb_post\ADB\bin\Debug\x64\opencv_videoio_ffmpeg411_64.dll
+D:\Bot - Tool Auto Game\adb_fb_post\ADB\bin\Debug\x64\vcruntime140.dll
+D:\Bot - Tool Auto Game\adb_fb_post\ADB\bin\Debug\x86\concrt140.dll
+D:\Bot - Tool Auto Game\adb_fb_post\ADB\bin\Debug\x86\cvextern.dll
+D:\Bot - Tool Auto Game\adb_fb_post\ADB\bin\Debug\x86\msvcp140.dll
+D:\Bot - Tool Auto Game\adb_fb_post\ADB\bin\Debug\x86\opencv_videoio_ffmpeg411.dll
+D:\Bot - Tool Auto Game\adb_fb_post\ADB\bin\Debug\x86\vcruntime140.dll
+D:\Bot - Tool Auto Game\adb_fb_post\ADB\bin\Debug\Emgu.CV.UI.dll
+D:\Bot - Tool Auto Game\adb_fb_post\ADB\bin\Debug\Emgu.CV.World.dll
+D:\Bot - Tool Auto Game\adb_fb_post\ADB\bin\Debug\ZedGraph.dll
+D:\Bot - Tool Auto Game\adb_fb_post\ADB\bin\Debug\de\ZedGraph.resources.dll
+D:\Bot - Tool Auto Game\adb_fb_post\ADB\bin\Debug\es\ZedGraph.resources.dll
+D:\Bot - Tool Auto Game\adb_fb_post\ADB\bin\Debug\fr\ZedGraph.resources.dll
+D:\Bot - Tool Auto Game\adb_fb_post\ADB\bin\Debug\hu\ZedGraph.resources.dll
+D:\Bot - Tool Auto Game\adb_fb_post\ADB\bin\Debug\it\ZedGraph.resources.dll
+D:\Bot - Tool Auto Game\adb_fb_post\ADB\bin\Debug\ja\ZedGraph.resources.dll
+D:\Bot - Tool Auto Game\adb_fb_post\ADB\bin\Debug\pt\ZedGraph.resources.dll
+D:\Bot - Tool Auto Game\adb_fb_post\ADB\bin\Debug\ru\ZedGraph.resources.dll
+D:\Bot - Tool Auto Game\adb_fb_post\ADB\bin\Debug\sk\ZedGraph.resources.dll
+D:\Bot - Tool Auto Game\adb_fb_post\ADB\bin\Debug\sv\ZedGraph.resources.dll
+D:\Bot - Tool Auto Game\adb_fb_post\ADB\bin\Debug\tr\ZedGraph.resources.dll
+D:\Bot - Tool Auto Game\adb_fb_post\ADB\bin\Debug\zh-cn\ZedGraph.resources.dll
+D:\Bot - Tool Auto Game\adb_fb_post\ADB\bin\Debug\zh-tw\ZedGraph.resources.dll
+D:\Bot_Tool_Auto_Game\adb_fb_post\ADB\bin\Debug\MainWindow.xaml.cs
+D:\Bot_Tool_Auto_Game\adb_fb_post\ADB\bin\Debug\ADB_Tool_Automation_Post_FB.exe.config
+D:\Bot_Tool_Auto_Game\adb_fb_post\ADB\bin\Debug\ADB_Tool_Automation_Post_FB.exe
+D:\Bot_Tool_Auto_Game\adb_fb_post\ADB\bin\Debug\ADB_Tool_Automation_Post_FB.pdb
+D:\Bot_Tool_Auto_Game\adb_fb_post\ADB\bin\Debug\Auto_LDPlayer.dll
+D:\Bot_Tool_Auto_Game\adb_fb_post\ADB\bin\Debug\KAutoHelper.dll
+D:\Bot_Tool_Auto_Game\adb_fb_post\ADB\bin\Debug\Microsoft.Bcl.AsyncInterfaces.dll
+D:\Bot_Tool_Auto_Game\adb_fb_post\ADB\bin\Debug\System.Buffers.dll
+D:\Bot_Tool_Auto_Game\adb_fb_post\ADB\bin\Debug\System.IO.Pipelines.dll
+D:\Bot_Tool_Auto_Game\adb_fb_post\ADB\bin\Debug\System.Memory.dll
+D:\Bot_Tool_Auto_Game\adb_fb_post\ADB\bin\Debug\System.Numerics.Vectors.dll
+D:\Bot_Tool_Auto_Game\adb_fb_post\ADB\bin\Debug\System.Runtime.CompilerServices.Unsafe.dll
+D:\Bot_Tool_Auto_Game\adb_fb_post\ADB\bin\Debug\System.Text.Encodings.Web.dll
+D:\Bot_Tool_Auto_Game\adb_fb_post\ADB\bin\Debug\System.Text.Json.dll
+D:\Bot_Tool_Auto_Game\adb_fb_post\ADB\bin\Debug\System.Threading.Tasks.Extensions.dll
+D:\Bot_Tool_Auto_Game\adb_fb_post\ADB\bin\Debug\System.ValueTuple.dll
+D:\Bot_Tool_Auto_Game\adb_fb_post\ADB\obj\Debug\ADB_Tool_Automation_Post_FB_Project.csproj.AssemblyReference.cache
+D:\Bot_Tool_Auto_Game\adb_fb_post\ADB\obj\Debug\ADB_Tool_Automation_Post_FB_Project.csproj.SuggestedBindingRedirects.cache
+D:\Bot_Tool_Auto_Game\adb_fb_post\ADB\obj\Debug\ADB_Tool_Automation_Post_FB.exe.config
+D:\Bot_Tool_Auto_Game\adb_fb_post\ADB\obj\Debug\MainWindow.baml
+D:\Bot_Tool_Auto_Game\adb_fb_post\ADB\obj\Debug\MainWindow.g.cs
+D:\Bot_Tool_Auto_Game\adb_fb_post\ADB\obj\Debug\App.g.cs
+D:\Bot_Tool_Auto_Game\adb_fb_post\ADB\obj\Debug\ADB_Tool_Automation_Post_FB_MarkupCompile.cache
+D:\Bot_Tool_Auto_Game\adb_fb_post\ADB\obj\Debug\ADB_Tool_Automation_Post_FB.g.resources
+D:\Bot_Tool_Auto_Game\adb_fb_post\ADB\obj\Debug\ADB_Tool_Automation_Post_FB.Properties.Resources.resources
+D:\Bot_Tool_Auto_Game\adb_fb_post\ADB\obj\Debug\ADB_Tool_Automation_Post_FB_Project.csproj.GenerateResource.cache
+D:\Bot_Tool_Auto_Game\adb_fb_post\ADB\obj\Debug\ADB_Tool_Automation_Post_FB_Project.csproj.CoreCompileInputs.cache
+D:\Bot_Tool_Auto_Game\adb_fb_post\ADB\obj\Debug\ADB_Tool.B37E936E.Up2Date
+D:\Bot_Tool_Auto_Game\adb_fb_post\ADB\obj\Debug\ADB_Tool_Automation_Post_FB.exe
+D:\Bot_Tool_Auto_Game\adb_fb_post\ADB\obj\Debug\ADB_Tool_Automation_Post_FB.pdb
+D:\Bot_Tool_Auto_Game\adb_fb_post\ADB\bin\Debug\x86\leptonica-1.80.0.dll
+D:\Bot_Tool_Auto_Game\adb_fb_post\ADB\bin\Debug\x86\tesseract41.dll
+D:\Bot_Tool_Auto_Game\adb_fb_post\ADB\bin\Debug\x64\leptonica-1.80.0.dll
+D:\Bot_Tool_Auto_Game\adb_fb_post\ADB\bin\Debug\x64\tesseract41.dll
+D:\Bot_Tool_Auto_Game\adb_fb_post\ADB\bin\Debug\Tesseract.dll
+D:\Bot_Tool_Auto_Game\adb_fb_post\ADB\bin\Debug\x64\concrt140.dll
+D:\Bot_Tool_Auto_Game\adb_fb_post\ADB\bin\Debug\x64\cvextern.dll
+D:\Bot_Tool_Auto_Game\adb_fb_post\ADB\bin\Debug\x64\msvcp140.dll
+D:\Bot_Tool_Auto_Game\adb_fb_post\ADB\bin\Debug\x64\opencv_videoio_ffmpeg411_64.dll
+D:\Bot_Tool_Auto_Game\adb_fb_post\ADB\bin\Debug\x64\vcruntime140.dll
+D:\Bot_Tool_Auto_Game\adb_fb_post\ADB\bin\Debug\x86\concrt140.dll
+D:\Bot_Tool_Auto_Game\adb_fb_post\ADB\bin\Debug\x86\cvextern.dll
+D:\Bot_Tool_Auto_Game\adb_fb_post\ADB\bin\Debug\x86\msvcp140.dll
+D:\Bot_Tool_Auto_Game\adb_fb_post\ADB\bin\Debug\x86\opencv_videoio_ffmpeg411.dll
+D:\Bot_Tool_Auto_Game\adb_fb_post\ADB\bin\Debug\x86\vcruntime140.dll
+D:\Bot_Tool_Auto_Game\adb_fb_post\ADB\bin\Debug\Emgu.CV.UI.dll
+D:\Bot_Tool_Auto_Game\adb_fb_post\ADB\bin\Debug\Emgu.CV.World.dll
+D:\Bot_Tool_Auto_Game\adb_fb_post\ADB\bin\Debug\ZedGraph.dll
+D:\Bot_Tool_Auto_Game\adb_fb_post\ADB\bin\Debug\de\ZedGraph.resources.dll
+D:\Bot_Tool_Auto_Game\adb_fb_post\ADB\bin\Debug\es\ZedGraph.resources.dll
+D:\Bot_Tool_Auto_Game\adb_fb_post\ADB\bin\Debug\fr\ZedGraph.resources.dll
+D:\Bot_Tool_Auto_Game\adb_fb_post\ADB\bin\Debug\hu\ZedGraph.resources.dll
+D:\Bot_Tool_Auto_Game\adb_fb_post\ADB\bin\Debug\it\ZedGraph.resources.dll
+D:\Bot_Tool_Auto_Game\adb_fb_post\ADB\bin\Debug\ja\ZedGraph.resources.dll
+D:\Bot_Tool_Auto_Game\adb_fb_post\ADB\bin\Debug\pt\ZedGraph.resources.dll
+D:\Bot_Tool_Auto_Game\adb_fb_post\ADB\bin\Debug\ru\ZedGraph.resources.dll
+D:\Bot_Tool_Auto_Game\adb_fb_post\ADB\bin\Debug\sk\ZedGraph.resources.dll
+D:\Bot_Tool_Auto_Game\adb_fb_post\ADB\bin\Debug\sv\ZedGraph.resources.dll
+D:\Bot_Tool_Auto_Game\adb_fb_post\ADB\bin\Debug\tr\ZedGraph.resources.dll
+D:\Bot_Tool_Auto_Game\adb_fb_post\ADB\bin\Debug\zh-cn\ZedGraph.resources.dll
+D:\Bot_Tool_Auto_Game\adb_fb_post\ADB\bin\Debug\zh-tw\ZedGraph.resources.dll
