@@ -102,7 +102,7 @@ namespace ADB_Tool_Automation_Post_FB
         public MainWindow()
         {
             InitializeComponent();
-            LoadDataImage();
+            TryLoadLegacyFacebookImages();
             LoadStaticLDConsole();
 
             emojiButtonsRaw.Add(EMOJI_THICH_BUTTON);
@@ -114,6 +114,22 @@ namespace ADB_Tool_Automation_Post_FB
             TaskExceptions.RegisterGlobalHandlers(); // ✅ Gọi handler tập trung
 
             this.ContentRendered += MainWindow_ContentRendered;
+        }
+
+        private void TryLoadLegacyFacebookImages()
+        {
+            try
+            {
+                LoadDataImage();
+            }
+            catch (Exception ex) when (ex is IOException ||
+                                       ex is UnauthorizedAccessException ||
+                                       ex is ArgumentException)
+            {
+                Logger.LogWarning(
+                    $"Legacy Facebook image data could not be loaded. " +
+                    $"The application will continue without Facebook image automation. {ex.Message}");
+            }
         }
 
         private void MainWindow_ContentRendered(object sender, EventArgs e)
