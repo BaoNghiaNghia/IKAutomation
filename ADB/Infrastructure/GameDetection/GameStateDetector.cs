@@ -6,6 +6,7 @@ using System;
 using System.Collections.Generic;
 using System.Diagnostics;
 using System.Drawing;
+using System.Drawing.Imaging;
 using System.IO;
 using System.Linq;
 using System.Threading;
@@ -147,7 +148,8 @@ namespace ADB_Tool_Automation_Post_FB.Infrastructure.GameDetection
             var configurationErrors = new List<string>();
             foreach (TemplateId templateId in DetectionTemplates)
             {
-                evidence.Add(MatchTemplate(screenshotPng, templateId, configurationErrors));
+                evidence.Add(MatchTemplate(
+                    screenshotPng, templateId, width, height, configurationErrors));
             }
 
             if (configurationErrors.Count > 0)
@@ -212,6 +214,8 @@ namespace ADB_Tool_Automation_Post_FB.Infrastructure.GameDetection
         private GameDetectionEvidence MatchTemplate(
             byte[] screenshotPng,
             TemplateId templateId,
+            int screenshotWidth,
+            int screenshotHeight,
             ICollection<string> configurationErrors)
         {
             string path;
@@ -236,6 +240,16 @@ namespace ADB_Tool_Automation_Post_FB.Infrastructure.GameDetection
             {
                 byte[] template = templateRegistry.LoadBytes(templateId);
                 ImageMatchResult match = imageMatcher.Find(screenshotPng, template, searchRegion: null);
+                bool usedStableWorldMapAnchor = false;
+                if (templateId == TemplateId.WorldMapAnchor && (match == null || !match.Found))
+                {
+                    byte[] stableTemplate = TryCreateStableWorldMapTemplate(template) ?? template;
+                    var lowerLeftRegion = new ImageRegion(
+                        0, screenshotHeight / 2,
+                        screenshotWidth / 2, screenshotHeight - screenshotHeight / 2);
+                    match = imageMatcher.Find(screenshotPng, stableTemplate, lowerLeftRegion);
+                    usedStableWorldMapAnchor = match != null && match.Found;
+                }
                 return new GameDetectionEvidence
                 {
                     TemplateId = templateId,
@@ -244,7 +258,9 @@ namespace ADB_Tool_Automation_Post_FB.Infrastructure.GameDetection
                     MatchResult = match,
                     Confidence = match?.Confidence,
                     Message = match != null && match.Found
-                        ? $"Template '{templateId}' matched."
+                        ? usedStableWorldMapAnchor
+                            ? "Template 'WorldMapAnchor' matched by its stable icon center in the lower-left region."
+                            : $"Template '{templateId}' matched."
                         : $"Template '{templateId}' was checked and did not match."
                 };
             }
@@ -253,6 +269,34 @@ namespace ADB_Tool_Automation_Post_FB.Infrastructure.GameDetection
                 string message = $"Existing template '{templateId}' could not be loaded or matched: {exception.Message}";
                 configurationErrors.Add(message);
                 return ErrorEvidence(templateId, true, message);
+            }
+        }
+
+        private static byte[] TryCreateStableWorldMapTemplate(byte[] templateBytes)
+        {
+            try
+            {
+                using (var input = new MemoryStream(templateBytes, writable: false))
+                using (var source = new Bitmap(input))
+                {
+                    int marginX = source.Width / 5;
+                    int marginY = source.Height / 5;
+                    int width = source.Width - marginX * 2;
+                    int height = source.Height - marginY * 2;
+                    if (width <= 0 || height <= 0) return null;
+
+                    using (Bitmap stable = source.Clone(
+                        new Rectangle(marginX, marginY, width, height), PixelFormat.Format32bppArgb))
+                    using (var output = new MemoryStream())
+                    {
+                        stable.Save(output, ImageFormat.Png);
+                        return output.ToArray();
+                    }
+                }
+            }
+            catch (ArgumentException)
+            {
+                return null;
             }
         }
 

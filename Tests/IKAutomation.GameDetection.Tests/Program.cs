@@ -26,6 +26,7 @@ namespace IKAutomation.GameDetection.Tests
             Run("ResourceSearchPanel requires both signals", PanelRequiresBothSignals);
             Run("ResourceSearchPanel has priority over WorldMap", PanelHasPriority);
             Run("WorldMap from WorldMapAnchor only", WorldMapFromAnchor);
+            Run("WorldMap uses stable anchor fallback", WorldMapStableAnchorFallback);
             Run("ContinentMap from ContinentMapTitle", ContinentMapFromTitle);
             Run("Unknown when no template matches", UnknownWhenNoMatches);
             Run("Unknown is not an exception", UnknownIsSuccessful);
@@ -88,6 +89,20 @@ namespace IKAutomation.GameDetection.Tests
         private static void WorldMapFromAnchor()
         {
             Equal(GameState.WorldMap, DetectWithMatches(TemplateId.WorldMapAnchor).State, "World map rule failed.");
+        }
+
+        private static void WorldMapStableAnchorFallback()
+        {
+            var matcher = new FakeImageMatcher { WorldMapStableOnly = true };
+            matcher.Matches.Add(TemplateId.WorldMapAnchor);
+            GameDetectionResult result = CreateDetector(
+                new FakeLdPlayerClient(), matcher: matcher)
+                .DetectAsync("IK-1", TestToken).GetAwaiter().GetResult();
+            Equal(GameState.WorldMap, result.State, "Stable WorldMap anchor fallback failed.");
+            GameDetectionEvidence evidence = result.Evidence.First(
+                item => item.TemplateId == TemplateId.WorldMapAnchor);
+            Assert(evidence.Found && evidence.MatchResult.X == 10 && evidence.MatchResult.Y == 20,
+                "Stable anchor bounds were not preserved.");
         }
 
         private static void ContinentMapFromTitle()
@@ -269,12 +284,15 @@ namespace IKAutomation.GameDetection.Tests
         private sealed class FakeImageMatcher : IImageMatcher
         {
             public HashSet<TemplateId> Matches { get; } = new HashSet<TemplateId>();
+            public bool WorldMapStableOnly { get; set; }
             public int FindCalls { get; private set; }
             public ImageMatchResult Find(byte[] screenshot, byte[] template, ImageRegion? region = null)
             {
                 FindCalls++;
                 TemplateId id = (TemplateId)template[0];
-                return Matches.Contains(id) ? ImageMatchResult.FoundAt(10, 20, 30, 40) : ImageMatchResult.NotFound();
+                bool found = Matches.Contains(id)
+                    && (id != TemplateId.WorldMapAnchor || !WorldMapStableOnly || region.HasValue);
+                return found ? ImageMatchResult.FoundAt(10, 20, 30, 40) : ImageMatchResult.NotFound();
             }
         }
 
