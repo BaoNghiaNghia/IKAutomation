@@ -208,7 +208,9 @@ namespace ADB_Tool_Automation_Post_FB
                 ResourceSearchConfigurationServiceFactory.CreateFromAppConfig(),
                 ResourceSearchExecutionServiceFactory.CreateFromAppConfig(),
                 ResourcePopupVerificationServiceFactory.CreateFromAppConfig(),
-                OpenTeamSelectionServiceFactory.CreateFromAppConfig())
+                OpenTeamSelectionServiceFactory.CreateFromAppConfig(),
+                SelectFarmTeamServiceFactory.CreateFromAppConfig(),
+                AppConfigFarmTeamSelectionOptionsProvider.LoadRequest())
             {
                 Owner = this
             };

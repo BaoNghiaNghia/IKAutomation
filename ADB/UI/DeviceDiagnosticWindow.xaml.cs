@@ -24,6 +24,8 @@ namespace ADB_Tool_Automation_Post_FB.UI
         private readonly IResourceSearchExecutionService resourceSearchExecutionService;
         private readonly IResourcePopupVerificationService resourcePopupVerificationService;
         private readonly IOpenTeamSelectionService openTeamSelectionService;
+        private readonly ISelectFarmTeamService selectFarmTeamService;
+        private readonly TeamSelectionRequest defaultFarmTeamRequest;
         private readonly CancellationTokenSource lifetimeCancellation = new CancellationTokenSource();
 
         public DeviceDiagnosticWindow(
@@ -33,7 +35,9 @@ namespace ADB_Tool_Automation_Post_FB.UI
             IResourceSearchConfigurationService resourceSearchConfigurationService,
             IResourceSearchExecutionService resourceSearchExecutionService,
             IResourcePopupVerificationService resourcePopupVerificationService,
-            IOpenTeamSelectionService openTeamSelectionService)
+            IOpenTeamSelectionService openTeamSelectionService,
+            ISelectFarmTeamService selectFarmTeamService,
+            TeamSelectionRequest defaultFarmTeamRequest)
         {
             this.diagnosticService = diagnosticService
                 ?? throw new ArgumentNullException(nameof(diagnosticService));
@@ -49,6 +53,10 @@ namespace ADB_Tool_Automation_Post_FB.UI
                 ?? throw new ArgumentNullException(nameof(resourcePopupVerificationService));
             this.openTeamSelectionService = openTeamSelectionService
                 ?? throw new ArgumentNullException(nameof(openTeamSelectionService));
+            this.selectFarmTeamService = selectFarmTeamService
+                ?? throw new ArgumentNullException(nameof(selectFarmTeamService));
+            this.defaultFarmTeamRequest = defaultFarmTeamRequest
+                ?? throw new ArgumentNullException(nameof(defaultFarmTeamRequest));
 
             InitializeComponent();
             PackageNameTextBox.Text = string.IsNullOrWhiteSpace(diagnosticService.Configuration.PackageName)
@@ -184,6 +192,13 @@ namespace ADB_Tool_Automation_Post_FB.UI
             await RunOperationAsync(async cancellationToken => FormatOpenTeamSelectionResult(
                 await openTeamSelectionService.OpenAsync(
                     GetSelectedDeviceName(), cancellationToken)));
+        }
+
+        private async void SelectFarmTeam_Click(object sender, RoutedEventArgs e)
+        {
+            await RunOperationAsync(async cancellationToken => FormatSelectFarmTeamResult(
+                await selectFarmTeamService.SelectAsync(GetSelectedDeviceName(),
+                    defaultFarmTeamRequest, cancellationToken)));
         }
 
 
@@ -393,6 +408,26 @@ namespace ADB_Tool_Automation_Post_FB.UI
                 + $"Error: {result.ErrorMessage ?? string.Empty}{Environment.NewLine}Observations:{Environment.NewLine}{observations}{Environment.NewLine}"
                 + $"Final evidence:{Environment.NewLine}{evidence}";
         }
+
+        private static string FormatSelectFarmTeamResult(SelectFarmTeamResult result)
+        {
+            string attempted = string.Join(", ", result.AttemptedTeams.Select(team => ((int)team).ToString()));
+            string attempts = string.Join(Environment.NewLine, result.Attempts.Select((item, index) =>
+                $"- #{index + 1} {item.TeamNumber}: badge={item.BadgeFound}, disabled={item.DisabledDetected}, "
+                + $"already={item.AlreadySelected}, tap={item.TapSent}, selected={item.SelectedVerified}, "
+                + $"badgeBounds={Bounds(item.BadgeMatch)}, selectedBounds={Bounds(item.SelectedBorderMatch)}; {item.Message}"));
+            return $"Outcome: {result.Outcome}{Environment.NewLine}Success: {result.Success}{Environment.NewLine}"
+                + $"Selected team: {result.SelectedTeam?.ToString() ?? string.Empty}{Environment.NewLine}Attempted teams: {attempted}{Environment.NewLine}"
+                + $"Initial: {result.InitialState}{Environment.NewLine}Final: {result.FinalState}{Environment.NewLine}"
+                + $"Team taps: {result.TeamTapCount}{Environment.NewLine}Team Selection verified: {result.TeamSelectionScreenVerified}{Environment.NewLine}"
+                + $"Selected state verified: {result.SelectedStateVerified}{Environment.NewLine}Duration: {result.Duration.TotalMilliseconds:F0} ms{Environment.NewLine}"
+                + $"Diagnostic: {result.DiagnosticScreenshotPath ?? string.Empty}{Environment.NewLine}Message: {result.Message}{Environment.NewLine}"
+                + $"Error: {result.ErrorMessage ?? string.Empty}{Environment.NewLine}Attempts:{Environment.NewLine}{attempts}";
+        }
+
+        private static string Bounds(ADB_Tool_Automation_Post_FB.Core.Vision.ImageMatchResult match) =>
+            match != null && match.Found
+                ? $"({match.X},{match.Y},{match.Width},{match.Height})" : string.Empty;
 
 
         private static int ParseInteger(string value, string fieldName)
