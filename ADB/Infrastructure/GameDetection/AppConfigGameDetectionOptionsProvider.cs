@@ -18,10 +18,10 @@ namespace ADB_Tool_Automation_Post_FB.Infrastructure.GameDetection
                 ConfigurationManager.AppSettings["GameDetection.UnknownScreenshotDirectory"]
                     ?? "Diagnostics/UnknownStates",
                 new ImageRegion(
-                    ReadPositiveInteger("ResourcePopupVerification.PopupRegion.X", 540, allowZero: true),
-                    ReadPositiveInteger("ResourcePopupVerification.PopupRegion.Y", 400, allowZero: true),
-                    ReadPositiveInteger("ResourcePopupVerification.PopupRegion.Width", 470),
-                    ReadPositiveInteger("ResourcePopupVerification.PopupRegion.Height", 320)));
+                    ReadPositiveInteger("ResourcePopupVerification.PopupRegion.X", 650, allowZero: true),
+                    ReadPositiveInteger("ResourcePopupVerification.PopupRegion.Y", 150, allowZero: true),
+                    ReadPositiveInteger("ResourcePopupVerification.PopupRegion.Width", 550),
+                    ReadPositiveInteger("ResourcePopupVerification.PopupRegion.Height", 450)));
         }
 
         private static int ReadPositiveInteger(string key, int defaultValue, bool allowZero = false)

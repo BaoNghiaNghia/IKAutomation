@@ -53,7 +53,7 @@ namespace IKAutomation.ResourcePopup.Tests
         private static void GatherAloneNotDetected()
         { Fixture f = Setup(TemplateId.GatherButtonEnabled); var r = Run(f); Equal(ResourcePopupOutcome.ResourcePopupNotDetected, r.Outcome); }
         private static void MatcherUsesRoi()
-        { Fixture f = Setup(TemplateId.ResourcePopupInfoAnchor, TemplateId.ResourcePopupIronTitle, TemplateId.GatherButtonEnabled); Run(f); foreach (var id in Required()) { Assert(f.Matcher.Regions[id].HasValue, id + " missing ROI"); Equal(540, f.Matcher.Regions[id].Value.X); } }
+        { Fixture f = Setup(TemplateId.ResourcePopupInfoAnchor, TemplateId.ResourcePopupIronTitle, TemplateId.GatherButtonEnabled); Run(f); foreach (var id in Required()) { Assert(f.Matcher.Regions[id].HasValue, id + " missing ROI"); Equal(650, f.Matcher.Regions[id].Value.X); Equal(150, f.Matcher.Regions[id].Value.Y); } }
         private static void BoundsPreserved()
         { Fixture f = Setup(TemplateId.ResourcePopupInfoAnchor, TemplateId.ResourcePopupIronTitle, TemplateId.GatherButtonEnabled); var r = Run(f); Equal(700, r.GatherButtonMatch.X); Equal(520, r.GatherButtonMatch.Y); }
         private static void MissingTemplateFails()
@@ -91,7 +91,7 @@ namespace IKAutomation.ResourcePopup.Tests
                 Options(1, readyFrames), f.Store, new FakeLogger()); return f;
         }
         private static ResourcePopupVerificationOptions Options(int poll = 1, int ready = 1) =>
-            new ResourcePopupVerificationOptions(poll, 1, ready, new ImageRegion(540, 400, 470, 320), true, "Diagnostics/ResourcePopup");
+            new ResourcePopupVerificationOptions(poll, 1, ready, new ImageRegion(650, 150, 550, 450), true, "Diagnostics/ResourcePopup");
         private static ResourcePopupVerificationResult Run(Fixture f, CancellationToken? token = null) =>
             f.Service.VerifyAsync("LDPlayer", token ?? Token).GetAwaiter().GetResult();
         private static TemplateId[] Required() => new[] { TemplateId.ResourcePopupInfoAnchor, TemplateId.ResourcePopupIronTitle, TemplateId.GatherButtonEnabled };

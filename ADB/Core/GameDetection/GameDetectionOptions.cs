@@ -25,7 +25,7 @@ namespace ADB_Tool_Automation_Post_FB.Core.GameDetection
             RequireExpectedResolution = requireExpectedResolution;
             SaveUnknownScreenshots = saveUnknownScreenshots;
             UnknownScreenshotDirectory = unknownScreenshotDirectory.Trim();
-            ResourcePopupRegion = resourcePopupRegion ?? new ImageRegion(540, 400, 470, 320);
+            ResourcePopupRegion = resourcePopupRegion ?? new ImageRegion(650, 150, 550, 450);
             if ((long)ResourcePopupRegion.X + ResourcePopupRegion.Width > expectedWidth
                 || (long)ResourcePopupRegion.Y + ResourcePopupRegion.Height > expectedHeight)
                 throw new ArgumentOutOfRangeException(nameof(resourcePopupRegion),

@@ -157,7 +157,8 @@ namespace IKAutomation.GameDetection.Tests
                 TemplateId.ResourcePopupIronTitle, TemplateId.GatherButtonEnabled })
             {
                 Assert(matcher.Regions[id].HasValue, id + " did not use ROI.");
-                Equal(540, matcher.Regions[id].Value.X, id + " ROI X.");
+                Equal(650, matcher.Regions[id].Value.X, id + " ROI X.");
+                Equal(150, matcher.Regions[id].Value.Y, id + " ROI Y.");
             }
         }
 

@@ -12,8 +12,8 @@ namespace ADB_Tool_Automation_Post_FB.Infrastructure.ResourcePopup
             return new ResourcePopupVerificationOptions(
                 Int("PollIntervalMs", 250), Int("VerificationTimeoutSeconds", 5),
                 Int("RequiredConsecutiveReadyFrames", 1),
-                new ImageRegion(Int("PopupRegion.X", 540), Int("PopupRegion.Y", 400),
-                    Int("PopupRegion.Width", 470), Int("PopupRegion.Height", 320)),
+                new ImageRegion(Int("PopupRegion.X", 650), Int("PopupRegion.Y", 150),
+                    Int("PopupRegion.Width", 550), Int("PopupRegion.Height", 450)),
                 Bool("SaveFailureScreenshots", true),
                 Text("FailureScreenshotDirectory", "Diagnostics/ResourcePopup"),
                 Int("ExpectedWidth", 1280), Int("ExpectedHeight", 720));
