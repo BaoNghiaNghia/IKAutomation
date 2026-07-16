@@ -2,6 +2,7 @@ using ADB_Tool_Automation_Post_FB.Core.Abstractions;
 using Auto_LDPlayer;
 using Auto_LDPlayer.Enums;
 using System;
+using System.Collections.Concurrent;
 using System.Collections.Generic;
 using System.Drawing;
 using System.Drawing.Imaging;
@@ -19,6 +20,10 @@ namespace ADB_Tool_Automation_Post_FB.Infrastructure.LDPlayer
     /// </summary>
     public sealed class AutoLdPlayerClient : ILdPlayerClient
     {
+        private const int ScreenshotReadyAttempts = 3;
+        private static readonly ConcurrentDictionary<string, SemaphoreSlim> ScreenshotLocks =
+            new ConcurrentDictionary<string, SemaphoreSlim>(StringComparer.OrdinalIgnoreCase);
+
         public static string ConfigureLdConsolePath(string configuredPath)
         {
             string expandedPath = string.IsNullOrWhiteSpace(configuredPath)
@@ -112,24 +117,69 @@ namespace ADB_Tool_Automation_Post_FB.Infrastructure.LDPlayer
             return Task.CompletedTask;
         }
 
-        public Task<byte[]> CaptureScreenshotPngAsync(string deviceName, CancellationToken cancellationToken)
+        public async Task<byte[]> CaptureScreenshotPngAsync(string deviceName, CancellationToken cancellationToken)
         {
             cancellationToken.ThrowIfCancellationRequested();
             ValidateDeviceName(deviceName);
 
+            string normalizedDeviceName = deviceName.Trim();
+            SemaphoreSlim screenshotLock = ScreenshotLocks.GetOrAdd(
+                normalizedDeviceName,
+                _ => new SemaphoreSlim(1, 1));
+
+            await screenshotLock.WaitAsync(cancellationToken);
             try
             {
-                using (Bitmap screenshot = Auto_LDPlayer.LDPlayer.ScreenShoot(LDType.Name, deviceName))
+                string adbState = null;
+                for (int attempt = 1; attempt <= ScreenshotReadyAttempts; attempt++)
+                {
+                    cancellationToken.ThrowIfCancellationRequested();
+                    adbState = Auto_LDPlayer.LDPlayer.Adb(
+                        LDType.Name,
+                        normalizedDeviceName,
+                        "get-state",
+                        3000,
+                        1);
+
+                    if (string.Equals(adbState?.Trim(), "device", StringComparison.OrdinalIgnoreCase))
+                        break;
+
+                    if (attempt < ScreenshotReadyAttempts)
+                        await Task.Delay(300, cancellationToken);
+                }
+
+                if (!string.Equals(adbState?.Trim(), "device", StringComparison.OrdinalIgnoreCase))
+                {
+                    string response = string.IsNullOrWhiteSpace(adbState)
+                        ? "no response"
+                        : adbState.Trim();
+                    throw new InvalidOperationException(
+                        $"LDPlayer device '{normalizedDeviceName}' is not available through ADB. "
+                        + "In LDPlayer, open Settings > Other settings, set ADB debugging to "
+                        + $"Open local connection, save, and restart the emulator. ADB response: {response}");
+                }
+
+                cancellationToken.ThrowIfCancellationRequested();
+                string screenshotFileName = $"ikautomation_{Guid.NewGuid():N}.png";
+                using (Bitmap screenshot = Auto_LDPlayer.LDPlayer.ScreenShoot(
+                    LDType.Name,
+                    normalizedDeviceName,
+                    true,
+                    screenshotFileName))
                 {
                     if (screenshot == null)
-                        throw new InvalidOperationException($"Screenshot returned null for LDPlayer device '{deviceName}'.");
+                    {
+                        throw new InvalidOperationException(
+                            $"Auto_LDPlayer returned no screenshot for LDPlayer device '{normalizedDeviceName}' "
+                            + "after ADB reported that the device was ready.");
+                    }
 
                     cancellationToken.ThrowIfCancellationRequested();
 
                     using (var stream = new MemoryStream())
                     {
                         screenshot.Save(stream, ImageFormat.Png);
-                        return Task.FromResult(stream.ToArray());
+                        return stream.ToArray();
                     }
                 }
             }
@@ -140,8 +190,12 @@ namespace ADB_Tool_Automation_Post_FB.Infrastructure.LDPlayer
             catch (Exception ex)
             {
                 throw new InvalidOperationException(
-                    $"Failed to capture PNG screenshot from LDPlayer device '{deviceName}'.",
+                    $"Failed to capture PNG screenshot from LDPlayer device '{deviceName}': {ex.Message}",
                     ex);
+            }
+            finally
+            {
+                screenshotLock.Release();
             }
         }
 
