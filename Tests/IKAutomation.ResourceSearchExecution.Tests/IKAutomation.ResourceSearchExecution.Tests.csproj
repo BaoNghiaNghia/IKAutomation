@@ -10,6 +10,7 @@
     <Compile Include="..\..\ADB\Core\Diagnostics\IDiagnosticLogger.cs" Link="Production\IDiagnosticLogger.cs" />
     <Compile Include="..\..\ADB\Core\GameDetection\*.cs" Link="Production\GameDetection\%(Filename)%(Extension)" />
     <Compile Include="..\..\ADB\Core\ResourceSearch\*.cs" Link="Production\ResourceSearch\%(Filename)%(Extension)" />
+    <Compile Include="..\..\ADB\Core\ResourcePopup\*.cs" Link="Production\ResourcePopup\%(Filename)%(Extension)" />
     <Compile Include="..\..\ADB\Core\Vision\*.cs" Link="Production\Vision\%(Filename)%(Extension)" />
     <Compile Include="..\..\ADB\Infrastructure\Concurrency\DeviceOperationLock.cs" Link="Production\DeviceOperationLock.cs" />
     <Compile Include="..\..\ADB\Infrastructure\Diagnostics\ScreenshotPathPolicy.cs" Link="Production\ScreenshotPathPolicy.cs" />

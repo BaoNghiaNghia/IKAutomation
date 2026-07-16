@@ -25,6 +25,11 @@ namespace IKAutomation.GameDetection.Tests
         {
             Run("ResourceSearchPanel requires both signals", PanelRequiresBothSignals);
             Run("ResourceSearchPanel has priority over WorldMap", PanelHasPriority);
+            Run("ResourcePopup has priority over WorldMap", PopupHasPriorityOverWorldMap);
+            Run("ResourceSearchPanel has priority over ResourcePopup", PanelHasPriorityOverPopup);
+            Run("Two popup signals detect ResourcePopup", TwoPopupSignalsDetectPopup);
+            Run("Gather button alone is ambiguous", GatherAloneIsAmbiguous);
+            Run("Popup templates use configured ROI", PopupTemplatesUseRoi);
             Run("WorldMap from WorldMapAnchor only", WorldMapFromAnchor);
             Run("WorldMap uses stable anchor fallback", WorldMapStableAnchorFallback);
             Run("ContinentMap from ContinentMapTitle", ContinentMapFromTitle);
@@ -84,6 +89,46 @@ namespace IKAutomation.GameDetection.Tests
                 TemplateId.SearchButtonEnabled);
             Equal(GameState.ResourceSearchPanel, result.State,
                 "Stable level-minus anchor should verify the open panel.");
+        }
+
+        private static void PopupHasPriorityOverWorldMap()
+        {
+            GameDetectionResult result = DetectWithMatches(TemplateId.ResourcePopupInfoAnchor,
+                TemplateId.ResourcePopupIronTitle, TemplateId.WorldMapAnchor);
+            Equal(GameState.ResourcePopup, result.State, "Popup must supersede WorldMap.");
+        }
+
+        private static void PanelHasPriorityOverPopup()
+        {
+            GameDetectionResult result = DetectWithMatches(TemplateId.ResourceSearchPanelAnchor,
+                TemplateId.SearchButtonEnabled, TemplateId.ResourcePopupInfoAnchor,
+                TemplateId.ResourcePopupIronTitle);
+            Equal(GameState.ResourceSearchPanel, result.State, "Search panel must supersede popup.");
+        }
+
+        private static void TwoPopupSignalsDetectPopup()
+        {
+            Equal(GameState.ResourcePopup, DetectWithMatches(TemplateId.ResourcePopupInfoAnchor,
+                TemplateId.GatherButtonEnabled).State, "Two popup signals should detect popup.");
+        }
+
+        private static void GatherAloneIsAmbiguous()
+        {
+            Equal(GameState.Unknown, DetectWithMatches(TemplateId.GatherButtonEnabled).State,
+                "Gather button alone must not detect popup.");
+        }
+
+        private static void PopupTemplatesUseRoi()
+        {
+            var matcher = new FakeImageMatcher();
+            CreateDetector(new FakeLdPlayerClient(), matcher: matcher)
+                .DetectAsync("IK-1", TestToken).GetAwaiter().GetResult();
+            foreach (TemplateId id in new[] { TemplateId.ResourcePopupInfoAnchor,
+                TemplateId.ResourcePopupIronTitle, TemplateId.GatherButtonEnabled })
+            {
+                Assert(matcher.Regions[id].HasValue, id + " did not use ROI.");
+                Equal(540, matcher.Regions[id].Value.X, id + " ROI X.");
+            }
         }
 
         private static void WorldMapFromAnchor()
@@ -168,7 +213,7 @@ namespace IKAutomation.GameDetection.Tests
         private static void EvidenceContainsThreeTemplates()
         {
             GameDetectionResult result = DetectWithMatches();
-            Equal(5, result.Evidence.Count, "Detector must check exactly five templates.");
+            Equal(8, result.Evidence.Count, "Detector must check exactly eight templates.");
             foreach (TemplateId id in RequiredIds())
                 Assert(result.Evidence.Any(item => item.TemplateId == id), "Missing evidence for " + id);
         }
@@ -257,7 +302,10 @@ namespace IKAutomation.GameDetection.Tests
 
         private static GameDetectionOptions Options(bool saveUnknown)
             => new GameDetectionOptions(1280, 720, true, saveUnknown, "Diagnostics/UnknownStates");
-        private static TemplateId[] RequiredIds() => new[] { TemplateId.ResourceSearchPanelAnchor, TemplateId.SearchButtonEnabled, TemplateId.LevelMinusButton, TemplateId.ContinentMapTitle, TemplateId.WorldMapAnchor };
+        private static TemplateId[] RequiredIds() => new[] { TemplateId.ResourceSearchPanelAnchor,
+            TemplateId.SearchButtonEnabled, TemplateId.LevelMinusButton,
+            TemplateId.ResourcePopupInfoAnchor, TemplateId.ResourcePopupIronTitle,
+            TemplateId.GatherButtonEnabled, TemplateId.ContinentMapTitle, TemplateId.WorldMapAnchor };
         private static string DataRoot() => Path.Combine(AppContext.BaseDirectory, "Data", "InfinityKingdom", "1280x720", "vi");
         private static string TempDirectory() { string path = Path.Combine(Path.GetTempPath(), "IKGameDetectionTests", Guid.NewGuid().ToString("N")); Directory.CreateDirectory(path); return path; }
 
@@ -285,11 +333,13 @@ namespace IKAutomation.GameDetection.Tests
         {
             public HashSet<TemplateId> Matches { get; } = new HashSet<TemplateId>();
             public bool WorldMapStableOnly { get; set; }
+            public Dictionary<TemplateId, ImageRegion?> Regions { get; } = new Dictionary<TemplateId, ImageRegion?>();
             public int FindCalls { get; private set; }
             public ImageMatchResult Find(byte[] screenshot, byte[] template, ImageRegion? region = null)
             {
                 FindCalls++;
                 TemplateId id = (TemplateId)template[0];
+                Regions[id] = region;
                 bool found = Matches.Contains(id)
                     && (id != TemplateId.WorldMapAnchor || !WorldMapStableOnly || region.HasValue);
                 return found ? ImageMatchResult.FoundAt(10, 20, 30, 40) : ImageMatchResult.NotFound();

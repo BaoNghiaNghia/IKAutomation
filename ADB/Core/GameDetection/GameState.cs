@@ -5,6 +5,7 @@ namespace ADB_Tool_Automation_Post_FB.Core.GameDetection
         Unknown,
         WorldMap,
         ContinentMap,
-        ResourceSearchPanel
+        ResourceSearchPanel,
+        ResourcePopup
     }
 }

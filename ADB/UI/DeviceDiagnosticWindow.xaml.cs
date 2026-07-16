@@ -2,6 +2,7 @@ using ADB_Tool_Automation_Post_FB.Core.Diagnostics;
 using ADB_Tool_Automation_Post_FB.Core.GameDetection;
 using ADB_Tool_Automation_Post_FB.Core.Navigation;
 using ADB_Tool_Automation_Post_FB.Core.ResourceSearch;
+using ADB_Tool_Automation_Post_FB.Core.ResourcePopup;
 using System;
 using System.Collections.Generic;
 using System.Globalization;
@@ -20,6 +21,7 @@ namespace ADB_Tool_Automation_Post_FB.UI
         private readonly IWorldMapNavigationService navigationService;
         private readonly IResourceSearchConfigurationService resourceSearchConfigurationService;
         private readonly IResourceSearchExecutionService resourceSearchExecutionService;
+        private readonly IResourcePopupVerificationService resourcePopupVerificationService;
         private readonly CancellationTokenSource lifetimeCancellation = new CancellationTokenSource();
 
         public DeviceDiagnosticWindow(
@@ -27,7 +29,8 @@ namespace ADB_Tool_Automation_Post_FB.UI
             IGameStateDetector gameStateDetector,
             IWorldMapNavigationService navigationService,
             IResourceSearchConfigurationService resourceSearchConfigurationService,
-            IResourceSearchExecutionService resourceSearchExecutionService)
+            IResourceSearchExecutionService resourceSearchExecutionService,
+            IResourcePopupVerificationService resourcePopupVerificationService)
         {
             this.diagnosticService = diagnosticService
                 ?? throw new ArgumentNullException(nameof(diagnosticService));
@@ -39,6 +42,8 @@ namespace ADB_Tool_Automation_Post_FB.UI
                 ?? throw new ArgumentNullException(nameof(resourceSearchConfigurationService));
             this.resourceSearchExecutionService = resourceSearchExecutionService
                 ?? throw new ArgumentNullException(nameof(resourceSearchExecutionService));
+            this.resourcePopupVerificationService = resourcePopupVerificationService
+                ?? throw new ArgumentNullException(nameof(resourcePopupVerificationService));
 
             InitializeComponent();
             PackageNameTextBox.Text = string.IsNullOrWhiteSpace(diagnosticService.Configuration.PackageName)
@@ -160,6 +165,13 @@ namespace ADB_Tool_Automation_Post_FB.UI
                         }
                     },
                     cancellationToken)));
+        }
+
+        private async void VerifyResourcePopup_Click(object sender, RoutedEventArgs e)
+        {
+            await RunOperationAsync(async cancellationToken => FormatPopupResult(
+                await resourcePopupVerificationService.VerifyAsync(
+                    GetSelectedDeviceName(), cancellationToken)));
         }
 
 
@@ -315,6 +327,30 @@ namespace ADB_Tool_Automation_Post_FB.UI
                 + $"Observed frames: {result.ObservedFrameCount}{Environment.NewLine}Duration: {result.Duration.TotalMilliseconds:F0} ms{Environment.NewLine}"
                 + $"Diagnostic: {result.DiagnosticScreenshotPath ?? string.Empty}{Environment.NewLine}Message: {result.Message}{Environment.NewLine}"
                 + $"Error: {result.ErrorMessage ?? string.Empty}{Environment.NewLine}Observations:{Environment.NewLine}{observations}";
+        }
+
+        private static string FormatPopupResult(ResourcePopupVerificationResult result)
+        {
+            string gatherBounds = result.GatherButtonMatch != null && result.GatherButtonMatch.Found
+                ? $"({result.GatherButtonMatch.X},{result.GatherButtonMatch.Y},"
+                    + $"{result.GatherButtonMatch.Width},{result.GatherButtonMatch.Height})"
+                : string.Empty;
+            string evidence = string.Join(Environment.NewLine, result.Evidence.Select(item =>
+                $"- {item.TemplateId}: found={item.Found}, bounds="
+                + (item.MatchResult != null && item.MatchResult.Found
+                    ? $"({item.MatchResult.X},{item.MatchResult.Y},{item.MatchResult.Width},{item.MatchResult.Height})"
+                    : string.Empty)
+                + $"; {item.Message}"));
+            return $"Outcome: {result.Outcome}{Environment.NewLine}Success: {result.Success}{Environment.NewLine}"
+                + $"Initial: {result.InitialState}{Environment.NewLine}Final: {result.FinalState}{Environment.NewLine}"
+                + $"Popup anchor verified: {result.PopupAnchorVerified}{Environment.NewLine}"
+                + $"Iron resource verified: {result.IronResourceVerified}{Environment.NewLine}"
+                + $"Gather button verified: {result.GatherButtonVerified}{Environment.NewLine}"
+                + $"Gather bounds: {gatherBounds}{Environment.NewLine}Observed frames: {result.ObservedFrameCount}{Environment.NewLine}"
+                + $"Duration: {result.Duration.TotalMilliseconds:F0} ms{Environment.NewLine}"
+                + $"Diagnostic: {result.DiagnosticScreenshotPath ?? string.Empty}{Environment.NewLine}"
+                + $"Message: {result.Message}{Environment.NewLine}Error: {result.ErrorMessage ?? string.Empty}{Environment.NewLine}"
+                + $"Evidence:{Environment.NewLine}{evidence}";
         }
 
 

@@ -17,6 +17,8 @@ Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "IKAutomation.ResourceSearch
 EndProject
 Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "IKAutomation.ResourceSearchExecution.Tests", "Tests\IKAutomation.ResourceSearchExecution.Tests\IKAutomation.ResourceSearchExecution.Tests.csproj", "{7A9C987C-FCF4-46BD-9E68-8D508999EE12}"
 EndProject
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "IKAutomation.ResourcePopup.Tests", "Tests\IKAutomation.ResourcePopup.Tests\IKAutomation.ResourcePopup.Tests.csproj", "{3D8FB8B4-E22A-4E90-9D69-EB9971C2F1A4}"
+EndProject
 Project("{2150E333-8FDC-42A3-9474-1A3956D46DE8}") = "Solution Items", "Solution Items", "{02EA681E-C7D8-13C7-8484-4AC65E1B71E8}"
 	ProjectSection(SolutionItems) = preProject
 		.editorconfig = .editorconfig
@@ -56,6 +58,10 @@ Global
 		{7A9C987C-FCF4-46BD-9E68-8D508999EE12}.Debug|Any CPU.Build.0 = Debug|Any CPU
 		{7A9C987C-FCF4-46BD-9E68-8D508999EE12}.Release|Any CPU.ActiveCfg = Release|Any CPU
 		{7A9C987C-FCF4-46BD-9E68-8D508999EE12}.Release|Any CPU.Build.0 = Release|Any CPU
+		{3D8FB8B4-E22A-4E90-9D69-EB9971C2F1A4}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{3D8FB8B4-E22A-4E90-9D69-EB9971C2F1A4}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{3D8FB8B4-E22A-4E90-9D69-EB9971C2F1A4}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{3D8FB8B4-E22A-4E90-9D69-EB9971C2F1A4}.Release|Any CPU.Build.0 = Release|Any CPU
 	EndGlobalSection
 	GlobalSection(SolutionProperties) = preSolution
 		HideSolutionNode = FALSE

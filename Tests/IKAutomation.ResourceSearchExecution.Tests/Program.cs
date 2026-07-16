@@ -3,6 +3,7 @@ using ADB_Tool_Automation_Post_FB.Core.Concurrency;
 using ADB_Tool_Automation_Post_FB.Core.Diagnostics;
 using ADB_Tool_Automation_Post_FB.Core.GameDetection;
 using ADB_Tool_Automation_Post_FB.Core.ResourceSearch;
+using ADB_Tool_Automation_Post_FB.Core.ResourcePopup;
 using ADB_Tool_Automation_Post_FB.Core.Vision;
 using ADB_Tool_Automation_Post_FB.Infrastructure.Concurrency;
 using ADB_Tool_Automation_Post_FB.Infrastructure.ResourceSearch;
@@ -76,6 +77,10 @@ namespace IKAutomation.ResourceSearchExecution.Tests
             Run("Wrong resolution fails before Search", WrongResolution);
             Run("Null execution request fails before input", NullRequest);
             Run("Options reject invalid movement thresholds", InvalidOptions);
+            Run("ResourcePopupReady ends search early", PopupReadyEndsEarly);
+            Run("ResourcePopupReady returns popup final state", PopupReadyFinalState);
+            Run("ResourceNotFound has priority over ResourcePopup", NotFoundBeforePopup);
+            Run("Popup integration sends no Gather input", PopupSendsNoGatherInput);
             Console.WriteLine($"Resource search execution tests: {passed} passed, {failed} failed.");
             return failed == 0 ? 0 : 1;
         }
@@ -134,15 +139,20 @@ namespace IKAutomation.ResourceSearchExecution.Tests
         private static void WrongResolution() { Fixture f=Setup(); f.Client.Frame=Png(10,10,Color.Black); var r=Execute(f); Is(r.Outcome==ResourceSearchOutcome.Failed,"outcome"); Eq(0,f.Client.TapCalls,"tap"); }
         private static void NullRequest() { Fixture f=Setup(); var r=f.Service.ExecuteAsync("d",null,Token).GetAwaiter().GetResult(); Is(r.Outcome==ResourceSearchOutcome.Failed,"outcome"); Eq(0,f.Client.TapCalls,"tap"); }
         private static void InvalidOptions() { Throws<ArgumentOutOfRangeException>(()=>Options(movement:.01,stable:.02)); }
+        private static void PopupReadyEndsEarly() { Fixture f=PopupFixture(); var r=Execute(f); Is(r.Outcome==ResourceSearchOutcome.ResourceLocated&&r.Success,"outcome"); Eq(1,r.ObservedFrameCount,"frames"); }
+        private static void PopupReadyFinalState() { var r=Execute(PopupFixture()); Is(r.FinalState==GameState.ResourcePopup&&r.PanelClosed,"popup final"); }
+        private static void NotFoundBeforePopup() { Fixture f=PopupFixture(); f.Matcher.Primary=true; f.Matcher.Action=true; f.Matcher.ToastFrames.Add(2); var r=Execute(f); Is(r.Outcome==ResourceSearchOutcome.ResourceNotFound,"priority"); Eq(0,f.PopupVerifier.Calls,"popup calls"); }
+        private static void PopupSendsNoGatherInput() { Fixture f=PopupFixture(); Execute(f); Eq(1,f.Client.TapCalls,"Search tap only"); Eq(0,f.Client.ProhibitedCalls,"prohibited"); }
 
         private static Fixture ToastFixture(bool saveResult=false) { Fixture f=Setup(saveResult:saveResult); f.Matcher.Primary=true; f.Matcher.Action=true; f.Matcher.ToastFrames.Add(2); return f; }
         private static Fixture LocatedFixture() { Fixture f=Setup(requiredStable:3,windowMs:30); f.Detector.SetStates(Panel(),World(),World(),World(),World()); f.Stability.Differences.Enqueue(.1); f.Stability.Differences.Enqueue(.001); f.Stability.Differences.Enqueue(.001); f.Stability.Differences.Enqueue(.001); return f; }
+        private static Fixture PopupFixture() { Fixture f=Setup(windowMs:30); f.Detector.SetStates(Panel(),Popup()); f.PopupVerifier.Result=ReadyPopup(); return f; }
 
         private static Fixture Setup(int maxAttempts=2,int maxUnknown=5,int requiredStable=3,int windowMs=5,bool saveResult=false,bool burst=false,int burstMax=2)
         {
-            var client=new FakeClient{Frame=Png(1280,720,Color.Black)}; var config=new FakeConfiguration(); var detector=new FakeDetector(); var registry=new FakeRegistry(); var matcher=new FakeMatcher(client); var stability=new FakeStability(); var store=new FakeStore();
-            var service=new ResourceSearchExecutionService(config,detector,client,registry,matcher,stability,new DeviceOperationLock(),Options(maxAttempts,maxUnknown,requiredStable,windowMs,saveResult,burst,burstMax),store,new FakeLogger());
-            return new Fixture{Client=client,Configuration=config,Detector=detector,Registry=registry,Matcher=matcher,Stability=stability,Store=store,Service=service};
+            var client=new FakeClient{Frame=Png(1280,720,Color.Black)}; var config=new FakeConfiguration(); var detector=new FakeDetector(); var registry=new FakeRegistry(); var matcher=new FakeMatcher(client); var stability=new FakeStability(); var store=new FakeStore(); var popup=new FakePopupVerifier();
+            var service=new ResourceSearchExecutionService(config,detector,client,registry,matcher,stability,new DeviceOperationLock(),Options(maxAttempts,maxUnknown,requiredStable,windowMs,saveResult,burst,burstMax),store,new FakeLogger(),popup);
+            return new Fixture{Client=client,Configuration=config,Detector=detector,Registry=registry,Matcher=matcher,Stability=stability,Store=store,PopupVerifier=popup,Service=service};
         }
         private static ResourceSearchExecutionOptions Options(int maxAttempts=2,int maxUnknown=5,int requiredStable=3,int windowMs=5,bool saveResult=false,bool burst=false,int burstMax=2,double movement=.04,double stable=.015) => new ResourceSearchExecutionOptions(windowMs,1,1,1,maxAttempts,1,new ImageRegion(220,120,840,360),140,movement,stable,requiredStable,maxUnknown,saveResult,burst,burstMax,"Diagnostics/SearchResults","Diagnostics/SearchObservation",1280,720,new ImageRegion(160,80,960,440));
         private static ResourceSearchExecutionRequest Request()=>new ResourceSearchExecutionRequest{ConfigureBeforeSearch=true,Configuration=new ResourceSearchConfigurationRequest{ResourceType=ResourceType.Iron,TargetLevel=7,UnoccupiedOnly=true}};
@@ -150,13 +160,17 @@ namespace IKAutomation.ResourceSearchExecution.Tests
 
         private static GameDetectionResult Panel()=>State(GameState.ResourceSearchPanel);
         private static GameDetectionResult World()=>State(GameState.WorldMap);
+        private static GameDetectionResult Popup()=>State(GameState.ResourcePopup);
+        private static ResourcePopupVerificationResult ReadyPopup()=>new ResourcePopupVerificationResult{Outcome=ResourcePopupOutcome.ResourcePopupReady,Success=true,InitialState=GameState.ResourcePopup,FinalState=GameState.ResourcePopup,Evidence=new GameDetectionEvidence[0],Message="ready"};
         private static GameDetectionResult State(GameState state)
         { var e=new List<GameDetectionEvidence>(); if(state==GameState.ResourceSearchPanel){e.Add(new GameDetectionEvidence{TemplateId=TemplateId.LevelMinusButton,Found=true});e.Add(new GameDetectionEvidence{TemplateId=TemplateId.SearchButtonEnabled,Found=true});} if(state==GameState.WorldMap)e.Add(new GameDetectionEvidence{TemplateId=TemplateId.WorldMapAnchor,Found=true}); return new GameDetectionResult{State=state,IsSuccessful=true,Evidence=e.AsReadOnly()}; }
         private static byte[] Png(int w,int h,Color c) { using(var b=new Bitmap(w,h)){using(Graphics g=Graphics.FromImage(b))g.Clear(c);using(var s=new MemoryStream()){b.Save(s,ImageFormat.Png);return s.ToArray();}} }
         private static byte[] PngWithCorner() { using(var b=new Bitmap(32,32)){using(Graphics g=Graphics.FromImage(b)){g.Clear(Color.Black);g.FillRectangle(Brushes.White,16,16,16,16);}using(var s=new MemoryStream()){b.Save(s,ImageFormat.Png);return s.ToArray();}} }
         private static void Is(bool c,string m){if(!c)throw new Exception(m);} private static void Eq<T>(T e,T a,string m){if(!EqualityComparer<T>.Default.Equals(e,a))throw new Exception($"{m}: expected={e}, actual={a}");} private static void Throws<T>(Action a)where T:Exception{try{a();}catch(T){return;}throw new Exception("Expected "+typeof(T).Name);}
 
-        private sealed class Fixture { public FakeClient Client; public FakeConfiguration Configuration; public FakeDetector Detector; public FakeRegistry Registry; public FakeMatcher Matcher; public FakeStability Stability; public FakeStore Store; public IResourceSearchExecutionService Service; }
+        private sealed class Fixture { public FakeClient Client; public FakeConfiguration Configuration; public FakeDetector Detector; public FakeRegistry Registry; public FakeMatcher Matcher; public FakeStability Stability; public FakeStore Store; public FakePopupVerifier PopupVerifier; public IResourceSearchExecutionService Service; }
+        private sealed class FakePopupVerifier:IResourcePopupVerificationService
+        { public int Calls; public ResourcePopupVerificationResult Result=new ResourcePopupVerificationResult{Outcome=ResourcePopupOutcome.ResourcePopupNotDetected,Evidence=new GameDetectionEvidence[0],Message="not detected"}; public Task<ResourcePopupVerificationResult> VerifyAsync(string d,CancellationToken t){Calls++;return Task.FromResult(Result);} }
         private sealed class FakeConfiguration:IResourceSearchConfigurationService
         { private int active; public bool Success=true; public int DelayMs,MaxActive; public async Task<ResourceSearchConfigurationResult> ConfigureAsync(string d,ResourceSearchConfigurationRequest q,CancellationToken t){int n=Interlocked.Increment(ref active);MaxActive=Math.Max(MaxActive,n);try{if(DelayMs>0)await Task.Delay(DelayMs,t);return new ResourceSearchConfigurationResult{Success=Success,InitialState=GameState.WorldMap,FinalState=GameState.ResourceSearchPanel,ErrorMessage=Success?null:"configuration failed",Steps=new ConfigurationStepResult[0]};}finally{Interlocked.Decrement(ref active);}} }
         private sealed class FakeDetector:IGameStateDetector

@@ -1,4 +1,5 @@
 using ADB_Tool_Automation_Post_FB.Core.GameDetection;
+using ADB_Tool_Automation_Post_FB.Core.ResourcePopup;
 using System;
 
 namespace ADB_Tool_Automation_Post_FB.Core.ResourceSearch
@@ -12,6 +13,7 @@ namespace ADB_Tool_Automation_Post_FB.Core.ResourceSearch
         public bool SearchPanelConfirmed { get; set; }
         public double? FrameDifference { get; set; }
         public bool IsStable { get; set; }
+        public ResourcePopupOutcome? PopupOutcome { get; set; }
         public string Message { get; set; }
     }
 }

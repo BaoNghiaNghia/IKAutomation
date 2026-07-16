@@ -92,6 +92,11 @@
     <Compile Include="Core\Navigation\NavigationResult.cs" />
     <Compile Include="Core\Navigation\NavigationTransition.cs" />
     <Compile Include="Core\Navigation\WorldMapNavigationOptions.cs" />
+    <Compile Include="Core\ResourcePopup\IResourcePopupDiagnosticStore.cs" />
+    <Compile Include="Core\ResourcePopup\IResourcePopupVerificationService.cs" />
+    <Compile Include="Core\ResourcePopup\ResourcePopupOutcome.cs" />
+    <Compile Include="Core\ResourcePopup\ResourcePopupVerificationOptions.cs" />
+    <Compile Include="Core\ResourcePopup\ResourcePopupVerificationResult.cs" />
     <Compile Include="Core\ResourceSearch\ConfigurationStepResult.cs" />
     <Compile Include="Core\ResourceSearch\ConfigurationTemplateEvidence.cs" />
     <Compile Include="Core\ResourceSearch\IResourceSearchConfigurationService.cs" />
@@ -140,6 +145,10 @@
     <Compile Include="Infrastructure\Navigation\AppConfigWorldMapNavigationOptionsProvider.cs" />
     <Compile Include="Infrastructure\Navigation\WorldMapNavigationService.cs" />
     <Compile Include="Infrastructure\Navigation\WorldMapNavigationServiceFactory.cs" />
+    <Compile Include="Infrastructure\ResourcePopup\AppConfigResourcePopupVerificationOptionsProvider.cs" />
+    <Compile Include="Infrastructure\ResourcePopup\ResourcePopupDiagnosticStore.cs" />
+    <Compile Include="Infrastructure\ResourcePopup\ResourcePopupVerificationService.cs" />
+    <Compile Include="Infrastructure\ResourcePopup\ResourcePopupVerificationServiceFactory.cs" />
     <Compile Include="Infrastructure\ResourceSearch\AppConfigResourceSearchConfigurationOptionsProvider.cs" />
     <Compile Include="Infrastructure\ResourceSearch\AppConfigResourceSearchExecutionOptionsProvider.cs" />
     <Compile Include="Infrastructure\ResourceSearch\ResourceSearchDiagnosticStore.cs" />

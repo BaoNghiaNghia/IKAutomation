@@ -6,6 +6,7 @@ using ADB_Tool_Automation_Post_FB.Infrastructure.GameDetection;
 using ADB_Tool_Automation_Post_FB.Infrastructure.LDPlayer;
 using ADB_Tool_Automation_Post_FB.Infrastructure.Navigation;
 using ADB_Tool_Automation_Post_FB.Infrastructure.ResourceSearch;
+using ADB_Tool_Automation_Post_FB.Infrastructure.ResourcePopup;
 using ADB_Tool_Automation_Post_FB.UI;
 using Auto_LDPlayer;
 using Auto_LDPlayer.Enums;
@@ -204,7 +205,8 @@ namespace ADB_Tool_Automation_Post_FB
                 GameStateDetectorFactory.CreateFromAppConfig(),
                 WorldMapNavigationServiceFactory.CreateFromAppConfig(),
                 ResourceSearchConfigurationServiceFactory.CreateFromAppConfig(),
-                ResourceSearchExecutionServiceFactory.CreateFromAppConfig())
+                ResourceSearchExecutionServiceFactory.CreateFromAppConfig(),
+                ResourcePopupVerificationServiceFactory.CreateFromAppConfig())
             {
                 Owner = this
             };

@@ -4,6 +4,7 @@ using ADB_Tool_Automation_Post_FB.Infrastructure.Diagnostics;
 using ADB_Tool_Automation_Post_FB.Infrastructure.GameDetection;
 using ADB_Tool_Automation_Post_FB.Infrastructure.LDPlayer;
 using ADB_Tool_Automation_Post_FB.Infrastructure.Navigation;
+using ADB_Tool_Automation_Post_FB.Infrastructure.ResourcePopup;
 using ADB_Tool_Automation_Post_FB.Infrastructure.Vision;
 
 namespace ADB_Tool_Automation_Post_FB.Infrastructure.ResourceSearch
@@ -26,10 +27,14 @@ namespace ADB_Tool_Automation_Post_FB.Infrastructure.ResourceSearch
                 client, registry, matcher, AppConfigResourceSearchConfigurationOptionsProvider.Load(),
                 operationLock, logger);
             ResourceSearchExecutionOptions options = AppConfigResourceSearchExecutionOptionsProvider.Load();
+            var popupOptions = AppConfigResourcePopupVerificationOptionsProvider.Load();
+            var popupVerifier = new ResourcePopupVerificationService(detector, client, registry,
+                matcher, popupOptions, new ResourcePopupDiagnosticStore(
+                    popupOptions.FailureScreenshotDirectory), logger);
             return new ResourceSearchExecutionService(configuration, detector, client, registry,
                 matcher, new FrameStabilityDetector(options.CameraStableThreshold), operationLock,
                 options, new ResourceSearchDiagnosticStore(options.ResultScreenshotDirectory,
-                    options.ObservationBurstDirectory), logger);
+                    options.ObservationBurstDirectory), logger, popupVerifier);
         }
     }
 }

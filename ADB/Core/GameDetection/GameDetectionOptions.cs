@@ -1,4 +1,5 @@
 using System;
+using ADB_Tool_Automation_Post_FB.Core.Vision;
 
 namespace ADB_Tool_Automation_Post_FB.Core.GameDetection
 {
@@ -9,7 +10,8 @@ namespace ADB_Tool_Automation_Post_FB.Core.GameDetection
             int expectedHeight,
             bool requireExpectedResolution,
             bool saveUnknownScreenshots,
-            string unknownScreenshotDirectory)
+            string unknownScreenshotDirectory,
+            ImageRegion? resourcePopupRegion = null)
         {
             if (expectedWidth <= 0)
                 throw new ArgumentOutOfRangeException(nameof(expectedWidth));
@@ -23,6 +25,11 @@ namespace ADB_Tool_Automation_Post_FB.Core.GameDetection
             RequireExpectedResolution = requireExpectedResolution;
             SaveUnknownScreenshots = saveUnknownScreenshots;
             UnknownScreenshotDirectory = unknownScreenshotDirectory.Trim();
+            ResourcePopupRegion = resourcePopupRegion ?? new ImageRegion(540, 400, 470, 320);
+            if ((long)ResourcePopupRegion.X + ResourcePopupRegion.Width > expectedWidth
+                || (long)ResourcePopupRegion.Y + ResourcePopupRegion.Height > expectedHeight)
+                throw new ArgumentOutOfRangeException(nameof(resourcePopupRegion),
+                    "Resource popup region must be inside the expected screenshot.");
         }
 
         public int ExpectedWidth { get; }
@@ -30,5 +37,6 @@ namespace ADB_Tool_Automation_Post_FB.Core.GameDetection
         public bool RequireExpectedResolution { get; }
         public bool SaveUnknownScreenshots { get; }
         public string UnknownScreenshotDirectory { get; }
+        public ImageRegion ResourcePopupRegion { get; }
     }
 }

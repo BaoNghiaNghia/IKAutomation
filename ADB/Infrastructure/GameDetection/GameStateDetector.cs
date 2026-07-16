@@ -21,6 +21,9 @@ namespace ADB_Tool_Automation_Post_FB.Infrastructure.GameDetection
             TemplateId.ResourceSearchPanelAnchor,
             TemplateId.SearchButtonEnabled,
             TemplateId.LevelMinusButton,
+            TemplateId.ResourcePopupInfoAnchor,
+            TemplateId.ResourcePopupIronTitle,
+            TemplateId.GatherButtonEnabled,
             TemplateId.ContinentMapTitle,
             TemplateId.WorldMapAnchor
         };
@@ -169,14 +172,20 @@ namespace ADB_Tool_Automation_Post_FB.Infrastructure.GameDetection
             GameDetectionEvidence panelAnchor = FindEvidence(evidence, TemplateId.ResourceSearchPanelAnchor);
             GameDetectionEvidence searchButton = FindEvidence(evidence, TemplateId.SearchButtonEnabled);
             GameDetectionEvidence levelMinusButton = FindEvidence(evidence, TemplateId.LevelMinusButton);
+            GameDetectionEvidence popupAnchor = FindEvidence(evidence, TemplateId.ResourcePopupInfoAnchor);
+            GameDetectionEvidence popupIron = FindEvidence(evidence, TemplateId.ResourcePopupIronTitle);
+            GameDetectionEvidence gatherButton = FindEvidence(evidence, TemplateId.GatherButtonEnabled);
             GameDetectionEvidence worldAnchor = FindEvidence(evidence, TemplateId.WorldMapAnchor);
             GameDetectionEvidence continentTitle = FindEvidence(evidence, TemplateId.ContinentMapTitle);
             bool panelConfirmed = (panelAnchor.Found || levelMinusButton.Found) && searchButton.Found;
+            int popupSignals = (popupAnchor.Found ? 1 : 0)
+                + (popupIron.Found ? 1 : 0) + (gatherButton.Found ? 1 : 0);
+            bool popupConfirmed = popupSignals >= 2 && (popupAnchor.Found || popupIron.Found);
             GameState state = panelConfirmed
                 ? GameState.ResourceSearchPanel
-                : continentTitle.Found
-                    ? GameState.ContinentMap
-                    : worldAnchor.Found ? GameState.WorldMap : GameState.Unknown;
+                : popupConfirmed ? GameState.ResourcePopup
+                    : continentTitle.Found ? GameState.ContinentMap
+                        : worldAnchor.Found ? GameState.WorldMap : GameState.Unknown;
 
             panelAnchor.Message += panelConfirmed
                 ? " Rule ResourceSearchPanel satisfied with SearchButtonEnabled."
@@ -187,10 +196,23 @@ namespace ADB_Tool_Automation_Post_FB.Infrastructure.GameDetection
             levelMinusButton.Message += panelConfirmed
                 ? " Rule ResourceSearchPanel accepted LevelMinusButton as a stable fallback anchor."
                 : " LevelMinusButton can provide stable panel evidence when the slider-inclusive anchor changes.";
+            popupAnchor.Message += popupConfirmed
+                ? " ResourcePopup selected from at least two popup signals."
+                : " ResourcePopup requires at least two signals and cannot be confirmed by GatherButtonEnabled alone.";
+            popupIron.Message += popupConfirmed
+                ? " ResourcePopup has priority over WorldMap."
+                : " Iron popup title was not sufficient to confirm the popup.";
+            gatherButton.Message += popupConfirmed
+                ? " Gather button contributed popup evidence."
+                : gatherButton.Found
+                    ? " Gather button alone is ambiguous and does not confirm ResourcePopup."
+                    : " Gather button was not found.";
             worldAnchor.Message += state == GameState.WorldMap
                 ? " Rule WorldMap selected because ResourceSearchPanel was not confirmed."
                 : panelConfirmed
                     ? " ResourceSearchPanel has priority over WorldMap."
+                    : popupConfirmed
+                        ? " ResourcePopup has priority over WorldMap."
                     : continentTitle.Found
                         ? " ContinentMap has priority over WorldMap."
                         : " Rule WorldMap not satisfied.";
@@ -198,6 +220,8 @@ namespace ADB_Tool_Automation_Post_FB.Infrastructure.GameDetection
                 ? " Rule ContinentMap selected because ResourceSearchPanel was not confirmed."
                 : panelConfirmed
                     ? " ResourceSearchPanel has priority over ContinentMap."
+                    : popupConfirmed
+                        ? " ResourcePopup has priority over ContinentMap."
                     : " Rule ContinentMap not satisfied.";
 
             return new GameDetectionResult
@@ -239,7 +263,9 @@ namespace ADB_Tool_Automation_Post_FB.Infrastructure.GameDetection
             try
             {
                 byte[] template = templateRegistry.LoadBytes(templateId);
-                ImageMatchResult match = imageMatcher.Find(screenshotPng, template, searchRegion: null);
+                ImageRegion? searchRegion = IsPopupTemplate(templateId)
+                    ? options.ResourcePopupRegion : (ImageRegion?)null;
+                ImageMatchResult match = imageMatcher.Find(screenshotPng, template, searchRegion);
                 bool usedStableWorldMapAnchor = false;
                 if (templateId == TemplateId.WorldMapAnchor && (match == null || !match.Found))
                 {
@@ -257,10 +283,13 @@ namespace ADB_Tool_Automation_Post_FB.Infrastructure.GameDetection
                     Found = match != null && match.Found,
                     MatchResult = match,
                     Confidence = match?.Confidence,
+                    SearchRegion = searchRegion,
                     Message = match != null && match.Found
                         ? usedStableWorldMapAnchor
                             ? "Template 'WorldMapAnchor' matched by its stable icon center in the lower-left region."
-                            : $"Template '{templateId}' matched."
+                            : searchRegion.HasValue
+                                ? $"Template '{templateId}' matched inside ResourcePopup ROI."
+                                : $"Template '{templateId}' matched."
                         : $"Template '{templateId}' was checked and did not match."
                 };
             }
@@ -271,6 +300,11 @@ namespace ADB_Tool_Automation_Post_FB.Infrastructure.GameDetection
                 return ErrorEvidence(templateId, true, message);
             }
         }
+
+        private static bool IsPopupTemplate(TemplateId id) =>
+            id == TemplateId.ResourcePopupInfoAnchor
+            || id == TemplateId.ResourcePopupIronTitle
+            || id == TemplateId.GatherButtonEnabled;
 
         private static byte[] TryCreateStableWorldMapTemplate(byte[] templateBytes)
         {

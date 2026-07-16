@@ -3,6 +3,7 @@ using ADB_Tool_Automation_Post_FB.Core.Concurrency;
 using ADB_Tool_Automation_Post_FB.Core.Diagnostics;
 using ADB_Tool_Automation_Post_FB.Core.GameDetection;
 using ADB_Tool_Automation_Post_FB.Core.ResourceSearch;
+using ADB_Tool_Automation_Post_FB.Core.ResourcePopup;
 using ADB_Tool_Automation_Post_FB.Core.Vision;
 using System;
 using System.Collections.Generic;
@@ -21,7 +22,10 @@ namespace ADB_Tool_Automation_Post_FB.Infrastructure.ResourceSearch
         {
             TemplateId.SearchButtonEnabled,
             TemplateId.ResourceNotFoundToastAnchor,
-            TemplateId.ResourceNotFoundToastActionAnchor
+            TemplateId.ResourceNotFoundToastActionAnchor,
+            TemplateId.ResourcePopupInfoAnchor,
+            TemplateId.ResourcePopupIronTitle,
+            TemplateId.GatherButtonEnabled
         };
 
         private readonly IResourceSearchConfigurationService configurationService;
@@ -34,6 +38,7 @@ namespace ADB_Tool_Automation_Post_FB.Infrastructure.ResourceSearch
         private readonly ResourceSearchExecutionOptions options;
         private readonly IResourceSearchDiagnosticStore diagnosticStore;
         private readonly IDiagnosticLogger logger;
+        private readonly IResourcePopupVerificationService popupVerificationService;
 
         public ResourceSearchExecutionService(
             IResourceSearchConfigurationService configurationService,
@@ -45,7 +50,8 @@ namespace ADB_Tool_Automation_Post_FB.Infrastructure.ResourceSearch
             IDeviceOperationLock operationLock,
             ResourceSearchExecutionOptions options,
             IResourceSearchDiagnosticStore diagnosticStore,
-            IDiagnosticLogger logger)
+            IDiagnosticLogger logger,
+            IResourcePopupVerificationService popupVerificationService = null)
         {
             this.configurationService = configurationService ?? throw new ArgumentNullException(nameof(configurationService));
             this.detector = detector ?? throw new ArgumentNullException(nameof(detector));
@@ -57,6 +63,7 @@ namespace ADB_Tool_Automation_Post_FB.Infrastructure.ResourceSearch
             this.options = options ?? throw new ArgumentNullException(nameof(options));
             this.diagnosticStore = diagnosticStore ?? throw new ArgumentNullException(nameof(diagnosticStore));
             this.logger = logger ?? throw new ArgumentNullException(nameof(logger));
+            this.popupVerificationService = popupVerificationService;
         }
 
         public async Task<ResourceSearchExecutionResult> ExecuteAsync(string deviceName,
@@ -187,9 +194,12 @@ namespace ADB_Tool_Automation_Post_FB.Infrastructure.ResourceSearch
                     break;
                 }
 
-                string timeoutMessage = result.PanelClosed && !result.CameraMovementObserved
-                    ? "WorldMap was observed after the panel closed, but camera movement was not verified."
-                    : "Resource search result observation timed out.";
+                string timeoutMessage = result.PopupVerificationResult != null
+                    && result.PopupVerificationResult.Outcome == ResourcePopupOutcome.ResourcePopupDetectedButNotReady
+                    ? "Resource popup was detected but did not become ready before timeout."
+                    : result.PanelClosed && !result.CameraMovementObserved
+                        ? "WorldMap was observed after the panel closed, but camera movement was not verified."
+                        : "Resource search result observation timed out.";
                 return await CompleteAsync(deviceName, result, context, ResourceSearchOutcome.Timeout,
                     timeoutMessage, null, watch, cancellationToken);
             }
@@ -279,6 +289,30 @@ namespace ADB_Tool_Automation_Post_FB.Infrastructure.ResourceSearch
                 result.NotFoundToastVerified = true;
                 return ObservationDecision.Decided(ResourceSearchOutcome.ResourceNotFound,
                     "ResourceNotFound toast was verified in one observation frame.", null);
+            }
+            if (!result.NotFoundObserved && detection.State == GameState.ResourcePopup)
+            {
+                if (popupVerificationService == null)
+                    return ObservationDecision.Decided(ResourceSearchOutcome.Failed,
+                        "ResourcePopup was detected but no popup verification service is configured.", null);
+                ResourcePopupVerificationResult popup = await popupVerificationService.VerifyAsync(
+                    deviceName, cancellationToken);
+                cancellationToken.ThrowIfCancellationRequested();
+                result.PopupVerificationResult = popup;
+                observation.PopupOutcome = popup.Outcome;
+                observation.Message = "ResourcePopup verification outcome: " + popup.Outcome + ". " + popup.Message;
+                if (popup.Outcome == ResourcePopupOutcome.ResourcePopupReady)
+                {
+                    result.PanelClosed = true;
+                    result.FinalState = GameState.ResourcePopup;
+                    return ObservationDecision.Decided(ResourceSearchOutcome.ResourceLocated,
+                        "Iron ResourcePopup and enabled Gather button were verified; popup evidence superseded camera stability.", null);
+                }
+                if (popup.Outcome == ResourcePopupOutcome.Failed)
+                    return ObservationDecision.Decided(ResourceSearchOutcome.Failed,
+                        "ResourcePopup verification failed.", popup.ErrorMessage);
+                if (popup.Outcome == ResourcePopupOutcome.Cancelled)
+                    throw new OperationCanceledException(cancellationToken);
             }
             if (!result.NotFoundObserved && result.PanelClosed
                 && detection.State == GameState.WorldMap && result.CameraMovementObserved
