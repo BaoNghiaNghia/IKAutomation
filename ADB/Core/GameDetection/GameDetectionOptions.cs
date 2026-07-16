@@ -11,7 +11,8 @@ namespace ADB_Tool_Automation_Post_FB.Core.GameDetection
             bool requireExpectedResolution,
             bool saveUnknownScreenshots,
             string unknownScreenshotDirectory,
-            ImageRegion? resourcePopupRegion = null)
+            ImageRegion? resourcePopupRegion = null,
+            ImageRegion? teamSelectionRegion = null)
         {
             if (expectedWidth <= 0)
                 throw new ArgumentOutOfRangeException(nameof(expectedWidth));
@@ -26,10 +27,15 @@ namespace ADB_Tool_Automation_Post_FB.Core.GameDetection
             SaveUnknownScreenshots = saveUnknownScreenshots;
             UnknownScreenshotDirectory = unknownScreenshotDirectory.Trim();
             ResourcePopupRegion = resourcePopupRegion ?? new ImageRegion(650, 150, 550, 450);
+            TeamSelectionRegion = teamSelectionRegion ?? new ImageRegion(0, 0, 780, 720);
             if ((long)ResourcePopupRegion.X + ResourcePopupRegion.Width > expectedWidth
                 || (long)ResourcePopupRegion.Y + ResourcePopupRegion.Height > expectedHeight)
                 throw new ArgumentOutOfRangeException(nameof(resourcePopupRegion),
                     "Resource popup region must be inside the expected screenshot.");
+            if ((long)TeamSelectionRegion.X + TeamSelectionRegion.Width > expectedWidth
+                || (long)TeamSelectionRegion.Y + TeamSelectionRegion.Height > expectedHeight)
+                throw new ArgumentOutOfRangeException(nameof(teamSelectionRegion),
+                    "Team Selection region must be inside the expected screenshot.");
         }
 
         public int ExpectedWidth { get; }
@@ -38,5 +44,6 @@ namespace ADB_Tool_Automation_Post_FB.Core.GameDetection
         public bool SaveUnknownScreenshots { get; }
         public string UnknownScreenshotDirectory { get; }
         public ImageRegion ResourcePopupRegion { get; }
+        public ImageRegion TeamSelectionRegion { get; }
     }
 }

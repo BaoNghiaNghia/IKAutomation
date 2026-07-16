@@ -3,6 +3,7 @@ using ADB_Tool_Automation_Post_FB.Core.GameDetection;
 using ADB_Tool_Automation_Post_FB.Core.Navigation;
 using ADB_Tool_Automation_Post_FB.Core.ResourceSearch;
 using ADB_Tool_Automation_Post_FB.Core.ResourcePopup;
+using ADB_Tool_Automation_Post_FB.Core.TeamSelection;
 using System;
 using System.Collections.Generic;
 using System.Globalization;
@@ -22,6 +23,7 @@ namespace ADB_Tool_Automation_Post_FB.UI
         private readonly IResourceSearchConfigurationService resourceSearchConfigurationService;
         private readonly IResourceSearchExecutionService resourceSearchExecutionService;
         private readonly IResourcePopupVerificationService resourcePopupVerificationService;
+        private readonly IOpenTeamSelectionService openTeamSelectionService;
         private readonly CancellationTokenSource lifetimeCancellation = new CancellationTokenSource();
 
         public DeviceDiagnosticWindow(
@@ -30,7 +32,8 @@ namespace ADB_Tool_Automation_Post_FB.UI
             IWorldMapNavigationService navigationService,
             IResourceSearchConfigurationService resourceSearchConfigurationService,
             IResourceSearchExecutionService resourceSearchExecutionService,
-            IResourcePopupVerificationService resourcePopupVerificationService)
+            IResourcePopupVerificationService resourcePopupVerificationService,
+            IOpenTeamSelectionService openTeamSelectionService)
         {
             this.diagnosticService = diagnosticService
                 ?? throw new ArgumentNullException(nameof(diagnosticService));
@@ -44,6 +47,8 @@ namespace ADB_Tool_Automation_Post_FB.UI
                 ?? throw new ArgumentNullException(nameof(resourceSearchExecutionService));
             this.resourcePopupVerificationService = resourcePopupVerificationService
                 ?? throw new ArgumentNullException(nameof(resourcePopupVerificationService));
+            this.openTeamSelectionService = openTeamSelectionService
+                ?? throw new ArgumentNullException(nameof(openTeamSelectionService));
 
             InitializeComponent();
             PackageNameTextBox.Text = string.IsNullOrWhiteSpace(diagnosticService.Configuration.PackageName)
@@ -171,6 +176,13 @@ namespace ADB_Tool_Automation_Post_FB.UI
         {
             await RunOperationAsync(async cancellationToken => FormatPopupResult(
                 await resourcePopupVerificationService.VerifyAsync(
+                    GetSelectedDeviceName(), cancellationToken)));
+        }
+
+        private async void OpenTeamSelection_Click(object sender, RoutedEventArgs e)
+        {
+            await RunOperationAsync(async cancellationToken => FormatOpenTeamSelectionResult(
+                await openTeamSelectionService.OpenAsync(
                     GetSelectedDeviceName(), cancellationToken)));
         }
 
@@ -351,6 +363,35 @@ namespace ADB_Tool_Automation_Post_FB.UI
                 + $"Diagnostic: {result.DiagnosticScreenshotPath ?? string.Empty}{Environment.NewLine}"
                 + $"Message: {result.Message}{Environment.NewLine}Error: {result.ErrorMessage ?? string.Empty}{Environment.NewLine}"
                 + $"Evidence:{Environment.NewLine}{evidence}";
+        }
+
+        private static string FormatOpenTeamSelectionResult(OpenTeamSelectionResult result)
+        {
+            string gatherBounds = result.GatherButtonMatch != null && result.GatherButtonMatch.Found
+                ? $"({result.GatherButtonMatch.X},{result.GatherButtonMatch.Y},"
+                    + $"{result.GatherButtonMatch.Width},{result.GatherButtonMatch.Height})"
+                : string.Empty;
+            string observations = string.Join(Environment.NewLine, result.Observations.Select((item, index) =>
+                $"- #{index + 1} {item.State}: panel={item.PanelAnchorFound}, adjust={item.AdjustFormationButtonFound}, "
+                + $"action={item.TeamActionButtonFound}, confirmed={item.TeamSelectionConfirmed}, ready={item.TeamSelectionReady}; {item.Message}"));
+            string evidence = string.Join(Environment.NewLine, result.FinalEvidence.Select(item =>
+                $"- {item.TemplateId}: exists={item.TemplateExists}, found={item.Found}, bounds="
+                + (item.MatchResult != null && item.MatchResult.Found
+                    ? $"({item.MatchResult.X},{item.MatchResult.Y},{item.MatchResult.Width},{item.MatchResult.Height})"
+                    : string.Empty)
+                + $", confidence={(item.Confidence.HasValue ? item.Confidence.Value.ToString("F3") : "n/a")}; {item.Message}"));
+            return $"Outcome: {result.Outcome}{Environment.NewLine}Success: {result.Success}{Environment.NewLine}"
+                + $"Initial: {result.InitialState}{Environment.NewLine}Final: {result.FinalState}{Environment.NewLine}"
+                + $"Resource popup verified: {result.ResourcePopupVerified}{Environment.NewLine}"
+                + $"Gather button verified: {result.GatherButtonVerified}{Environment.NewLine}"
+                + $"Team selection verified: {result.TeamSelectionVerified}{Environment.NewLine}Team selection ready: {result.TeamSelectionReady}{Environment.NewLine}"
+                + $"Panel anchor: {result.PanelAnchorVerified}{Environment.NewLine}Adjust formation: {result.AdjustFormationButtonVerified}{Environment.NewLine}"
+                + $"Team action: {result.TeamActionButtonVerified}{Environment.NewLine}Gather taps: {result.GatherTapCount}{Environment.NewLine}"
+                + $"Observed frames: {result.ObservedFrameCount}{Environment.NewLine}Transient unknown frames: {result.TransientUnknownFrameCount}{Environment.NewLine}"
+                + $"Gather bounds: {gatherBounds}{Environment.NewLine}Duration: {result.Duration.TotalMilliseconds:F0} ms{Environment.NewLine}"
+                + $"Diagnostic: {result.DiagnosticScreenshotPath ?? string.Empty}{Environment.NewLine}Message: {result.Message}{Environment.NewLine}"
+                + $"Error: {result.ErrorMessage ?? string.Empty}{Environment.NewLine}Observations:{Environment.NewLine}{observations}{Environment.NewLine}"
+                + $"Final evidence:{Environment.NewLine}{evidence}";
         }
 
 

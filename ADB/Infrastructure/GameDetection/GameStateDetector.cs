@@ -18,6 +18,9 @@ namespace ADB_Tool_Automation_Post_FB.Infrastructure.GameDetection
     {
         private static readonly TemplateId[] DetectionTemplates =
         {
+            TemplateId.TeamSelectionPanelAnchor,
+            TemplateId.TeamAdjustFormationButton,
+            TemplateId.TeamActionButtonEnabled,
             TemplateId.ResourceSearchPanelAnchor,
             TemplateId.SearchButtonEnabled,
             TemplateId.LevelMinusButton,
@@ -172,6 +175,9 @@ namespace ADB_Tool_Automation_Post_FB.Infrastructure.GameDetection
             }
 
             GameDetectionEvidence panelAnchor = FindEvidence(evidence, TemplateId.ResourceSearchPanelAnchor);
+            GameDetectionEvidence teamPanel = FindEvidence(evidence, TemplateId.TeamSelectionPanelAnchor);
+            GameDetectionEvidence teamAdjust = FindEvidence(evidence, TemplateId.TeamAdjustFormationButton);
+            GameDetectionEvidence teamAction = FindEvidence(evidence, TemplateId.TeamActionButtonEnabled);
             GameDetectionEvidence searchButton = FindEvidence(evidence, TemplateId.SearchButtonEnabled);
             GameDetectionEvidence levelMinusButton = FindEvidence(evidence, TemplateId.LevelMinusButton);
             GameDetectionEvidence resourceTabSelected = FindEvidence(evidence, TemplateId.ResourceTabSelected);
@@ -187,12 +193,23 @@ namespace ADB_Tool_Automation_Post_FB.Infrastructure.GameDetection
             int popupSignals = (popupAnchor.Found ? 1 : 0)
                 + (popupIron.Found ? 1 : 0) + (gatherButton.Found ? 1 : 0);
             bool popupConfirmed = popupSignals >= 2 && (popupAnchor.Found || popupIron.Found);
-            GameState state = panelConfirmed
-                ? GameState.ResourceSearchPanel
+            bool teamSelectionConfirmed = teamPanel.Found && (teamAdjust.Found || teamAction.Found);
+            GameState state = teamSelectionConfirmed
+                ? GameState.TeamSelection
+                : panelConfirmed ? GameState.ResourceSearchPanel
                 : popupConfirmed ? GameState.ResourcePopup
                     : continentTitle.Found ? GameState.ContinentMap
                         : worldAnchor.Found ? GameState.WorldMap : GameState.Unknown;
 
+            teamPanel.Message += teamSelectionConfirmed
+                ? " Rule TeamSelection satisfied with a team action control."
+                : " Rule TeamSelection requires the panel anchor and an Adjust Formation or Team Action button.";
+            teamAdjust.Message += teamSelectionConfirmed && teamAdjust.Found
+                ? " Adjust Formation contributed TeamSelection evidence."
+                : " Adjust Formation alone does not confirm TeamSelection.";
+            teamAction.Message += teamSelectionConfirmed && teamAction.Found
+                ? " Team Action contributed TeamSelection evidence."
+                : " Team Action alone does not confirm TeamSelection.";
             panelAnchor.Message += panelConfirmed
                 ? " Rule ResourceSearchPanel satisfied with SearchButtonEnabled."
                 : " Rule ResourceSearchPanel requires SearchButtonEnabled and a stable panel control.";
@@ -208,7 +225,9 @@ namespace ADB_Tool_Automation_Post_FB.Infrastructure.GameDetection
             resourceTabUnselected.Message += panelConfirmed && resourceTabUnselected.Found
                 ? " Unselected resource tab provided stable ResourceSearchPanel evidence."
                 : " Unselected resource tab was checked as panel evidence.";
-            popupAnchor.Message += popupConfirmed
+            popupAnchor.Message += teamSelectionConfirmed
+                ? " TeamSelection has priority over ResourcePopup."
+                : popupConfirmed
                 ? " ResourcePopup selected from at least two popup signals."
                 : " ResourcePopup requires at least two signals and cannot be confirmed by GatherButtonEnabled alone.";
             popupIron.Message += popupConfirmed
@@ -221,6 +240,8 @@ namespace ADB_Tool_Automation_Post_FB.Infrastructure.GameDetection
                     : " Gather button was not found.";
             worldAnchor.Message += state == GameState.WorldMap
                 ? " Rule WorldMap selected because ResourceSearchPanel was not confirmed."
+                : teamSelectionConfirmed
+                    ? " TeamSelection has priority over WorldMap."
                 : panelConfirmed
                     ? " ResourceSearchPanel has priority over WorldMap."
                     : popupConfirmed
@@ -275,7 +296,9 @@ namespace ADB_Tool_Automation_Post_FB.Infrastructure.GameDetection
             try
             {
                 byte[] template = templateRegistry.LoadBytes(templateId);
-                ImageRegion? searchRegion = IsPopupTemplate(templateId)
+                ImageRegion? searchRegion = IsTeamSelectionTemplate(templateId)
+                    ? options.TeamSelectionRegion
+                    : IsPopupTemplate(templateId)
                     ? options.ResourcePopupRegion
                     : IsSearchPanelTemplate(templateId)
                         ? new ImageRegion(0, screenshotHeight / 2,
@@ -304,7 +327,7 @@ namespace ADB_Tool_Automation_Post_FB.Infrastructure.GameDetection
                         ? usedStableWorldMapAnchor
                             ? "Template 'WorldMapAnchor' matched by its stable icon center in the lower-left region."
                             : searchRegion.HasValue
-                                ? $"Template '{templateId}' matched inside ResourcePopup ROI."
+                                ? $"Template '{templateId}' matched inside its configured ROI."
                                 : $"Template '{templateId}' matched."
                         : $"Template '{templateId}' was checked and did not match."
                 };
@@ -321,6 +344,11 @@ namespace ADB_Tool_Automation_Post_FB.Infrastructure.GameDetection
             id == TemplateId.ResourcePopupInfoAnchor
             || id == TemplateId.ResourcePopupIronTitle
             || id == TemplateId.GatherButtonEnabled;
+
+        private static bool IsTeamSelectionTemplate(TemplateId id) =>
+            id == TemplateId.TeamSelectionPanelAnchor
+            || id == TemplateId.TeamAdjustFormationButton
+            || id == TemplateId.TeamActionButtonEnabled;
 
         private static bool IsSearchPanelTemplate(TemplateId id) =>
             id == TemplateId.ResourceSearchPanelAnchor

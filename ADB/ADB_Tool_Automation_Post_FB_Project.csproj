@@ -111,6 +111,12 @@
     <Compile Include="Core\ResourceSearch\ResourceSearchObservation.cs" />
     <Compile Include="Core\ResourceSearch\ResourceSearchOutcome.cs" />
     <Compile Include="Core\ResourceSearch\ResourceType.cs" />
+    <Compile Include="Core\TeamSelection\IOpenTeamSelectionDiagnosticStore.cs" />
+    <Compile Include="Core\TeamSelection\IOpenTeamSelectionService.cs" />
+    <Compile Include="Core\TeamSelection\OpenTeamSelectionOptions.cs" />
+    <Compile Include="Core\TeamSelection\OpenTeamSelectionOutcome.cs" />
+    <Compile Include="Core\TeamSelection\OpenTeamSelectionResult.cs" />
+    <Compile Include="Core\TeamSelection\TeamSelectionObservation.cs" />
     <Compile Include="Core\Vision\IImageMatcher.cs" />
     <Compile Include="Core\Vision\IFrameStabilityDetector.cs" />
     <Compile Include="Core\Vision\FrameComparisonResult.cs" />
@@ -156,6 +162,10 @@
     <Compile Include="Infrastructure\ResourceSearch\ResourceSearchConfigurationServiceFactory.cs" />
     <Compile Include="Infrastructure\ResourceSearch\ResourceSearchExecutionService.cs" />
     <Compile Include="Infrastructure\ResourceSearch\ResourceSearchExecutionServiceFactory.cs" />
+    <Compile Include="Infrastructure\TeamSelection\AppConfigOpenTeamSelectionOptionsProvider.cs" />
+    <Compile Include="Infrastructure\TeamSelection\OpenTeamSelectionDiagnosticStore.cs" />
+    <Compile Include="Infrastructure\TeamSelection\OpenTeamSelectionService.cs" />
+    <Compile Include="Infrastructure\TeamSelection\OpenTeamSelectionServiceFactory.cs" />
     <Compile Include="Infrastructure\Vision\FrameStabilityDetector.cs" />
     <Compile Include="Infrastructure\Vision\KAutoImageMatcher.cs" />
     <Compile Include="Infrastructure\Vision\TemplateMatchDiagnosticService.cs" />

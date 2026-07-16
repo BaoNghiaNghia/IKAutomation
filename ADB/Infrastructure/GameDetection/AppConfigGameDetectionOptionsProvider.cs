@@ -21,7 +21,12 @@ namespace ADB_Tool_Automation_Post_FB.Infrastructure.GameDetection
                     ReadPositiveInteger("ResourcePopupVerification.PopupRegion.X", 650, allowZero: true),
                     ReadPositiveInteger("ResourcePopupVerification.PopupRegion.Y", 150, allowZero: true),
                     ReadPositiveInteger("ResourcePopupVerification.PopupRegion.Width", 550),
-                    ReadPositiveInteger("ResourcePopupVerification.PopupRegion.Height", 450)));
+                    ReadPositiveInteger("ResourcePopupVerification.PopupRegion.Height", 450)),
+                new ImageRegion(
+                    ReadPositiveInteger("OpenTeamSelection.TeamSelectionRegion.X", 0, allowZero: true),
+                    ReadPositiveInteger("OpenTeamSelection.TeamSelectionRegion.Y", 0, allowZero: true),
+                    ReadPositiveInteger("OpenTeamSelection.TeamSelectionRegion.Width", 780),
+                    ReadPositiveInteger("OpenTeamSelection.TeamSelectionRegion.Height", 720)));
         }
 
         private static int ReadPositiveInteger(string key, int defaultValue, bool allowZero = false)

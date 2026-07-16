@@ -1,0 +1,18 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <OutputType>Exe</OutputType>
+    <TargetFramework>net481</TargetFramework>
+    <AssemblyName>IKAutomation.TeamSelection.Tests</AssemblyName>
+  </PropertyGroup>
+  <ItemGroup>
+    <Compile Include="..\..\ADB\Core\Abstractions\ILdPlayerClient.cs" Link="Production\ILdPlayerClient.cs" />
+    <Compile Include="..\..\ADB\Core\Concurrency\IDeviceOperationLock.cs" Link="Production\IDeviceOperationLock.cs" />
+    <Compile Include="..\..\ADB\Core\Diagnostics\IDiagnosticLogger.cs" Link="Production\IDiagnosticLogger.cs" />
+    <Compile Include="..\..\ADB\Core\GameDetection\*.cs" Link="Production\GameDetection\%(Filename)%(Extension)" />
+    <Compile Include="..\..\ADB\Core\ResourcePopup\*.cs" Link="Production\ResourcePopup\%(Filename)%(Extension)" />
+    <Compile Include="..\..\ADB\Core\TeamSelection\*.cs" Link="Production\TeamSelection\%(Filename)%(Extension)" />
+    <Compile Include="..\..\ADB\Core\Vision\*.cs" Link="Production\Vision\%(Filename)%(Extension)" />
+    <Compile Include="..\..\ADB\Infrastructure\Concurrency\DeviceOperationLock.cs" Link="Production\DeviceOperationLock.cs" />
+    <Compile Include="..\..\ADB\Infrastructure\TeamSelection\OpenTeamSelectionService.cs" Link="Production\OpenTeamSelectionService.cs" />
+  </ItemGroup>
+</Project>

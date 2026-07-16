@@ -6,6 +6,7 @@ namespace ADB_Tool_Automation_Post_FB.Core.GameDetection
         WorldMap,
         ContinentMap,
         ResourceSearchPanel,
-        ResourcePopup
+        ResourcePopup,
+        TeamSelection
     }
 }

@@ -25,6 +25,8 @@ namespace IKAutomation.GameDetection.Tests
         {
             Run("ResourceSearchPanel requires both signals", PanelRequiresBothSignals);
             Run("ResourceSearchPanel has priority over WorldMap", PanelHasPriority);
+            Run("TeamSelection uses panel plus action rule", TeamSelectionRule);
+            Run("TeamSelection has highest priority", TeamSelectionHasPriority);
             Run("ResourcePopup has priority over WorldMap", PopupHasPriorityOverWorldMap);
             Run("ResourceSearchPanel has priority over ResourcePopup", PanelHasPriorityOverPopup);
             Run("Two popup signals detect ResourcePopup", TwoPopupSignalsDetectPopup);
@@ -82,6 +84,34 @@ namespace IKAutomation.GameDetection.Tests
                 TemplateId.SearchButtonEnabled,
                 TemplateId.WorldMapAnchor);
             Equal(GameState.ResourceSearchPanel, result.State, "Panel should have priority.");
+        }
+
+        private static void TeamSelectionRule()
+        {
+            Equal(GameState.TeamSelection, DetectWithMatches(
+                TemplateId.TeamSelectionPanelAnchor,
+                TemplateId.TeamAdjustFormationButton).State,
+                "Panel plus Adjust should confirm TeamSelection.");
+            Equal(GameState.TeamSelection, DetectWithMatches(
+                TemplateId.TeamSelectionPanelAnchor,
+                TemplateId.TeamActionButtonEnabled).State,
+                "Panel plus Action should confirm TeamSelection.");
+            Equal(GameState.Unknown, DetectWithMatches(
+                TemplateId.TeamAdjustFormationButton,
+                TemplateId.TeamActionButtonEnabled).State,
+                "Controls without the panel must not confirm TeamSelection.");
+        }
+
+        private static void TeamSelectionHasPriority()
+        {
+            GameDetectionResult result = DetectWithMatches(
+                TemplateId.TeamSelectionPanelAnchor,
+                TemplateId.TeamActionButtonEnabled,
+                TemplateId.ResourcePopupInfoAnchor,
+                TemplateId.ResourcePopupIronTitle,
+                TemplateId.WorldMapAnchor);
+            Equal(GameState.TeamSelection, result.State,
+                "TeamSelection must have priority over ResourcePopup and WorldMap.");
         }
 
         private static void LevelMinusPanelFallback()
@@ -244,7 +274,7 @@ namespace IKAutomation.GameDetection.Tests
         private static void EvidenceContainsThreeTemplates()
         {
             GameDetectionResult result = DetectWithMatches();
-            Equal(10, result.Evidence.Count, "Detector must check exactly ten templates.");
+            Equal(13, result.Evidence.Count, "Detector must check exactly thirteen templates.");
             foreach (TemplateId id in RequiredIds())
                 Assert(result.Evidence.Any(item => item.TemplateId == id), "Missing evidence for " + id);
         }
@@ -334,6 +364,8 @@ namespace IKAutomation.GameDetection.Tests
         private static GameDetectionOptions Options(bool saveUnknown)
             => new GameDetectionOptions(1280, 720, true, saveUnknown, "Diagnostics/UnknownStates");
         private static TemplateId[] RequiredIds() => new[] { TemplateId.ResourceSearchPanelAnchor,
+            TemplateId.TeamSelectionPanelAnchor, TemplateId.TeamAdjustFormationButton,
+            TemplateId.TeamActionButtonEnabled,
             TemplateId.SearchButtonEnabled, TemplateId.LevelMinusButton,
             TemplateId.ResourceTabSelected, TemplateId.ResourceTabUnselected,
             TemplateId.ResourcePopupInfoAnchor, TemplateId.ResourcePopupIronTitle,
