@@ -8,6 +8,9 @@ using ADB_Tool_Automation_Post_FB.Core.Vision;
 using System;
 using System.Collections.Generic;
 using System.Diagnostics;
+using System.Drawing;
+using System.Drawing.Imaging;
+using System.IO;
 using System.Linq;
 using System.Threading;
 using System.Threading.Tasks;
@@ -230,8 +233,8 @@ namespace ADB_Tool_Automation_Post_FB.Infrastructure.ResourceSearch
                 await Task.Delay(options.TapIntervalMs, cancellationToken);
             }
 
-            ConfigurationTemplateEvidence level = await PollForAsync(
-                deviceName, TemplateId.LevelValue7, cancellationToken);
+            ConfigurationTemplateEvidence level = await PollForLevel7Async(
+                deviceName, minus, plus, cancellationToken);
             evidence.Add(level);
             result.LevelVerified = level.Found;
             AddStep(steps, "SetLevel", level.Found, 1, evidence,
@@ -283,11 +286,13 @@ namespace ADB_Tool_Automation_Post_FB.Infrastructure.ResourceSearch
             GameDetectionResult state = await detector.DetectAsync(deviceName, cancellationToken);
             result.FinalState = state.State;
             byte[] screenshot = await ldPlayerClient.CaptureScreenshotPngAsync(deviceName, cancellationToken);
+            ConfigurationTemplateEvidence minus = Match(screenshot, TemplateId.LevelMinusButton);
+            ConfigurationTemplateEvidence plus = Match(screenshot, TemplateId.LevelPlusButton);
             var evidence = new List<ConfigurationTemplateEvidence>
             {
                 Match(screenshot, TemplateId.ResourceTabSelected),
                 Match(screenshot, TemplateId.ResourceIronSelected),
-                Match(screenshot, TemplateId.LevelValue7),
+                MatchLevel7(screenshot, minus, plus),
                 Match(screenshot, request.UnoccupiedOnly
                     ? TemplateId.UnoccupiedFilterChecked : TemplateId.UnoccupiedFilterUnchecked),
                 Match(screenshot, TemplateId.SearchButtonEnabled)
@@ -316,6 +321,83 @@ namespace ADB_Tool_Automation_Post_FB.Infrastructure.ResourceSearch
                 await Task.Delay(options.StatePollIntervalMs, cancellationToken);
             }
             return last;
+        }
+
+        private async Task<ConfigurationTemplateEvidence> PollForLevel7Async(string deviceName,
+            ConfigurationTemplateEvidence minus, ConfigurationTemplateEvidence plus,
+            CancellationToken cancellationToken)
+        {
+            var watch = Stopwatch.StartNew();
+            ConfigurationTemplateEvidence last = Evidence(
+                TemplateId.LevelValue7, null, "Not checked.");
+            while (watch.Elapsed < TimeSpan.FromSeconds(options.ActionVerificationTimeoutSeconds))
+            {
+                cancellationToken.ThrowIfCancellationRequested();
+                byte[] screenshot = await ldPlayerClient.CaptureScreenshotPngAsync(
+                    deviceName, cancellationToken);
+                last = MatchLevel7(screenshot, minus, plus);
+                if (last.Found) return last;
+                await Task.Delay(options.StatePollIntervalMs, cancellationToken);
+            }
+            return last;
+        }
+
+        private ConfigurationTemplateEvidence MatchLevel7(byte[] screenshot,
+            ConfigurationTemplateEvidence minus, ConfigurationTemplateEvidence plus)
+        {
+            ConfigurationTemplateEvidence direct = Match(screenshot, TemplateId.LevelValue7);
+            if (direct.Found || !HasBounds(minus) || !HasBounds(plus)) return direct;
+
+            ImageRegion? region = CreateLevelValueRegion(minus, plus);
+            if (!region.HasValue) return direct;
+
+            byte[] sourceTemplate = templateRegistry.LoadBytes(TemplateId.LevelValue7);
+            byte[] stableTemplate = TryCreateStableLevelTemplate(sourceTemplate) ?? sourceTemplate;
+            ImageMatchResult match = imageMatcher.Find(screenshot, stableTemplate, region);
+            return Evidence(TemplateId.LevelValue7, match, match != null && match.Found
+                ? "LevelValue7 matched by its stable value chip inside the level-control region."
+                : "LevelValue7 did not match directly or by its stable value chip.");
+        }
+
+        private static ImageRegion? CreateLevelValueRegion(
+            ConfigurationTemplateEvidence minus, ConfigurationTemplateEvidence plus)
+        {
+            ConfigurationTemplateEvidence leftControl = minus.X <= plus.X ? minus : plus;
+            ConfigurationTemplateEvidence rightControl = minus.X <= plus.X ? plus : minus;
+            int left = leftControl.X + leftControl.Width;
+            int right = rightControl.X;
+            int top = Math.Max(0, Math.Min(minus.Y, plus.Y) - 100);
+            int bottom = Math.Max(minus.Y + minus.Height, plus.Y + plus.Height) + 20;
+            return right > left && bottom > top
+                ? new ImageRegion(left, top, right - left, bottom - top)
+                : (ImageRegion?)null;
+        }
+
+        private static byte[] TryCreateStableLevelTemplate(byte[] templateBytes)
+        {
+            try
+            {
+                using (var input = new MemoryStream(templateBytes, writable: false))
+                using (var source = new Bitmap(input))
+                {
+                    int left = source.Width * 35 / 100;
+                    int right = source.Width * 72 / 100;
+                    int width = right - left;
+                    if (width <= 0) return null;
+
+                    using (Bitmap stable = source.Clone(
+                        new Rectangle(left, 0, width, source.Height), PixelFormat.Format32bppArgb))
+                    using (var output = new MemoryStream())
+                    {
+                        stable.Save(output, ImageFormat.Png);
+                        return output.ToArray();
+                    }
+                }
+            }
+            catch (ArgumentException)
+            {
+                return null;
+            }
         }
 
         private ConfigurationTemplateEvidence Match(byte[] screenshot, TemplateId templateId)

@@ -33,6 +33,7 @@ namespace IKAutomation.ResourceSearch.Tests
             Run("Level reset taps minus eight times", MinusEight);
             Run("Level seven taps plus six times", PlusSix);
             Run("Level requires LevelValue7 verification", LevelRequiresVerification);
+            Run("Level verification uses stable chip fallback", LevelStableChipFallback);
             Run("Out-of-range level rejected before input", InvalidLevelNoInput);
             Run("Checked filter is not tapped", CheckedFilterNoTap);
             Run("Unchecked filter is tapped and verified", UncheckedFilterToggled);
@@ -110,6 +111,13 @@ namespace IKAutomation.ResourceSearch.Tests
             Fixture f = Setup(); f.Ui.HideLevelValue = true;
             ResourceSearchConfigurationResult r = Execute(f);
             Assert(!r.Success && !r.LevelVerified, "Level falsely verified.");
+        }
+
+        private static void LevelStableChipFallback()
+        {
+            Fixture f = Setup(); f.Ui.LevelRequiresStableChip = true;
+            ResourceSearchConfigurationResult r = Execute(f);
+            Assert(r.Success && r.LevelVerified, r.ErrorMessage);
         }
 
         private static void InvalidLevelNoInput()
@@ -258,7 +266,7 @@ namespace IKAutomation.ResourceSearch.Tests
         private sealed class FakeUi
         {
             public bool ResourceSelected, FilterChecked, IgnoreResourceTap, InvalidResourceBounds,
-                HideLevelValue, AmbiguousResource;
+                HideLevelValue, AmbiguousResource, LevelRequiresStableChip;
             public bool ResourceTabSelected = true;
             public int Level = 3;
         }
@@ -280,7 +288,8 @@ namespace IKAutomation.ResourceSearch.Tests
                         : Found(!ui.ResourceSelected || ui.AmbiguousResource, 10, 10, 20, 30);
                     case TemplateId.LevelMinusButton: return ImageMatchResult.FoundAt(100, 100, 20, 20);
                     case TemplateId.LevelPlusButton: return ImageMatchResult.FoundAt(200, 100, 20, 20);
-                    case TemplateId.LevelValue7: return Found(ui.Level == 7 && !ui.HideLevelValue, 150, 50, 20, 20);
+                    case TemplateId.LevelValue7: return Found(ui.Level == 7 && !ui.HideLevelValue
+                        && (!ui.LevelRequiresStableChip || region.HasValue), 150, 50, 20, 20);
                     case TemplateId.UnoccupiedFilterChecked: return Found(ui.FilterChecked, 300, 100, 20, 20);
                     case TemplateId.UnoccupiedFilterUnchecked: return Found(!ui.FilterChecked, 300, 100, 20, 20);
                     case TemplateId.SearchButtonEnabled: return ImageMatchResult.FoundAt(400, 400, 20, 20);
