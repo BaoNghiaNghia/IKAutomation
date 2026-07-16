@@ -19,6 +19,7 @@ namespace ADB_Tool_Automation_Post_FB.Infrastructure.GameDetection
         {
             TemplateId.ResourceSearchPanelAnchor,
             TemplateId.SearchButtonEnabled,
+            TemplateId.LevelMinusButton,
             TemplateId.ContinentMapTitle,
             TemplateId.WorldMapAnchor
         };
@@ -165,9 +166,10 @@ namespace ADB_Tool_Automation_Post_FB.Infrastructure.GameDetection
 
             GameDetectionEvidence panelAnchor = FindEvidence(evidence, TemplateId.ResourceSearchPanelAnchor);
             GameDetectionEvidence searchButton = FindEvidence(evidence, TemplateId.SearchButtonEnabled);
+            GameDetectionEvidence levelMinusButton = FindEvidence(evidence, TemplateId.LevelMinusButton);
             GameDetectionEvidence worldAnchor = FindEvidence(evidence, TemplateId.WorldMapAnchor);
             GameDetectionEvidence continentTitle = FindEvidence(evidence, TemplateId.ContinentMapTitle);
-            bool panelConfirmed = panelAnchor.Found && searchButton.Found;
+            bool panelConfirmed = (panelAnchor.Found || levelMinusButton.Found) && searchButton.Found;
             GameState state = panelConfirmed
                 ? GameState.ResourceSearchPanel
                 : continentTitle.Found
@@ -176,10 +178,13 @@ namespace ADB_Tool_Automation_Post_FB.Infrastructure.GameDetection
 
             panelAnchor.Message += panelConfirmed
                 ? " Rule ResourceSearchPanel satisfied with SearchButtonEnabled."
-                : " Rule ResourceSearchPanel requires both panel anchor and enabled Search button.";
+                : " Rule ResourceSearchPanel requires SearchButtonEnabled and either ResourceSearchPanelAnchor or LevelMinusButton.";
             searchButton.Message += panelConfirmed
-                ? " Rule ResourceSearchPanel satisfied with ResourceSearchPanelAnchor."
-                : " Rule ResourceSearchPanel requires both panel anchor and enabled Search button.";
+                ? " Rule ResourceSearchPanel satisfied with a stable panel anchor."
+                : " Rule ResourceSearchPanel requires SearchButtonEnabled and either ResourceSearchPanelAnchor or LevelMinusButton.";
+            levelMinusButton.Message += panelConfirmed
+                ? " Rule ResourceSearchPanel accepted LevelMinusButton as a stable fallback anchor."
+                : " LevelMinusButton can provide stable panel evidence when the slider-inclusive anchor changes.";
             worldAnchor.Message += state == GameState.WorldMap
                 ? " Rule WorldMap selected because ResourceSearchPanel was not confirmed."
                 : panelConfirmed

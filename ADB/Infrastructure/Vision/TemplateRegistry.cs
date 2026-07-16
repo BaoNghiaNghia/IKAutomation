@@ -16,6 +16,8 @@ namespace ADB_Tool_Automation_Post_FB.Infrastructure.Vision
                 { TemplateId.ContinentMapTitle, Define(TemplateId.ContinentMapTitle, "Global/continent_map_title.png") },
                 { TemplateId.ResourceSearchPanelAnchor, Define(TemplateId.ResourceSearchPanelAnchor, "Search/resource_search_panel_anchor.png") },
                 { TemplateId.SearchButtonEnabled, Define(TemplateId.SearchButtonEnabled, "Search/search_button_enabled.png") },
+                { TemplateId.ResourceTabSelected, Define(TemplateId.ResourceTabSelected, "Search/resource_tab_selected.png") },
+                { TemplateId.ResourceTabUnselected, Define(TemplateId.ResourceTabUnselected, "Search/resource_tab_unselected.png") },
                 { TemplateId.ResourceIronSelected, Define(TemplateId.ResourceIronSelected, "Search/resource_iron_selected.png") },
                 { TemplateId.ResourceIronUnselected, Define(TemplateId.ResourceIronUnselected, "Search/resource_iron_unselected.png") },
                 { TemplateId.LevelMinusButton, Define(TemplateId.LevelMinusButton, "Search/level_minus_button.png") },

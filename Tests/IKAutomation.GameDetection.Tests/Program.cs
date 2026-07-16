@@ -33,7 +33,8 @@ namespace IKAutomation.GameDetection.Tests
             Run("Empty device name is rejected", EmptyDeviceRejected);
             Run("Cancellation is respected and propagated", CancellationRespected);
             Run("Wrong resolution stops matching", WrongResolutionStopsMatching);
-            Run("Evidence contains all four templates", EvidenceContainsThreeTemplates);
+            Run("Evidence contains all five templates", EvidenceContainsThreeTemplates);
+            Run("Level minus is a stable panel anchor fallback", LevelMinusPanelFallback);
             Run("Unknown screenshot path is correct", UnknownScreenshotPathIsCorrect);
             Run("Unknown screenshot save failure does not crash", UnknownSaveFailureDoesNotCrash);
             Run("Detector never sends input", DetectorNeverSendsInput);
@@ -73,6 +74,15 @@ namespace IKAutomation.GameDetection.Tests
                 TemplateId.SearchButtonEnabled,
                 TemplateId.WorldMapAnchor);
             Equal(GameState.ResourceSearchPanel, result.State, "Panel should have priority.");
+        }
+
+        private static void LevelMinusPanelFallback()
+        {
+            GameDetectionResult result = DetectWithMatches(
+                TemplateId.LevelMinusButton,
+                TemplateId.SearchButtonEnabled);
+            Equal(GameState.ResourceSearchPanel, result.State,
+                "Stable level-minus anchor should verify the open panel.");
         }
 
         private static void WorldMapFromAnchor()
@@ -143,7 +153,7 @@ namespace IKAutomation.GameDetection.Tests
         private static void EvidenceContainsThreeTemplates()
         {
             GameDetectionResult result = DetectWithMatches();
-            Equal(4, result.Evidence.Count, "Detector must check exactly four templates.");
+            Equal(5, result.Evidence.Count, "Detector must check exactly five templates.");
             foreach (TemplateId id in RequiredIds())
                 Assert(result.Evidence.Any(item => item.TemplateId == id), "Missing evidence for " + id);
         }
@@ -232,7 +242,7 @@ namespace IKAutomation.GameDetection.Tests
 
         private static GameDetectionOptions Options(bool saveUnknown)
             => new GameDetectionOptions(1280, 720, true, saveUnknown, "Diagnostics/UnknownStates");
-        private static TemplateId[] RequiredIds() => new[] { TemplateId.ResourceSearchPanelAnchor, TemplateId.SearchButtonEnabled, TemplateId.ContinentMapTitle, TemplateId.WorldMapAnchor };
+        private static TemplateId[] RequiredIds() => new[] { TemplateId.ResourceSearchPanelAnchor, TemplateId.SearchButtonEnabled, TemplateId.LevelMinusButton, TemplateId.ContinentMapTitle, TemplateId.WorldMapAnchor };
         private static string DataRoot() => Path.Combine(AppContext.BaseDirectory, "Data", "InfinityKingdom", "1280x720", "vi");
         private static string TempDirectory() { string path = Path.Combine(Path.GetTempPath(), "IKGameDetectionTests", Guid.NewGuid().ToString("N")); Directory.CreateDirectory(path); return path; }
 

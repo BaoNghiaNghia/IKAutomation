@@ -6,6 +6,8 @@ namespace ADB_Tool_Automation_Post_FB.Core.Vision
         ContinentMapTitle,
         ResourceSearchPanelAnchor,
         SearchButtonEnabled,
+        ResourceTabSelected,
+        ResourceTabUnselected,
         ResourceIronSelected,
         ResourceIronUnselected,
         LevelMinusButton,

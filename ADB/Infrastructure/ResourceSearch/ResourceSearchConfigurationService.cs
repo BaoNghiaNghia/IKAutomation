@@ -19,6 +19,7 @@ namespace ADB_Tool_Automation_Post_FB.Infrastructure.ResourceSearch
         private static readonly TemplateId[] RequiredTemplates =
         {
             TemplateId.ResourceSearchPanelAnchor, TemplateId.SearchButtonEnabled,
+            TemplateId.ResourceTabSelected, TemplateId.ResourceTabUnselected,
             TemplateId.ResourceIronSelected, TemplateId.ResourceIronUnselected,
             TemplateId.LevelMinusButton, TemplateId.LevelPlusButton, TemplateId.LevelValue7,
             TemplateId.UnoccupiedFilterChecked, TemplateId.UnoccupiedFilterUnchecked
@@ -99,6 +100,8 @@ namespace ADB_Tool_Automation_Post_FB.Infrastructure.ResourceSearch
                 AddStep(steps, "EnsurePanel", true, 1, panelEvidence,
                     "ResourceSearchPanel verified.", null);
 
+                if (!await EnsureResourceTabAsync(deviceName, result, steps, cancellationToken))
+                    return Complete(result, watch, "Resource search tab could not be selected.", LastError(steps));
                 if (!await ConfigureResourceAsync(deviceName, result, steps, cancellationToken))
                     return Complete(result, watch, "Iron selection failed.", LastError(steps));
                 if (!await ConfigureLevelAsync(deviceName, result, steps, cancellationToken))
@@ -123,6 +126,37 @@ namespace ADB_Tool_Automation_Post_FB.Infrastructure.ResourceSearch
                     + $"TapCount={result.TapCount}, DurationMs={watch.Elapsed.TotalMilliseconds:F0}", exception);
                 return Complete(result, watch, "Configuration failed.", exception.Message);
             }
+        }
+
+        private async Task<bool> EnsureResourceTabAsync(string deviceName,
+            ResourceSearchConfigurationResult result, IList<ConfigurationStepResult> steps,
+            CancellationToken cancellationToken)
+        {
+            byte[] screenshot = await ldPlayerClient.CaptureScreenshotPngAsync(deviceName, cancellationToken);
+            ConfigurationTemplateEvidence selected = Match(screenshot, TemplateId.ResourceTabSelected);
+            ConfigurationTemplateEvidence unselected = Match(screenshot, TemplateId.ResourceTabUnselected);
+            var evidence = new List<ConfigurationTemplateEvidence> { selected, unselected };
+            if (selected.Found)
+            {
+                AddStep(steps, "SelectResourceTab", true, 1, evidence,
+                    "Resource tab was already selected; no Tap was sent.", null);
+                return true;
+            }
+            if (!HasBounds(unselected))
+            {
+                AddStep(steps, "SelectResourceTab", false, 1, evidence,
+                    "Resource tab was not found with valid bounds; no fallback Tap was sent.", null);
+                return false;
+            }
+
+            await TapAsync(deviceName, unselected, "SelectResourceTab", result, cancellationToken);
+            ConfigurationTemplateEvidence verified = await PollForAsync(
+                deviceName, TemplateId.ResourceTabSelected, cancellationToken);
+            evidence.Add(verified);
+            AddStep(steps, "SelectResourceTab", verified.Found, 1, evidence,
+                verified.Found ? "Resource tab verified after Tap."
+                    : "Resource tab was not verified before timeout.", null);
+            return verified.Found;
         }
 
         private async Task<bool> ConfigureResourceAsync(string deviceName,
@@ -251,6 +285,7 @@ namespace ADB_Tool_Automation_Post_FB.Infrastructure.ResourceSearch
             byte[] screenshot = await ldPlayerClient.CaptureScreenshotPngAsync(deviceName, cancellationToken);
             var evidence = new List<ConfigurationTemplateEvidence>
             {
+                Match(screenshot, TemplateId.ResourceTabSelected),
                 Match(screenshot, TemplateId.ResourceIronSelected),
                 Match(screenshot, TemplateId.LevelValue7),
                 Match(screenshot, request.UnoccupiedOnly
@@ -258,9 +293,9 @@ namespace ADB_Tool_Automation_Post_FB.Infrastructure.ResourceSearch
                 Match(screenshot, TemplateId.SearchButtonEnabled)
             };
             bool success = IsVerifiedPanel(state) && evidence.All(item => item.Found);
-            result.ResourceVerified = evidence[0].Found;
-            result.LevelVerified = evidence[1].Found;
-            result.FilterVerified = evidence[2].Found;
+            result.ResourceVerified = evidence[1].Found;
+            result.LevelVerified = evidence[2].Found;
+            result.FilterVerified = evidence[3].Found;
             AddStep(steps, "FinalVerification", success, 1, evidence,
                 success ? "Panel and all requested criteria were verified; Search was not pressed."
                     : "Panel or one or more requested criteria could not be verified.", state.ErrorMessage);
@@ -338,7 +373,9 @@ namespace ADB_Tool_Automation_Post_FB.Infrastructure.ResourceSearch
         {
             return result != null && result.IsSuccessful && result.State == GameState.ResourceSearchPanel
                 && result.Evidence != null
-                && result.Evidence.Any(item => item.TemplateId == TemplateId.ResourceSearchPanelAnchor && item.Found)
+                && result.Evidence.Any(item =>
+                    (item.TemplateId == TemplateId.ResourceSearchPanelAnchor
+                        || item.TemplateId == TemplateId.LevelMinusButton) && item.Found)
                 && result.Evidence.Any(item => item.TemplateId == TemplateId.SearchButtonEnabled && item.Found);
         }
 
@@ -348,6 +385,7 @@ namespace ADB_Tool_Automation_Post_FB.Infrastructure.ResourceSearch
             if (result?.Evidence == null) return evidence;
             foreach (GameDetectionEvidence item in result.Evidence.Where(item =>
                 item.TemplateId == TemplateId.ResourceSearchPanelAnchor
+                || item.TemplateId == TemplateId.LevelMinusButton
                 || item.TemplateId == TemplateId.SearchButtonEnabled))
                 evidence.Add(Evidence(item.TemplateId, item.MatchResult, item.Message));
             return evidence;

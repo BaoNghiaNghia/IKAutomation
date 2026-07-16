@@ -169,9 +169,11 @@ namespace ADB_Tool_Automation_Post_FB.Infrastructure.Navigation
 
             bool anchorFound = result.Evidence.Any(item =>
                 item.TemplateId == TemplateId.ResourceSearchPanelAnchor && item.Found);
+            bool stableFallbackFound = result.Evidence.Any(item =>
+                item.TemplateId == TemplateId.LevelMinusButton && item.Found);
             bool searchButtonFound = result.Evidence.Any(item =>
                 item.TemplateId == TemplateId.SearchButtonEnabled && item.Found);
-            return anchorFound && searchButtonFound;
+            return (anchorFound || stableFallbackFound) && searchButtonFound;
         }
 
         private async Task<GameDetectionResult> DetectAsync(string deviceName, IList<NavigationTransition> transitions, CancellationToken token)

@@ -25,6 +25,7 @@ namespace IKAutomation.ResourceSearch.Tests
         private static int Main()
         {
             Run("Navigation failure sends no input", NavigationFailureNoInput);
+            Run("Monster panel switches to resource tab", ResourceTabIsSelected);
             Run("Selected Iron is not tapped", SelectedIronNoTap);
             Run("Unselected Iron center is tapped", UnselectedIronCenter);
             Run("Iron requires selected verification", IronRequiresVerification);
@@ -62,6 +63,15 @@ namespace IKAutomation.ResourceSearch.Tests
             Fixture f = Setup(); f.Navigation.Success = false;
             ResourceSearchConfigurationResult r = Execute(f);
             Assert(!r.Success, "Expected failure."); Equal(0, f.Client.TotalInput, "Input sent.");
+        }
+
+        private static void ResourceTabIsSelected()
+        {
+            Fixture f = Setup(); f.Ui.ResourceTabSelected = false;
+            ResourceSearchConfigurationResult r = Execute(f);
+            Assert(r.Success && f.Ui.ResourceTabSelected, r.ErrorMessage);
+            Equal(1, f.Client.ResourceTabTaps, "Resource tab tap count.");
+            Assert(f.Client.Taps.Contains("210,674"), "Wrong resource tab center.");
         }
 
         private static void SelectedIronNoTap()
@@ -249,6 +259,7 @@ namespace IKAutomation.ResourceSearch.Tests
         {
             public bool ResourceSelected, FilterChecked, IgnoreResourceTap, InvalidResourceBounds,
                 HideLevelValue, AmbiguousResource;
+            public bool ResourceTabSelected = true;
             public int Level = 3;
         }
 
@@ -261,6 +272,8 @@ namespace IKAutomation.ResourceSearch.Tests
                 TemplateId id = (TemplateId)template[0];
                 switch (id)
                 {
+                    case TemplateId.ResourceTabSelected: return Found(ui.ResourceTabSelected, 158, 648, 104, 52);
+                    case TemplateId.ResourceTabUnselected: return Found(!ui.ResourceTabSelected, 158, 648, 104, 52);
                     case TemplateId.ResourceIronSelected: return Found(ui.ResourceSelected, 10, 10, 20, 30);
                     case TemplateId.ResourceIronUnselected: return ui.InvalidResourceBounds
                         ? ImageMatchResult.FoundAt(10, 10, 0, 0)
@@ -314,13 +327,14 @@ namespace IKAutomation.ResourceSearch.Tests
         {
             private readonly FakeUi ui;
             public readonly List<string> Taps = new List<string>();
-            public int ResourceTaps, MinusTaps, PlusTaps, FilterTaps, SearchTaps, ProhibitedCalls;
+            public int ResourceTabTaps, ResourceTaps, MinusTaps, PlusTaps, FilterTaps, SearchTaps, ProhibitedCalls;
             public int TotalInput => Taps.Count + ProhibitedCalls;
             public FakeClient(FakeUi ui) { this.ui = ui; }
             public Task TapAsync(string d, int x, int y, CancellationToken t)
             {
                 t.ThrowIfCancellationRequested(); Taps.Add(x + "," + y);
-                if (x == 20 && y == 25) { ResourceTaps++; if (!ui.IgnoreResourceTap) ui.ResourceSelected = true; }
+                if (x == 210 && y == 674) { ResourceTabTaps++; ui.ResourceTabSelected = true; }
+                else if (x == 20 && y == 25) { ResourceTaps++; if (!ui.IgnoreResourceTap) ui.ResourceSelected = true; }
                 else if (x == 110) { MinusTaps++; ui.Level = Math.Max(1, ui.Level - 1); }
                 else if (x == 210) { PlusTaps++; ui.Level = Math.Min(7, ui.Level + 1); }
                 else if (x == 310) { FilterTaps++; ui.FilterChecked = !ui.FilterChecked; }

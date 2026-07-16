@@ -44,6 +44,9 @@
     <Content Include="..\..\ADB\Data\InfinityKingdom\1280x720\vi\Search\search_button_enabled.png" Link="Data\InfinityKingdom\1280x720\vi\Search\search_button_enabled.png">
       <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
     </Content>
+    <Content Include="..\..\ADB\Data\InfinityKingdom\1280x720\vi\Search\level_minus_button.png" Link="Data\InfinityKingdom\1280x720\vi\Search\level_minus_button.png">
+      <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
+    </Content>
     <Content Include="..\..\ADB\Data\InfinityKingdom\1280x720\vi\Fixtures\resource_search_screen.png" Link="Data\InfinityKingdom\1280x720\vi\Fixtures\resource_search_screen.png">
       <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
     </Content>
