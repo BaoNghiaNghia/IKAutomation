@@ -21,6 +21,8 @@ namespace ADB_Tool_Automation_Post_FB.Infrastructure.GameDetection
             TemplateId.ResourceSearchPanelAnchor,
             TemplateId.SearchButtonEnabled,
             TemplateId.LevelMinusButton,
+            TemplateId.ResourceTabSelected,
+            TemplateId.ResourceTabUnselected,
             TemplateId.ResourcePopupInfoAnchor,
             TemplateId.ResourcePopupIronTitle,
             TemplateId.GatherButtonEnabled,
@@ -172,12 +174,16 @@ namespace ADB_Tool_Automation_Post_FB.Infrastructure.GameDetection
             GameDetectionEvidence panelAnchor = FindEvidence(evidence, TemplateId.ResourceSearchPanelAnchor);
             GameDetectionEvidence searchButton = FindEvidence(evidence, TemplateId.SearchButtonEnabled);
             GameDetectionEvidence levelMinusButton = FindEvidence(evidence, TemplateId.LevelMinusButton);
+            GameDetectionEvidence resourceTabSelected = FindEvidence(evidence, TemplateId.ResourceTabSelected);
+            GameDetectionEvidence resourceTabUnselected = FindEvidence(evidence, TemplateId.ResourceTabUnselected);
             GameDetectionEvidence popupAnchor = FindEvidence(evidence, TemplateId.ResourcePopupInfoAnchor);
             GameDetectionEvidence popupIron = FindEvidence(evidence, TemplateId.ResourcePopupIronTitle);
             GameDetectionEvidence gatherButton = FindEvidence(evidence, TemplateId.GatherButtonEnabled);
             GameDetectionEvidence worldAnchor = FindEvidence(evidence, TemplateId.WorldMapAnchor);
             GameDetectionEvidence continentTitle = FindEvidence(evidence, TemplateId.ContinentMapTitle);
-            bool panelConfirmed = (panelAnchor.Found || levelMinusButton.Found) && searchButton.Found;
+            bool panelChromeFound = panelAnchor.Found || levelMinusButton.Found
+                || resourceTabSelected.Found || resourceTabUnselected.Found;
+            bool panelConfirmed = panelChromeFound && searchButton.Found;
             int popupSignals = (popupAnchor.Found ? 1 : 0)
                 + (popupIron.Found ? 1 : 0) + (gatherButton.Found ? 1 : 0);
             bool popupConfirmed = popupSignals >= 2 && (popupAnchor.Found || popupIron.Found);
@@ -189,13 +195,19 @@ namespace ADB_Tool_Automation_Post_FB.Infrastructure.GameDetection
 
             panelAnchor.Message += panelConfirmed
                 ? " Rule ResourceSearchPanel satisfied with SearchButtonEnabled."
-                : " Rule ResourceSearchPanel requires SearchButtonEnabled and either ResourceSearchPanelAnchor or LevelMinusButton.";
+                : " Rule ResourceSearchPanel requires SearchButtonEnabled and a stable panel control.";
             searchButton.Message += panelConfirmed
                 ? " Rule ResourceSearchPanel satisfied with a stable panel anchor."
-                : " Rule ResourceSearchPanel requires SearchButtonEnabled and either ResourceSearchPanelAnchor or LevelMinusButton.";
+                : " Rule ResourceSearchPanel requires SearchButtonEnabled and a stable panel control.";
             levelMinusButton.Message += panelConfirmed
                 ? " Rule ResourceSearchPanel accepted LevelMinusButton as a stable fallback anchor."
                 : " LevelMinusButton can provide stable panel evidence when the slider-inclusive anchor changes.";
+            resourceTabSelected.Message += panelConfirmed && resourceTabSelected.Found
+                ? " Selected resource tab provided stable ResourceSearchPanel evidence."
+                : " Selected resource tab was checked as panel evidence.";
+            resourceTabUnselected.Message += panelConfirmed && resourceTabUnselected.Found
+                ? " Unselected resource tab provided stable ResourceSearchPanel evidence."
+                : " Unselected resource tab was checked as panel evidence.";
             popupAnchor.Message += popupConfirmed
                 ? " ResourcePopup selected from at least two popup signals."
                 : " ResourcePopup requires at least two signals and cannot be confirmed by GatherButtonEnabled alone.";
@@ -264,7 +276,11 @@ namespace ADB_Tool_Automation_Post_FB.Infrastructure.GameDetection
             {
                 byte[] template = templateRegistry.LoadBytes(templateId);
                 ImageRegion? searchRegion = IsPopupTemplate(templateId)
-                    ? options.ResourcePopupRegion : (ImageRegion?)null;
+                    ? options.ResourcePopupRegion
+                    : IsSearchPanelTemplate(templateId)
+                        ? new ImageRegion(0, screenshotHeight / 2,
+                            screenshotWidth, screenshotHeight - screenshotHeight / 2)
+                        : (ImageRegion?)null;
                 ImageMatchResult match = imageMatcher.Find(screenshotPng, template, searchRegion);
                 bool usedStableWorldMapAnchor = false;
                 if (templateId == TemplateId.WorldMapAnchor && (match == null || !match.Found))
@@ -305,6 +321,13 @@ namespace ADB_Tool_Automation_Post_FB.Infrastructure.GameDetection
             id == TemplateId.ResourcePopupInfoAnchor
             || id == TemplateId.ResourcePopupIronTitle
             || id == TemplateId.GatherButtonEnabled;
+
+        private static bool IsSearchPanelTemplate(TemplateId id) =>
+            id == TemplateId.ResourceSearchPanelAnchor
+            || id == TemplateId.SearchButtonEnabled
+            || id == TemplateId.LevelMinusButton
+            || id == TemplateId.ResourceTabSelected
+            || id == TemplateId.ResourceTabUnselected;
 
         private static byte[] TryCreateStableWorldMapTemplate(byte[] templateBytes)
         {

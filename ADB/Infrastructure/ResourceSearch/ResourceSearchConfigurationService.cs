@@ -589,7 +589,9 @@ namespace ADB_Tool_Automation_Post_FB.Infrastructure.ResourceSearch
                 && result.Evidence != null
                 && result.Evidence.Any(item =>
                     (item.TemplateId == TemplateId.ResourceSearchPanelAnchor
-                        || item.TemplateId == TemplateId.LevelMinusButton) && item.Found)
+                        || item.TemplateId == TemplateId.LevelMinusButton
+                        || item.TemplateId == TemplateId.ResourceTabSelected
+                        || item.TemplateId == TemplateId.ResourceTabUnselected) && item.Found)
                 && result.Evidence.Any(item => item.TemplateId == TemplateId.SearchButtonEnabled && item.Found);
         }
 
@@ -600,6 +602,8 @@ namespace ADB_Tool_Automation_Post_FB.Infrastructure.ResourceSearch
             foreach (GameDetectionEvidence item in result.Evidence.Where(item =>
                 item.TemplateId == TemplateId.ResourceSearchPanelAnchor
                 || item.TemplateId == TemplateId.LevelMinusButton
+                || item.TemplateId == TemplateId.ResourceTabSelected
+                || item.TemplateId == TemplateId.ResourceTabUnselected
                 || item.TemplateId == TemplateId.SearchButtonEnabled))
                 evidence.Add(Evidence(item.TemplateId, item.MatchResult, item.Message));
             return evidence;

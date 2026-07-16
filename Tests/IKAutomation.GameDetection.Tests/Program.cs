@@ -39,8 +39,10 @@ namespace IKAutomation.GameDetection.Tests
             Run("Empty device name is rejected", EmptyDeviceRejected);
             Run("Cancellation is respected and propagated", CancellationRespected);
             Run("Wrong resolution stops matching", WrongResolutionStopsMatching);
-            Run("Evidence contains all five templates", EvidenceContainsThreeTemplates);
+            Run("Evidence contains all detection templates", EvidenceContainsThreeTemplates);
             Run("Level minus is a stable panel anchor fallback", LevelMinusPanelFallback);
+            Run("Resource tab is a stable panel anchor fallback", ResourceTabPanelFallback);
+            Run("Search panel templates use lower-half ROI", SearchPanelTemplatesUseLowerHalfRoi);
             Run("Unknown screenshot path is correct", UnknownScreenshotPathIsCorrect);
             Run("Unknown screenshot save failure does not crash", UnknownSaveFailureDoesNotCrash);
             Run("Detector never sends input", DetectorNeverSendsInput);
@@ -89,6 +91,34 @@ namespace IKAutomation.GameDetection.Tests
                 TemplateId.SearchButtonEnabled);
             Equal(GameState.ResourceSearchPanel, result.State,
                 "Stable level-minus anchor should verify the open panel.");
+        }
+
+        private static void ResourceTabPanelFallback()
+        {
+            Equal(GameState.ResourceSearchPanel,
+                DetectWithMatches(TemplateId.ResourceTabUnselected, TemplateId.SearchButtonEnabled).State,
+                "Unselected resource tab should verify the monster search panel.");
+            Equal(GameState.ResourceSearchPanel,
+                DetectWithMatches(TemplateId.ResourceTabSelected, TemplateId.SearchButtonEnabled).State,
+                "Selected resource tab should verify the resource search panel.");
+            Equal(GameState.Unknown,
+                DetectWithMatches(TemplateId.ResourceTabUnselected).State,
+                "A resource tab without SearchButtonEnabled must remain ambiguous.");
+        }
+
+        private static void SearchPanelTemplatesUseLowerHalfRoi()
+        {
+            var matcher = new FakeImageMatcher();
+            CreateDetector(new FakeLdPlayerClient(), matcher: matcher)
+                .DetectAsync("IK-1", TestToken).GetAwaiter().GetResult();
+            foreach (TemplateId id in new[] { TemplateId.ResourceSearchPanelAnchor,
+                TemplateId.SearchButtonEnabled, TemplateId.LevelMinusButton,
+                TemplateId.ResourceTabSelected, TemplateId.ResourceTabUnselected })
+            {
+                Assert(matcher.Regions[id].HasValue, id + " did not use a bounded panel ROI.");
+                Equal(360, matcher.Regions[id].Value.Y, id + " ROI Y.");
+                Equal(360, matcher.Regions[id].Value.Height, id + " ROI height.");
+            }
         }
 
         private static void PopupHasPriorityOverWorldMap()
@@ -213,7 +243,7 @@ namespace IKAutomation.GameDetection.Tests
         private static void EvidenceContainsThreeTemplates()
         {
             GameDetectionResult result = DetectWithMatches();
-            Equal(8, result.Evidence.Count, "Detector must check exactly eight templates.");
+            Equal(10, result.Evidence.Count, "Detector must check exactly ten templates.");
             foreach (TemplateId id in RequiredIds())
                 Assert(result.Evidence.Any(item => item.TemplateId == id), "Missing evidence for " + id);
         }
@@ -304,6 +334,7 @@ namespace IKAutomation.GameDetection.Tests
             => new GameDetectionOptions(1280, 720, true, saveUnknown, "Diagnostics/UnknownStates");
         private static TemplateId[] RequiredIds() => new[] { TemplateId.ResourceSearchPanelAnchor,
             TemplateId.SearchButtonEnabled, TemplateId.LevelMinusButton,
+            TemplateId.ResourceTabSelected, TemplateId.ResourceTabUnselected,
             TemplateId.ResourcePopupInfoAnchor, TemplateId.ResourcePopupIronTitle,
             TemplateId.GatherButtonEnabled, TemplateId.ContinentMapTitle, TemplateId.WorldMapAnchor };
         private static string DataRoot() => Path.Combine(AppContext.BaseDirectory, "Data", "InfinityKingdom", "1280x720", "vi");

@@ -26,6 +26,7 @@ namespace IKAutomation.ResourceSearch.Tests
         {
             Run("Navigation failure sends no input", NavigationFailureNoInput);
             Run("Monster panel switches to resource tab", ResourceTabIsSelected);
+            Run("Resource tab evidence verifies open panel", ResourceTabEvidenceVerifiesPanel);
             Run("Selected Iron is not tapped", SelectedIronNoTap);
             Run("Unselected Iron center is tapped", UnselectedIronCenter);
             Run("Iron requires selected verification", IronRequiresVerification);
@@ -75,6 +76,13 @@ namespace IKAutomation.ResourceSearch.Tests
             Assert(r.Success && f.Ui.ResourceTabSelected, r.ErrorMessage);
             Equal(1, f.Client.ResourceTabTaps, "Resource tab tap count.");
             Assert(f.Client.Taps.Contains("210,674"), "Wrong resource tab center.");
+        }
+
+        private static void ResourceTabEvidenceVerifiesPanel()
+        {
+            Fixture f = Setup(); f.Detector.UseResourceTabEvidence = true;
+            ResourceSearchConfigurationResult r = Execute(f);
+            Assert(r.Success, r.ErrorMessage);
         }
 
         private static void SelectedIronNoTap()
@@ -274,6 +282,22 @@ namespace IKAutomation.ResourceSearch.Tests
                 IsSuccessful = true, Evidence = evidence.AsReadOnly() };
         }
 
+        private static GameDetectionResult PanelFromResourceTab()
+        {
+            return new GameDetectionResult
+            {
+                State = GameState.ResourceSearchPanel,
+                IsSuccessful = true,
+                Evidence = new List<GameDetectionEvidence>
+                {
+                    new GameDetectionEvidence { TemplateId = TemplateId.ResourceTabUnselected,
+                        Found = true, MatchResult = ImageMatchResult.FoundAt(158, 648, 104, 52) },
+                    new GameDetectionEvidence { TemplateId = TemplateId.SearchButtonEnabled,
+                        Found = true, MatchResult = ImageMatchResult.FoundAt(933, 549, 185, 70) }
+                }.AsReadOnly()
+            };
+        }
+
         private static void Assert(bool condition, string message) { if (!condition) throw new Exception(message); }
         private static void Equal<T>(T expected, T actual, string message) { if (!EqualityComparer<T>.Default.Equals(expected, actual)) throw new Exception($"{message} Expected={expected}, Actual={actual}"); }
         private static void Throws<T>(Action action) where T : Exception { try { action(); } catch (T) { return; } throw new Exception("Expected " + typeof(T).Name); }
@@ -349,9 +373,10 @@ namespace IKAutomation.ResourceSearch.Tests
 
         private sealed class FakeDetector : IGameStateDetector
         {
-            private int calls; public bool FailOnSecondCall;
+            private int calls; public bool FailOnSecondCall, UseResourceTabEvidence;
             public Task<GameDetectionResult> DetectAsync(string d, CancellationToken t)
-            { calls++; return Task.FromResult(Panel(!(FailOnSecondCall && calls >= 2))); }
+            { calls++; return Task.FromResult(UseResourceTabEvidence
+                ? PanelFromResourceTab() : Panel(!(FailOnSecondCall && calls >= 2))); }
             public GameDetectionResult Detect(byte[] p) => Panel();
         }
 

@@ -28,6 +28,7 @@ namespace IKAutomation.ResourceSearchExecution.Tests
         {
             Run("Configuration failure prevents Search", ConfigurationFailure);
             Run("Search taps fresh button center", SearchCenter);
+            Run("Resource tab fallback allows Search tap", ResourceTabFallbackAllowsSearch);
             Run("Missing Search bounds fails without Tap", MissingSearchBounds);
             Run("Outcome prevents a second Tap", OutcomeStopsTap);
             Run("Retry is bounded", RetryBounded);
@@ -90,6 +91,7 @@ namespace IKAutomation.ResourceSearchExecution.Tests
 
         private static void ConfigurationFailure() { Fixture f=Setup(); f.Configuration.Success=false; var r=Execute(f); Is(r.Outcome==ResourceSearchOutcome.Failed,"outcome"); Eq(0,f.Client.TapCalls,"tap"); }
         private static void SearchCenter() { Fixture f=ToastFixture(); Execute(f); Eq(110,f.Client.LastX,"x"); Eq(220,f.Client.LastY,"y"); }
+        private static void ResourceTabFallbackAllowsSearch() { Fixture f=Setup(windowMs:3); f.Detector.SetStates(PanelFromResourceTab(),World()); var r=Execute(f); Eq(1,r.SearchTapCount,"search tap count"); Eq(1,f.Client.TapCalls,"client tap count"); }
         private static void MissingSearchBounds() { Fixture f=Setup(); f.Matcher.InvalidSearchBounds=true; var r=Execute(f); Is(r.Outcome==ResourceSearchOutcome.Failed,"outcome"); Eq(0,f.Client.TapCalls,"tap"); }
         private static void OutcomeStopsTap() { Fixture f=ToastFixture(); Execute(f); Eq(1,f.Client.TapCalls,"tap"); }
         private static void RetryBounded() { Fixture f=Setup(maxAttempts:2); var r=Execute(f); Is(r.Outcome==ResourceSearchOutcome.Timeout,"outcome"); Eq(2,f.Client.TapCalls,"tap"); }
@@ -159,6 +161,7 @@ namespace IKAutomation.ResourceSearchExecution.Tests
         private static ResourceSearchExecutionResult Execute(Fixture f,ResourceSearchExecutionRequest q=null,CancellationToken? token=null)=>f.Service.ExecuteAsync("LDPlayer",q??Request(),token??Token).GetAwaiter().GetResult();
 
         private static GameDetectionResult Panel()=>State(GameState.ResourceSearchPanel);
+        private static GameDetectionResult PanelFromResourceTab()=>new GameDetectionResult{State=GameState.ResourceSearchPanel,IsSuccessful=true,Evidence=new List<GameDetectionEvidence>{new GameDetectionEvidence{TemplateId=TemplateId.ResourceTabUnselected,Found=true},new GameDetectionEvidence{TemplateId=TemplateId.SearchButtonEnabled,Found=true}}.AsReadOnly()};
         private static GameDetectionResult World()=>State(GameState.WorldMap);
         private static GameDetectionResult Popup()=>State(GameState.ResourcePopup);
         private static ResourcePopupVerificationResult ReadyPopup()=>new ResourcePopupVerificationResult{Outcome=ResourcePopupOutcome.ResourcePopupReady,Success=true,InitialState=GameState.ResourcePopup,FinalState=GameState.ResourcePopup,Evidence=new GameDetectionEvidence[0],Message="ready"};
