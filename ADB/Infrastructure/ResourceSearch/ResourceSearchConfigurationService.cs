@@ -253,8 +253,9 @@ namespace ADB_Tool_Automation_Post_FB.Infrastructure.ResourceSearch
             TemplateId otherId = requestedChecked
                 ? TemplateId.UnoccupiedFilterUnchecked : TemplateId.UnoccupiedFilterChecked;
             byte[] screenshot = await ldPlayerClient.CaptureScreenshotPngAsync(deviceName, cancellationToken);
-            ConfigurationTemplateEvidence desired = Match(screenshot, desiredId);
-            ConfigurationTemplateEvidence other = Match(screenshot, otherId);
+            ConfigurationTemplateEvidence search = Match(screenshot, TemplateId.SearchButtonEnabled);
+            ConfigurationTemplateEvidence desired = MatchFilterState(screenshot, desiredId, search);
+            ConfigurationTemplateEvidence other = MatchFilterState(screenshot, otherId, search);
             var evidence = new List<ConfigurationTemplateEvidence> { desired, other };
             if (desired.Found)
             {
@@ -270,7 +271,8 @@ namespace ADB_Tool_Automation_Post_FB.Infrastructure.ResourceSearch
                 return false;
             }
             await TapAsync(deviceName, other, "SetUnoccupiedFilter", result, cancellationToken);
-            ConfigurationTemplateEvidence verified = await PollForAsync(deviceName, desiredId, cancellationToken);
+            ConfigurationTemplateEvidence verified = await PollForFilterStateAsync(
+                deviceName, desiredId, search, cancellationToken);
             evidence.Add(verified);
             result.FilterVerified = verified.Found;
             AddStep(steps, "SetUnoccupiedFilter", verified.Found, 1, evidence,
@@ -288,14 +290,15 @@ namespace ADB_Tool_Automation_Post_FB.Infrastructure.ResourceSearch
             byte[] screenshot = await ldPlayerClient.CaptureScreenshotPngAsync(deviceName, cancellationToken);
             ConfigurationTemplateEvidence minus = Match(screenshot, TemplateId.LevelMinusButton);
             ConfigurationTemplateEvidence plus = Match(screenshot, TemplateId.LevelPlusButton);
+            ConfigurationTemplateEvidence search = Match(screenshot, TemplateId.SearchButtonEnabled);
             var evidence = new List<ConfigurationTemplateEvidence>
             {
                 Match(screenshot, TemplateId.ResourceTabSelected),
                 Match(screenshot, TemplateId.ResourceIronSelected),
                 MatchLevel7(screenshot, minus, plus),
-                Match(screenshot, request.UnoccupiedOnly
-                    ? TemplateId.UnoccupiedFilterChecked : TemplateId.UnoccupiedFilterUnchecked),
-                Match(screenshot, TemplateId.SearchButtonEnabled)
+                MatchFilterState(screenshot, request.UnoccupiedOnly
+                    ? TemplateId.UnoccupiedFilterChecked : TemplateId.UnoccupiedFilterUnchecked, search),
+                search
             };
             bool success = IsVerifiedPanel(state) && evidence.All(item => item.Found);
             result.ResourceVerified = evidence[1].Found;
@@ -336,6 +339,24 @@ namespace ADB_Tool_Automation_Post_FB.Infrastructure.ResourceSearch
                 byte[] screenshot = await ldPlayerClient.CaptureScreenshotPngAsync(
                     deviceName, cancellationToken);
                 last = MatchLevel7(screenshot, minus, plus);
+                if (last.Found) return last;
+                await Task.Delay(options.StatePollIntervalMs, cancellationToken);
+            }
+            return last;
+        }
+
+        private async Task<ConfigurationTemplateEvidence> PollForFilterStateAsync(string deviceName,
+            TemplateId templateId, ConfigurationTemplateEvidence search,
+            CancellationToken cancellationToken)
+        {
+            var watch = Stopwatch.StartNew();
+            ConfigurationTemplateEvidence last = Evidence(templateId, null, "Not checked.");
+            while (watch.Elapsed < TimeSpan.FromSeconds(options.ActionVerificationTimeoutSeconds))
+            {
+                cancellationToken.ThrowIfCancellationRequested();
+                byte[] screenshot = await ldPlayerClient.CaptureScreenshotPngAsync(
+                    deviceName, cancellationToken);
+                last = MatchFilterState(screenshot, templateId, search);
                 if (last.Found) return last;
                 await Task.Delay(options.StatePollIntervalMs, cancellationToken);
             }
@@ -387,6 +408,51 @@ namespace ADB_Tool_Automation_Post_FB.Infrastructure.ResourceSearch
 
                     using (Bitmap stable = source.Clone(
                         new Rectangle(left, 0, width, source.Height), PixelFormat.Format32bppArgb))
+                    using (var output = new MemoryStream())
+                    {
+                        stable.Save(output, ImageFormat.Png);
+                        return output.ToArray();
+                    }
+                }
+            }
+            catch (ArgumentException)
+            {
+                return null;
+            }
+        }
+
+        private ConfigurationTemplateEvidence MatchFilterState(byte[] screenshot,
+            TemplateId templateId, ConfigurationTemplateEvidence search)
+        {
+            ConfigurationTemplateEvidence direct = Match(screenshot, templateId);
+            if (direct.Found || !HasBounds(search)) return direct;
+
+            ImageRegion region = new ImageRegion(
+                Math.Max(0, search.X - 40), Math.Max(0, search.Y - 110),
+                search.Width + 80, 110);
+            byte[] sourceTemplate = templateRegistry.LoadBytes(templateId);
+            byte[] stableTemplate = TryCreateStableFilterTemplate(sourceTemplate) ?? sourceTemplate;
+            ImageMatchResult match = imageMatcher.Find(screenshot, stableTemplate, region);
+            return Evidence(templateId, match, match != null && match.Found
+                ? $"Template '{templateId}' matched by its stable control center inside the Search-relative region."
+                : $"Template '{templateId}' did not match directly or by its stable control center.");
+        }
+
+        private static byte[] TryCreateStableFilterTemplate(byte[] templateBytes)
+        {
+            try
+            {
+                using (var input = new MemoryStream(templateBytes, writable: false))
+                using (var source = new Bitmap(input))
+                {
+                    int marginX = source.Width / 5;
+                    int marginY = source.Height / 5;
+                    int width = source.Width - marginX * 2;
+                    int height = source.Height - marginY * 2;
+                    if (width <= 0 || height <= 0) return null;
+
+                    using (Bitmap stable = source.Clone(
+                        new Rectangle(marginX, marginY, width, height), PixelFormat.Format32bppArgb))
                     using (var output = new MemoryStream())
                     {
                         stable.Save(output, ImageFormat.Png);
