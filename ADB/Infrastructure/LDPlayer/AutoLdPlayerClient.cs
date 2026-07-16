@@ -40,7 +40,17 @@ namespace ADB_Tool_Automation_Post_FB.Infrastructure.LDPlayer
                     expandedPath);
             }
 
+            string ldPlayerDirectory = Path.GetDirectoryName(resolvedPath);
+            string adbPath = Path.Combine(ldPlayerDirectory, "adb.exe");
+            if (!File.Exists(adbPath))
+            {
+                throw new FileNotFoundException(
+                    $"LDPlayer ADB was not found beside '{resolvedPath}'.",
+                    adbPath);
+            }
+
             Auto_LDPlayer.LDPlayer.PathLD = resolvedPath;
+            KAutoHelper.ADBHelper.SetADBFolderPath(ldPlayerDirectory);
             return resolvedPath;
         }
 
