@@ -23,7 +23,7 @@ namespace IKAutomation.GameDetection.Tests
 
         private static int Main()
         {
-            Run("ResourceSearchPanel requires both signals", PanelRequiresBothSignals);
+            Run("ResourceSearchPanel uses stable search button", PanelUsesStableSearchButton);
             Run("ResourceSearchPanel has priority over WorldMap", PanelHasPriority);
             Run("WorldMap from WorldMapAnchor only", WorldMapFromAnchor);
             Run("ContinentMap from ContinentMapTitle", ContinentMapFromTitle);
@@ -50,16 +50,20 @@ namespace IKAutomation.GameDetection.Tests
             catch (Exception exception) { failed++; Console.Error.WriteLine($"FAIL: {name} - {exception}"); }
         }
 
-        private static void PanelRequiresBothSignals()
+        private static void PanelUsesStableSearchButton()
         {
             GameDetectionResult result = DetectWithMatches(
                 TemplateId.ResourceSearchPanelAnchor,
                 TemplateId.SearchButtonEnabled);
-            Equal(GameState.ResourceSearchPanel, result.State, "Both panel signals should confirm panel.");
+            Equal(GameState.ResourceSearchPanel, result.State, "Both panel signals should confirm the panel.");
+            Equal(
+                GameState.ResourceSearchPanel,
+                DetectWithMatches(TemplateId.SearchButtonEnabled).State,
+                "The stable Search button should confirm the panel when the selected tab changes.");
             Equal(
                 GameState.Unknown,
                 DetectWithMatches(TemplateId.ResourceSearchPanelAnchor).State,
-                "Panel anchor alone must not confirm the panel.");
+                "The variable panel layout alone must not confirm the panel.");
         }
 
         private static void PanelHasPriority()

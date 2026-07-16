@@ -167,7 +167,10 @@ namespace ADB_Tool_Automation_Post_FB.Infrastructure.GameDetection
             GameDetectionEvidence searchButton = FindEvidence(evidence, TemplateId.SearchButtonEnabled);
             GameDetectionEvidence worldAnchor = FindEvidence(evidence, TemplateId.WorldMapAnchor);
             GameDetectionEvidence continentTitle = FindEvidence(evidence, TemplateId.ContinentMapTitle);
-            bool panelConfirmed = panelAnchor.Found && searchButton.Found;
+            // The selected resource category changes the colors and icons in the tab stack,
+            // so the full panel anchor is supporting evidence only. The enabled Search button
+            // is the stable, panel-specific signal across resource and enemy search categories.
+            bool panelConfirmed = searchButton.Found;
             GameState state = panelConfirmed
                 ? GameState.ResourceSearchPanel
                 : continentTitle.Found
@@ -175,11 +178,13 @@ namespace ADB_Tool_Automation_Post_FB.Infrastructure.GameDetection
                     : worldAnchor.Found ? GameState.WorldMap : GameState.Unknown;
 
             panelAnchor.Message += panelConfirmed
-                ? " Rule ResourceSearchPanel satisfied with SearchButtonEnabled."
-                : " Rule ResourceSearchPanel not satisfied without both required signals.";
+                ? panelAnchor.Found
+                    ? " Supporting panel-layout evidence matched."
+                    : " Panel layout varies with the selected search category; this evidence is optional."
+                : " Rule ResourceSearchPanel was not evaluated as matched without SearchButtonEnabled.";
             searchButton.Message += panelConfirmed
-                ? " Rule ResourceSearchPanel satisfied with ResourceSearchPanelAnchor."
-                : " Rule ResourceSearchPanel not satisfied without both required signals.";
+                ? " Rule ResourceSearchPanel satisfied by the stable enabled Search button."
+                : " Rule ResourceSearchPanel requires SearchButtonEnabled.";
             worldAnchor.Message += state == GameState.WorldMap
                 ? " Rule WorldMap selected because ResourceSearchPanel was not confirmed."
                 : panelConfirmed

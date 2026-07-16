@@ -24,6 +24,7 @@ namespace IKAutomation.Navigation.Tests
             Run("Unknown fails without input", UnknownNoInput);
             Run("Already-open panel succeeds without Tap", AlreadyPanel);
             Run("Open panel taps exact evidence center", TapEvidenceCenter);
+            Run("Transient Unknown frame is tolerated", TransientUnknownIsTolerated);
             Run("Tap success requires verified panel", TapRequiresVerification);
             Run("Timeout returns failure", TimeoutFailure);
             Run("Retry never exceeds configured maximum", RetryBounded);
@@ -46,6 +47,7 @@ namespace IKAutomation.Navigation.Tests
         private static void UnknownNoInput() { var f=Setup(State(GameState.Unknown)); var r=f.Service.EnsureWorldMapAsync("d",Token).GetAwaiter().GetResult(); Assert(!r.Success,"Unexpected success."); Equal(0,f.Client.TotalInput,"Blind input."); }
         private static void AlreadyPanel() { var f=Setup(State(GameState.ResourceSearchPanel)); var r=f.Service.OpenResourceSearchPanelAsync("d",Token).GetAwaiter().GetResult(); Assert(r.Success,"Failed."); Equal(0,f.Client.TapCalls,"Extra Tap."); }
         private static void TapEvidenceCenter() { var f=Setup(State(GameState.WorldMap, true), State(GameState.ResourceSearchPanel)); var r=f.Service.OpenResourceSearchPanelAsync("d",Token).GetAwaiter().GetResult(); Assert(r.Success,"Failed."); Equal(25,f.Client.LastX,"Tap X."); Equal(40,f.Client.LastY,"Tap Y."); }
+        private static void TransientUnknownIsTolerated() { var f=Setup(State(GameState.WorldMap,true),State(GameState.Unknown),State(GameState.ResourceSearchPanel)); var r=f.Service.OpenResourceSearchPanelAsync("d",Token).GetAwaiter().GetResult(); Assert(r.Success,"Transient Unknown should not fail verification."); Equal(1,f.Client.TapCalls,"Unexpected additional Tap."); }
         private static void TapRequiresVerification() { var f=Setup(State(GameState.WorldMap,true), State(GameState.Unknown)); var r=f.Service.OpenResourceSearchPanelAsync("d",Token).GetAwaiter().GetResult(); Assert(!r.Success,"Tap alone counted as success."); }
         private static void TimeoutFailure() { var f=SetupWithOptions(new WorldMapNavigationOptions(250,1,1), State(GameState.WorldMap,true)); var r=f.Service.OpenResourceSearchPanelAsync("d",Token).GetAwaiter().GetResult(); Assert(!r.Success,"Timeout should fail."); Equal(1,f.Client.TapCalls,"Tap count."); }
         private static void RetryBounded() { var states=new List<GameDetectionResult>{State(GameState.WorldMap,true)}; for(int i=0;i<8;i++)states.Add(State(GameState.WorldMap,true)); var f=SetupWithOptions(new WorldMapNavigationOptions(250,1,2),states.ToArray()); var r=f.Service.OpenResourceSearchPanelAsync("d",Token).GetAwaiter().GetResult(); Assert(!r.Success,"Expected failure."); Equal(2,f.Client.TapCalls,"Exceeded retry max."); }

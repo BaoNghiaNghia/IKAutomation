@@ -92,7 +92,7 @@ namespace ADB_Tool_Automation_Post_FB.Infrastructure.Navigation
 
             await ldPlayerClient.BackAsync(deviceName, cancellationToken);
             AddTransition(transitions, "Back", "Sent one Back command to return to WorldMap.");
-            GameDetectionResult final = await PollAsync(deviceName, GameState.WorldMap, false, transitions, cancellationToken);
+            GameDetectionResult final = await PollAsync(deviceName, GameState.WorldMap, transitions, cancellationToken);
             return final.IsSuccessful && final.State == GameState.WorldMap
                 ? Result(true, initial, final, 1, watch, "WorldMap verified after Back.", null, transitions)
                 : Result(false, initial, final, 1, watch, "Back did not reach WorldMap before timeout.", final.ErrorMessage, transitions);
@@ -125,7 +125,7 @@ namespace ADB_Tool_Automation_Post_FB.Infrastructure.Navigation
                 int y = anchor.MatchResult.CenterY;
                 await ldPlayerClient.TapAsync(deviceName, x, y, cancellationToken);
                 AddTransition(transitions, "Tap", $"Attempt {attempt}: tapped WorldMapAnchor center ({x},{y}).");
-                current = await PollAsync(deviceName, GameState.ResourceSearchPanel, true, transitions, cancellationToken);
+                current = await PollAsync(deviceName, GameState.ResourceSearchPanel, transitions, cancellationToken);
                 if (current.IsSuccessful && current.State == GameState.ResourceSearchPanel)
                     return Result(true, initial, current, attempt, watch, "ResourceSearchPanel verified after Tap.", null, transitions);
                 if (!current.IsSuccessful || current.State != GameState.WorldMap)
@@ -136,7 +136,7 @@ namespace ADB_Tool_Automation_Post_FB.Infrastructure.Navigation
                 "Maximum open-search attempts reached without verification.", current.ErrorMessage, transitions);
         }
 
-        private async Task<GameDetectionResult> PollAsync(string deviceName, GameState target, bool stopOnUnknown,
+        private async Task<GameDetectionResult> PollAsync(string deviceName, GameState target,
             IList<NavigationTransition> transitions, CancellationToken cancellationToken)
         {
             var watch = Stopwatch.StartNew();
@@ -146,7 +146,9 @@ namespace ADB_Tool_Automation_Post_FB.Infrastructure.Navigation
                 await Task.Delay(options.StatePollIntervalMs, cancellationToken);
                 AddTransition(transitions, "Wait", $"Waited {options.StatePollIntervalMs} ms before verification.");
                 last = await DetectAsync(deviceName, transitions, cancellationToken);
-                if (!last.IsSuccessful || last.State == target || (stopOnUnknown && last.State == GameState.Unknown)) return last;
+                // Unknown can be a transient render frame after navigation. Waiting is safe
+                // because polling sends no additional input; only a verified target succeeds.
+                if (!last.IsSuccessful || last.State == target) return last;
             }
             return last ?? await DetectAsync(deviceName, transitions, cancellationToken);
         }
