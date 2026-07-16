@@ -19,13 +19,15 @@ namespace ADB_Tool_Automation_Post_FB.UI
         private readonly IGameStateDetector gameStateDetector;
         private readonly IWorldMapNavigationService navigationService;
         private readonly IResourceSearchConfigurationService resourceSearchConfigurationService;
+        private readonly IResourceSearchExecutionService resourceSearchExecutionService;
         private readonly CancellationTokenSource lifetimeCancellation = new CancellationTokenSource();
 
         public DeviceDiagnosticWindow(
             IDeviceDiagnosticService diagnosticService,
             IGameStateDetector gameStateDetector,
             IWorldMapNavigationService navigationService,
-            IResourceSearchConfigurationService resourceSearchConfigurationService)
+            IResourceSearchConfigurationService resourceSearchConfigurationService,
+            IResourceSearchExecutionService resourceSearchExecutionService)
         {
             this.diagnosticService = diagnosticService
                 ?? throw new ArgumentNullException(nameof(diagnosticService));
@@ -35,6 +37,8 @@ namespace ADB_Tool_Automation_Post_FB.UI
                 ?? throw new ArgumentNullException(nameof(navigationService));
             this.resourceSearchConfigurationService = resourceSearchConfigurationService
                 ?? throw new ArgumentNullException(nameof(resourceSearchConfigurationService));
+            this.resourceSearchExecutionService = resourceSearchExecutionService
+                ?? throw new ArgumentNullException(nameof(resourceSearchExecutionService));
 
             InitializeComponent();
             PackageNameTextBox.Text = string.IsNullOrWhiteSpace(diagnosticService.Configuration.PackageName)
@@ -136,6 +140,24 @@ namespace ADB_Tool_Automation_Post_FB.UI
                         ResourceType = ResourceType.Iron,
                         TargetLevel = 7,
                         UnoccupiedOnly = true
+                    },
+                    cancellationToken)));
+        }
+
+        private async void ExecuteSearch_Click(object sender, RoutedEventArgs e)
+        {
+            await RunOperationAsync(async cancellationToken => FormatExecutionResult(
+                await resourceSearchExecutionService.ExecuteAsync(
+                    GetSelectedDeviceName(),
+                    new ResourceSearchExecutionRequest
+                    {
+                        ConfigureBeforeSearch = true,
+                        Configuration = new ResourceSearchConfigurationRequest
+                        {
+                            ResourceType = ResourceType.Iron,
+                            TargetLevel = 7,
+                            UnoccupiedOnly = true
+                        }
                     },
                     cancellationToken)));
         }
@@ -277,6 +299,22 @@ namespace ADB_Tool_Automation_Post_FB.UI
                 + $"Tap count: {result.TapCount}{Environment.NewLine}Duration: {result.Duration.TotalMilliseconds:F0} ms{Environment.NewLine}"
                 + $"Message: {result.Message}{Environment.NewLine}Error: {result.ErrorMessage ?? string.Empty}{Environment.NewLine}"
                 + $"Steps:{Environment.NewLine}{steps}";
+        }
+
+        private static string FormatExecutionResult(ResourceSearchExecutionResult result)
+        {
+            string observations = string.Join(Environment.NewLine, result.Observations.Select((item, index) =>
+                $"- #{index + 1} {item.State}: toast={item.ToastAnchorFound}/{item.ToastActionAnchorFound}, "
+                + $"panel={item.SearchPanelConfirmed}, diff={item.FrameDifference?.ToString("F4") ?? "n/a"}, "
+                + $"stable={item.IsStable}; {item.Message}"));
+            return $"Outcome: {result.Outcome}{Environment.NewLine}Success: {result.Success}{Environment.NewLine}"
+                + $"Initial: {result.InitialState}{Environment.NewLine}Final: {result.FinalState}{Environment.NewLine}"
+                + $"Search taps: {result.SearchTapCount}{Environment.NewLine}Panel closed: {result.PanelClosed}{Environment.NewLine}"
+                + $"Camera movement: {result.CameraMovementObserved}{Environment.NewLine}Camera stable: {result.CameraStabilityVerified}{Environment.NewLine}"
+                + $"Not found observed: {result.NotFoundObserved}{Environment.NewLine}Toast verified: {result.NotFoundToastVerified}{Environment.NewLine}"
+                + $"Observed frames: {result.ObservedFrameCount}{Environment.NewLine}Duration: {result.Duration.TotalMilliseconds:F0} ms{Environment.NewLine}"
+                + $"Diagnostic: {result.DiagnosticScreenshotPath ?? string.Empty}{Environment.NewLine}Message: {result.Message}{Environment.NewLine}"
+                + $"Error: {result.ErrorMessage ?? string.Empty}{Environment.NewLine}Observations:{Environment.NewLine}{observations}";
         }
 
 

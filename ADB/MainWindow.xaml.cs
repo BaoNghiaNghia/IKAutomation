@@ -203,7 +203,8 @@ namespace ADB_Tool_Automation_Post_FB
                 DeviceDiagnosticServiceFactory.CreateFromAppConfig(),
                 GameStateDetectorFactory.CreateFromAppConfig(),
                 WorldMapNavigationServiceFactory.CreateFromAppConfig(),
-                ResourceSearchConfigurationServiceFactory.CreateFromAppConfig())
+                ResourceSearchConfigurationServiceFactory.CreateFromAppConfig(),
+                ResourceSearchExecutionServiceFactory.CreateFromAppConfig())
             {
                 Owner = this
             };

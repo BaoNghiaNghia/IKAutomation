@@ -1,0 +1,21 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <OutputType>Exe</OutputType>
+    <TargetFramework>net481</TargetFramework>
+    <AssemblyName>IKAutomation.ResourceSearchExecution.Tests</AssemblyName>
+  </PropertyGroup>
+  <ItemGroup>
+    <Compile Include="..\..\ADB\Core\Abstractions\ILdPlayerClient.cs" Link="Production\ILdPlayerClient.cs" />
+    <Compile Include="..\..\ADB\Core\Concurrency\*.cs" Link="Production\Concurrency\%(Filename)%(Extension)" />
+    <Compile Include="..\..\ADB\Core\Diagnostics\IDiagnosticLogger.cs" Link="Production\IDiagnosticLogger.cs" />
+    <Compile Include="..\..\ADB\Core\GameDetection\*.cs" Link="Production\GameDetection\%(Filename)%(Extension)" />
+    <Compile Include="..\..\ADB\Core\ResourceSearch\*.cs" Link="Production\ResourceSearch\%(Filename)%(Extension)" />
+    <Compile Include="..\..\ADB\Core\Vision\*.cs" Link="Production\Vision\%(Filename)%(Extension)" />
+    <Compile Include="..\..\ADB\Infrastructure\Concurrency\DeviceOperationLock.cs" Link="Production\DeviceOperationLock.cs" />
+    <Compile Include="..\..\ADB\Infrastructure\Diagnostics\ScreenshotPathPolicy.cs" Link="Production\ScreenshotPathPolicy.cs" />
+    <Compile Include="..\..\ADB\Infrastructure\ResourceSearch\ResourceSearchDiagnosticStore.cs" Link="Production\ResourceSearchDiagnosticStore.cs" />
+    <Compile Include="..\..\ADB\Infrastructure\ResourceSearch\ResourceSearchExecutionService.cs" Link="Production\ResourceSearchExecutionService.cs" />
+    <Compile Include="..\..\ADB\Infrastructure\Vision\FrameStabilityDetector.cs" Link="Production\FrameStabilityDetector.cs" />
+  </ItemGroup>
+  <ItemGroup><Reference Include="System.Drawing" /></ItemGroup>
+</Project>

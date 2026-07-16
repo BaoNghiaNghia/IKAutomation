@@ -18,6 +18,8 @@ namespace ADB_Tool_Automation_Post_FB.Core.Vision
         CheckboxChecked,
         CheckboxUnchecked,
         ResourceNotFoundToast,
+        ResourceNotFoundToastAnchor,
+        ResourceNotFoundToastActionAnchor,
         ResourcePopup,
         GatherButton,
         TeamPanel,

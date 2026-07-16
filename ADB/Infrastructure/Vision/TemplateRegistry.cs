@@ -28,6 +28,8 @@ namespace ADB_Tool_Automation_Post_FB.Infrastructure.Vision
                 { TemplateId.CheckboxChecked, Define(TemplateId.CheckboxChecked, "Search/checkbox_checked.png") },
                 { TemplateId.CheckboxUnchecked, Define(TemplateId.CheckboxUnchecked, "Search/checkbox_unchecked.png") },
                 { TemplateId.ResourceNotFoundToast, Define(TemplateId.ResourceNotFoundToast, "Errors/resource_not_found_toast.png") },
+                { TemplateId.ResourceNotFoundToastAnchor, Define(TemplateId.ResourceNotFoundToastAnchor, "Search/resource_not_found_toast_anchor.png") },
+                { TemplateId.ResourceNotFoundToastActionAnchor, Define(TemplateId.ResourceNotFoundToastActionAnchor, "Search/resource_not_found_toast_action_anchor.png") },
                 { TemplateId.ResourcePopup, Define(TemplateId.ResourcePopup, "Resources/resource_popup.png") },
                 { TemplateId.GatherButton, Define(TemplateId.GatherButton, "Resources/gather_button.png") },
                 { TemplateId.TeamPanel, Define(TemplateId.TeamPanel, "Teams/team_panel.png") },
