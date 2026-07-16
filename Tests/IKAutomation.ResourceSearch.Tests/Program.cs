@@ -1,0 +1,347 @@
+using ADB_Tool_Automation_Post_FB.Core.Abstractions;
+using ADB_Tool_Automation_Post_FB.Core.Concurrency;
+using ADB_Tool_Automation_Post_FB.Core.Diagnostics;
+using ADB_Tool_Automation_Post_FB.Core.GameDetection;
+using ADB_Tool_Automation_Post_FB.Core.Navigation;
+using ADB_Tool_Automation_Post_FB.Core.ResourceSearch;
+using ADB_Tool_Automation_Post_FB.Core.Vision;
+using ADB_Tool_Automation_Post_FB.Infrastructure.Concurrency;
+using ADB_Tool_Automation_Post_FB.Infrastructure.ResourceSearch;
+using System;
+using System.Collections.Generic;
+using System.IO;
+using System.Linq;
+using System.Threading;
+using System.Threading.Tasks;
+
+namespace IKAutomation.ResourceSearch.Tests
+{
+    internal static class Program
+    {
+        private static readonly CancellationToken Token = new CancellationToken(false);
+        private static int passed;
+        private static int failed;
+
+        private static int Main()
+        {
+            Run("Navigation failure sends no input", NavigationFailureNoInput);
+            Run("Selected Iron is not tapped", SelectedIronNoTap);
+            Run("Unselected Iron center is tapped", UnselectedIronCenter);
+            Run("Iron requires selected verification", IronRequiresVerification);
+            Run("Missing Iron bounds prevents fallback", MissingIronBounds);
+            Run("Level reset taps minus eight times", MinusEight);
+            Run("Level seven taps plus six times", PlusSix);
+            Run("Level requires LevelValue7 verification", LevelRequiresVerification);
+            Run("Out-of-range level rejected before input", InvalidLevelNoInput);
+            Run("Checked filter is not tapped", CheckedFilterNoTap);
+            Run("Unchecked filter is tapped and verified", UncheckedFilterToggled);
+            Run("UnoccupiedOnly false is supported", FalseFilterSupported);
+            Run("Final success requires all evidence", FinalEvidenceRequired);
+            Run("Search button is never tapped", SearchNeverTapped);
+            Run("Polling timeout returns failure", TimeoutFailure);
+            Run("Polling cancellation is respected", PollCancellation);
+            Run("Level sequence cancellation is respected", LevelCancellation);
+            Run("Same-device workflows are serialized", SameDeviceSerialized);
+            Run("Different devices are not globally locked", DifferentDevicesParallel);
+            Run("Prohibited input methods are not called", NoProhibitedInput);
+            Run("Missing template fails without input", MissingTemplateNoInput);
+            Run("Null request is rejected before input", NullRequestNoInput);
+            Run("Ambiguous resource evidence prefers selected", AmbiguousPrefersSelected);
+            Console.WriteLine($"Resource search tests: {passed} passed, {failed} failed.");
+            return failed == 0 ? 0 : 1;
+        }
+
+        private static void Run(string name, Action test)
+        {
+            try { test(); passed++; Console.WriteLine("PASS: " + name); }
+            catch (Exception exception) { failed++; Console.Error.WriteLine("FAIL: " + name + " - " + exception); }
+        }
+
+        private static void NavigationFailureNoInput()
+        {
+            Fixture f = Setup(); f.Navigation.Success = false;
+            ResourceSearchConfigurationResult r = Execute(f);
+            Assert(!r.Success, "Expected failure."); Equal(0, f.Client.TotalInput, "Input sent.");
+        }
+
+        private static void SelectedIronNoTap()
+        {
+            Fixture f = Setup(); f.Ui.ResourceSelected = true; f.Ui.FilterChecked = true;
+            ResourceSearchConfigurationResult r = Execute(f);
+            Assert(r.Success, r.ErrorMessage); Equal(0, f.Client.ResourceTaps, "Resource tapped.");
+        }
+
+        private static void UnselectedIronCenter()
+        {
+            Fixture f = Setup(); Execute(f);
+            Equal(1, f.Client.ResourceTaps, "Resource tap count.");
+            Assert(f.Client.Taps.Contains("20,25"), "Wrong resource center.");
+        }
+
+        private static void IronRequiresVerification()
+        {
+            Fixture f = Setup(); f.Ui.IgnoreResourceTap = true;
+            ResourceSearchConfigurationResult r = Execute(f);
+            Assert(!r.Success && !r.ResourceVerified, "Resource falsely verified.");
+        }
+
+        private static void MissingIronBounds()
+        {
+            Fixture f = Setup(); f.Ui.InvalidResourceBounds = true;
+            ResourceSearchConfigurationResult r = Execute(f);
+            Assert(!r.Success, "Unexpected success."); Equal(0, f.Client.TotalInput, "Fallback input sent.");
+        }
+
+        private static void MinusEight() { Fixture f = Setup(); Execute(f); Equal(8, f.Client.MinusTaps, "Minus taps."); }
+        private static void PlusSix() { Fixture f = Setup(); Execute(f); Equal(6, f.Client.PlusTaps, "Plus taps."); }
+
+        private static void LevelRequiresVerification()
+        {
+            Fixture f = Setup(); f.Ui.HideLevelValue = true;
+            ResourceSearchConfigurationResult r = Execute(f);
+            Assert(!r.Success && !r.LevelVerified, "Level falsely verified.");
+        }
+
+        private static void InvalidLevelNoInput()
+        {
+            Fixture f = Setup(); ResourceSearchConfigurationRequest request = Request(); request.TargetLevel = 8;
+            ResourceSearchConfigurationResult r = Execute(f, request);
+            Assert(!r.Success, "Unexpected success."); Equal(0, f.Client.TotalInput, "Input sent."); Equal(0, f.Navigation.Calls, "Navigation called.");
+        }
+
+        private static void CheckedFilterNoTap()
+        {
+            Fixture f = Setup(); f.Ui.FilterChecked = true; Execute(f);
+            Equal(0, f.Client.FilterTaps, "Filter tapped.");
+        }
+
+        private static void UncheckedFilterToggled()
+        {
+            Fixture f = Setup(); ResourceSearchConfigurationResult r = Execute(f);
+            Assert(r.Success && r.FilterVerified, r.ErrorMessage); Equal(1, f.Client.FilterTaps, "Filter taps.");
+        }
+
+        private static void FalseFilterSupported()
+        {
+            Fixture f = Setup(); f.Ui.FilterChecked = true; ResourceSearchConfigurationRequest request = Request(); request.UnoccupiedOnly = false;
+            ResourceSearchConfigurationResult r = Execute(f, request);
+            Assert(r.Success && !f.Ui.FilterChecked, r.ErrorMessage); Equal(1, f.Client.FilterTaps, "Filter taps.");
+        }
+
+        private static void FinalEvidenceRequired()
+        {
+            Fixture f = Setup(); f.Detector.FailOnSecondCall = true;
+            ResourceSearchConfigurationResult r = Execute(f);
+            Assert(!r.Success, "Final state evidence was ignored.");
+        }
+
+        private static void SearchNeverTapped()
+        {
+            Fixture f = Setup(); Execute(f); Equal(0, f.Client.SearchTaps, "Search was tapped.");
+        }
+
+        private static void TimeoutFailure()
+        {
+            Fixture f = Setup(10, 1); f.Ui.IgnoreResourceTap = true;
+            ResourceSearchConfigurationResult r = Execute(f);
+            Assert(!r.Success, "Timeout should fail.");
+        }
+
+        private static void PollCancellation()
+        {
+            Fixture f = Setup(10, 2); f.Ui.IgnoreResourceTap = true;
+            using (var source = new CancellationTokenSource(40))
+                Throws<OperationCanceledException>(() => Execute(f, Request(), source.Token));
+        }
+
+        private static void LevelCancellation()
+        {
+            Fixture f = Setup(10, 2, 30); f.Ui.ResourceSelected = true;
+            using (var source = new CancellationTokenSource(70))
+                Throws<OperationCanceledException>(() => Execute(f, Request(), source.Token));
+            Assert(f.Client.MinusTaps < 8, "Level sequence ignored cancellation.");
+        }
+
+        private static void SameDeviceSerialized()
+        {
+            Fixture f = Setup(); f.Navigation.DelayMs = 80;
+            Task<ResourceSearchConfigurationResult> a = f.Service.ConfigureAsync("same", Request(), Token);
+            Task<ResourceSearchConfigurationResult> b = f.Service.ConfigureAsync("same", Request(), Token);
+            Task.WaitAll(a, b); Equal(1, f.Navigation.MaxActive, "Same device overlapped.");
+        }
+
+        private static void DifferentDevicesParallel()
+        {
+            Fixture f = Setup(); f.Navigation.DelayMs = 80;
+            Task.WaitAll(f.Service.ConfigureAsync("a", Request(), Token), f.Service.ConfigureAsync("b", Request(), Token));
+            Assert(f.Navigation.MaxActive >= 2, "Different devices globally blocked.");
+        }
+
+        private static void NoProhibitedInput()
+        {
+            Fixture f = Setup(); Execute(f); Equal(0, f.Client.ProhibitedCalls, "Prohibited input called.");
+        }
+
+        private static void MissingTemplateNoInput()
+        {
+            Fixture f = Setup(); f.Registry.Missing = TemplateId.LevelPlusButton;
+            ResourceSearchConfigurationResult r = Execute(f);
+            Assert(!r.Success && r.ErrorMessage.Contains("LevelPlusButton"), "Missing template not reported.");
+            Equal(0, f.Client.TotalInput, "Input sent."); Equal(0, f.Navigation.Calls, "Navigation called.");
+        }
+
+        private static void NullRequestNoInput()
+        {
+            Fixture f = Setup(); ResourceSearchConfigurationResult r =
+                f.Service.ConfigureAsync("LDPlayer", null, Token).GetAwaiter().GetResult();
+            Assert(!r.Success, "Null request accepted."); Equal(0, f.Client.TotalInput, "Input sent.");
+        }
+
+        private static void AmbiguousPrefersSelected()
+        {
+            Fixture f = Setup(); f.Ui.ResourceSelected = true; f.Ui.AmbiguousResource = true; f.Ui.FilterChecked = true;
+            ResourceSearchConfigurationResult r = Execute(f);
+            Assert(r.Success, r.ErrorMessage); Equal(0, f.Client.ResourceTaps, "Ambiguous selected state was tapped.");
+        }
+
+        private static Fixture Setup(int pollMs = 1, int timeoutSeconds = 1, int tapIntervalMs = 1)
+        {
+            var ui = new FakeUi();
+            var client = new FakeClient(ui);
+            var navigation = new FakeNavigation();
+            var detector = new FakeDetector();
+            var registry = new FakeRegistry();
+            var service = new ResourceSearchConfigurationService(navigation, detector, client,
+                registry, new FakeMatcher(ui),
+                new ResourceSearchConfigurationOptions(pollMs, timeoutSeconds, 2, 1, 7, 8, tapIntervalMs),
+                new DeviceOperationLock(), new FakeLogger());
+            return new Fixture { Ui = ui, Client = client, Navigation = navigation,
+                Detector = detector, Registry = registry, Service = service };
+        }
+
+        private static ResourceSearchConfigurationRequest Request() => new ResourceSearchConfigurationRequest
+        { ResourceType = ResourceType.Iron, TargetLevel = 7, UnoccupiedOnly = true };
+
+        private static ResourceSearchConfigurationResult Execute(Fixture fixture,
+            ResourceSearchConfigurationRequest request = null, CancellationToken? token = null) =>
+            fixture.Service.ConfigureAsync("LDPlayer", request ?? Request(), token ?? Token).GetAwaiter().GetResult();
+
+        private static GameDetectionResult Panel(bool valid = true)
+        {
+            var evidence = new List<GameDetectionEvidence>();
+            if (valid)
+            {
+                evidence.Add(new GameDetectionEvidence { TemplateId = TemplateId.ResourceSearchPanelAnchor, Found = true, MatchResult = ImageMatchResult.FoundAt(1, 1, 10, 10) });
+                evidence.Add(new GameDetectionEvidence { TemplateId = TemplateId.SearchButtonEnabled, Found = true, MatchResult = ImageMatchResult.FoundAt(400, 400, 20, 20) });
+            }
+            return new GameDetectionResult { State = valid ? GameState.ResourceSearchPanel : GameState.Unknown,
+                IsSuccessful = true, Evidence = evidence.AsReadOnly() };
+        }
+
+        private static void Assert(bool condition, string message) { if (!condition) throw new Exception(message); }
+        private static void Equal<T>(T expected, T actual, string message) { if (!EqualityComparer<T>.Default.Equals(expected, actual)) throw new Exception($"{message} Expected={expected}, Actual={actual}"); }
+        private static void Throws<T>(Action action) where T : Exception { try { action(); } catch (T) { return; } throw new Exception("Expected " + typeof(T).Name); }
+
+        private sealed class Fixture
+        { public FakeUi Ui; public FakeClient Client; public FakeNavigation Navigation; public FakeDetector Detector; public FakeRegistry Registry; public IResourceSearchConfigurationService Service; }
+
+        private sealed class FakeUi
+        {
+            public bool ResourceSelected, FilterChecked, IgnoreResourceTap, InvalidResourceBounds,
+                HideLevelValue, AmbiguousResource;
+            public int Level = 3;
+        }
+
+        private sealed class FakeMatcher : IImageMatcher
+        {
+            private readonly FakeUi ui;
+            public FakeMatcher(FakeUi ui) { this.ui = ui; }
+            public ImageMatchResult Find(byte[] screenshot, byte[] template, ImageRegion? region = null)
+            {
+                TemplateId id = (TemplateId)template[0];
+                switch (id)
+                {
+                    case TemplateId.ResourceIronSelected: return Found(ui.ResourceSelected, 10, 10, 20, 30);
+                    case TemplateId.ResourceIronUnselected: return ui.InvalidResourceBounds
+                        ? ImageMatchResult.FoundAt(10, 10, 0, 0)
+                        : Found(!ui.ResourceSelected || ui.AmbiguousResource, 10, 10, 20, 30);
+                    case TemplateId.LevelMinusButton: return ImageMatchResult.FoundAt(100, 100, 20, 20);
+                    case TemplateId.LevelPlusButton: return ImageMatchResult.FoundAt(200, 100, 20, 20);
+                    case TemplateId.LevelValue7: return Found(ui.Level == 7 && !ui.HideLevelValue, 150, 50, 20, 20);
+                    case TemplateId.UnoccupiedFilterChecked: return Found(ui.FilterChecked, 300, 100, 20, 20);
+                    case TemplateId.UnoccupiedFilterUnchecked: return Found(!ui.FilterChecked, 300, 100, 20, 20);
+                    case TemplateId.SearchButtonEnabled: return ImageMatchResult.FoundAt(400, 400, 20, 20);
+                    default: return ImageMatchResult.FoundAt(1, 1, 10, 10);
+                }
+            }
+            private static ImageMatchResult Found(bool value, int x, int y, int width, int height) =>
+                value ? ImageMatchResult.FoundAt(x, y, width, height) : ImageMatchResult.NotFound();
+        }
+
+        private sealed class FakeRegistry : ITemplateRegistry
+        {
+            public TemplateId? Missing;
+            public TemplateDefinition GetDefinition(TemplateId id) => new TemplateDefinition(id, id + ".png", .8);
+            public string GetPath(TemplateId id) => Path.Combine("templates", id + ".png");
+            public byte[] LoadBytes(TemplateId id) => new[] { (byte)id };
+            public bool Exists(TemplateId id) => Missing != id;
+        }
+
+        private sealed class FakeNavigation : IWorldMapNavigationService
+        {
+            private int active;
+            public bool Success = true; public int Calls, DelayMs, MaxActive;
+            public Task<NavigationResult> EnsureWorldMapAsync(string d, CancellationToken t) => OpenResourceSearchPanelAsync(d, t);
+            public async Task<NavigationResult> OpenResourceSearchPanelAsync(string d, CancellationToken t)
+            {
+                Calls++; int now = Interlocked.Increment(ref active); MaxActive = Math.Max(MaxActive, now);
+                try { if (DelayMs > 0) await Task.Delay(DelayMs, t); return new NavigationResult { Success = Success,
+                    InitialState = GameState.WorldMap, FinalState = Success ? GameState.ResourceSearchPanel : GameState.WorldMap,
+                    FinalEvidence = new GameDetectionEvidence[0], Transitions = new NavigationTransition[0], Message = Success ? "open" : "failed" }; }
+                finally { Interlocked.Decrement(ref active); }
+            }
+        }
+
+        private sealed class FakeDetector : IGameStateDetector
+        {
+            private int calls; public bool FailOnSecondCall;
+            public Task<GameDetectionResult> DetectAsync(string d, CancellationToken t)
+            { calls++; return Task.FromResult(Panel(!(FailOnSecondCall && calls >= 2))); }
+            public GameDetectionResult Detect(byte[] p) => Panel();
+        }
+
+        private sealed class FakeClient : ILdPlayerClient
+        {
+            private readonly FakeUi ui;
+            public readonly List<string> Taps = new List<string>();
+            public int ResourceTaps, MinusTaps, PlusTaps, FilterTaps, SearchTaps, ProhibitedCalls;
+            public int TotalInput => Taps.Count + ProhibitedCalls;
+            public FakeClient(FakeUi ui) { this.ui = ui; }
+            public Task TapAsync(string d, int x, int y, CancellationToken t)
+            {
+                t.ThrowIfCancellationRequested(); Taps.Add(x + "," + y);
+                if (x == 20 && y == 25) { ResourceTaps++; if (!ui.IgnoreResourceTap) ui.ResourceSelected = true; }
+                else if (x == 110) { MinusTaps++; ui.Level = Math.Max(1, ui.Level - 1); }
+                else if (x == 210) { PlusTaps++; ui.Level = Math.Min(7, ui.Level + 1); }
+                else if (x == 310) { FilterTaps++; ui.FilterChecked = !ui.FilterChecked; }
+                else if (x == 410) SearchTaps++;
+                return Task.CompletedTask;
+            }
+            public Task<byte[]> CaptureScreenshotPngAsync(string d, CancellationToken t) { t.ThrowIfCancellationRequested(); return Task.FromResult(new byte[] { 1 }); }
+            public Task<IReadOnlyList<string>> GetDeviceNamesAsync(CancellationToken t) => Task.FromResult<IReadOnlyList<string>>(new[] { "LDPlayer" });
+            public Task<bool> IsRunningAsync(string d, CancellationToken t) => Task.FromResult(true);
+            public Task OpenAsync(string d, CancellationToken t) => Task.CompletedTask;
+            public Task CloseAsync(string d, CancellationToken t) => Task.CompletedTask;
+            public Task RunAppAsync(string d, string p, CancellationToken t) => Task.CompletedTask;
+            public Task BackAsync(string d, CancellationToken t) { ProhibitedCalls++; return Task.CompletedTask; }
+            public Task TapByPercentAsync(string d, double x, double y, CancellationToken t) { ProhibitedCalls++; return Task.CompletedTask; }
+            public Task LongPressAsync(string d, int x, int y, int ms, CancellationToken t) { ProhibitedCalls++; return Task.CompletedTask; }
+            public Task SwipeByPercentAsync(string d, double sx, double sy, double ex, double ey, int ms, CancellationToken t) { ProhibitedCalls++; return Task.CompletedTask; }
+            public Task InputTextAsync(string d, string s, CancellationToken t) { ProhibitedCalls++; return Task.CompletedTask; }
+            public Task PressKeyAsync(string d, AndroidKeyCode k, CancellationToken t) { ProhibitedCalls++; return Task.CompletedTask; }
+        }
+
+        private sealed class FakeLogger : IDiagnosticLogger
+        { public void Info(string message) { } public void Error(string message, Exception exception) { } }
+    }
+}

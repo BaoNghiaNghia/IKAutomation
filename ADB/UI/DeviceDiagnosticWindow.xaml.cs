@@ -1,6 +1,7 @@
 using ADB_Tool_Automation_Post_FB.Core.Diagnostics;
 using ADB_Tool_Automation_Post_FB.Core.GameDetection;
 using ADB_Tool_Automation_Post_FB.Core.Navigation;
+using ADB_Tool_Automation_Post_FB.Core.ResourceSearch;
 using System;
 using System.Collections.Generic;
 using System.Globalization;
@@ -17,12 +18,14 @@ namespace ADB_Tool_Automation_Post_FB.UI
         private readonly IDeviceDiagnosticService diagnosticService;
         private readonly IGameStateDetector gameStateDetector;
         private readonly IWorldMapNavigationService navigationService;
+        private readonly IResourceSearchConfigurationService resourceSearchConfigurationService;
         private readonly CancellationTokenSource lifetimeCancellation = new CancellationTokenSource();
 
         public DeviceDiagnosticWindow(
             IDeviceDiagnosticService diagnosticService,
             IGameStateDetector gameStateDetector,
-            IWorldMapNavigationService navigationService)
+            IWorldMapNavigationService navigationService,
+            IResourceSearchConfigurationService resourceSearchConfigurationService)
         {
             this.diagnosticService = diagnosticService
                 ?? throw new ArgumentNullException(nameof(diagnosticService));
@@ -30,6 +33,8 @@ namespace ADB_Tool_Automation_Post_FB.UI
                 ?? throw new ArgumentNullException(nameof(gameStateDetector));
             this.navigationService = navigationService
                 ?? throw new ArgumentNullException(nameof(navigationService));
+            this.resourceSearchConfigurationService = resourceSearchConfigurationService
+                ?? throw new ArgumentNullException(nameof(resourceSearchConfigurationService));
 
             InitializeComponent();
             PackageNameTextBox.Text = string.IsNullOrWhiteSpace(diagnosticService.Configuration.PackageName)
@@ -119,6 +124,20 @@ namespace ADB_Tool_Automation_Post_FB.UI
         {
             await RunOperationAsync(async cancellationToken => FormatNavigationResult(
                 await navigationService.OpenResourceSearchPanelAsync(GetSelectedDeviceName(), cancellationToken)));
+        }
+
+        private async void ConfigureSearch_Click(object sender, RoutedEventArgs e)
+        {
+            await RunOperationAsync(async cancellationToken => FormatConfigurationResult(
+                await resourceSearchConfigurationService.ConfigureAsync(
+                    GetSelectedDeviceName(),
+                    new ResourceSearchConfigurationRequest
+                    {
+                        ResourceType = ResourceType.Iron,
+                        TargetLevel = 7,
+                        UnoccupiedOnly = true
+                    },
+                    cancellationToken)));
         }
 
 
@@ -245,6 +264,19 @@ namespace ADB_Tool_Automation_Post_FB.UI
                 + $"Final: {result.FinalState}{Environment.NewLine}Attempts: {result.Attempts}{Environment.NewLine}"
                 + $"Duration: {result.Duration.TotalMilliseconds:F0} ms{Environment.NewLine}Message: {result.Message}{Environment.NewLine}"
                 + $"Error: {result.ErrorMessage ?? string.Empty}{Environment.NewLine}Evidence:{Environment.NewLine}{evidence}";
+        }
+
+        private static string FormatConfigurationResult(ResourceSearchConfigurationResult result)
+        {
+            string steps = string.Join(Environment.NewLine, result.Steps.Select(step =>
+                $"- {step.StepName}: success={step.Success}, attempts={step.Attempts}; "
+                + $"{step.Message}; error={step.ErrorMessage ?? string.Empty}"));
+            return $"Success: {result.Success}{Environment.NewLine}Initial: {result.InitialState}{Environment.NewLine}"
+                + $"Final: {result.FinalState}{Environment.NewLine}Resource verified: {result.ResourceVerified}{Environment.NewLine}"
+                + $"Level verified: {result.LevelVerified}{Environment.NewLine}Filter verified: {result.FilterVerified}{Environment.NewLine}"
+                + $"Tap count: {result.TapCount}{Environment.NewLine}Duration: {result.Duration.TotalMilliseconds:F0} ms{Environment.NewLine}"
+                + $"Message: {result.Message}{Environment.NewLine}Error: {result.ErrorMessage ?? string.Empty}{Environment.NewLine}"
+                + $"Steps:{Environment.NewLine}{steps}";
         }
 
 

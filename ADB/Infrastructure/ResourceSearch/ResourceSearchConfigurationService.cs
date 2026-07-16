@@ -1,0 +1,431 @@
+using ADB_Tool_Automation_Post_FB.Core.Abstractions;
+using ADB_Tool_Automation_Post_FB.Core.Concurrency;
+using ADB_Tool_Automation_Post_FB.Core.Diagnostics;
+using ADB_Tool_Automation_Post_FB.Core.GameDetection;
+using ADB_Tool_Automation_Post_FB.Core.Navigation;
+using ADB_Tool_Automation_Post_FB.Core.ResourceSearch;
+using ADB_Tool_Automation_Post_FB.Core.Vision;
+using System;
+using System.Collections.Generic;
+using System.Diagnostics;
+using System.Linq;
+using System.Threading;
+using System.Threading.Tasks;
+
+namespace ADB_Tool_Automation_Post_FB.Infrastructure.ResourceSearch
+{
+    public sealed class ResourceSearchConfigurationService : IResourceSearchConfigurationService
+    {
+        private static readonly TemplateId[] RequiredTemplates =
+        {
+            TemplateId.ResourceSearchPanelAnchor, TemplateId.SearchButtonEnabled,
+            TemplateId.ResourceIronSelected, TemplateId.ResourceIronUnselected,
+            TemplateId.LevelMinusButton, TemplateId.LevelPlusButton, TemplateId.LevelValue7,
+            TemplateId.UnoccupiedFilterChecked, TemplateId.UnoccupiedFilterUnchecked
+        };
+
+        private readonly IWorldMapNavigationService navigationService;
+        private readonly IGameStateDetector detector;
+        private readonly ILdPlayerClient ldPlayerClient;
+        private readonly ITemplateRegistry templateRegistry;
+        private readonly IImageMatcher imageMatcher;
+        private readonly ResourceSearchConfigurationOptions options;
+        private readonly IDeviceOperationLock operationLock;
+        private readonly IDiagnosticLogger logger;
+
+        public ResourceSearchConfigurationService(IWorldMapNavigationService navigationService,
+            IGameStateDetector detector, ILdPlayerClient ldPlayerClient,
+            ITemplateRegistry templateRegistry, IImageMatcher imageMatcher,
+            ResourceSearchConfigurationOptions options, IDeviceOperationLock operationLock,
+            IDiagnosticLogger logger)
+        {
+            this.navigationService = navigationService ?? throw new ArgumentNullException(nameof(navigationService));
+            this.detector = detector ?? throw new ArgumentNullException(nameof(detector));
+            this.ldPlayerClient = ldPlayerClient ?? throw new ArgumentNullException(nameof(ldPlayerClient));
+            this.templateRegistry = templateRegistry ?? throw new ArgumentNullException(nameof(templateRegistry));
+            this.imageMatcher = imageMatcher ?? throw new ArgumentNullException(nameof(imageMatcher));
+            this.options = options ?? throw new ArgumentNullException(nameof(options));
+            this.operationLock = operationLock ?? throw new ArgumentNullException(nameof(operationLock));
+            this.logger = logger ?? throw new ArgumentNullException(nameof(logger));
+        }
+
+        public Task<ResourceSearchConfigurationResult> ConfigureAsync(string deviceName,
+            ResourceSearchConfigurationRequest request, CancellationToken cancellationToken)
+        {
+            cancellationToken.ThrowIfCancellationRequested();
+            if (string.IsNullOrWhiteSpace(deviceName))
+                throw new ArgumentException("LDPlayer device name is required.", nameof(deviceName));
+
+            string validationError = ValidateRequest(request);
+            if (validationError != null)
+                return Task.FromResult(InvalidResult(request, validationError));
+
+            string templateError = ValidateTemplates();
+            if (templateError != null)
+                return Task.FromResult(InvalidResult(request, templateError));
+
+            return operationLock.RunAsync(deviceName,
+                token => ConfigureCoreAsync(deviceName.Trim(), request, token), cancellationToken);
+        }
+
+        private async Task<ResourceSearchConfigurationResult> ConfigureCoreAsync(string deviceName,
+            ResourceSearchConfigurationRequest request, CancellationToken cancellationToken)
+        {
+            var watch = Stopwatch.StartNew();
+            var steps = new List<ConfigurationStepResult>();
+            var result = NewResult(request, steps);
+            try
+            {
+                LogStart(deviceName, request);
+                NavigationResult navigation = await navigationService.OpenResourceSearchPanelAsync(deviceName, cancellationToken);
+                result.InitialState = navigation.InitialState;
+                if (!navigation.Success)
+                {
+                    AddStep(steps, "EnsurePanel", false, navigation.Attempts, null,
+                        navigation.Message, navigation.ErrorMessage);
+                    return Complete(result, watch, "ResourceSearchPanel could not be opened.", navigation.ErrorMessage);
+                }
+
+                GameDetectionResult panel = await detector.DetectAsync(deviceName, cancellationToken);
+                List<ConfigurationTemplateEvidence> panelEvidence = PanelEvidence(panel);
+                if (!IsVerifiedPanel(panel))
+                {
+                    AddStep(steps, "EnsurePanel", false, 1, panelEvidence,
+                        "ResourceSearchPanel did not have both required evidence signals.", panel.ErrorMessage);
+                    result.FinalState = panel.State;
+                    return Complete(result, watch, "Panel verification failed.", panel.ErrorMessage);
+                }
+                result.FinalState = panel.State;
+                AddStep(steps, "EnsurePanel", true, 1, panelEvidence,
+                    "ResourceSearchPanel verified.", null);
+
+                if (!await ConfigureResourceAsync(deviceName, result, steps, cancellationToken))
+                    return Complete(result, watch, "Iron selection failed.", LastError(steps));
+                if (!await ConfigureLevelAsync(deviceName, result, steps, cancellationToken))
+                    return Complete(result, watch, "Level configuration failed.", LastError(steps));
+                if (!await ConfigureFilterAsync(deviceName, request.UnoccupiedOnly, result, steps, cancellationToken))
+                    return Complete(result, watch, "Unoccupied filter configuration failed.", LastError(steps));
+                if (!await VerifyFinalAsync(deviceName, request, result, steps, cancellationToken))
+                    return Complete(result, watch, "Final configuration verification failed.", LastError(steps));
+
+                result.Success = true;
+                return Complete(result, watch, "Iron level 7 search criteria verified; Search was not pressed.", null);
+            }
+            catch (OperationCanceledException)
+            {
+                logger.Info($"[Resource Search Configuration] DeviceName='{deviceName}', Cancellation=true, "
+                    + $"TapCount={result.TapCount}, DurationMs={watch.Elapsed.TotalMilliseconds:F0}");
+                throw;
+            }
+            catch (Exception exception)
+            {
+                logger.Error($"[Resource Search Configuration] DeviceName='{deviceName}', Error='{exception.Message}', "
+                    + $"TapCount={result.TapCount}, DurationMs={watch.Elapsed.TotalMilliseconds:F0}", exception);
+                return Complete(result, watch, "Configuration failed.", exception.Message);
+            }
+        }
+
+        private async Task<bool> ConfigureResourceAsync(string deviceName,
+            ResourceSearchConfigurationResult result, IList<ConfigurationStepResult> steps,
+            CancellationToken cancellationToken)
+        {
+            var evidence = new List<ConfigurationTemplateEvidence>();
+            for (int attempt = 1; attempt <= options.MaxSelectionAttempts; attempt++)
+            {
+                byte[] screenshot = await ldPlayerClient.CaptureScreenshotPngAsync(deviceName, cancellationToken);
+                ConfigurationTemplateEvidence selected = Match(screenshot, TemplateId.ResourceIronSelected);
+                ConfigurationTemplateEvidence unselected = Match(screenshot, TemplateId.ResourceIronUnselected);
+                evidence.Add(selected); evidence.Add(unselected);
+                if (selected.Found)
+                {
+                    string message = unselected.Found
+                        ? "Iron selected verified; unselected also matched and was ignored as ambiguous evidence."
+                        : "Iron selected verified without input.";
+                    result.ResourceVerified = true;
+                    AddStep(steps, "SelectIron", true, attempt, evidence, message, null);
+                    return true;
+                }
+                if (!HasBounds(unselected))
+                {
+                    AddStep(steps, "SelectIron", false, attempt, evidence,
+                        "Iron unselected template was not found with valid bounds; no Tap was sent.", null);
+                    return false;
+                }
+
+                await TapAsync(deviceName, unselected, "SelectIron", result, cancellationToken);
+                ConfigurationTemplateEvidence verified = await PollForAsync(
+                    deviceName, TemplateId.ResourceIronSelected, cancellationToken);
+                evidence.Add(verified);
+                if (verified.Found)
+                {
+                    result.ResourceVerified = true;
+                    AddStep(steps, "SelectIron", true, attempt, evidence,
+                        "Iron selected template verified after Tap.", null);
+                    return true;
+                }
+            }
+            AddStep(steps, "SelectIron", false, options.MaxSelectionAttempts, evidence,
+                "Iron selected template was not verified before the attempt limit.", null);
+            return false;
+        }
+
+        private async Task<bool> ConfigureLevelAsync(string deviceName,
+            ResourceSearchConfigurationResult result, IList<ConfigurationStepResult> steps,
+            CancellationToken cancellationToken)
+        {
+            byte[] screenshot = await ldPlayerClient.CaptureScreenshotPngAsync(deviceName, cancellationToken);
+            ConfigurationTemplateEvidence minus = Match(screenshot, TemplateId.LevelMinusButton);
+            ConfigurationTemplateEvidence plus = Match(screenshot, TemplateId.LevelPlusButton);
+            var evidence = new List<ConfigurationTemplateEvidence> { minus, plus };
+            if (!HasBounds(minus) || !HasBounds(plus))
+            {
+                AddStep(steps, "SetLevel", false, 1, evidence,
+                    "Level minus/plus controls were not found with valid bounds; no level input was sent.", null);
+                return false;
+            }
+
+            for (int index = 0; index < options.ResetMinusTapCount; index++)
+            {
+                await TapAsync(deviceName, minus, "ResetLevel", result, cancellationToken);
+                await Task.Delay(options.TapIntervalMs, cancellationToken);
+            }
+            int plusTapCount = result.RequestedLevel - options.MinimumLevel;
+            for (int index = 0; index < plusTapCount; index++)
+            {
+                await TapAsync(deviceName, plus, "IncreaseLevel", result, cancellationToken);
+                await Task.Delay(options.TapIntervalMs, cancellationToken);
+            }
+
+            ConfigurationTemplateEvidence level = await PollForAsync(
+                deviceName, TemplateId.LevelValue7, cancellationToken);
+            evidence.Add(level);
+            result.LevelVerified = level.Found;
+            AddStep(steps, "SetLevel", level.Found, 1, evidence,
+                level.Found
+                    ? $"Level 7 verified after {options.ResetMinusTapCount} minus and {plusTapCount} plus Taps."
+                    : "LevelValue7 was not verified after the bounded Tap sequence.", null);
+            return level.Found;
+        }
+
+        private async Task<bool> ConfigureFilterAsync(string deviceName, bool requestedChecked,
+            ResourceSearchConfigurationResult result, IList<ConfigurationStepResult> steps,
+            CancellationToken cancellationToken)
+        {
+            TemplateId desiredId = requestedChecked
+                ? TemplateId.UnoccupiedFilterChecked : TemplateId.UnoccupiedFilterUnchecked;
+            TemplateId otherId = requestedChecked
+                ? TemplateId.UnoccupiedFilterUnchecked : TemplateId.UnoccupiedFilterChecked;
+            byte[] screenshot = await ldPlayerClient.CaptureScreenshotPngAsync(deviceName, cancellationToken);
+            ConfigurationTemplateEvidence desired = Match(screenshot, desiredId);
+            ConfigurationTemplateEvidence other = Match(screenshot, otherId);
+            var evidence = new List<ConfigurationTemplateEvidence> { desired, other };
+            if (desired.Found)
+            {
+                result.FilterVerified = true;
+                AddStep(steps, "SetUnoccupiedFilter", true, 1, evidence,
+                    "Requested filter state was already verified; no Tap was sent.", null);
+                return true;
+            }
+            if (!HasBounds(other))
+            {
+                AddStep(steps, "SetUnoccupiedFilter", false, 1, evidence,
+                    "Opposite filter state was not found with valid bounds; no Tap was sent.", null);
+                return false;
+            }
+            await TapAsync(deviceName, other, "SetUnoccupiedFilter", result, cancellationToken);
+            ConfigurationTemplateEvidence verified = await PollForAsync(deviceName, desiredId, cancellationToken);
+            evidence.Add(verified);
+            result.FilterVerified = verified.Found;
+            AddStep(steps, "SetUnoccupiedFilter", verified.Found, 1, evidence,
+                verified.Found ? "Requested filter state verified after Tap."
+                    : "Requested filter state was not verified before timeout.", null);
+            return verified.Found;
+        }
+
+        private async Task<bool> VerifyFinalAsync(string deviceName,
+            ResourceSearchConfigurationRequest request, ResourceSearchConfigurationResult result,
+            IList<ConfigurationStepResult> steps, CancellationToken cancellationToken)
+        {
+            GameDetectionResult state = await detector.DetectAsync(deviceName, cancellationToken);
+            result.FinalState = state.State;
+            byte[] screenshot = await ldPlayerClient.CaptureScreenshotPngAsync(deviceName, cancellationToken);
+            var evidence = new List<ConfigurationTemplateEvidence>
+            {
+                Match(screenshot, TemplateId.ResourceIronSelected),
+                Match(screenshot, TemplateId.LevelValue7),
+                Match(screenshot, request.UnoccupiedOnly
+                    ? TemplateId.UnoccupiedFilterChecked : TemplateId.UnoccupiedFilterUnchecked),
+                Match(screenshot, TemplateId.SearchButtonEnabled)
+            };
+            bool success = IsVerifiedPanel(state) && evidence.All(item => item.Found);
+            result.ResourceVerified = evidence[0].Found;
+            result.LevelVerified = evidence[1].Found;
+            result.FilterVerified = evidence[2].Found;
+            AddStep(steps, "FinalVerification", success, 1, evidence,
+                success ? "Panel and all requested criteria were verified; Search was not pressed."
+                    : "Panel or one or more requested criteria could not be verified.", state.ErrorMessage);
+            return success;
+        }
+
+        private async Task<ConfigurationTemplateEvidence> PollForAsync(string deviceName,
+            TemplateId templateId, CancellationToken cancellationToken)
+        {
+            var watch = Stopwatch.StartNew();
+            ConfigurationTemplateEvidence last = Evidence(templateId, null, "Not checked.");
+            while (watch.Elapsed < TimeSpan.FromSeconds(options.ActionVerificationTimeoutSeconds))
+            {
+                cancellationToken.ThrowIfCancellationRequested();
+                byte[] screenshot = await ldPlayerClient.CaptureScreenshotPngAsync(deviceName, cancellationToken);
+                last = Match(screenshot, templateId);
+                if (last.Found) return last;
+                await Task.Delay(options.StatePollIntervalMs, cancellationToken);
+            }
+            return last;
+        }
+
+        private ConfigurationTemplateEvidence Match(byte[] screenshot, TemplateId templateId)
+        {
+            ImageMatchResult match = imageMatcher.Find(screenshot, templateRegistry.LoadBytes(templateId), null);
+            return Evidence(templateId, match, match != null && match.Found
+                ? $"Template '{templateId}' matched."
+                : $"Template '{templateId}' did not match.");
+        }
+
+        private async Task TapAsync(string deviceName, ConfigurationTemplateEvidence evidence,
+            string action, ResourceSearchConfigurationResult result, CancellationToken cancellationToken)
+        {
+            cancellationToken.ThrowIfCancellationRequested();
+            int x = evidence.X + evidence.Width / 2;
+            int y = evidence.Y + evidence.Height / 2;
+            logger.Info($"[Resource Search Configuration] DeviceName='{deviceName}', Action='{action}', "
+                + $"Template='{evidence.TemplateId}', Bounds=({evidence.X},{evidence.Y},{evidence.Width},{evidence.Height}), "
+                + $"Tap=({x},{y}), Cancellation=false");
+            await ldPlayerClient.TapAsync(deviceName, x, y, cancellationToken);
+            result.TapCount++;
+        }
+
+        private string ValidateRequest(ResourceSearchConfigurationRequest request)
+        {
+            if (request == null) return "ResourceSearchConfigurationRequest is required.";
+            if (request.ResourceType != ResourceType.Iron)
+                return $"Resource type '{request.ResourceType}' is not supported; only Iron is supported.";
+            if (request.TargetLevel < options.MinimumLevel || request.TargetLevel > options.MaximumLevel)
+                return $"TargetLevel must be between {options.MinimumLevel} and {options.MaximumLevel}.";
+            if (request.TargetLevel != 7)
+                return "Only target level 7 is supported by the available verification template.";
+            return null;
+        }
+
+        private string ValidateTemplates()
+        {
+            foreach (TemplateId templateId in RequiredTemplates)
+            {
+                try
+                {
+                    string path = templateRegistry.GetPath(templateId);
+                    if (!templateRegistry.Exists(templateId))
+                        return $"Required template '{templateId}' was not found at '{path}'.";
+                }
+                catch (Exception exception)
+                {
+                    return $"Required template '{templateId}' could not be resolved: {exception.Message}";
+                }
+            }
+            return null;
+        }
+
+        private static bool IsVerifiedPanel(GameDetectionResult result)
+        {
+            return result != null && result.IsSuccessful && result.State == GameState.ResourceSearchPanel
+                && result.Evidence != null
+                && result.Evidence.Any(item => item.TemplateId == TemplateId.ResourceSearchPanelAnchor && item.Found)
+                && result.Evidence.Any(item => item.TemplateId == TemplateId.SearchButtonEnabled && item.Found);
+        }
+
+        private static List<ConfigurationTemplateEvidence> PanelEvidence(GameDetectionResult result)
+        {
+            var evidence = new List<ConfigurationTemplateEvidence>();
+            if (result?.Evidence == null) return evidence;
+            foreach (GameDetectionEvidence item in result.Evidence.Where(item =>
+                item.TemplateId == TemplateId.ResourceSearchPanelAnchor
+                || item.TemplateId == TemplateId.SearchButtonEnabled))
+                evidence.Add(Evidence(item.TemplateId, item.MatchResult, item.Message));
+            return evidence;
+        }
+
+        private static ConfigurationTemplateEvidence Evidence(TemplateId id,
+            ImageMatchResult match, string message)
+        {
+            return new ConfigurationTemplateEvidence
+            {
+                TemplateId = id, Found = match != null && match.Found,
+                X = match?.X ?? 0, Y = match?.Y ?? 0,
+                Width = match?.Width ?? 0, Height = match?.Height ?? 0,
+                Confidence = match?.Confidence, Message = message
+            };
+        }
+
+        private static bool HasBounds(ConfigurationTemplateEvidence evidence) =>
+            evidence != null && evidence.Found && evidence.Width > 0 && evidence.Height > 0;
+
+        private static void AddStep(IList<ConfigurationStepResult> steps, string name,
+            bool success, int attempts, IEnumerable<ConfigurationTemplateEvidence> evidence,
+            string message, string error)
+        {
+            steps.Add(new ConfigurationStepResult
+            {
+                StepName = name, Success = success, Attempts = attempts,
+                TemplateEvidence = (evidence ?? new ConfigurationTemplateEvidence[0]).ToList().AsReadOnly(),
+                Message = message, ErrorMessage = error
+            });
+        }
+
+        private static string LastError(IList<ConfigurationStepResult> steps) =>
+            steps.Count == 0 ? null : steps[steps.Count - 1].ErrorMessage ?? steps[steps.Count - 1].Message;
+
+        private ResourceSearchConfigurationResult InvalidResult(
+            ResourceSearchConfigurationRequest request, string error)
+        {
+            var result = NewResult(request, new List<ConfigurationStepResult>());
+            result.Message = "Request was rejected before input.";
+            result.ErrorMessage = error;
+            return result;
+        }
+
+        private static ResourceSearchConfigurationResult NewResult(
+            ResourceSearchConfigurationRequest request, List<ConfigurationStepResult> steps)
+        {
+            return new ResourceSearchConfigurationResult
+            {
+                RequestedResource = request?.ResourceType ?? ResourceType.Iron,
+                RequestedLevel = request?.TargetLevel ?? 0,
+                RequestedUnoccupiedOnly = request != null && request.UnoccupiedOnly,
+                InitialState = GameState.Unknown, FinalState = GameState.Unknown,
+                Steps = steps.AsReadOnly()
+            };
+        }
+
+        private ResourceSearchConfigurationResult Complete(ResourceSearchConfigurationResult result,
+            Stopwatch watch, string message, string error)
+        {
+            result.Duration = watch.Elapsed;
+            result.Message = message;
+            result.ErrorMessage = error;
+            logger.Info($"[Resource Search Configuration] RequestedResource='{result.RequestedResource}', "
+                + $"RequestedLevel={result.RequestedLevel}, UnoccupiedOnly={result.RequestedUnoccupiedOnly}, "
+                + $"InitialState='{result.InitialState}', FinalState='{result.FinalState}', "
+                + $"ResourceVerified={result.ResourceVerified}, LevelVerified={result.LevelVerified}, "
+                + $"FilterVerified={result.FilterVerified}, TapCount={result.TapCount}, "
+                + $"DurationMs={result.Duration.TotalMilliseconds:F0}, Success={result.Success}, "
+                + $"Error='{error ?? string.Empty}'");
+            return result;
+        }
+
+        private void LogStart(string deviceName, ResourceSearchConfigurationRequest request)
+        {
+            logger.Info($"[Resource Search Configuration] DeviceName='{deviceName}', "
+                + $"RequestedResource='{request.ResourceType}', RequestedLevel={request.TargetLevel}, "
+                + $"UnoccupiedOnly={request.UnoccupiedOnly}, Cancellation=false, Phase='Starting'");
+        }
+    }
+}

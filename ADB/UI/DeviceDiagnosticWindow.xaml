@@ -67,6 +67,8 @@
                 <Button Content="Detect Current State" Click="DetectCurrentState_Click" Padding="14,7" Margin="0,0,8,8"/>
                 <Button Content="Ensure World Map" Click="EnsureWorldMap_Click" Padding="14,7" Margin="0,0,8,8"/>
                 <Button Content="Open Search Panel" Click="OpenSearchPanel_Click" Padding="14,7" Margin="0,0,8,8"/>
+                <Button x:Name="ConfigureSearchButton" Content="Configure Search: Iron Lv7"
+                        Click="ConfigureSearch_Click" Padding="14,7" Margin="0,0,8,8"/>
                 <Button Content="Back Test" Click="BackTest_Click" Padding="14,7" Margin="0,0,8,8"/>
             </WrapPanel>
 

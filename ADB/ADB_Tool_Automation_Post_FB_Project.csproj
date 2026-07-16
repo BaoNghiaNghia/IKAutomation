@@ -75,6 +75,7 @@
       <SubType>Code</SubType>
     </Compile>
     <Compile Include="Core\Abstractions\ILdPlayerClient.cs" />
+    <Compile Include="Core\Concurrency\IDeviceOperationLock.cs" />
     <Compile Include="Core\Diagnostics\DeviceDiagnosticOptions.cs" />
     <Compile Include="Core\Diagnostics\DeviceDiagnosticResult.cs" />
     <Compile Include="Core\Diagnostics\IDeviceDiagnosticService.cs" />
@@ -90,6 +91,13 @@
     <Compile Include="Core\Navigation\NavigationResult.cs" />
     <Compile Include="Core\Navigation\NavigationTransition.cs" />
     <Compile Include="Core\Navigation\WorldMapNavigationOptions.cs" />
+    <Compile Include="Core\ResourceSearch\ConfigurationStepResult.cs" />
+    <Compile Include="Core\ResourceSearch\ConfigurationTemplateEvidence.cs" />
+    <Compile Include="Core\ResourceSearch\IResourceSearchConfigurationService.cs" />
+    <Compile Include="Core\ResourceSearch\ResourceSearchConfigurationOptions.cs" />
+    <Compile Include="Core\ResourceSearch\ResourceSearchConfigurationRequest.cs" />
+    <Compile Include="Core\ResourceSearch\ResourceSearchConfigurationResult.cs" />
+    <Compile Include="Core\ResourceSearch\ResourceType.cs" />
     <Compile Include="Core\Vision\IImageMatcher.cs" />
     <Compile Include="Core\Vision\ImageMatchResult.cs" />
     <Compile Include="Core\Vision\ImageRegion.cs" />
@@ -114,6 +122,7 @@
     <Compile Include="Infrastructure\Diagnostics\ScreenshotMetadata.cs" />
     <Compile Include="Infrastructure\Diagnostics\ScreenshotMetadataJson.cs" />
     <Compile Include="Infrastructure\Diagnostics\ScreenshotPathPolicy.cs" />
+    <Compile Include="Infrastructure\Concurrency\DeviceOperationLock.cs" />
     <Compile Include="Infrastructure\GameDetection\AppConfigGameDetectionOptionsProvider.cs" />
     <Compile Include="Infrastructure\GameDetection\GameStateDetector.cs" />
     <Compile Include="Infrastructure\GameDetection\GameStateDetectorFactory.cs" />
@@ -121,6 +130,9 @@
     <Compile Include="Infrastructure\Navigation\AppConfigWorldMapNavigationOptionsProvider.cs" />
     <Compile Include="Infrastructure\Navigation\WorldMapNavigationService.cs" />
     <Compile Include="Infrastructure\Navigation\WorldMapNavigationServiceFactory.cs" />
+    <Compile Include="Infrastructure\ResourceSearch\AppConfigResourceSearchConfigurationOptionsProvider.cs" />
+    <Compile Include="Infrastructure\ResourceSearch\ResourceSearchConfigurationService.cs" />
+    <Compile Include="Infrastructure\ResourceSearch\ResourceSearchConfigurationServiceFactory.cs" />
     <Compile Include="Infrastructure\Vision\KAutoImageMatcher.cs" />
     <Compile Include="Infrastructure\Vision\TemplateMatchDiagnosticService.cs" />
     <Compile Include="Infrastructure\Vision\TemplateRegistry.cs" />

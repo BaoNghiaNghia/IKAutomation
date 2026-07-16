@@ -13,6 +13,8 @@ Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "IKAutomation.GameDetection.
 EndProject
 Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "IKAutomation.Navigation.Tests", "Tests\IKAutomation.Navigation.Tests\IKAutomation.Navigation.Tests.csproj", "{5AA7949C-A1F2-41BD-850E-D3916CFF4D4D}"
 EndProject
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "IKAutomation.ResourceSearch.Tests", "Tests\IKAutomation.ResourceSearch.Tests\IKAutomation.ResourceSearch.Tests.csproj", "{63A77477-356D-4B73-A946-6EE7C2CE784D}"
+EndProject
 Project("{2150E333-8FDC-42A3-9474-1A3956D46DE8}") = "Solution Items", "Solution Items", "{02EA681E-C7D8-13C7-8484-4AC65E1B71E8}"
 	ProjectSection(SolutionItems) = preProject
 		.editorconfig = .editorconfig
@@ -44,6 +46,10 @@ Global
 		{5AA7949C-A1F2-41BD-850E-D3916CFF4D4D}.Debug|Any CPU.Build.0 = Debug|Any CPU
 		{5AA7949C-A1F2-41BD-850E-D3916CFF4D4D}.Release|Any CPU.ActiveCfg = Release|Any CPU
 		{5AA7949C-A1F2-41BD-850E-D3916CFF4D4D}.Release|Any CPU.Build.0 = Release|Any CPU
+		{63A77477-356D-4B73-A946-6EE7C2CE784D}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{63A77477-356D-4B73-A946-6EE7C2CE784D}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{63A77477-356D-4B73-A946-6EE7C2CE784D}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{63A77477-356D-4B73-A946-6EE7C2CE784D}.Release|Any CPU.Build.0 = Release|Any CPU
 	EndGlobalSection
 	GlobalSection(SolutionProperties) = preSolution
 		HideSolutionNode = FALSE

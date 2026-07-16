@@ -5,6 +5,7 @@ using ADB_Tool_Automation_Post_FB.Infrastructure.Diagnostics;
 using ADB_Tool_Automation_Post_FB.Infrastructure.GameDetection;
 using ADB_Tool_Automation_Post_FB.Infrastructure.LDPlayer;
 using ADB_Tool_Automation_Post_FB.Infrastructure.Navigation;
+using ADB_Tool_Automation_Post_FB.Infrastructure.ResourceSearch;
 using ADB_Tool_Automation_Post_FB.UI;
 using Auto_LDPlayer;
 using Auto_LDPlayer.Enums;
@@ -201,7 +202,8 @@ namespace ADB_Tool_Automation_Post_FB
             var diagnosticWindow = new DeviceDiagnosticWindow(
                 DeviceDiagnosticServiceFactory.CreateFromAppConfig(),
                 GameStateDetectorFactory.CreateFromAppConfig(),
-                WorldMapNavigationServiceFactory.CreateFromAppConfig())
+                WorldMapNavigationServiceFactory.CreateFromAppConfig(),
+                ResourceSearchConfigurationServiceFactory.CreateFromAppConfig())
             {
                 Owner = this
             };

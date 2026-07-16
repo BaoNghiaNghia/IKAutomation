@@ -1,35 +1,41 @@
 using ADB_Tool_Automation_Post_FB.Core.Abstractions;
+using ADB_Tool_Automation_Post_FB.Core.Concurrency;
 using ADB_Tool_Automation_Post_FB.Core.Diagnostics;
 using ADB_Tool_Automation_Post_FB.Core.GameDetection;
 using ADB_Tool_Automation_Post_FB.Core.Navigation;
 using ADB_Tool_Automation_Post_FB.Core.Vision;
 using System;
-using System.Collections.Concurrent;
 using System.Collections.Generic;
 using System.Diagnostics;
 using System.Linq;
 using System.Threading;
 using System.Threading.Tasks;
+using ADB_Tool_Automation_Post_FB.Infrastructure.Concurrency;
 
 namespace ADB_Tool_Automation_Post_FB.Infrastructure.Navigation
 {
     public sealed class WorldMapNavigationService : IWorldMapNavigationService
     {
-        private static readonly ConcurrentDictionary<string, SemaphoreSlim> DeviceLocks =
-            new ConcurrentDictionary<string, SemaphoreSlim>(StringComparer.OrdinalIgnoreCase);
-
         private readonly ILdPlayerClient ldPlayerClient;
         private readonly IGameStateDetector detector;
         private readonly WorldMapNavigationOptions options;
         private readonly IDiagnosticLogger logger;
+        private readonly IDeviceOperationLock operationLock;
 
         public WorldMapNavigationService(ILdPlayerClient ldPlayerClient, IGameStateDetector detector,
             WorldMapNavigationOptions options, IDiagnosticLogger logger)
+            : this(ldPlayerClient, detector, options, logger, DeviceOperationLock.Shared)
+        {
+        }
+
+        public WorldMapNavigationService(ILdPlayerClient ldPlayerClient, IGameStateDetector detector,
+            WorldMapNavigationOptions options, IDiagnosticLogger logger, IDeviceOperationLock operationLock)
         {
             this.ldPlayerClient = ldPlayerClient ?? throw new ArgumentNullException(nameof(ldPlayerClient));
             this.detector = detector ?? throw new ArgumentNullException(nameof(detector));
             this.options = options ?? throw new ArgumentNullException(nameof(options));
             this.logger = logger ?? throw new ArgumentNullException(nameof(logger));
+            this.operationLock = operationLock ?? throw new ArgumentNullException(nameof(operationLock));
         }
 
         public Task<NavigationResult> EnsureWorldMapAsync(string deviceName, CancellationToken cancellationToken)
@@ -50,19 +56,9 @@ namespace ADB_Tool_Automation_Post_FB.Infrastructure.Navigation
             ValidateDeviceName(deviceName);
             cancellationToken.ThrowIfCancellationRequested();
             var operationWatch = Stopwatch.StartNew();
-            SemaphoreSlim deviceLock = DeviceLocks.GetOrAdd(deviceName.Trim(), _ => new SemaphoreSlim(1, 1));
             try
             {
-                await deviceLock.WaitAsync(cancellationToken);
-            }
-            catch (OperationCanceledException)
-            {
-                LogInterrupted(deviceName, operation, operationWatch, true, "WaitingForDeviceLock", "Operation canceled.", null);
-                throw;
-            }
-            try
-            {
-                NavigationResult result = await action(cancellationToken);
+                NavigationResult result = await operationLock.RunAsync(deviceName, action, cancellationToken);
                 Log(deviceName, operation, result, false);
                 return result;
             }
@@ -76,7 +72,6 @@ namespace ADB_Tool_Automation_Post_FB.Infrastructure.Navigation
                 LogInterrupted(deviceName, operation, operationWatch, false, "Executing", exception.Message, exception);
                 throw;
             }
-            finally { deviceLock.Release(); }
         }
 
         private async Task<NavigationResult> EnsureWorldMapCoreAsync(
