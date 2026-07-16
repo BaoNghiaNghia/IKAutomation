@@ -49,6 +49,7 @@ namespace ADB_Tool_Automation_Post_FB.Infrastructure.Navigation
         {
             ValidateDeviceName(deviceName);
             cancellationToken.ThrowIfCancellationRequested();
+            var operationWatch = Stopwatch.StartNew();
             SemaphoreSlim deviceLock = DeviceLocks.GetOrAdd(deviceName.Trim(), _ => new SemaphoreSlim(1, 1));
             try
             {
@@ -56,7 +57,7 @@ namespace ADB_Tool_Automation_Post_FB.Infrastructure.Navigation
             }
             catch (OperationCanceledException)
             {
-                logger.Info($"[World Map Navigation] DeviceName='{deviceName}', Operation='{operation}', Cancellation=true, Phase='WaitingForDeviceLock'");
+                LogInterrupted(deviceName, operation, operationWatch, true, "WaitingForDeviceLock", "Operation canceled.", null);
                 throw;
             }
             try
@@ -67,12 +68,12 @@ namespace ADB_Tool_Automation_Post_FB.Infrastructure.Navigation
             }
             catch (OperationCanceledException)
             {
-                logger.Info($"[World Map Navigation] DeviceName='{deviceName}', Operation='{operation}', Cancellation=true");
+                LogInterrupted(deviceName, operation, operationWatch, true, "Executing", "Operation canceled.", null);
                 throw;
             }
             catch (Exception exception)
             {
-                logger.Error($"[World Map Navigation] DeviceName='{deviceName}', Operation='{operation}', Error='{exception.Message}'", exception);
+                LogInterrupted(deviceName, operation, operationWatch, false, "Executing", exception.Message, exception);
                 throw;
             }
             finally { deviceLock.Release(); }
@@ -105,8 +106,12 @@ namespace ADB_Tool_Automation_Post_FB.Infrastructure.Navigation
             var transitions = new List<NavigationTransition>();
             GameDetectionResult initial = await DetectAsync(deviceName, transitions, cancellationToken);
             if (!initial.IsSuccessful) return Result(false, initial, initial, 0, watch, "State detection failed.", initial.ErrorMessage, transitions);
-            if (initial.State == GameState.ResourceSearchPanel)
+            if (IsVerifiedResourceSearchPanel(initial))
                 return Result(true, initial, initial, 0, watch, "ResourceSearchPanel is already open.", null, transitions);
+            if (initial.State == GameState.ResourceSearchPanel)
+                return Result(false, initial, initial, 0, watch,
+                    "ResourceSearchPanel state was reported without both required evidence signals; no input was sent.",
+                    initial.ErrorMessage, transitions);
 
             NavigationResult ensured = await EnsureWorldMapCoreAsync(deviceName, initial, cancellationToken);
             foreach (NavigationTransition transition in ensured.Transitions) transitions.Add(transition);
@@ -123,10 +128,12 @@ namespace ADB_Tool_Automation_Post_FB.Infrastructure.Navigation
 
                 int x = anchor.MatchResult.CenterX;
                 int y = anchor.MatchResult.CenterY;
+                logger.Info($"[World Map Navigation] DeviceName='{deviceName}', Operation='Tap', "
+                    + $"Attempt={attempt}, TapX={x}, TapY={y}, Cancellation=false, Phase='Attempting'");
                 await ldPlayerClient.TapAsync(deviceName, x, y, cancellationToken);
                 AddTransition(transitions, "Tap", $"Attempt {attempt}: tapped WorldMapAnchor center ({x},{y}).");
                 current = await PollAsync(deviceName, GameState.ResourceSearchPanel, transitions, cancellationToken);
-                if (current.IsSuccessful && current.State == GameState.ResourceSearchPanel)
+                if (current.IsSuccessful && IsVerifiedResourceSearchPanel(current))
                     return Result(true, initial, current, attempt, watch, "ResourceSearchPanel verified after Tap.", null, transitions);
                 if (!current.IsSuccessful || current.State != GameState.WorldMap)
                     return Result(false, initial, current, attempt, watch, "Panel was not verified and retry is unsafe.", current.ErrorMessage, transitions);
@@ -148,9 +155,28 @@ namespace ADB_Tool_Automation_Post_FB.Infrastructure.Navigation
                 last = await DetectAsync(deviceName, transitions, cancellationToken);
                 // Unknown can be a transient render frame after navigation. Waiting is safe
                 // because polling sends no additional input; only a verified target succeeds.
-                if (!last.IsSuccessful || last.State == target) return last;
+                if (!last.IsSuccessful || IsVerifiedTarget(last, target)) return last;
             }
             return last ?? await DetectAsync(deviceName, transitions, cancellationToken);
+        }
+
+        private static bool IsVerifiedTarget(GameDetectionResult result, GameState target)
+        {
+            return target == GameState.ResourceSearchPanel
+                ? IsVerifiedResourceSearchPanel(result)
+                : result.State == target;
+        }
+
+        private static bool IsVerifiedResourceSearchPanel(GameDetectionResult result)
+        {
+            if (result == null || result.State != GameState.ResourceSearchPanel || result.Evidence == null)
+                return false;
+
+            bool anchorFound = result.Evidence.Any(item =>
+                item.TemplateId == TemplateId.ResourceSearchPanelAnchor && item.Found);
+            bool searchButtonFound = result.Evidence.Any(item =>
+                item.TemplateId == TemplateId.SearchButtonEnabled && item.Found);
+            return anchorFound && searchButtonFound;
         }
 
         private async Task<GameDetectionResult> DetectAsync(string deviceName, IList<NavigationTransition> transitions, CancellationToken token)
@@ -181,6 +207,19 @@ namespace ADB_Tool_Automation_Post_FB.Infrastructure.Navigation
             logger.Info($"[World Map Navigation] DeviceName='{device}', Operation='{operation}', InitialState='{result.InitialState}', "
                 + $"FinalState='{result.FinalState}', Attempt={result.Attempts}, DurationMs={result.Duration.TotalMilliseconds:F0}, "
                 + $"Success={result.Success}, Error='{result.ErrorMessage ?? string.Empty}', Cancellation={cancellation}, Transitions='{transitions}'");
+        }
+
+        private void LogInterrupted(string device, string operation, Stopwatch watch, bool cancellation,
+            string phase, string error, Exception exception)
+        {
+            string message = $"[World Map Navigation] DeviceName='{device}', Operation='{operation}', "
+                + "InitialState='Unknown', FinalState='Unknown', Attempt=0, "
+                + $"DurationMs={watch.Elapsed.TotalMilliseconds:F0}, Success=false, Error='{error}', "
+                + $"Cancellation={cancellation}, Phase='{phase}'";
+            if (exception == null)
+                logger.Info(message);
+            else
+                logger.Error(message, exception);
         }
 
         private static void ValidateDeviceName(string deviceName)
