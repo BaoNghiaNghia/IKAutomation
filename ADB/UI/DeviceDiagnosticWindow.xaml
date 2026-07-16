@@ -77,6 +77,8 @@
                         Click="OpenTeamSelection_Click" Padding="14,7" Margin="0,0,8,8"/>
                 <Button x:Name="SelectFarmTeamButton" Content="Select Farm Team"
                         Click="SelectFarmTeam_Click" Padding="14,7" Margin="0,0,8,8"/>
+                <Button x:Name="DispatchSelectedTeamButton" Content="Dispatch Selected Team"
+                        Click="DispatchSelectedTeam_Click" Padding="14,7" Margin="0,0,8,8"/>
                 <Button Content="Back Test" Click="BackTest_Click" Padding="14,7" Margin="0,0,8,8"/>
             </WrapPanel>
 

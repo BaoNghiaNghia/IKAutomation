@@ -111,6 +111,13 @@
     <Compile Include="Core\ResourceSearch\ResourceSearchObservation.cs" />
     <Compile Include="Core\ResourceSearch\ResourceSearchOutcome.cs" />
     <Compile Include="Core\ResourceSearch\ResourceType.cs" />
+    <Compile Include="Core\MarchDispatch\DispatchMarchOutcome.cs" />
+    <Compile Include="Core\MarchDispatch\DispatchMarchRequest.cs" />
+    <Compile Include="Core\MarchDispatch\DispatchMarchResult.cs" />
+    <Compile Include="Core\MarchDispatch\DispatchSelectedTeamOptions.cs" />
+    <Compile Include="Core\MarchDispatch\IDispatchMarchDiagnosticStore.cs" />
+    <Compile Include="Core\MarchDispatch\IDispatchSelectedTeamService.cs" />
+    <Compile Include="Core\MarchDispatch\MarchDispatchObservation.cs" />
     <Compile Include="Core\TeamSelection\IOpenTeamSelectionDiagnosticStore.cs" />
     <Compile Include="Core\TeamSelection\IOpenTeamSelectionService.cs" />
     <Compile Include="Core\TeamSelection\ISelectFarmTeamDiagnosticStore.cs" />
@@ -170,6 +177,10 @@
     <Compile Include="Infrastructure\ResourceSearch\ResourceSearchConfigurationServiceFactory.cs" />
     <Compile Include="Infrastructure\ResourceSearch\ResourceSearchExecutionService.cs" />
     <Compile Include="Infrastructure\ResourceSearch\ResourceSearchExecutionServiceFactory.cs" />
+    <Compile Include="Infrastructure\MarchDispatch\AppConfigDispatchSelectedTeamOptionsProvider.cs" />
+    <Compile Include="Infrastructure\MarchDispatch\DispatchMarchDiagnosticStore.cs" />
+    <Compile Include="Infrastructure\MarchDispatch\DispatchSelectedTeamService.cs" />
+    <Compile Include="Infrastructure\MarchDispatch\DispatchSelectedTeamServiceFactory.cs" />
     <Compile Include="Infrastructure\TeamSelection\AppConfigOpenTeamSelectionOptionsProvider.cs" />
     <Compile Include="Infrastructure\TeamSelection\AppConfigFarmTeamSelectionOptionsProvider.cs" />
     <Compile Include="Infrastructure\TeamSelection\OpenTeamSelectionDiagnosticStore.cs" />

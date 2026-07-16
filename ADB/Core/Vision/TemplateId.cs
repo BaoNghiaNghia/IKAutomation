@@ -33,6 +33,8 @@ namespace ADB_Tool_Automation_Post_FB.Core.Vision
         Team4Badge,
         TeamSelectedBorderAnchor,
         TeamDisabledAnchor,
+        TeamBusyStatusAnchor,
+        TeamMarchTimerAnchor,
         TeamPanel,
         TeamFree,
         TeamBusy,

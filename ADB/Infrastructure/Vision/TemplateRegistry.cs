@@ -43,6 +43,8 @@ namespace ADB_Tool_Automation_Post_FB.Infrastructure.Vision
                 { TemplateId.Team4Badge, Define(TemplateId.Team4Badge, "Teams/team_4_badge.png") },
                 { TemplateId.TeamSelectedBorderAnchor, Define(TemplateId.TeamSelectedBorderAnchor, "Teams/team_selected_border_anchor.png") },
                 { TemplateId.TeamDisabledAnchor, Define(TemplateId.TeamDisabledAnchor, "Teams/team_disabled_anchor.png") },
+                { TemplateId.TeamBusyStatusAnchor, Define(TemplateId.TeamBusyStatusAnchor, "Teams/team_busy_status_anchor.png") },
+                { TemplateId.TeamMarchTimerAnchor, Define(TemplateId.TeamMarchTimerAnchor, "Teams/team_march_timer_anchor.png") },
                 { TemplateId.TeamPanel, Define(TemplateId.TeamPanel, "Teams/team_panel.png") },
                 { TemplateId.TeamFree, Define(TemplateId.TeamFree, "Teams/team_free.png") },
                 { TemplateId.TeamBusy, Define(TemplateId.TeamBusy, "Teams/team_busy.png") },

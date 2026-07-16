@@ -1,5 +1,6 @@
 using ADB_Tool_Automation_Post_FB.Core.Diagnostics;
 using ADB_Tool_Automation_Post_FB.Core.GameDetection;
+using ADB_Tool_Automation_Post_FB.Core.MarchDispatch;
 using ADB_Tool_Automation_Post_FB.Core.Navigation;
 using ADB_Tool_Automation_Post_FB.Core.ResourceSearch;
 using ADB_Tool_Automation_Post_FB.Core.ResourcePopup;
@@ -26,6 +27,8 @@ namespace ADB_Tool_Automation_Post_FB.UI
         private readonly IOpenTeamSelectionService openTeamSelectionService;
         private readonly ISelectFarmTeamService selectFarmTeamService;
         private readonly TeamSelectionRequest defaultFarmTeamRequest;
+        private readonly IDispatchSelectedTeamService dispatchSelectedTeamService;
+        private readonly DispatchMarchRequest defaultDispatchRequest;
         private readonly CancellationTokenSource lifetimeCancellation = new CancellationTokenSource();
 
         public DeviceDiagnosticWindow(
@@ -37,7 +40,9 @@ namespace ADB_Tool_Automation_Post_FB.UI
             IResourcePopupVerificationService resourcePopupVerificationService,
             IOpenTeamSelectionService openTeamSelectionService,
             ISelectFarmTeamService selectFarmTeamService,
-            TeamSelectionRequest defaultFarmTeamRequest)
+            TeamSelectionRequest defaultFarmTeamRequest,
+            IDispatchSelectedTeamService dispatchSelectedTeamService,
+            DispatchMarchRequest defaultDispatchRequest)
         {
             this.diagnosticService = diagnosticService
                 ?? throw new ArgumentNullException(nameof(diagnosticService));
@@ -57,6 +62,10 @@ namespace ADB_Tool_Automation_Post_FB.UI
                 ?? throw new ArgumentNullException(nameof(selectFarmTeamService));
             this.defaultFarmTeamRequest = defaultFarmTeamRequest
                 ?? throw new ArgumentNullException(nameof(defaultFarmTeamRequest));
+            this.dispatchSelectedTeamService = dispatchSelectedTeamService
+                ?? throw new ArgumentNullException(nameof(dispatchSelectedTeamService));
+            this.defaultDispatchRequest = defaultDispatchRequest
+                ?? throw new ArgumentNullException(nameof(defaultDispatchRequest));
 
             InitializeComponent();
             PackageNameTextBox.Text = string.IsNullOrWhiteSpace(diagnosticService.Configuration.PackageName)
@@ -199,6 +208,13 @@ namespace ADB_Tool_Automation_Post_FB.UI
             await RunOperationAsync(async cancellationToken => FormatSelectFarmTeamResult(
                 await selectFarmTeamService.SelectAsync(GetSelectedDeviceName(),
                     defaultFarmTeamRequest, cancellationToken)));
+        }
+
+        private async void DispatchSelectedTeam_Click(object sender, RoutedEventArgs e)
+        {
+            await RunOperationAsync(async cancellationToken => FormatDispatchMarchResult(
+                await dispatchSelectedTeamService.DispatchAsync(GetSelectedDeviceName(),
+                    defaultDispatchRequest, cancellationToken)));
         }
 
 
@@ -428,6 +444,28 @@ namespace ADB_Tool_Automation_Post_FB.UI
         private static string Bounds(ADB_Tool_Automation_Post_FB.Core.Vision.ImageMatchResult match) =>
             match != null && match.Found
                 ? $"({match.X},{match.Y},{match.Width},{match.Height})" : string.Empty;
+
+        private static string FormatDispatchMarchResult(DispatchMarchResult result)
+        {
+            string observations = string.Join(Environment.NewLine, result.Observations.Select((item, index) =>
+                $"- #{index + 1} {item.State}: panel={item.TeamSelectionFound}, world={item.WorldMapFound}, "
+                + $"badge={item.ExpectedTeamBadgeFound}, selected={item.SelectedBorderFound}, busy={item.BusyStatusFound}, "
+                + $"timer={item.MarchTimerFound}, diff={item.TeamRegionDifference?.ToString("F4") ?? "n/a"}, "
+                + $"changed={item.TeamRegionChanged}, success={item.SuccessRuleMatched}; {item.Message}"));
+            return $"Outcome: {result.Outcome}{Environment.NewLine}Success: {result.Success}{Environment.NewLine}"
+                + $"Expected team: {result.ExpectedTeam}{Environment.NewLine}Dispatched team: {result.DispatchedTeam?.ToString() ?? string.Empty}{Environment.NewLine}"
+                + $"Initial: {result.InitialState}{Environment.NewLine}Final: {result.FinalState}{Environment.NewLine}"
+                + $"Team Selection verified: {result.TeamSelectionVerified}{Environment.NewLine}Expected team selected: {result.ExpectedTeamSelectedBeforeTap}{Environment.NewLine}"
+                + $"Action button verified: {result.ActionButtonVerified}{Environment.NewLine}Team Selection closed: {result.TeamSelectionClosed}{Environment.NewLine}"
+                + $"World Map verified: {result.WorldMapVerified}{Environment.NewLine}Selected border disappeared: {result.SelectedBorderDisappeared}{Environment.NewLine}"
+                + $"Team region changed: {result.TeamRegionChanged}{Environment.NewLine}Team region difference: {result.TeamRegionDifference?.ToString("F4") ?? "n/a"}{Environment.NewLine}"
+                + $"Busy status: {result.BusyStatusVerified}{Environment.NewLine}March timer: {result.MarchTimerVerified}{Environment.NewLine}"
+                + $"March started: {result.MarchStartedVerified}{Environment.NewLine}Action taps: {result.ActionTapCount}{Environment.NewLine}"
+                + $"Observed frames: {result.ObservedFrameCount}{Environment.NewLine}Consecutive success: {result.ConsecutiveSuccessFrames}{Environment.NewLine}"
+                + $"Transient Unknown: {result.TransientUnknownFrameCount}{Environment.NewLine}Duration: {result.Duration.TotalMilliseconds:F0} ms{Environment.NewLine}"
+                + $"Diagnostic: {result.DiagnosticScreenshotPath ?? string.Empty}{Environment.NewLine}Message: {result.Message}{Environment.NewLine}"
+                + $"Error: {result.ErrorMessage ?? string.Empty}{Environment.NewLine}Observations:{Environment.NewLine}{observations}";
+        }
 
 
         private static int ParseInteger(string value, string fieldName)

@@ -23,6 +23,8 @@ Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "IKAutomation.TeamSelection.
 EndProject
 Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "IKAutomation.FarmTeamSelection.Tests", "Tests\IKAutomation.FarmTeamSelection.Tests\IKAutomation.FarmTeamSelection.Tests.csproj", "{A61A63BE-893F-4DF0-9A1F-7C61B9444860}"
 EndProject
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "IKAutomation.MarchDispatch.Tests", "Tests\IKAutomation.MarchDispatch.Tests\IKAutomation.MarchDispatch.Tests.csproj", "{DDE5711A-E4B1-44B3-9BE2-C2445887B90A}"
+EndProject
 Project("{2150E333-8FDC-42A3-9474-1A3956D46DE8}") = "Solution Items", "Solution Items", "{02EA681E-C7D8-13C7-8484-4AC65E1B71E8}"
 	ProjectSection(SolutionItems) = preProject
 		.editorconfig = .editorconfig
@@ -74,6 +76,10 @@ Global
 		{A61A63BE-893F-4DF0-9A1F-7C61B9444860}.Debug|Any CPU.Build.0 = Debug|Any CPU
 		{A61A63BE-893F-4DF0-9A1F-7C61B9444860}.Release|Any CPU.ActiveCfg = Release|Any CPU
 		{A61A63BE-893F-4DF0-9A1F-7C61B9444860}.Release|Any CPU.Build.0 = Release|Any CPU
+		{DDE5711A-E4B1-44B3-9BE2-C2445887B90A}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{DDE5711A-E4B1-44B3-9BE2-C2445887B90A}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{DDE5711A-E4B1-44B3-9BE2-C2445887B90A}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{DDE5711A-E4B1-44B3-9BE2-C2445887B90A}.Release|Any CPU.Build.0 = Release|Any CPU
 	EndGlobalSection
 	GlobalSection(SolutionProperties) = preSolution
 		HideSolutionNode = FALSE
