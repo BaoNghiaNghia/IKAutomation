@@ -440,9 +440,11 @@ namespace ADB_Tool_Automation_Post_FB.Infrastructure.ResourceSearch
             byte[] sourceTemplate = templateRegistry.LoadBytes(TemplateId.LevelValue7);
             byte[] stableTemplate = TryCreateStableLevelTemplate(sourceTemplate) ?? sourceTemplate;
             ImageMatchResult match = imageMatcher.Find(screenshot, stableTemplate, region);
+            if (match == null || !match.Found)
+                match = TryMatchBinarizedCurrentLevel(screenshot, sourceTemplate, minus, plus);
             return Evidence(TemplateId.LevelValue7, match, match != null && match.Found
-                ? "LevelValue7 matched by its stable value chip inside the level-control region."
-                : "LevelValue7 did not match directly or by its stable value chip.");
+                ? "LevelValue7 matched inside the current-value region using stable UI text."
+                : "LevelValue7 did not match directly, by its stable chip, or by binary UI text.");
         }
 
         private static ImageRegion? CreateLevelValueRegion(
@@ -483,6 +485,83 @@ namespace ADB_Tool_Automation_Post_FB.Infrastructure.ResourceSearch
             catch (ArgumentException)
             {
                 return null;
+            }
+        }
+
+        private ImageMatchResult TryMatchBinarizedCurrentLevel(byte[] screenshot,
+            byte[] templateBytes, ConfigurationTemplateEvidence minus,
+            ConfigurationTemplateEvidence plus)
+        {
+            try
+            {
+                int controlCenterX = (minus.X + minus.Width / 2
+                    + plus.X + plus.Width / 2) / 2;
+                int top = Math.Max(0, Math.Min(minus.Y, plus.Y) - 110);
+                var currentValueRegion = new ImageRegion(
+                    Math.Max(0, controlCenterX - 80), top, 100, 130);
+
+                using (var screenshotStream = new MemoryStream(screenshot, writable: false))
+                using (var screenshotBitmap = new Bitmap(screenshotStream))
+                using (var templateStream = new MemoryStream(templateBytes, writable: false))
+                using (var templateBitmap = new Bitmap(templateStream))
+                {
+                    if ((long)currentValueRegion.X + currentValueRegion.Width > screenshotBitmap.Width
+                        || (long)currentValueRegion.Y + currentValueRegion.Height > screenshotBitmap.Height)
+                        return ImageMatchResult.NotFound();
+
+                    int glyphLeft = templateBitmap.Width * 32 / 100;
+                    int glyphRight = templateBitmap.Width * 68 / 100;
+                    int glyphWidth = glyphRight - glyphLeft;
+                    if (glyphWidth <= 0) return ImageMatchResult.NotFound();
+
+                    using (Bitmap currentValue = screenshotBitmap.Clone(
+                        new Rectangle(currentValueRegion.X, currentValueRegion.Y,
+                            currentValueRegion.Width, currentValueRegion.Height),
+                        PixelFormat.Format32bppArgb))
+                    using (Bitmap glyph = templateBitmap.Clone(
+                        new Rectangle(glyphLeft, 0, glyphWidth, templateBitmap.Height),
+                        PixelFormat.Format32bppArgb))
+                    {
+                        byte[] binaryCurrentValue = CreateWhiteTextMaskPng(currentValue);
+                        byte[] binaryGlyph = CreateWhiteTextMaskPng(glyph);
+                        ImageMatchResult local = imageMatcher.Find(
+                            binaryCurrentValue, binaryGlyph, null);
+                        return local != null && local.Found
+                            ? ImageMatchResult.FoundAt(
+                                currentValueRegion.X + local.X,
+                                currentValueRegion.Y + local.Y,
+                                local.Width, local.Height)
+                            : ImageMatchResult.NotFound();
+                    }
+                }
+            }
+            catch (ArgumentException)
+            {
+                return ImageMatchResult.NotFound();
+            }
+        }
+
+        private static byte[] CreateWhiteTextMaskPng(Bitmap source)
+        {
+            using (var mask = new Bitmap(source.Width, source.Height,
+                PixelFormat.Format32bppArgb))
+            {
+                for (int y = 0; y < source.Height; y++)
+                {
+                    for (int x = 0; x < source.Width; x++)
+                    {
+                        Color pixel = source.GetPixel(x, y);
+                        bool isLightUiText = pixel.R > 150
+                            && pixel.G > 150 && pixel.B > 150;
+                        mask.SetPixel(x, y, isLightUiText ? Color.White : Color.Black);
+                    }
+                }
+
+                using (var output = new MemoryStream())
+                {
+                    mask.Save(output, ImageFormat.Png);
+                    return output.ToArray();
+                }
             }
         }
 

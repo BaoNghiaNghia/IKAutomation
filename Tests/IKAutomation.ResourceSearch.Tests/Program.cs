@@ -9,6 +9,8 @@ using ADB_Tool_Automation_Post_FB.Infrastructure.Concurrency;
 using ADB_Tool_Automation_Post_FB.Infrastructure.ResourceSearch;
 using System;
 using System.Collections.Generic;
+using System.Drawing;
+using System.Drawing.Imaging;
 using System.IO;
 using System.Linq;
 using System.Threading;
@@ -37,6 +39,7 @@ namespace IKAutomation.ResourceSearch.Tests
             Run("Level seven already selected sends no level input", LevelSevenAlreadySelected);
             Run("Level requires LevelValue7 verification", LevelRequiresVerification);
             Run("Level verification uses stable chip fallback", LevelStableChipFallback);
+            Run("Level verification tolerates translucent panel background", LevelBinaryTextFallback);
             Run("Out-of-range level rejected before input", InvalidLevelNoInput);
             Run("Checked filter is not tapped", CheckedFilterNoTap);
             Run("Unchecked filter is tapped and verified", UncheckedFilterToggled);
@@ -147,6 +150,20 @@ namespace IKAutomation.ResourceSearch.Tests
             Fixture f = Setup(); f.Ui.LevelRequiresStableChip = true;
             ResourceSearchConfigurationResult r = Execute(f);
             Assert(r.Success && r.LevelVerified, r.ErrorMessage);
+        }
+
+        private static void LevelBinaryTextFallback()
+        {
+            Fixture f = Setup();
+            f.Ui.ResourceSelected = true;
+            f.Ui.FilterChecked = true;
+            f.Ui.Level = 7;
+            f.Ui.HideLevelValue = true;
+            f.Ui.BinaryLevelFallback = true;
+            f.Registry.UseImageLevelTemplate = true;
+            ResourceSearchConfigurationResult result = Execute(f);
+            Assert(result.Success && result.LevelVerified,
+                "Binary UI-text fallback did not verify the visible level 7 value.");
         }
 
         private static void InvalidLevelNoInput()
@@ -329,7 +346,8 @@ namespace IKAutomation.ResourceSearch.Tests
         {
             public bool ResourceSelected, FilterChecked, IgnoreResourceTap, InvalidResourceBounds,
                 HideLevelValue, AmbiguousResource, LevelRequiresStableChip,
-                FilterRequiresStableControl, ResourceRequiresStableIcon, HideUncheckedFilter;
+                FilterRequiresStableControl, ResourceRequiresStableIcon, HideUncheckedFilter,
+                BinaryLevelFallback;
             public bool ResourceTabSelected = true;
             public int Level = 3;
         }
@@ -340,6 +358,10 @@ namespace IKAutomation.ResourceSearch.Tests
             public FakeMatcher(FakeUi ui) { this.ui = ui; }
             public ImageMatchResult Find(byte[] screenshot, byte[] template, ImageRegion? region = null)
             {
+                if (template.Length > 1 && template[0] == 137)
+                    return ui.BinaryLevelFallback && IsBinaryMask(template)
+                        ? ImageMatchResult.FoundAt(10, 20, 45, 33)
+                        : ImageMatchResult.NotFound();
                 TemplateId id = (TemplateId)template[0];
                 switch (id)
                 {
@@ -366,15 +388,45 @@ namespace IKAutomation.ResourceSearch.Tests
             }
             private static ImageMatchResult Found(bool value, int x, int y, int width, int height) =>
                 value ? ImageMatchResult.FoundAt(x, y, width, height) : ImageMatchResult.NotFound();
+
+            private static bool IsBinaryMask(byte[] png)
+            {
+                using (var stream = new MemoryStream(png, writable: false))
+                using (var bitmap = new Bitmap(stream))
+                {
+                    for (int y = 0; y < bitmap.Height; y++)
+                    for (int x = 0; x < bitmap.Width; x++)
+                    {
+                        Color pixel = bitmap.GetPixel(x, y);
+                        if (pixel.R != pixel.G || pixel.G != pixel.B
+                            || (pixel.R != 0 && pixel.R != 255)) return false;
+                    }
+                    return true;
+                }
+            }
         }
 
         private sealed class FakeRegistry : ITemplateRegistry
         {
-            public TemplateId? Missing;
+            public TemplateId? Missing; public bool UseImageLevelTemplate;
             public TemplateDefinition GetDefinition(TemplateId id) => new TemplateDefinition(id, id + ".png", .8);
             public string GetPath(TemplateId id) => Path.Combine("templates", id + ".png");
-            public byte[] LoadBytes(TemplateId id) => new[] { (byte)id };
+            public byte[] LoadBytes(TemplateId id) => id == TemplateId.LevelValue7 && UseImageLevelTemplate
+                ? CreateLevelTemplate() : new[] { (byte)id };
             public bool Exists(TemplateId id) => Missing != id;
+
+            private static byte[] CreateLevelTemplate()
+            {
+                using (var bitmap = new Bitmap(125, 33))
+                using (var graphics = Graphics.FromImage(bitmap))
+                using (var stream = new MemoryStream())
+                {
+                    graphics.Clear(Color.DarkRed);
+                    graphics.DrawString("7", SystemFonts.DefaultFont, Brushes.White, 55, 5);
+                    bitmap.Save(stream, ImageFormat.Png);
+                    return stream.ToArray();
+                }
+            }
         }
 
         private sealed class FakeNavigation : IWorldMapNavigationService
@@ -420,7 +472,17 @@ namespace IKAutomation.ResourceSearch.Tests
                 else if (x == 410) SearchTaps++;
                 return Task.CompletedTask;
             }
-            public Task<byte[]> CaptureScreenshotPngAsync(string d, CancellationToken t) { t.ThrowIfCancellationRequested(); return Task.FromResult(new byte[] { 1 }); }
+            public Task<byte[]> CaptureScreenshotPngAsync(string d, CancellationToken t)
+            {
+                t.ThrowIfCancellationRequested();
+                if (!ui.BinaryLevelFallback) return Task.FromResult(new byte[] { 1 });
+                using (var bitmap = new Bitmap(1280, 720))
+                using (var stream = new MemoryStream())
+                {
+                    bitmap.Save(stream, ImageFormat.Png);
+                    return Task.FromResult(stream.ToArray());
+                }
+            }
             public Task<IReadOnlyList<string>> GetDeviceNamesAsync(CancellationToken t) => Task.FromResult<IReadOnlyList<string>>(new[] { "LDPlayer" });
             public Task<bool> IsRunningAsync(string d, CancellationToken t) => Task.FromResult(true);
             public Task OpenAsync(string d, CancellationToken t) => Task.CompletedTask;
