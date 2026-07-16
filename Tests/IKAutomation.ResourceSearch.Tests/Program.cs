@@ -40,6 +40,7 @@ namespace IKAutomation.ResourceSearch.Tests
             Run("Checked filter is not tapped", CheckedFilterNoTap);
             Run("Unchecked filter is tapped and verified", UncheckedFilterToggled);
             Run("Filter verification uses stable control fallback", FilterStableControlFallback);
+            Run("Unchecked filter uses Search-relative fallback", UncheckedFilterSearchRelativeFallback);
             Run("UnoccupiedOnly false is supported", FalseFilterSupported);
             Run("Final success requires all evidence", FinalEvidenceRequired);
             Run("Search button is never tapped", SearchNeverTapped);
@@ -163,6 +164,15 @@ namespace IKAutomation.ResourceSearch.Tests
             ResourceSearchConfigurationResult r = Execute(f);
             Assert(r.Success && r.FilterVerified, r.ErrorMessage);
             Equal(1, f.Client.FilterTaps, "Filter taps.");
+        }
+
+        private static void UncheckedFilterSearchRelativeFallback()
+        {
+            Fixture f = Setup(); f.Ui.HideUncheckedFilter = true;
+            ResourceSearchConfigurationResult r = Execute(f);
+            Assert(r.Success && r.FilterVerified, r.ErrorMessage);
+            Equal(1, f.Client.FilterTaps, "Filter fallback taps.");
+            Assert(f.Client.Taps.Contains("408,362"), "Wrong Search-relative filter fallback center.");
         }
 
         private static void FalseFilterSupported()
@@ -309,7 +319,7 @@ namespace IKAutomation.ResourceSearch.Tests
         {
             public bool ResourceSelected, FilterChecked, IgnoreResourceTap, InvalidResourceBounds,
                 HideLevelValue, AmbiguousResource, LevelRequiresStableChip,
-                FilterRequiresStableControl, ResourceRequiresStableIcon;
+                FilterRequiresStableControl, ResourceRequiresStableIcon, HideUncheckedFilter;
             public bool ResourceTabSelected = true;
             public int Level = 3;
         }
@@ -338,6 +348,7 @@ namespace IKAutomation.ResourceSearch.Tests
                     case TemplateId.UnoccupiedFilterChecked: return Found(ui.FilterChecked
                         && (!ui.FilterRequiresStableControl || region.HasValue), 300, 100, 20, 20);
                     case TemplateId.UnoccupiedFilterUnchecked: return Found(!ui.FilterChecked
+                        && !ui.HideUncheckedFilter
                         && (!ui.FilterRequiresStableControl || region.HasValue), 300, 100, 20, 20);
                     case TemplateId.SearchButtonEnabled: return ImageMatchResult.FoundAt(400, 400, 20, 20);
                     default: return ImageMatchResult.FoundAt(1, 1, 10, 10);
@@ -395,6 +406,7 @@ namespace IKAutomation.ResourceSearch.Tests
                 else if (x == 110) { MinusTaps++; ui.Level = Math.Max(1, ui.Level - 1); }
                 else if (x == 210) { PlusTaps++; ui.Level = Math.Min(7, ui.Level + 1); }
                 else if (x == 310) { FilterTaps++; ui.FilterChecked = !ui.FilterChecked; }
+                else if (x == 408 && y == 362) { FilterTaps++; ui.FilterChecked = !ui.FilterChecked; }
                 else if (x == 410) SearchTaps++;
                 return Task.CompletedTask;
             }

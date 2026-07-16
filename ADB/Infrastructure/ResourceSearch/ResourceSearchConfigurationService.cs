@@ -269,9 +269,26 @@ namespace ADB_Tool_Automation_Post_FB.Infrastructure.ResourceSearch
             }
             if (!HasBounds(other))
             {
-                AddStep(steps, "SetUnoccupiedFilter", false, 1, evidence,
-                    "Opposite filter state was not found with valid bounds; no Tap was sent.", null);
-                return false;
+                // The unchecked control has a translucent center, so its template can
+                // change with the map rendered behind the panel. For the supported
+                // UnoccupiedOnly workflow, use the verified Search button as a local
+                // anchor and still require the checked template after the Tap. This is
+                // bounded to the known 1280x720 panel layout and is never a blind Tap.
+                if (!requestedChecked || !HasBounds(search))
+                {
+                    AddStep(steps, "SetUnoccupiedFilter", false, 1, evidence,
+                        "Opposite filter state was not found with valid bounds; no Tap was sent.", null);
+                    return false;
+                }
+
+                other = CreateSearchRelativeUncheckedFilterEvidence(search);
+                if (!HasBounds(other))
+                {
+                    AddStep(steps, "SetUnoccupiedFilter", false, 1, evidence,
+                        "Unchecked filter fallback bounds could not be derived; no Tap was sent.", null);
+                    return false;
+                }
+                evidence.Add(other);
             }
             await TapAsync(deviceName, other, "SetUnoccupiedFilter", result, cancellationToken);
             ConfigurationTemplateEvidence verified = await PollForFilterStateAsync(
@@ -282,6 +299,22 @@ namespace ADB_Tool_Automation_Post_FB.Infrastructure.ResourceSearch
                 verified.Found ? "Requested filter state verified after Tap."
                     : "Requested filter state was not verified before timeout.", null);
             return verified.Found;
+        }
+
+        private static ConfigurationTemplateEvidence CreateSearchRelativeUncheckedFilterEvidence(
+            ConfigurationTemplateEvidence search)
+        {
+            const int controlWidth = 22;
+            const int controlHeight = 23;
+            int x = search.X - 3;
+            int y = search.Y - 49;
+            ImageMatchResult match = x >= 0 && y >= 0
+                ? ImageMatchResult.FoundAt(x, y, controlWidth, controlHeight)
+                : ImageMatchResult.NotFound();
+            return Evidence(TemplateId.UnoccupiedFilterUnchecked, match,
+                match.Found
+                    ? "Unchecked filter control bounds were derived from the verified Search button anchor."
+                    : "Unchecked filter control bounds could not be derived from the Search button anchor.");
         }
 
         private async Task<bool> VerifyFinalAsync(string deviceName,
