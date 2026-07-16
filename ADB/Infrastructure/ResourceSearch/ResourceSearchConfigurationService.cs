@@ -170,8 +170,11 @@ namespace ADB_Tool_Automation_Post_FB.Infrastructure.ResourceSearch
             for (int attempt = 1; attempt <= options.MaxSelectionAttempts; attempt++)
             {
                 byte[] screenshot = await ldPlayerClient.CaptureScreenshotPngAsync(deviceName, cancellationToken);
-                ConfigurationTemplateEvidence selected = Match(screenshot, TemplateId.ResourceIronSelected);
-                ConfigurationTemplateEvidence unselected = Match(screenshot, TemplateId.ResourceIronUnselected);
+                ConfigurationTemplateEvidence search = Match(screenshot, TemplateId.SearchButtonEnabled);
+                ConfigurationTemplateEvidence selected = MatchResourceState(
+                    screenshot, TemplateId.ResourceIronSelected, search);
+                ConfigurationTemplateEvidence unselected = MatchResourceState(
+                    screenshot, TemplateId.ResourceIronUnselected, search);
                 evidence.Add(selected); evidence.Add(unselected);
                 if (selected.Found)
                 {
@@ -190,8 +193,8 @@ namespace ADB_Tool_Automation_Post_FB.Infrastructure.ResourceSearch
                 }
 
                 await TapAsync(deviceName, unselected, "SelectIron", result, cancellationToken);
-                ConfigurationTemplateEvidence verified = await PollForAsync(
-                    deviceName, TemplateId.ResourceIronSelected, cancellationToken);
+                ConfigurationTemplateEvidence verified = await PollForResourceStateAsync(
+                    deviceName, TemplateId.ResourceIronSelected, search, cancellationToken);
                 evidence.Add(verified);
                 if (verified.Found)
                 {
@@ -294,7 +297,7 @@ namespace ADB_Tool_Automation_Post_FB.Infrastructure.ResourceSearch
             var evidence = new List<ConfigurationTemplateEvidence>
             {
                 Match(screenshot, TemplateId.ResourceTabSelected),
-                Match(screenshot, TemplateId.ResourceIronSelected),
+                MatchResourceState(screenshot, TemplateId.ResourceIronSelected, search),
                 MatchLevel7(screenshot, minus, plus),
                 MatchFilterState(screenshot, request.UnoccupiedOnly
                     ? TemplateId.UnoccupiedFilterChecked : TemplateId.UnoccupiedFilterUnchecked, search),
@@ -357,6 +360,24 @@ namespace ADB_Tool_Automation_Post_FB.Infrastructure.ResourceSearch
                 byte[] screenshot = await ldPlayerClient.CaptureScreenshotPngAsync(
                     deviceName, cancellationToken);
                 last = MatchFilterState(screenshot, templateId, search);
+                if (last.Found) return last;
+                await Task.Delay(options.StatePollIntervalMs, cancellationToken);
+            }
+            return last;
+        }
+
+        private async Task<ConfigurationTemplateEvidence> PollForResourceStateAsync(string deviceName,
+            TemplateId templateId, ConfigurationTemplateEvidence search,
+            CancellationToken cancellationToken)
+        {
+            var watch = Stopwatch.StartNew();
+            ConfigurationTemplateEvidence last = Evidence(templateId, null, "Not checked.");
+            while (watch.Elapsed < TimeSpan.FromSeconds(options.ActionVerificationTimeoutSeconds))
+            {
+                cancellationToken.ThrowIfCancellationRequested();
+                byte[] screenshot = await ldPlayerClient.CaptureScreenshotPngAsync(
+                    deviceName, cancellationToken);
+                last = MatchResourceState(screenshot, templateId, search);
                 if (last.Found) return last;
                 await Task.Delay(options.StatePollIntervalMs, cancellationToken);
             }
@@ -436,6 +457,51 @@ namespace ADB_Tool_Automation_Post_FB.Infrastructure.ResourceSearch
             return Evidence(templateId, match, match != null && match.Found
                 ? $"Template '{templateId}' matched by its stable control center inside the Search-relative region."
                 : $"Template '{templateId}' did not match directly or by its stable control center.");
+        }
+
+        private ConfigurationTemplateEvidence MatchResourceState(byte[] screenshot,
+            TemplateId templateId, ConfigurationTemplateEvidence search)
+        {
+            ConfigurationTemplateEvidence direct = Match(screenshot, templateId);
+            if (direct.Found || !HasBounds(search)) return direct;
+
+            int left = Math.Max(0, search.X - 700);
+            int top = Math.Max(0, search.Y - 180);
+            ImageRegion region = new ImageRegion(left, top, search.X - left, 210);
+            byte[] sourceTemplate = templateRegistry.LoadBytes(templateId);
+            byte[] stableTemplate = TryCreateStableResourceTemplate(sourceTemplate) ?? sourceTemplate;
+            ImageMatchResult match = imageMatcher.Find(screenshot, stableTemplate, region);
+            return Evidence(templateId, match, match != null && match.Found
+                ? $"Template '{templateId}' matched by its stable icon center inside the Search-relative region."
+                : $"Template '{templateId}' did not match directly or by its stable icon center.");
+        }
+
+        private static byte[] TryCreateStableResourceTemplate(byte[] templateBytes)
+        {
+            try
+            {
+                using (var input = new MemoryStream(templateBytes, writable: false))
+                using (var source = new Bitmap(input))
+                {
+                    int marginX = source.Width / 4;
+                    int marginY = source.Height / 4;
+                    int width = source.Width - marginX * 2;
+                    int height = source.Height - marginY * 2;
+                    if (width <= 0 || height <= 0) return null;
+
+                    using (Bitmap stable = source.Clone(
+                        new Rectangle(marginX, marginY, width, height), PixelFormat.Format32bppArgb))
+                    using (var output = new MemoryStream())
+                    {
+                        stable.Save(output, ImageFormat.Png);
+                        return output.ToArray();
+                    }
+                }
+            }
+            catch (ArgumentException)
+            {
+                return null;
+            }
         }
 
         private static byte[] TryCreateStableFilterTemplate(byte[] templateBytes)

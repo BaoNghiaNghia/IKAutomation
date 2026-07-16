@@ -29,6 +29,7 @@ namespace IKAutomation.ResourceSearch.Tests
             Run("Selected Iron is not tapped", SelectedIronNoTap);
             Run("Unselected Iron center is tapped", UnselectedIronCenter);
             Run("Iron requires selected verification", IronRequiresVerification);
+            Run("Iron verification uses stable icon fallback", IronStableIconFallback);
             Run("Missing Iron bounds prevents fallback", MissingIronBounds);
             Run("Level reset taps minus eight times", MinusEight);
             Run("Level seven taps plus six times", PlusSix);
@@ -95,6 +96,14 @@ namespace IKAutomation.ResourceSearch.Tests
             Fixture f = Setup(); f.Ui.IgnoreResourceTap = true;
             ResourceSearchConfigurationResult r = Execute(f);
             Assert(!r.Success && !r.ResourceVerified, "Resource falsely verified.");
+        }
+
+        private static void IronStableIconFallback()
+        {
+            Fixture f = Setup(); f.Ui.ResourceRequiresStableIcon = true;
+            ResourceSearchConfigurationResult r = Execute(f);
+            Assert(r.Success && r.ResourceVerified, r.ErrorMessage);
+            Equal(1, f.Client.ResourceTaps, "Resource taps.");
         }
 
         private static void MissingIronBounds()
@@ -276,7 +285,7 @@ namespace IKAutomation.ResourceSearch.Tests
         {
             public bool ResourceSelected, FilterChecked, IgnoreResourceTap, InvalidResourceBounds,
                 HideLevelValue, AmbiguousResource, LevelRequiresStableChip,
-                FilterRequiresStableControl;
+                FilterRequiresStableControl, ResourceRequiresStableIcon;
             public bool ResourceTabSelected = true;
             public int Level = 3;
         }
@@ -292,10 +301,12 @@ namespace IKAutomation.ResourceSearch.Tests
                 {
                     case TemplateId.ResourceTabSelected: return Found(ui.ResourceTabSelected, 158, 648, 104, 52);
                     case TemplateId.ResourceTabUnselected: return Found(!ui.ResourceTabSelected, 158, 648, 104, 52);
-                    case TemplateId.ResourceIronSelected: return Found(ui.ResourceSelected, 10, 10, 20, 30);
+                    case TemplateId.ResourceIronSelected: return Found(ui.ResourceSelected
+                        && (!ui.ResourceRequiresStableIcon || region.HasValue), 10, 10, 20, 30);
                     case TemplateId.ResourceIronUnselected: return ui.InvalidResourceBounds
                         ? ImageMatchResult.FoundAt(10, 10, 0, 0)
-                        : Found(!ui.ResourceSelected || ui.AmbiguousResource, 10, 10, 20, 30);
+                        : Found((!ui.ResourceSelected || ui.AmbiguousResource)
+                            && (!ui.ResourceRequiresStableIcon || region.HasValue), 10, 10, 20, 30);
                     case TemplateId.LevelMinusButton: return ImageMatchResult.FoundAt(100, 100, 20, 20);
                     case TemplateId.LevelPlusButton: return ImageMatchResult.FoundAt(200, 100, 20, 20);
                     case TemplateId.LevelValue7: return Found(ui.Level == 7 && !ui.HideLevelValue
