@@ -214,9 +214,20 @@ namespace ADB_Tool_Automation_Post_FB.Infrastructure.ResourceSearch
             CancellationToken cancellationToken)
         {
             byte[] screenshot = await ldPlayerClient.CaptureScreenshotPngAsync(deviceName, cancellationToken);
+            ConfigurationTemplateEvidence currentLevel = Match(screenshot, TemplateId.LevelValue7);
+            var evidence = new List<ConfigurationTemplateEvidence> { currentLevel };
+            if (currentLevel.Found)
+            {
+                result.LevelVerified = true;
+                AddStep(steps, "SetLevel", true, 1, evidence,
+                    "Level 7 was already verified; no level input was sent.", null);
+                return true;
+            }
+
             ConfigurationTemplateEvidence minus = Match(screenshot, TemplateId.LevelMinusButton);
             ConfigurationTemplateEvidence plus = Match(screenshot, TemplateId.LevelPlusButton);
-            var evidence = new List<ConfigurationTemplateEvidence> { minus, plus };
+            evidence.Add(minus);
+            evidence.Add(plus);
             if (!HasBounds(minus) || !HasBounds(plus))
             {
                 AddStep(steps, "SetLevel", false, 1, evidence,

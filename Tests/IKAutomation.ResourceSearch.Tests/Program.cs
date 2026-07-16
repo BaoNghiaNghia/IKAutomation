@@ -34,6 +34,7 @@ namespace IKAutomation.ResourceSearch.Tests
             Run("Missing Iron bounds prevents fallback", MissingIronBounds);
             Run("Level reset taps minus eight times", MinusEight);
             Run("Level seven taps plus six times", PlusSix);
+            Run("Level seven already selected sends no level input", LevelSevenAlreadySelected);
             Run("Level requires LevelValue7 verification", LevelRequiresVerification);
             Run("Level verification uses stable chip fallback", LevelStableChipFallback);
             Run("Out-of-range level rejected before input", InvalidLevelNoInput);
@@ -124,6 +125,15 @@ namespace IKAutomation.ResourceSearch.Tests
 
         private static void MinusEight() { Fixture f = Setup(); Execute(f); Equal(8, f.Client.MinusTaps, "Minus taps."); }
         private static void PlusSix() { Fixture f = Setup(); Execute(f); Equal(6, f.Client.PlusTaps, "Plus taps."); }
+
+        private static void LevelSevenAlreadySelected()
+        {
+            Fixture f = Setup(); f.Ui.Level = 7;
+            ResourceSearchConfigurationResult r = Execute(f);
+            Assert(r.Success && r.LevelVerified, r.ErrorMessage);
+            Equal(0, f.Client.MinusTaps, "Minus taps.");
+            Equal(0, f.Client.PlusTaps, "Plus taps.");
+        }
 
         private static void LevelRequiresVerification()
         {
