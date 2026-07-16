@@ -23,6 +23,7 @@ internal static class Program
     {
         Run("TeamSelection not ready sends no Tap", NotReady);
         Run("Expected Team4 not selected sends no Tap", NotSelected);
+        Run("Badge color variation with unique selected border is accepted", BadgeVariationAccepted);
         Run("Team4 selected permits action Tap", SelectedPermitsTap);
         Run("Multiple selected ROIs are indeterminate", AmbiguousSelection);
         Run("Missing action bounds is unavailable", MissingAction);
@@ -83,6 +84,7 @@ internal static class Program
 
     private static void NotReady() { var h = new Harness(); h.Detector.Initial = h.Detector.Result(GameState.Unknown, false); var r = Execute(h); Eq(DispatchMarchOutcome.TeamSelectionNotReady, r.Outcome, "outcome"); Eq(0, h.Client.Taps.Count, "tap count"); }
     private static void NotSelected() { var h = new Harness(); h.Matcher.Rule = (f, id, roi) => id == TemplateId.TeamSelectedBorderAnchor ? ImageMatchResult.NotFound() : h.Matcher.Default(f, id, roi); var r = Execute(h); Eq(DispatchMarchOutcome.ExpectedTeamNotSelected, r.Outcome, "outcome"); Eq(0, h.Client.Taps.Count, "tap count"); }
+    private static void BadgeVariationAccepted() { var h = new Harness(); h.Matcher.Rule = (f,id,roi) => id == TemplateId.Team4Badge ? ImageMatchResult.NotFound() : h.Matcher.Default(f,id,roi); var r=Execute(h); Eq(DispatchMarchOutcome.MarchStarted,r.Outcome,"outcome"); Eq(1,r.ActionTapCount,"tap count"); Is(r.ExpectedTeamSelectedBeforeTap,"selected border should identify Team4 ROI"); }
     private static void SelectedPermitsTap() { var h = new Harness(); var r = Execute(h); Eq(DispatchMarchOutcome.MarchStarted, r.Outcome, "outcome"); Is(r.ExpectedTeamSelectedBeforeTap, "selected"); }
     private static void AmbiguousSelection() { var h = new Harness(); h.Matcher.Rule = (f,id,roi) => id == TemplateId.TeamSelectedBorderAnchor && roi.HasValue && (roi.Value.Y == 290 || roi.Value.Y == 435) ? Found(10,roi.Value.Y) : h.Matcher.Default(f,id,roi); var r=Execute(h); Eq(DispatchMarchOutcome.VerificationIndeterminate,r.Outcome,"outcome"); Eq(0,h.Client.Taps.Count,"tap count"); }
     private static void MissingAction() { var h=new Harness(); h.Matcher.Rule=(f,id,roi)=>id==TemplateId.TeamActionButtonEnabled && f==2 ? ImageMatchResult.NotFound():h.Matcher.Default(f,id,roi); var r=Execute(h); Eq(DispatchMarchOutcome.ActionButtonUnavailable,r.Outcome,"outcome"); }

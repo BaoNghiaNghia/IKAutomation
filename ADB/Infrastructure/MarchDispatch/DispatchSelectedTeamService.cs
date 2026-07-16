@@ -105,7 +105,7 @@ namespace ADB_Tool_Automation_Post_FB.Infrastructure.MarchDispatch
                     return await CompleteAsync(deviceName, result, DispatchMarchOutcome.VerificationIndeterminate,
                         "Selected border appeared in multiple team ROIs; no Tap was sent.",
                         "Ambiguous selected-team evidence.", lastFrame, watch, cancellationToken);
-                if (!precheck.BadgeFound || !precheck.SelectedFound)
+                if (!precheck.SelectedFound)
                     return await CompleteAsync(deviceName, result, DispatchMarchOutcome.ExpectedTeamNotSelected,
                         "Expected team is not selected; no Tap was sent.", null,
                         lastFrame, watch, cancellationToken);
@@ -124,7 +124,7 @@ namespace ADB_Tool_Automation_Post_FB.Infrastructure.MarchDispatch
                 ImageMatchResult action = Match(beforeDispatch, TemplateId.TeamActionButtonEnabled, null);
                 logger.Info($"[March Dispatch] DeviceName='{deviceName}', FreshState='{freshState.State}', ExpectedBadgeFound={freshSelection.BadgeFound}, ExpectedSelected={freshSelection.SelectedFound}, ActionButtonFound={HasBounds(action)}, ActionButtonBounds={(HasBounds(action) ? $"({action.X},{action.Y},{action.Width},{action.Height})" : string.Empty)}");
                 if (!IsReady(freshState) || freshSelection.Ambiguous
-                    || !freshSelection.BadgeFound || !freshSelection.SelectedFound)
+                    || !freshSelection.SelectedFound)
                     return await CompleteAsync(deviceName, result, DispatchMarchOutcome.ExpectedTeamNotSelected,
                         "Expected team selection changed before dispatch; no Tap was sent.", null,
                         beforeDispatch, watch, cancellationToken);
@@ -246,7 +246,7 @@ namespace ADB_Tool_Automation_Post_FB.Infrastructure.MarchDispatch
                 || state.State != GameState.TeamSelection || !observation.TeamSelectionFound)
                 return false;
             Verification selection = VerifySelection(frame, team, badgeId);
-            if (selection.Ambiguous || !selection.BadgeFound || !selection.SelectedFound) return false;
+            if (selection.Ambiguous || !selection.SelectedFound) return false;
             ImageMatchResult adjust = Match(frame, TemplateId.TeamAdjustFormationButton, null);
             action = Match(frame, TemplateId.TeamActionButtonEnabled, null);
             return adjust.Found && HasBounds(action);
