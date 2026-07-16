@@ -20,6 +20,8 @@ namespace ADB_Tool_Automation_Post_FB.Infrastructure.LDPlayer
     /// </summary>
     public sealed class AutoLdPlayerClient : ILdPlayerClient
     {
+        private const int InputCommandTimeoutMilliseconds = 3000;
+
         private const int ScreenshotReadyAttempts = 3;
         private static readonly ConcurrentDictionary<string, SemaphoreSlim> ScreenshotLocks =
             new ConcurrentDictionary<string, SemaphoreSlim>(StringComparer.OrdinalIgnoreCase);
@@ -204,7 +206,20 @@ namespace ADB_Tool_Automation_Post_FB.Infrastructure.LDPlayer
             cancellationToken.ThrowIfCancellationRequested();
             ValidateDeviceName(deviceName);
 
-            Auto_LDPlayer.LDPlayer.Tap(LDType.Name, deviceName, x, y);
+            // LDPlayer.Tap uses a 200 ms process timeout and retries once. The first
+            // command can reach Android even when ldnconsole has not exited yet, so
+            // its retry may become a delayed second tap after the current panel has
+            // closed. Input commands have side effects and must never be retried.
+            string output = Auto_LDPlayer.LDPlayer.Adb(
+                LDType.Name,
+                deviceName,
+                $"shell input tap {x} {y}",
+                InputCommandTimeoutMilliseconds,
+                0);
+            if (output == null)
+                throw new InvalidOperationException(
+                    $"Failed to send a single tap to LDPlayer device '{deviceName}' at ({x}, {y}).");
+
             return Task.CompletedTask;
         }
 
