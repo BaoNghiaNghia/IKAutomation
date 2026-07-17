@@ -135,6 +135,7 @@ namespace ADB_Tool_Automation_Post_FB.Infrastructure.Workflows
                     }
 
                     result.LocatedResource = resource; result.LocatedLevel = level.LocatedLevel;
+                    result.LastCompletedStep = OneShotFarmStep.SearchWithLevelFallback;
                     ResourcePopupVerificationResult popupResult = await popup.VerifyAsync(
                         deviceName, resource, cancellationToken);
                     attempt.PopupResult = popupResult; result.FinalState = popupResult.FinalState;
@@ -143,11 +144,14 @@ namespace ADB_Tool_Automation_Post_FB.Infrastructure.Workflows
                     if (!popupResult.Success || popupResult.Outcome != ResourcePopupOutcome.ResourcePopupReady
                         || !popupResult.ExpectedResourceVerified || !popupResult.GatherButtonVerified)
                     {
+                        result.LastCompletedStep = OneShotFarmStep.VerifyResourcePopup;
                         attempt.Message = popupResult.Message; attempt.ErrorMessage = popupResult.ErrorMessage;
                         attempt.Duration = attemptWatch.Elapsed;
                         return Complete(result, ResourceFarmFallbackOutcome.PopupFailed, watch,
                             popupResult.Message, popupResult.ErrorMessage);
                     }
+
+                    result.LastCompletedStep = OneShotFarmStep.VerifyResourcePopup;
 
                     OpenTeamSelectionResult opened = await openTeam.OpenAsync(deviceName, cancellationToken);
                     attempt.OpenTeamResult = opened; result.FinalState = opened.FinalState;

@@ -8,9 +8,6 @@ using ADB_Tool_Automation_Post_FB.Infrastructure.ResourceSearch;
 using System;
 using System.Collections.Generic;
 using System.Diagnostics;
-using System.Drawing;
-using System.Drawing.Imaging;
-using System.IO;
 using System.Threading;
 using System.Threading.Tasks;
 
@@ -96,30 +93,35 @@ namespace ADB_Tool_Automation_Post_FB.Infrastructure.ResourcePopup
                     result.ObservedFrameCount++;
                     if (result.ObservedFrameCount == 1) result.InitialState = detection.State;
                     result.FinalState = detection.State;
-                    GameDetectionEvidence anchor = Match(lastFrame, TemplateId.ResourcePopupInfoAnchor);
+                    GameDetectionEvidence anchor = Match(lastFrame,
+                        TemplateId.ResourcePopupInfoAnchor, options.HeaderRegion, "HeaderRegion");
                     ResourceTemplateProfile expectedProfile = profileProvider.Get(resourceType);
-                    GameDetectionEvidence iron = MatchPopupTitle(
-                        lastFrame, expectedProfile.PopupTitleTemplate);
+                    GameDetectionEvidence expectedTitle = Match(lastFrame,
+                        expectedProfile.PopupTitleTemplate, options.HeaderRegion, "HeaderRegion");
                     ResourceType? mismatch = FindMismatchedResource(lastFrame, resourceType);
-                    GameDetectionEvidence gather = Match(lastFrame, TemplateId.GatherButtonEnabled);
-                    result.Evidence = new[] { anchor, iron, gather };
+                    GameDetectionEvidence gather = Match(lastFrame,
+                        TemplateId.GatherButtonEnabled, options.ActionRegion, "ActionRegion");
+                    result.Evidence = new[] { anchor, expectedTitle, gather };
                     result.PopupAnchorVerified = anchor.Found;
-                    result.IronResourceVerified = iron.Found;
-                    result.ResourceVerified = iron.Found;
-                    result.ExpectedResourceVerified = iron.Found;
+                    result.IronResourceVerified = resourceType == ResourceType.Iron && expectedTitle.Found;
+                    result.ResourceVerified = expectedTitle.Found;
+                    result.ExpectedResourceVerified = expectedTitle.Found;
+                    result.PopupAnchorFound = anchor.Found;
+                    result.ExpectedResourceTitleFound = expectedTitle.Found;
+                    result.GatherButtonFound = gather.Found;
                     result.MismatchedResource = mismatch;
                     result.GatherButtonVerified = gather.Found;
                     result.GatherButtonMatch = gather.MatchResult;
 
-                    int signals = (anchor.Found ? 1 : 0) + (iron.Found ? 1 : 0) + (gather.Found ? 1 : 0);
-                    bool detected = signals >= 2 && (anchor.Found || iron.Found);
+                    int signals = (anchor.Found ? 1 : 0) + (expectedTitle.Found ? 1 : 0) + (gather.Found ? 1 : 0);
+                    bool detected = signals >= 2 && (anchor.Found || expectedTitle.Found);
                     popupObserved |= detected || detection.State == GameState.ResourcePopup;
-                    if (!iron.Found && mismatch.HasValue && anchor.Found)
+                    if (!expectedTitle.Found && mismatch.HasValue && anchor.Found)
                         return Complete(result, ResourcePopupOutcome.ResourcePopupMismatch, watch,
                             $"Popup title belongs to {mismatch.Value}, not expected {resourceType}; no Gather input was sent.", null);
-                    bool ready = anchor.Found && iron.Found && gather.Found;
+                    bool ready = anchor.Found && expectedTitle.Found && gather.Found;
                     readyFrames = ready ? readyFrames + 1 : 0;
-                    LogFrame(deviceName, result, anchor, iron, gather);
+                    LogFrame(deviceName, result, anchor, expectedTitle, gather);
                     if (readyFrames >= options.RequiredConsecutiveReadyFrames)
                         return Complete(result, ResourcePopupOutcome.ResourcePopupReady, watch,
                             $"{resourceType} resource popup and enabled Gather button were verified.", null);
@@ -130,7 +132,7 @@ namespace ADB_Tool_Automation_Post_FB.Infrastructure.ResourcePopup
                     ? ResourcePopupOutcome.ResourcePopupDetectedButNotReady
                     : ResourcePopupOutcome.ResourcePopupNotDetected;
                 string message = popupObserved
-                    ? $"Resource popup was detected but {resourceType}/Gather readiness was not fully verified."
+                    ? BuildNotReadyMessage(result)
                     : "Resource popup was not detected before timeout.";
                 return await CompleteWithDiagnosticAsync(deviceName, result, outcome, watch,
                     message, null, lastFrame, cancellationToken);
@@ -149,69 +151,19 @@ namespace ADB_Tool_Automation_Post_FB.Infrastructure.ResourcePopup
             }
         }
 
-        private GameDetectionEvidence Match(byte[] screenshot, TemplateId id)
+        private GameDetectionEvidence Match(byte[] screenshot, TemplateId id,
+            ImageRegion region, string regionName)
         {
-            ImageMatchResult match = matcher.Find(screenshot, registry.LoadBytes(id), options.PopupRegion);
+            ImageMatchResult match = matcher.Find(screenshot, registry.LoadBytes(id), region);
             return new GameDetectionEvidence
             {
                 TemplateId = id, TemplateExists = true,
                 Found = match != null && match.Found, MatchResult = match,
-                Confidence = match?.Confidence, SearchRegion = options.PopupRegion,
+                Confidence = match?.Confidence, SearchRegion = region,
                 Message = match != null && match.Found
-                    ? $"Template '{id}' matched inside ResourcePopup ROI."
-                    : $"Template '{id}' did not match inside ResourcePopup ROI."
+                    ? $"Template '{id}' matched inside {regionName}."
+                    : $"Template '{id}' did not match inside {regionName}."
             };
-        }
-
-        private GameDetectionEvidence MatchPopupTitle(byte[] screenshot, TemplateId id)
-        {
-            GameDetectionEvidence direct = Match(screenshot, id);
-            if (direct.Found) return direct;
-
-            byte[] sourceTemplate = registry.LoadBytes(id);
-            byte[] stableTitle = TryCreateStablePopupTitleTemplate(sourceTemplate);
-            if (stableTitle == null) return direct;
-
-            ImageMatchResult match = matcher.Find(screenshot, stableTitle, options.PopupRegion);
-            return new GameDetectionEvidence
-            {
-                TemplateId = id,
-                TemplateExists = true,
-                Found = match != null && match.Found,
-                MatchResult = match,
-                Confidence = match?.Confidence,
-                SearchRegion = options.PopupRegion,
-                Message = match != null && match.Found
-                    ? $"Template '{id}' matched by its stable resource-title region inside ResourcePopup ROI."
-                    : $"Template '{id}' did not match directly or by its stable resource-title region inside ResourcePopup ROI."
-            };
-        }
-
-        private static byte[] TryCreateStablePopupTitleTemplate(byte[] templateBytes)
-        {
-            try
-            {
-                using (var input = new MemoryStream(templateBytes, writable: false))
-                using (var source = new Bitmap(input))
-                {
-                    int left = source.Width * 55 / 100;
-                    int height = source.Height * 55 / 100;
-                    int width = source.Width - left;
-                    if (width <= 0 || height <= 0) return null;
-
-                    using (Bitmap stable = source.Clone(
-                        new Rectangle(left, 0, width, height), PixelFormat.Format32bppArgb))
-                    using (var output = new MemoryStream())
-                    {
-                        stable.Save(output, ImageFormat.Png);
-                        return output.ToArray();
-                    }
-                }
-            }
-            catch (ArgumentException)
-            {
-                return null;
-            }
         }
 
         private string ValidateTemplates(ResourceType resourceType)
@@ -260,8 +212,8 @@ namespace ADB_Tool_Automation_Post_FB.Infrastructure.ResourcePopup
             result.Message = message;
             result.ErrorMessage = error;
             logger.Info($"[Resource Popup Verification] InitialState='{result.InitialState}', FinalState='{result.FinalState}', "
-                + $"PopupROI=({options.PopupRegion.X},{options.PopupRegion.Y},{options.PopupRegion.Width},{options.PopupRegion.Height}), "
-                + $"PopupAnchor={result.PopupAnchorVerified}, IronTitle={result.IronResourceVerified}, "
+                + $"HeaderRegion={Region(options.HeaderRegion)}, ActionRegion={Region(options.ActionRegion)}, "
+                + $"PopupAnchor={result.PopupAnchorVerified}, ExpectedTitle={result.ExpectedResourceVerified}, "
                 + $"GatherButton={result.GatherButtonVerified}, Outcome='{outcome}', "
                 + $"ObservedFrames={result.ObservedFrameCount}, DurationMs={result.Duration.TotalMilliseconds:F0}, "
                 + $"Cancellation={outcome == ResourcePopupOutcome.Cancelled}, Error='{error ?? string.Empty}'");
@@ -269,10 +221,11 @@ namespace ADB_Tool_Automation_Post_FB.Infrastructure.ResourcePopup
         }
 
         private void LogFrame(string deviceName, ResourcePopupVerificationResult result,
-            GameDetectionEvidence anchor, GameDetectionEvidence iron, GameDetectionEvidence gather)
+            GameDetectionEvidence anchor, GameDetectionEvidence expectedTitle, GameDetectionEvidence gather)
         {
             logger.Info($"[Resource Popup Observation] DeviceName='{deviceName}', Index={result.ObservedFrameCount}, "
-                + $"PopupAnchor={Bounds(anchor)}, IronTitle={Bounds(iron)}, GatherButton={Bounds(gather)}");
+                + $"PopupAnchor={Bounds(anchor)}, ExpectedTitle={Bounds(expectedTitle)}, GatherButton={Bounds(gather)}, "
+                + $"HeaderRegion={Region(options.HeaderRegion)}, ActionRegion={Region(options.ActionRegion)}");
         }
 
         private static string Bounds(GameDetectionEvidence evidence) => evidence.Found && evidence.MatchResult != null
@@ -286,7 +239,8 @@ namespace ADB_Tool_Automation_Post_FB.Infrastructure.ResourcePopup
                 if (candidate == expected) continue;
                 ResourceTemplateProfile profile = profileProvider.Get(candidate);
                 if (registry.Exists(profile.PopupTitleTemplate)
-                    && MatchPopupTitle(screenshot, profile.PopupTitleTemplate).Found) return candidate;
+                    && Match(screenshot, profile.PopupTitleTemplate,
+                        options.HeaderRegion, "HeaderRegion").Found) return candidate;
             }
             return null;
         }
@@ -297,9 +251,25 @@ namespace ADB_Tool_Automation_Post_FB.Infrastructure.ResourcePopup
             ResourceType = resourceType,
             ExpectedResource = resourceType,
             ExpectedPopupTitleTemplate = profileProvider.Get(resourceType).PopupTitleTemplate,
+            HeaderRegion = options.HeaderRegion,
+            ActionRegion = options.ActionRegion,
             InitialState = GameState.Unknown,
             FinalState = GameState.Unknown,
             Evidence = new GameDetectionEvidence[0]
         };
+
+        private string BuildNotReadyMessage(ResourcePopupVerificationResult result)
+        {
+            if (!result.PopupAnchorFound)
+                return $"ResourcePopup was detected, but {TemplateId.ResourcePopupInfoAnchor} was not found in HeaderRegion {Region(options.HeaderRegion)}.";
+            if (!result.ExpectedResourceTitleFound)
+                return $"ResourcePopup was detected, but {result.ExpectedPopupTitleTemplate} was not found in HeaderRegion {Region(options.HeaderRegion)}.";
+            if (!result.GatherButtonFound)
+                return $"ResourcePopup was detected, but {TemplateId.GatherButtonEnabled} was not found in ActionRegion {Region(options.ActionRegion)}.";
+            return "ResourcePopup was detected, but all required signals were not ready in the same frame.";
+        }
+
+        private static string Region(ImageRegion region) =>
+            $"({region.X},{region.Y},{region.Width},{region.Height})";
     }
 }

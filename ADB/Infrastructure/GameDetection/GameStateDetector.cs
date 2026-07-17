@@ -315,6 +315,8 @@ namespace ADB_Tool_Automation_Post_FB.Infrastructure.GameDetection
                     ? options.StorageLimitDialogRegion
                     : IsTeamSelectionTemplate(templateId)
                     ? options.TeamSelectionRegion
+                    : IsPopupActionTemplate(templateId)
+                    ? options.ResourcePopupActionRegion
                     : IsPopupTemplate(templateId)
                     ? options.ResourcePopupRegion
                     : IsSearchPanelTemplate(templateId)
@@ -361,6 +363,9 @@ namespace ADB_Tool_Automation_Post_FB.Infrastructure.GameDetection
             id == TemplateId.ResourcePopupInfoAnchor
             || id == TemplateId.ResourcePopupIronTitle
             || id == TemplateId.GatherButtonEnabled;
+
+        private static bool IsPopupActionTemplate(TemplateId id) =>
+            id == TemplateId.GatherButtonEnabled;
 
         private static bool IsStorageLimitTemplate(TemplateId id) =>
             id == TemplateId.StorageLimitDialogAnchor

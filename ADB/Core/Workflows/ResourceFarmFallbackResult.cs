@@ -25,5 +25,6 @@ namespace ADB_Tool_Automation_Post_FB.Core.Workflows
         public string Message { get; set; }
         public string ErrorMessage { get; set; }
         public int RecoveryTransitions { get; set; }
+        public OneShotFarmStep LastCompletedStep { get; set; }
     }
 }

@@ -405,9 +405,10 @@ namespace ADB_Tool_Automation_Post_FB.UI
                 + $"; {item.Message}"));
             return $"Outcome: {result.Outcome}{Environment.NewLine}Success: {result.Success}{Environment.NewLine}"
                 + $"Initial: {result.InitialState}{Environment.NewLine}Final: {result.FinalState}{Environment.NewLine}"
-                + $"Popup anchor verified: {result.PopupAnchorVerified}{Environment.NewLine}"
-                + $"Iron resource verified: {result.IronResourceVerified}{Environment.NewLine}"
-                + $"Gather button verified: {result.GatherButtonVerified}{Environment.NewLine}"
+                + $"Expected resource: {result.ExpectedResource}{Environment.NewLine}Expected popup title: {result.ExpectedPopupTitleTemplate}{Environment.NewLine}"
+                + $"Popup anchor found: {result.PopupAnchorFound}{Environment.NewLine}Expected resource title found: {result.ExpectedResourceTitleFound}{Environment.NewLine}"
+                + $"Gather button found: {result.GatherButtonFound}{Environment.NewLine}Header region: ({result.HeaderRegion.X},{result.HeaderRegion.Y},{result.HeaderRegion.Width},{result.HeaderRegion.Height}){Environment.NewLine}"
+                + $"Action region: ({result.ActionRegion.X},{result.ActionRegion.Y},{result.ActionRegion.Width},{result.ActionRegion.Height}){Environment.NewLine}"
                 + $"Gather bounds: {gatherBounds}{Environment.NewLine}Observed frames: {result.ObservedFrameCount}{Environment.NewLine}"
                 + $"Duration: {result.Duration.TotalMilliseconds:F0} ms{Environment.NewLine}"
                 + $"Diagnostic: {result.DiagnosticScreenshotPath ?? string.Empty}{Environment.NewLine}"

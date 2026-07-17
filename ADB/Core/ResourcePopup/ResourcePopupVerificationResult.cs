@@ -21,6 +21,11 @@ namespace ADB_Tool_Automation_Post_FB.Core.ResourcePopup
         public TemplateId ExpectedPopupTitleTemplate { get; set; }
         public ResourceType? MismatchedResource { get; set; }
         public bool GatherButtonVerified { get; set; }
+        public bool PopupAnchorFound { get; set; }
+        public bool ExpectedResourceTitleFound { get; set; }
+        public bool GatherButtonFound { get; set; }
+        public ImageRegion HeaderRegion { get; set; }
+        public ImageRegion ActionRegion { get; set; }
         public ImageMatchResult GatherButtonMatch { get; set; }
         public int ObservedFrameCount { get; set; }
         public TimeSpan Duration { get; set; }

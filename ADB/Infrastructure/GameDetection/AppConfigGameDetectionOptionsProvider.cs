@@ -18,10 +18,10 @@ namespace ADB_Tool_Automation_Post_FB.Infrastructure.GameDetection
                 ConfigurationManager.AppSettings["GameDetection.UnknownScreenshotDirectory"]
                     ?? "Diagnostics/UnknownStates",
                 new ImageRegion(
-                    ReadPositiveInteger("ResourcePopupVerification.PopupRegion.X", 650, allowZero: true),
-                    ReadPositiveInteger("ResourcePopupVerification.PopupRegion.Y", 150, allowZero: true),
-                    ReadPositiveInteger("ResourcePopupVerification.PopupRegion.Width", 550),
-                    ReadPositiveInteger("ResourcePopupVerification.PopupRegion.Height", 450)),
+                    ReadPositiveInteger("ResourcePopupVerification.HeaderRegion.X", 450, allowZero: true),
+                    ReadPositiveInteger("ResourcePopupVerification.HeaderRegion.Y", 230, allowZero: true),
+                    ReadPositiveInteger("ResourcePopupVerification.HeaderRegion.Width", 680),
+                    ReadPositiveInteger("ResourcePopupVerification.HeaderRegion.Height", 310)),
                 new ImageRegion(
                     ReadPositiveInteger("OpenTeamSelection.TeamSelectionRegion.X", 0, allowZero: true),
                     ReadPositiveInteger("OpenTeamSelection.TeamSelectionRegion.Y", 0, allowZero: true),
@@ -31,7 +31,12 @@ namespace ADB_Tool_Automation_Post_FB.Infrastructure.GameDetection
                     ReadPositiveInteger("StorageLimitDialog.Region.X", 250, allowZero: true),
                     ReadPositiveInteger("StorageLimitDialog.Region.Y", 100, allowZero: true),
                     ReadPositiveInteger("StorageLimitDialog.Region.Width", 780),
-                    ReadPositiveInteger("StorageLimitDialog.Region.Height", 520)));
+                    ReadPositiveInteger("StorageLimitDialog.Region.Height", 520)),
+                new ImageRegion(
+                    ReadPositiveInteger("ResourcePopupVerification.ActionRegion.X", 560, allowZero: true),
+                    ReadPositiveInteger("ResourcePopupVerification.ActionRegion.Y", 480, allowZero: true),
+                    ReadPositiveInteger("ResourcePopupVerification.ActionRegion.Width", 500),
+                    ReadPositiveInteger("ResourcePopupVerification.ActionRegion.Height", 210)));
         }
 
         private static int ReadPositiveInteger(string key, int defaultValue, bool allowZero = false)

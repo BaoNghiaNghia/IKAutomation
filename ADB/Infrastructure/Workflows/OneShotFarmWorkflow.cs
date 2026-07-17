@@ -233,10 +233,13 @@ namespace ADB_Tool_Automation_Post_FB.Infrastructure.Workflows
                 ResourcePopupVerificationResult verifiedPopup;
                 IResourceAwarePopupVerificationService resourceAwarePopup = popup as IResourceAwarePopupVerificationService;
                 if (request.ResourceType == ResourceType.Stone && resourceAwarePopup == null)
+                {
+                    result.LastCompletedStep = OneShotFarmStep.VerifyResourcePopup;
                     return await StopAsync(result, OneShotFarmOutcome.ResourcePopupNotReady,
                         "The popup verifier is not resource-aware; no Stone input was sent.",
                         "IResourceAwarePopupVerificationService is required for Stone.",
                         OneShotFarmStep.VerifyResourcePopup, watch, runId, token);
+                }
                 verifiedPopup = resourceAwarePopup != null
                     ? await resourceAwarePopup.VerifyAsync(deviceName, request.ResourceType, token)
                     : await popup.VerifyAsync(deviceName, token);
@@ -249,6 +252,7 @@ namespace ADB_Tool_Automation_Post_FB.Infrastructure.Workflows
                     || !verifiedPopup.GatherButtonVerified)
                 {
                     Add(steps, OneShotFarmStep.VerifyResourcePopup, false, started, verifiedPopup.Message, verifiedPopup.ErrorMessage, verifiedPopup);
+                    result.LastCompletedStep = OneShotFarmStep.VerifyResourcePopup;
                     return await StopAsync(result, OneShotFarmOutcome.ResourcePopupNotReady, verifiedPopup.Message,
                         verifiedPopup.ErrorMessage, OneShotFarmStep.VerifyResourcePopup, watch, runId, token);
                 }
@@ -501,6 +505,8 @@ namespace ADB_Tool_Automation_Post_FB.Infrastructure.Workflows
             result.DispatchedTeam = fallbackResult.DispatchedTeam;
             result.SelectedTeam = fallbackResult.DispatchedTeam;
             result.FinalState = fallbackResult.FinalState;
+            if (fallbackResult.LastCompletedStep != default(OneShotFarmStep))
+                result.LastCompletedStep = fallbackResult.LastCompletedStep;
             if (fallbackResult.Outcome == ResourceFarmFallbackOutcome.Cancelled)
                 throw new OperationCanceledException(token);
             if (!fallbackResult.Success || fallbackResult.Outcome != ResourceFarmFallbackOutcome.MarchStarted)

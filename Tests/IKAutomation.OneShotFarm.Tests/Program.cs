@@ -47,6 +47,7 @@ internal static class Program
         Run("Workflow has no default token bypass", NoNone); Run("Screenshot failure preserves outcome", ScreenshotFailure);
         Run("ResourceNotFound falls back through requested levels", NoLevelFallback); Run("Success requires MarchStartedVerified", VerifiedRequired);
         Run("Level 6 located continues workflow", Level6Located);
+        Run("Level 6 popup failure remains a popup outcome", Level6PopupFailureMapping);
         Run("Structural fallback result is accepted", StructuralAccepted); Run("Success does not start second cycle", NoSecondCycle);
         Run("Iron storage full switches to Stone", IronFullSwitchesStone);
         Run("Iron and Stone storage full exhausts plan", BothStoragesFull);
@@ -112,6 +113,7 @@ internal static class Program
     static void ScreenshotFailure(){var h=new H();h.Diag.Throw=true;Is(Go(h).Success,"diagnostic replaced outcome");}
     static void NoLevelFallback(){var h=new H();h.Search.Outcome=ResourceSearchOutcome.ResourceNotFound;var r=Go(h);Eq(3,h.Config.Calls,"fallback config");Is(new[]{7,6,5}.SequenceEqual(r.AttemptedLevels),"levels");}
     static void Level6Located(){var h=new H();h.Search.Outcomes.Enqueue(ResourceSearchOutcome.ResourceNotFound);h.Search.Outcomes.Enqueue(ResourceSearchOutcome.ResourceLocated);var r=Go(h);Is(r.Success,"workflow");Eq(6,r.LocatedLevel,"located");Is(new[]{7,6}.SequenceEqual(r.AttemptedLevels),"attempted");}
+    static void Level6PopupFailureMapping(){var h=new H();h.Search.Outcomes.Enqueue(ResourceSearchOutcome.ResourceNotFound);h.Search.Outcomes.Enqueue(ResourceSearchOutcome.ResourceLocated);h.Popup.Ready=false;var r=Go(h);Eq(OneShotFarmOutcome.ResourcePopupNotReady,r.Outcome,"outcome");Is(r.Outcome!=OneShotFarmOutcome.SearchExecutionFailed,"wrong mapping");Eq(6,r.LocatedLevel,"located");Is(new[]{7,6}.SequenceEqual(r.AttemptedLevels),"attempted");Eq(OneShotFarmStep.VerifyResourcePopup,r.LastCompletedStep,"last");Eq(0,h.Open.Calls,"team opened");}
     static void VerifiedRequired(){UnverifiedDispatch();} static void StructuralAccepted(){var h=new H();h.Dispatch.Verified=true;Is(Go(h).Success,"structural");}
     static void NoSecondCycle(){var h=new H();Go(h);Eq(1,h.Search.Calls,"cycle count");}
     static void IronFullSwitchesStone()

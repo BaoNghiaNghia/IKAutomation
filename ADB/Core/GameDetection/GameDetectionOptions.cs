@@ -13,7 +13,8 @@ namespace ADB_Tool_Automation_Post_FB.Core.GameDetection
             string unknownScreenshotDirectory,
             ImageRegion? resourcePopupRegion = null,
             ImageRegion? teamSelectionRegion = null,
-            ImageRegion? storageLimitDialogRegion = null)
+            ImageRegion? storageLimitDialogRegion = null,
+            ImageRegion? resourcePopupActionRegion = null)
         {
             if (expectedWidth <= 0)
                 throw new ArgumentOutOfRangeException(nameof(expectedWidth));
@@ -27,13 +28,18 @@ namespace ADB_Tool_Automation_Post_FB.Core.GameDetection
             RequireExpectedResolution = requireExpectedResolution;
             SaveUnknownScreenshots = saveUnknownScreenshots;
             UnknownScreenshotDirectory = unknownScreenshotDirectory.Trim();
-            ResourcePopupRegion = resourcePopupRegion ?? new ImageRegion(650, 150, 550, 450);
+            ResourcePopupRegion = resourcePopupRegion ?? new ImageRegion(450, 230, 680, 310);
+            ResourcePopupActionRegion = resourcePopupActionRegion ?? new ImageRegion(560, 480, 500, 210);
             TeamSelectionRegion = teamSelectionRegion ?? new ImageRegion(0, 0, 780, 720);
             StorageLimitDialogRegion = storageLimitDialogRegion ?? new ImageRegion(250, 100, 780, 520);
             if ((long)ResourcePopupRegion.X + ResourcePopupRegion.Width > expectedWidth
                 || (long)ResourcePopupRegion.Y + ResourcePopupRegion.Height > expectedHeight)
                 throw new ArgumentOutOfRangeException(nameof(resourcePopupRegion),
                     "Resource popup region must be inside the expected screenshot.");
+            if ((long)ResourcePopupActionRegion.X + ResourcePopupActionRegion.Width > expectedWidth
+                || (long)ResourcePopupActionRegion.Y + ResourcePopupActionRegion.Height > expectedHeight)
+                throw new ArgumentOutOfRangeException(nameof(resourcePopupActionRegion),
+                    "Resource popup action region must be inside the expected screenshot.");
             if ((long)TeamSelectionRegion.X + TeamSelectionRegion.Width > expectedWidth
                 || (long)TeamSelectionRegion.Y + TeamSelectionRegion.Height > expectedHeight)
                 throw new ArgumentOutOfRangeException(nameof(teamSelectionRegion),
@@ -50,6 +56,7 @@ namespace ADB_Tool_Automation_Post_FB.Core.GameDetection
         public bool SaveUnknownScreenshots { get; }
         public string UnknownScreenshotDirectory { get; }
         public ImageRegion ResourcePopupRegion { get; }
+        public ImageRegion ResourcePopupActionRegion { get; }
         public ImageRegion TeamSelectionRegion { get; }
         public ImageRegion StorageLimitDialogRegion { get; }
     }

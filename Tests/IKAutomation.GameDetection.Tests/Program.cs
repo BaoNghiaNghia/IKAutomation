@@ -204,12 +204,19 @@ namespace IKAutomation.GameDetection.Tests
             CreateDetector(new FakeLdPlayerClient(), matcher: matcher)
                 .DetectAsync("IK-1", TestToken).GetAwaiter().GetResult();
             foreach (TemplateId id in new[] { TemplateId.ResourcePopupInfoAnchor,
-                TemplateId.ResourcePopupIronTitle, TemplateId.GatherButtonEnabled })
+                TemplateId.ResourcePopupIronTitle })
             {
                 Assert(matcher.Regions[id].HasValue, id + " did not use ROI.");
-                Equal(650, matcher.Regions[id].Value.X, id + " ROI X.");
-                Equal(150, matcher.Regions[id].Value.Y, id + " ROI Y.");
+                Equal(450, matcher.Regions[id].Value.X, id + " ROI X.");
+                Equal(230, matcher.Regions[id].Value.Y, id + " ROI Y.");
             }
+
+            Assert(matcher.Regions[TemplateId.GatherButtonEnabled].HasValue,
+                "GatherButtonEnabled did not use ROI.");
+            Equal(560, matcher.Regions[TemplateId.GatherButtonEnabled].Value.X,
+                "GatherButtonEnabled ROI X.");
+            Equal(480, matcher.Regions[TemplateId.GatherButtonEnabled].Value.Y,
+                "GatherButtonEnabled ROI Y.");
         }
 
         private static void WorldMapFromAnchor()
