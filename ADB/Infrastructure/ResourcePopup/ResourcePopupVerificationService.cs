@@ -4,6 +4,7 @@ using ADB_Tool_Automation_Post_FB.Core.GameDetection;
 using ADB_Tool_Automation_Post_FB.Core.ResourcePopup;
 using ADB_Tool_Automation_Post_FB.Core.Vision;
 using ADB_Tool_Automation_Post_FB.Core.ResourceSearch;
+using ADB_Tool_Automation_Post_FB.Infrastructure.ResourceSearch;
 using System;
 using System.Collections.Generic;
 using System.Diagnostics;
@@ -27,10 +28,20 @@ namespace ADB_Tool_Automation_Post_FB.Infrastructure.ResourcePopup
         private readonly ResourcePopupVerificationOptions options;
         private readonly IResourcePopupDiagnosticStore diagnosticStore;
         private readonly IDiagnosticLogger logger;
+        private readonly IResourceTemplateProfileProvider profileProvider;
 
         public ResourcePopupVerificationService(IGameStateDetector detector, ILdPlayerClient client,
             ITemplateRegistry registry, IImageMatcher matcher, ResourcePopupVerificationOptions options,
             IResourcePopupDiagnosticStore diagnosticStore, IDiagnosticLogger logger)
+            : this(detector, client, registry, matcher, options, diagnosticStore, logger,
+                new ResourceTemplateProfileProvider(registry))
+        {
+        }
+
+        public ResourcePopupVerificationService(IGameStateDetector detector, ILdPlayerClient client,
+            ITemplateRegistry registry, IImageMatcher matcher, ResourcePopupVerificationOptions options,
+            IResourcePopupDiagnosticStore diagnosticStore, IDiagnosticLogger logger,
+            IResourceTemplateProfileProvider profileProvider)
         {
             this.detector = detector ?? throw new ArgumentNullException(nameof(detector));
             this.client = client ?? throw new ArgumentNullException(nameof(client));
@@ -39,6 +50,7 @@ namespace ADB_Tool_Automation_Post_FB.Infrastructure.ResourcePopup
             this.options = options ?? throw new ArgumentNullException(nameof(options));
             this.diagnosticStore = diagnosticStore ?? throw new ArgumentNullException(nameof(diagnosticStore));
             this.logger = logger ?? throw new ArgumentNullException(nameof(logger));
+            this.profileProvider = profileProvider ?? throw new ArgumentNullException(nameof(profileProvider));
         }
 
         public async Task<ResourcePopupVerificationResult> VerifyAsync(
@@ -59,7 +71,9 @@ namespace ADB_Tool_Automation_Post_FB.Infrastructure.ResourcePopup
                 if (string.IsNullOrWhiteSpace(deviceName))
                     return Complete(result, ResourcePopupOutcome.Failed, watch,
                         "LDPlayer device name is required.", "LDPlayer device name is required.");
-                string templateError = ValidateTemplates(resourceType);
+                string templateError = profileProvider.IsSupported(resourceType)
+                    ? ValidateTemplates(resourceType)
+                    : profileProvider.GetUnsupportedReason(resourceType);
                 if (templateError != null)
                     return Complete(result, ResourcePopupOutcome.Failed, watch, templateError, templateError);
 
@@ -80,18 +94,25 @@ namespace ADB_Tool_Automation_Post_FB.Infrastructure.ResourcePopup
                     if (result.ObservedFrameCount == 1) result.InitialState = detection.State;
                     result.FinalState = detection.State;
                     GameDetectionEvidence anchor = Match(lastFrame, TemplateId.ResourcePopupInfoAnchor);
-                    GameDetectionEvidence iron = Match(lastFrame, ResourceTemplateMap.PopupTitle(resourceType));
+                    ResourceTemplateProfile expectedProfile = profileProvider.Get(resourceType);
+                    GameDetectionEvidence iron = Match(lastFrame, expectedProfile.PopupTitleTemplate);
+                    ResourceType? mismatch = FindMismatchedResource(lastFrame, resourceType);
                     GameDetectionEvidence gather = Match(lastFrame, TemplateId.GatherButtonEnabled);
                     result.Evidence = new[] { anchor, iron, gather };
                     result.PopupAnchorVerified = anchor.Found;
                     result.IronResourceVerified = iron.Found;
                     result.ResourceVerified = iron.Found;
+                    result.ExpectedResourceVerified = iron.Found;
+                    result.MismatchedResource = mismatch;
                     result.GatherButtonVerified = gather.Found;
                     result.GatherButtonMatch = gather.MatchResult;
 
                     int signals = (anchor.Found ? 1 : 0) + (iron.Found ? 1 : 0) + (gather.Found ? 1 : 0);
                     bool detected = signals >= 2 && (anchor.Found || iron.Found);
                     popupObserved |= detected || detection.State == GameState.ResourcePopup;
+                    if (!iron.Found && mismatch.HasValue && anchor.Found)
+                        return Complete(result, ResourcePopupOutcome.ResourcePopupMismatch, watch,
+                            $"Popup title belongs to {mismatch.Value}, not expected {resourceType}; no Gather input was sent.", null);
                     bool ready = anchor.Found && iron.Found && gather.Found;
                     readyFrames = ready ? readyFrames + 1 : 0;
                     LogFrame(deviceName, result, anchor, iron, gather);
@@ -142,7 +163,7 @@ namespace ADB_Tool_Automation_Post_FB.Infrastructure.ResourcePopup
         {
             foreach (TemplateId id in new List<TemplateId>(RequiredTemplates)
             {
-                ResourceTemplateMap.PopupTitle(resourceType)
+                profileProvider.Get(resourceType).PopupTitleTemplate
             })
             {
                 try
@@ -203,10 +224,24 @@ namespace ADB_Tool_Automation_Post_FB.Infrastructure.ResourcePopup
             ? $"true:({evidence.MatchResult.X},{evidence.MatchResult.Y},{evidence.MatchResult.Width},{evidence.MatchResult.Height})"
             : "false";
 
-        private static ResourcePopupVerificationResult NewResult(ResourceType resourceType) => new ResourcePopupVerificationResult
+        private ResourceType? FindMismatchedResource(byte[] screenshot, ResourceType expected)
+        {
+            foreach (ResourceType candidate in (ResourceType[])Enum.GetValues(typeof(ResourceType)))
+            {
+                if (candidate == expected) continue;
+                ResourceTemplateProfile profile = profileProvider.Get(candidate);
+                if (registry.Exists(profile.PopupTitleTemplate)
+                    && Match(screenshot, profile.PopupTitleTemplate).Found) return candidate;
+            }
+            return null;
+        }
+
+        private ResourcePopupVerificationResult NewResult(ResourceType resourceType) => new ResourcePopupVerificationResult
         {
             Outcome = ResourcePopupOutcome.Failed,
             ResourceType = resourceType,
+            ExpectedResource = resourceType,
+            ExpectedPopupTitleTemplate = profileProvider.Get(resourceType).PopupTitleTemplate,
             InitialState = GameState.Unknown,
             FinalState = GameState.Unknown,
             Evidence = new GameDetectionEvidence[0]

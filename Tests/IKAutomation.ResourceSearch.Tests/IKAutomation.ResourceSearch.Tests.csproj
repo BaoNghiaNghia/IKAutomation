@@ -15,5 +15,6 @@
     <Compile Include="..\..\ADB\Core\Vision\*.cs" Link="Production\Vision\%(Filename)%(Extension)" />
     <Compile Include="..\..\ADB\Infrastructure\Concurrency\DeviceOperationLock.cs" Link="Production\DeviceOperationLock.cs" />
     <Compile Include="..\..\ADB\Infrastructure\ResourceSearch\ResourceSearchConfigurationService.cs" Link="Production\ResourceSearchConfigurationService.cs" />
+    <Compile Include="..\..\ADB\Infrastructure\ResourceSearch\ResourceTemplateProfileProvider.cs" Link="Production\ResourceTemplateProfileProvider.cs" />
   </ItemGroup>
 </Project>

@@ -22,15 +22,22 @@ namespace ADB_Tool_Automation_Post_FB.Infrastructure.Workflows
             var detector = new GameStateDetector(client, registry, matcher, detectionOptions,
                 new UnknownScreenshotStore(detectionOptions.UnknownScreenshotDirectory), logger);
             var workflowOptions = AppConfigOneShotFarmWorkflowOptionsProvider.Load();
-            return new OneShotFarmWorkflow(WorldMapNavigationServiceFactory.CreateFromAppConfig(),
-                ResourceLevelFallbackServiceFactory.CreateFromAppConfig(),
-                ResourcePopupVerificationServiceFactory.CreateFromAppConfig(),
-                OpenTeamSelectionServiceFactory.CreateFromAppConfig(),
-                SelectFarmTeamServiceFactory.CreateFromAppConfig(),
-                DispatchSelectedTeamServiceFactory.CreateFromAppConfig(), detector,
+            var navigation = WorldMapNavigationServiceFactory.CreateFromAppConfig();
+            var levelFallback = ResourceLevelFallbackServiceFactory.CreateFromAppConfig();
+            var popup = ResourcePopupVerificationServiceFactory.CreateFromAppConfig();
+            var openTeam = OpenTeamSelectionServiceFactory.CreateFromAppConfig();
+            var selectTeam = SelectFarmTeamServiceFactory.CreateFromAppConfig();
+            var dispatch = DispatchSelectedTeamServiceFactory.CreateFromAppConfig();
+            var fallbackOptions = AppConfigResourceFarmFallbackOptionsProvider.Load();
+            var resourceFallback = new ResourceFarmFallbackService(navigation, levelFallback,
+                (ADB_Tool_Automation_Post_FB.Core.ResourcePopup.IResourceAwarePopupVerificationService)popup,
+                openTeam, selectTeam, dispatch, new ResourceTemplateProfileProvider(registry),
+                fallbackOptions, logger);
+            return new OneShotFarmWorkflow(navigation, levelFallback, popup,
+                openTeam, selectTeam, dispatch, detector,
                 DeviceOperationLock.Shared, workflowOptions,
                 new OneShotFarmDiagnosticService(client, workflowOptions.ScreenshotDirectory), logger,
-                AppConfigResourceFarmFallbackOptionsProvider.Load());
+                fallbackOptions, resourceFallback);
         }
     }
 }

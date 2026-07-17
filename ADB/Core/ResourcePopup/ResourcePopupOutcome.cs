@@ -5,6 +5,7 @@ namespace ADB_Tool_Automation_Post_FB.Core.ResourcePopup
         ResourcePopupReady,
         ResourcePopupDetectedButNotReady,
         ResourcePopupNotDetected,
+        ResourcePopupMismatch,
         Failed,
         Cancelled
     }

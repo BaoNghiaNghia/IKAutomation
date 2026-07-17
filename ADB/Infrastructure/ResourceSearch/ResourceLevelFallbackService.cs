@@ -260,7 +260,7 @@ namespace ADB_Tool_Automation_Post_FB.Infrastructure.ResourceSearch
 
         private string Validate(ResourceType resourceType, ResourceLevelFallbackPolicy policy)
         {
-            if (resourceType != ResourceType.Iron) return "Only Iron is supported by the MVP.";
+            if (!Enum.IsDefined(typeof(ResourceType), resourceType)) return $"Resource '{resourceType}' is not supported.";
             if (policy == null) return "ResourceLevelFallbackPolicy is required.";
             return policy.Validate(configurationOptions.MinimumLevel, configurationOptions.MaximumLevel);
         }

@@ -35,12 +35,23 @@ namespace ADB_Tool_Automation_Post_FB.Infrastructure.ResourceSearch
         private readonly ResourceSearchConfigurationOptions options;
         private readonly IDeviceOperationLock operationLock;
         private readonly IDiagnosticLogger logger;
+        private readonly IResourceTemplateProfileProvider profileProvider;
 
         public ResourceSearchConfigurationService(IWorldMapNavigationService navigationService,
             IGameStateDetector detector, ILdPlayerClient ldPlayerClient,
             ITemplateRegistry templateRegistry, IImageMatcher imageMatcher,
             ResourceSearchConfigurationOptions options, IDeviceOperationLock operationLock,
             IDiagnosticLogger logger)
+            : this(navigationService, detector, ldPlayerClient, templateRegistry, imageMatcher,
+                options, operationLock, logger, new ResourceTemplateProfileProvider(templateRegistry))
+        {
+        }
+
+        public ResourceSearchConfigurationService(IWorldMapNavigationService navigationService,
+            IGameStateDetector detector, ILdPlayerClient ldPlayerClient,
+            ITemplateRegistry templateRegistry, IImageMatcher imageMatcher,
+            ResourceSearchConfigurationOptions options, IDeviceOperationLock operationLock,
+            IDiagnosticLogger logger, IResourceTemplateProfileProvider profileProvider)
         {
             this.navigationService = navigationService ?? throw new ArgumentNullException(nameof(navigationService));
             this.detector = detector ?? throw new ArgumentNullException(nameof(detector));
@@ -50,6 +61,7 @@ namespace ADB_Tool_Automation_Post_FB.Infrastructure.ResourceSearch
             this.options = options ?? throw new ArgumentNullException(nameof(options));
             this.operationLock = operationLock ?? throw new ArgumentNullException(nameof(operationLock));
             this.logger = logger ?? throw new ArgumentNullException(nameof(logger));
+            this.profileProvider = profileProvider ?? throw new ArgumentNullException(nameof(profileProvider));
         }
 
         public Task<ResourceSearchConfigurationResult> ConfigureAsync(string deviceName,
@@ -63,7 +75,9 @@ namespace ADB_Tool_Automation_Post_FB.Infrastructure.ResourceSearch
             if (validationError != null)
                 return Task.FromResult(InvalidResult(request, validationError));
 
-            string templateError = ValidateTemplates(request.ResourceType, request.TargetLevel);
+            string templateError = profileProvider.IsSupported(request.ResourceType)
+                ? ValidateTemplates(request.ResourceType, request.TargetLevel)
+                : profileProvider.GetUnsupportedReason(request.ResourceType);
             if (templateError != null)
                 return Task.FromResult(InvalidResult(request, templateError));
 
@@ -170,8 +184,9 @@ namespace ADB_Tool_Automation_Post_FB.Infrastructure.ResourceSearch
             {
                 byte[] screenshot = await ldPlayerClient.CaptureScreenshotPngAsync(deviceName, cancellationToken);
                 ConfigurationTemplateEvidence search = Match(screenshot, TemplateId.SearchButtonEnabled);
-                TemplateId selectedId = ResourceTemplateMap.Selected(result.RequestedResource);
-                TemplateId unselectedId = ResourceTemplateMap.Unselected(result.RequestedResource);
+                ResourceTemplateProfile profile = profileProvider.Get(result.RequestedResource);
+                TemplateId selectedId = profile.SelectedTemplate;
+                TemplateId unselectedId = profile.UnselectedTemplate;
                 ConfigurationTemplateEvidence selected = MatchResourceState(screenshot, selectedId, search);
                 ConfigurationTemplateEvidence unselected = MatchResourceState(screenshot, unselectedId, search);
                 evidence.Add(selected); evidence.Add(unselected);
@@ -353,7 +368,7 @@ namespace ADB_Tool_Automation_Post_FB.Infrastructure.ResourceSearch
             var evidence = new List<ConfigurationTemplateEvidence>
             {
                 Match(screenshot, TemplateId.ResourceTabSelected),
-                MatchResourceState(screenshot, ResourceTemplateMap.Selected(request.ResourceType), search),
+                MatchResourceState(screenshot, profileProvider.Get(request.ResourceType).SelectedTemplate, search),
                 MatchLevel(screenshot, GetLevelTemplateId(request.TargetLevel), minus, plus),
                 MatchFilterState(screenshot, request.UnoccupiedOnly
                     ? TemplateId.UnoccupiedFilterChecked : TemplateId.UnoccupiedFilterUnchecked, search),
@@ -704,7 +719,7 @@ namespace ADB_Tool_Automation_Post_FB.Infrastructure.ResourceSearch
         private string ValidateRequest(ResourceSearchConfigurationRequest request)
         {
             if (request == null) return "ResourceSearchConfigurationRequest is required.";
-            if (request.ResourceType != ResourceType.Iron && request.ResourceType != ResourceType.Stone)
+            if (!Enum.IsDefined(typeof(ResourceType), request.ResourceType))
                 return $"Resource type '{request.ResourceType}' is not supported.";
             if (request.TargetLevel < options.MinimumLevel || request.TargetLevel > options.MaximumLevel)
                 return $"TargetLevel must be between {options.MinimumLevel} and {options.MaximumLevel}.";
@@ -717,7 +732,8 @@ namespace ADB_Tool_Automation_Post_FB.Infrastructure.ResourceSearch
         {
             foreach (TemplateId templateId in RequiredTemplates.Concat(new[]
             {
-                ResourceTemplateMap.Selected(resourceType), ResourceTemplateMap.Unselected(resourceType),
+                profileProvider.Get(resourceType).SelectedTemplate,
+                profileProvider.Get(resourceType).UnselectedTemplate,
                 GetLevelTemplateId(targetLevel)
             }))
             {

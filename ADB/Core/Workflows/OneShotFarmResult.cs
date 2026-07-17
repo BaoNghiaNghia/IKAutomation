@@ -20,6 +20,7 @@ namespace ADB_Tool_Automation_Post_FB.Core.Workflows
         public int? LocatedLevel { get; set; }
         public IReadOnlyList<ResourceType> AttemptedResources { get; set; }
         public IReadOnlyList<ResourceType> StorageFullResources { get; set; }
+        public IReadOnlyList<ResourceType> LevelsExhaustedResources { get; set; }
         public ResourceType? LocatedResource { get; set; }
         public ResourceType? DispatchedResource { get; set; }
         public ResourceFarmFallbackResult ResourceFallbackResult { get; set; }

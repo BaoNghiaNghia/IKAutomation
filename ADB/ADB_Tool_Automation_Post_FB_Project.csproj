@@ -120,6 +120,8 @@
     <Compile Include="Core\ResourceSearch\ResourceSearchOutcome.cs" />
     <Compile Include="Core\ResourceSearch\ResourceType.cs" />
     <Compile Include="Core\ResourceSearch\ResourceTemplateMap.cs" />
+    <Compile Include="Core\ResourceSearch\ResourceTemplateProfile.cs" />
+    <Compile Include="Core\ResourceSearch\IResourceTemplateProfileProvider.cs" />
     <Compile Include="Core\ResourcePopup\IResourceAwarePopupVerificationService.cs" />
     <Compile Include="Core\StorageLimit\IStorageLimitDialogService.cs" />
     <Compile Include="Core\StorageLimit\StorageLimitDialogOptions.cs" />
@@ -165,6 +167,10 @@
     <Compile Include="Core\Workflows\OneShotFarmWorkflowOptions.cs" />
     <Compile Include="Core\Workflows\ResourceFarmFallbackResult.cs" />
     <Compile Include="Core\Workflows\ResourceFarmFallbackOptions.cs" />
+    <Compile Include="Core\Workflows\ResourceFarmFallbackOutcome.cs" />
+    <Compile Include="Core\Workflows\ResourceFarmFallbackPolicy.cs" />
+    <Compile Include="Core\Workflows\ResourceFarmAttemptResult.cs" />
+    <Compile Include="Core\Workflows\IResourceFarmFallbackService.cs" />
     <Compile Include="Exceptions\TaskExepction.cs" />
     <Compile Include="Helpers\BitmapHelper.cs" />
     <Compile Include="Helpers\Delay.cs" />
@@ -206,6 +212,7 @@
     <Compile Include="Infrastructure\ResourceSearch\ResourceSearchConfigurationServiceFactory.cs" />
     <Compile Include="Infrastructure\ResourceSearch\ResourceSearchExecutionService.cs" />
     <Compile Include="Infrastructure\ResourceSearch\ResourceSearchExecutionServiceFactory.cs" />
+    <Compile Include="Infrastructure\ResourceSearch\ResourceTemplateProfileProvider.cs" />
     <Compile Include="Infrastructure\MarchDispatch\AppConfigDispatchSelectedTeamOptionsProvider.cs" />
     <Compile Include="Infrastructure\MarchDispatch\DispatchMarchDiagnosticStore.cs" />
     <Compile Include="Infrastructure\MarchDispatch\DispatchSelectedTeamService.cs" />
@@ -229,6 +236,7 @@
     <Compile Include="Infrastructure\Workflows\OneShotFarmDiagnosticService.cs" />
     <Compile Include="Infrastructure\Workflows\OneShotFarmWorkflow.cs" />
     <Compile Include="Infrastructure\Workflows\OneShotFarmWorkflowFactory.cs" />
+    <Compile Include="Infrastructure\Workflows\ResourceFarmFallbackService.cs" />
     <Compile Include="MainWindow.xaml.cs">
       <DependentUpon>MainWindow.xaml</DependentUpon>
       <SubType>Code</SubType>

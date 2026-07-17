@@ -6,6 +6,6 @@ namespace ADB_Tool_Automation_Post_FB.Core.Workflows
         SearchPanelUnavailable, SearchConfigurationFailed, SearchExecutionFailed,
         ResourcePopupNotReady, TeamSelectionFailed, TeamSelectionNotReady,
         TeamDispatchFailed, AllCandidateStoragesFull, ResourcePlanExhausted,
-        PreconditionFailed, Failed, Cancelled
+        RecoveryFailed, PreconditionFailed, Failed, Cancelled
     }
 }

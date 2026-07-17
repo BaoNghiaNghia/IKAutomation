@@ -491,6 +491,15 @@ namespace ADB_Tool_Automation_Post_FB.UI
 
         private static string FormatOneShotFarmResult(OneShotFarmResult result)
         {
+            ResourceFarmFallbackResult resourcePlan = result.ResourceFallbackResult;
+            string resourceAttempts = resourcePlan?.Attempts == null ? string.Empty
+                : string.Join(Environment.NewLine, resourcePlan.Attempts.Select(item =>
+                    $"- resource={item.ResourceType}, levels={string.Join(",", item.AttemptedLevels ?? new int[0])}, "
+                    + $"locatedLevel={item.LocatedLevel?.ToString() ?? string.Empty}, search={item.LevelFallbackResult?.Outcome.ToString() ?? string.Empty}, "
+                    + $"storageFull={item.MarkedStorageFull}, storageConfirmed={item.StorageLimitConfirmed}, recovery={item.RecoverySucceeded}, "
+                    + $"popup={item.PopupResult?.Outcome.ToString() ?? string.Empty}, selectedTeam={item.SelectTeamResult?.SelectedTeam?.ToString() ?? string.Empty}, "
+                    + $"dispatch={item.DispatchResult?.Outcome.ToString() ?? string.Empty}, duration={item.Duration.TotalMilliseconds:F0} ms, "
+                    + $"error={item.ErrorMessage ?? string.Empty}"));
             string fallbackAttempts = result.FallbackResult?.Attempts == null ? string.Empty
                 : string.Join(Environment.NewLine, result.FallbackResult.Attempts.Select(item =>
                     $"- level={item.Level}, attempt={item.AttemptNumber}, configured={item.ConfigurationSucceeded}, "
@@ -507,12 +516,15 @@ namespace ADB_Tool_Automation_Post_FB.UI
                 + $"Located level: {result.LocatedLevel?.ToString() ?? string.Empty}{Environment.NewLine}Fallback outcome: {result.FallbackResult?.Outcome.ToString() ?? string.Empty}{Environment.NewLine}"
                 + $"Attempted resources: {string.Join(",", result.AttemptedResources ?? new ADB_Tool_Automation_Post_FB.Core.ResourceSearch.ResourceType[0])}{Environment.NewLine}"
                 + $"Storage full resources: {string.Join(",", result.StorageFullResources ?? new ADB_Tool_Automation_Post_FB.Core.ResourceSearch.ResourceType[0])}{Environment.NewLine}"
+                + $"Resource priority: {string.Join(",", resourcePlan?.RequestedResources ?? new ADB_Tool_Automation_Post_FB.Core.ResourceSearch.ResourceType[0])}{Environment.NewLine}"
+                + $"Levels exhausted resources: {string.Join(",", result.LevelsExhaustedResources ?? new ADB_Tool_Automation_Post_FB.Core.ResourceSearch.ResourceType[0])}{Environment.NewLine}"
                 + $"Located resource: {result.LocatedResource?.ToString() ?? string.Empty}{Environment.NewLine}Dispatched resource: {result.DispatchedResource?.ToString() ?? string.Empty}{Environment.NewLine}"
                 + $"Recovery transitions: {result.ResourceFallbackResult?.RecoveryTransitions ?? 0}{Environment.NewLine}"
                 + $"StorageLimitDialog detected: {result.StorageLimitDialogDetected}{Environment.NewLine}Storage limit confirmed: {result.StorageLimitConfirmed}{Environment.NewLine}"
                 + $"Resource switch required: {result.ResourceSwitchRequired}{Environment.NewLine}State after confirmation: {result.StateAfterConfirmation}{Environment.NewLine}"
                 + $"Current resource: {result.CurrentResource?.ToString() ?? string.Empty}{Environment.NewLine}Next resource: {result.NextResource?.ToString() ?? string.Empty}{Environment.NewLine}"
                 + $"Unoccupied only: {result.RequestedUnoccupiedOnly}{Environment.NewLine}Fallback attempts:{Environment.NewLine}{fallbackAttempts}{Environment.NewLine}"
+                + $"Resource attempts:{Environment.NewLine}{resourceAttempts}{Environment.NewLine}"
                 + $"Selected team: {result.SelectedTeam?.ToString() ?? string.Empty}{Environment.NewLine}Dispatched team: {result.DispatchedTeam?.ToString() ?? string.Empty}{Environment.NewLine}"
                 + $"Duration: {result.Duration.TotalMilliseconds:F0} ms{Environment.NewLine}Diagnostic: {result.DiagnosticScreenshotPath ?? string.Empty}{Environment.NewLine}"
                 + $"Message: {result.Message}{Environment.NewLine}Error: {result.ErrorMessage ?? string.Empty}{Environment.NewLine}Steps:{Environment.NewLine}{steps}";

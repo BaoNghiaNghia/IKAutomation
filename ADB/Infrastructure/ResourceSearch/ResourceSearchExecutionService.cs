@@ -25,10 +25,7 @@ namespace ADB_Tool_Automation_Post_FB.Infrastructure.ResourceSearch
         {
             TemplateId.SearchButtonEnabled,
             TemplateId.ResourceNotFoundToastAnchor,
-            TemplateId.ResourceNotFoundToastActionAnchor,
-            TemplateId.ResourcePopupInfoAnchor,
-            TemplateId.ResourcePopupIronTitle,
-            TemplateId.GatherButtonEnabled
+            TemplateId.ResourceNotFoundToastActionAnchor
         };
 
         private readonly IResourceSearchConfigurationService configurationService;
@@ -169,7 +166,8 @@ namespace ADB_Tool_Automation_Post_FB.Infrastructure.ResourceSearch
                         && searchResultWatch.Elapsed < TimeSpan.FromSeconds(options.SearchResultTimeoutSeconds))
                     {
                         ObservationDecision decision = await ObserveFrameAsync(
-                            deviceName, result, observations, context, cancellationToken);
+                            deviceName, request.Configuration.ResourceType, result, observations,
+                            context, cancellationToken);
                         if (decision.HasOutcome)
                             return await CompleteAsync(deviceName, result, context, decision.Outcome,
                                 decision.Message, decision.ErrorMessage, watch, cancellationToken);
@@ -188,7 +186,8 @@ namespace ADB_Tool_Automation_Post_FB.Infrastructure.ResourceSearch
                     while (searchResultWatch.Elapsed < TimeSpan.FromSeconds(options.SearchResultTimeoutSeconds))
                     {
                         ObservationDecision decision = await ObserveFrameAsync(
-                            deviceName, result, observations, context, cancellationToken);
+                            deviceName, request.Configuration.ResourceType, result, observations,
+                            context, cancellationToken);
                         if (decision.HasOutcome)
                             return await CompleteAsync(deviceName, result, context, decision.Outcome,
                                 decision.Message, decision.ErrorMessage, watch, cancellationToken);
@@ -217,6 +216,7 @@ namespace ADB_Tool_Automation_Post_FB.Infrastructure.ResourceSearch
         }
 
         private async Task<ObservationDecision> ObserveFrameAsync(string deviceName,
+            ResourceType expectedResource,
             ResourceSearchExecutionResult result, IList<ResourceSearchObservation> observations,
             ObservationContext context, CancellationToken cancellationToken)
         {
@@ -317,8 +317,11 @@ namespace ADB_Tool_Automation_Post_FB.Infrastructure.ResourceSearch
                 if (popupVerificationService == null)
                     return ObservationDecision.Decided(ResourceSearchOutcome.Failed,
                         "ResourcePopup was detected but no popup verification service is configured.", null);
-                ResourcePopupVerificationResult popup = await popupVerificationService.VerifyAsync(
-                    deviceName, cancellationToken);
+                ResourcePopupVerificationResult popup;
+                if (popupVerificationService is IResourceAwarePopupVerificationService resourceAware)
+                    popup = await resourceAware.VerifyAsync(deviceName, expectedResource, cancellationToken);
+                else
+                    popup = await popupVerificationService.VerifyAsync(deviceName, cancellationToken);
                 cancellationToken.ThrowIfCancellationRequested();
                 result.PopupVerificationResult = popup;
                 observation.PopupOutcome = popup.Outcome;
@@ -328,7 +331,7 @@ namespace ADB_Tool_Automation_Post_FB.Infrastructure.ResourceSearch
                     result.PanelClosed = true;
                     result.FinalState = GameState.ResourcePopup;
                     return ObservationDecision.Decided(ResourceSearchOutcome.ResourceLocated,
-                        "Iron ResourcePopup and enabled Gather button were verified; popup evidence superseded camera stability.", null);
+                        $"{expectedResource} ResourcePopup and enabled Gather button were verified; popup evidence superseded camera stability.", null);
                 }
                 if (popup.Outcome == ResourcePopupOutcome.Failed)
                     return ObservationDecision.Decided(ResourceSearchOutcome.Failed,

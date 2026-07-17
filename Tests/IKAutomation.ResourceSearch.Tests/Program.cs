@@ -62,6 +62,10 @@ namespace IKAutomation.ResourceSearch.Tests
             Run("Ambiguous resource evidence prefers selected", AmbiguousPrefersSelected);
             Run("Stone selected template is used", StoneSelectedTemplate);
             Run("Missing Stone template prevents input", MissingStoneTemplateNoInput);
+            Run("Resource profiles map all four resources", ResourceProfilesMapAll);
+            Run("Wood selected and unselected templates are used", WoodTemplatesUsed);
+            Run("Food selected and unselected templates are used", FoodTemplatesUsed);
+            Run("Missing popup title makes profile unsupported", MissingPopupTitleUnsupported);
             Console.WriteLine($"Resource search tests: {passed} passed, {failed} failed.");
             return failed == 0 ? 0 : 1;
         }
@@ -328,6 +332,45 @@ namespace IKAutomation.ResourceSearch.Tests
             Equal(0, f.Client.TotalInput, "input");
         }
 
+        private static void ResourceProfilesMapAll()
+        {
+            var provider = new ResourceTemplateProfileProvider(new FakeRegistry());
+            ResourceTemplateProfile iron = provider.Get(ResourceType.Iron);
+            ResourceTemplateProfile stone = provider.Get(ResourceType.Stone);
+            ResourceTemplateProfile wood = provider.Get(ResourceType.Wood);
+            ResourceTemplateProfile food = provider.Get(ResourceType.Food);
+            Equal(TemplateId.ResourceIronSelected, iron.SelectedTemplate, "Iron selected");
+            Equal(TemplateId.ResourcePopupIronTitle, iron.PopupTitleTemplate, "Iron popup");
+            Equal(TemplateId.ResourceStoneSelected, stone.SelectedTemplate, "Stone selected");
+            Equal(TemplateId.ResourcePopupStoneTitle, stone.PopupTitleTemplate, "Stone popup");
+            Equal(TemplateId.ResourceWoodSelected, wood.SelectedTemplate, "Wood selected");
+            Equal(TemplateId.ResourcePopupWoodTitle, wood.PopupTitleTemplate, "Wood popup");
+            Equal(TemplateId.ResourceFoodSelected, food.SelectedTemplate, "Food selected");
+            Equal(TemplateId.ResourcePopupFoodTitle, food.PopupTitleTemplate, "Food popup");
+        }
+
+        private static void WoodTemplatesUsed()
+        {
+            Fixture f = Setup(); var request = Request(); request.ResourceType = ResourceType.Wood;
+            ResourceSearchConfigurationResult result = Execute(f, request);
+            Assert(result.Success && result.ResourceVerified, result.ErrorMessage); Assert(f.Client.Taps.Contains("80,25"), "Wood center was not tapped.");
+        }
+
+        private static void FoodTemplatesUsed()
+        {
+            Fixture f = Setup(); var request = Request(); request.ResourceType = ResourceType.Food;
+            ResourceSearchConfigurationResult result = Execute(f, request);
+            Assert(result.Success && result.ResourceVerified, result.ErrorMessage); Assert(f.Client.Taps.Contains("110,25"), "Food center was not tapped.");
+        }
+
+        private static void MissingPopupTitleUnsupported()
+        {
+            var registry = new FakeRegistry { Missing = TemplateId.ResourcePopupWoodTitle };
+            var provider = new ResourceTemplateProfileProvider(registry);
+            Assert(!provider.IsSupported(ResourceType.Wood), "Wood should be unsupported.");
+            Assert(provider.GetUnsupportedReason(ResourceType.Wood).Contains("ResourcePopupWoodTitle"), "Missing TemplateId was not reported.");
+        }
+
         private static ResourceSearchConfigurationResult Execute(Fixture fixture,
             ResourceSearchConfigurationRequest request = null, CancellationToken? token = null) =>
             fixture.Service.ConfigureAsync("LDPlayer", request ?? Request(), token ?? Token).GetAwaiter().GetResult();
@@ -396,6 +439,10 @@ namespace IKAutomation.ResourceSearch.Tests
                         && (!ui.ResourceRequiresStableIcon || region.HasValue), 10, 10, 20, 30);
                     case TemplateId.ResourceStoneSelected: return Found(ui.ResourceSelected
                         && (!ui.ResourceRequiresStableIcon || region.HasValue), 40, 10, 20, 30);
+                    case TemplateId.ResourceWoodSelected: return Found(ui.ResourceSelected
+                        && (!ui.ResourceRequiresStableIcon || region.HasValue), 70, 10, 20, 30);
+                    case TemplateId.ResourceFoodSelected: return Found(ui.ResourceSelected
+                        && (!ui.ResourceRequiresStableIcon || region.HasValue), 100, 10, 20, 30);
                     case TemplateId.ResourceIronUnselected: return ui.InvalidResourceBounds
                         ? ImageMatchResult.FoundAt(10, 10, 0, 0)
                         : Found((!ui.ResourceSelected || ui.AmbiguousResource)
@@ -404,6 +451,14 @@ namespace IKAutomation.ResourceSearch.Tests
                         ? ImageMatchResult.FoundAt(40, 10, 0, 0)
                         : Found((!ui.ResourceSelected || ui.AmbiguousResource)
                             && (!ui.ResourceRequiresStableIcon || region.HasValue), 40, 10, 20, 30);
+                    case TemplateId.ResourceWoodUnselected: return ui.InvalidResourceBounds
+                        ? ImageMatchResult.FoundAt(70, 10, 0, 0)
+                        : Found((!ui.ResourceSelected || ui.AmbiguousResource)
+                            && (!ui.ResourceRequiresStableIcon || region.HasValue), 70, 10, 20, 30);
+                    case TemplateId.ResourceFoodUnselected: return ui.InvalidResourceBounds
+                        ? ImageMatchResult.FoundAt(100, 10, 0, 0)
+                        : Found((!ui.ResourceSelected || ui.AmbiguousResource)
+                            && (!ui.ResourceRequiresStableIcon || region.HasValue), 100, 10, 20, 30);
                     case TemplateId.LevelMinusButton: return ImageMatchResult.FoundAt(100, 100, 20, 20);
                     case TemplateId.LevelPlusButton: return ImageMatchResult.FoundAt(200, 100, 20, 20);
                     case TemplateId.LevelValue7: return Found(ui.Level == 7 && !ui.HideLevelValue
@@ -499,7 +554,7 @@ namespace IKAutomation.ResourceSearch.Tests
             {
                 t.ThrowIfCancellationRequested(); Taps.Add(x + "," + y);
                 if (x == 210 && y == 674) { ResourceTabTaps++; ui.ResourceTabSelected = true; }
-                else if (x == 20 && y == 25) { ResourceTaps++; if (!ui.IgnoreResourceTap) ui.ResourceSelected = true; }
+                else if ((x == 20 || x == 50 || x == 80 || x == 110) && y == 25) { ResourceTaps++; if (!ui.IgnoreResourceTap) ui.ResourceSelected = true; }
                 else if (x == 110) { MinusTaps++; ui.Level = Math.Max(1, ui.Level - 1); }
                 else if (x == 210) { PlusTaps++; ui.Level = Math.Min(7, ui.Level + 1); }
                 else if (x == 310) { FilterTaps++; ui.FilterChecked = !ui.FilterChecked; }

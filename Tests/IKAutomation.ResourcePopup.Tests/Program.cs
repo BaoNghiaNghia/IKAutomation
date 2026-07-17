@@ -40,6 +40,9 @@ namespace IKAutomation.ResourcePopup.Tests
             Run("Initial and final state are returned", StatesReturned);
             Run("Stone popup uses Stone title", StonePopupReady);
             Run("Missing Stone title fails before capture", MissingStoneTitleFails);
+            Run("Wood popup uses Wood title", WoodPopupReady);
+            Run("Food popup uses Food title", FoodPopupReady);
+            Run("Different resource title returns controlled mismatch", PopupMismatch);
             Console.WriteLine($"Resource popup tests: {passed} passed, {failed} failed.");
             return failed == 0 ? 0 : 1;
         }
@@ -99,6 +102,27 @@ namespace IKAutomation.ResourcePopup.Tests
             Equal(ResourcePopupOutcome.Failed, result.Outcome);
             Assert(result.ErrorMessage.Contains("ResourcePopupStoneTitle"), result.ErrorMessage);
             Equal(0, f.Client.Captures);
+        }
+        private static void WoodPopupReady() => AssertPopupReady(ResourceType.Wood, TemplateId.ResourcePopupWoodTitle);
+        private static void FoodPopupReady() => AssertPopupReady(ResourceType.Food, TemplateId.ResourcePopupFoodTitle);
+        private static void AssertPopupReady(ResourceType resource, TemplateId title)
+        {
+            Fixture f = Setup(TemplateId.ResourcePopupInfoAnchor, title, TemplateId.GatherButtonEnabled);
+            var result = ((IResourceAwarePopupVerificationService)f.Service)
+                .VerifyAsync("LDPlayer", resource, Token).GetAwaiter().GetResult();
+            Equal(ResourcePopupOutcome.ResourcePopupReady, result.Outcome);
+            Assert(result.ExpectedResource == resource && result.ExpectedResourceVerified
+                && result.ExpectedPopupTitleTemplate == title, result.Message);
+        }
+        private static void PopupMismatch()
+        {
+            Fixture f = Setup(TemplateId.ResourcePopupInfoAnchor, TemplateId.ResourcePopupIronTitle,
+                TemplateId.GatherButtonEnabled);
+            var result = ((IResourceAwarePopupVerificationService)f.Service)
+                .VerifyAsync("LDPlayer", ResourceType.Wood, Token).GetAwaiter().GetResult();
+            Equal(ResourcePopupOutcome.ResourcePopupMismatch, result.Outcome);
+            Assert(!result.Success && result.MismatchedResource == ResourceType.Iron, result.Message);
+            Equal(0, f.Client.InputCalls);
         }
 
         private static Fixture Setup(params TemplateId[] matches) => Setup(matches, 1);

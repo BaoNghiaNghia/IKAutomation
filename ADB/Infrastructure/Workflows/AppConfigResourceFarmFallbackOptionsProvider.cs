@@ -13,14 +13,19 @@ namespace ADB_Tool_Automation_Post_FB.Infrastructure.Workflows
         {
             var options = new ResourceFarmFallbackOptions
             {
-                ResourcePriority = ReadList("ResourceFarmFallback.ResourcePriority", "Iron,Stone", ParseResource),
+                ResourcePriority = ReadList("ResourceFarmFallback.ResourcePriority", "Iron,Stone,Wood,Food", ParseResource),
                 LevelPriority = ReadList("ResourceFarmFallback.LevelPriority", "7,6,5", int.Parse),
+                AttemptsPerLevel = ReadInt("ResourceFarmFallback.AttemptsPerLevel", 1),
                 StorageLimitPolicy = ReadEnum("ResourceFarmFallback.StorageLimitPolicy", StorageLimitPolicy.ConfirmAndSwitchResource),
                 SwitchOnStorageLimit = ReadBool("ResourceFarmFallback.SwitchOnStorageLimit", true),
                 SwitchWhenLevelsExhausted = ReadBool("ResourceFarmFallback.SwitchWhenLevelsExhausted", true),
                 MaxRecoveryTransitions = ReadInt("ResourceFarmFallback.MaxRecoveryTransitions", 3),
                 RecoveryPollIntervalMs = ReadInt("ResourceFarmFallback.RecoveryPollIntervalMs", 250),
-                RecoveryTimeoutSeconds = ReadInt("ResourceFarmFallback.RecoveryTimeoutSeconds", 8)
+                RecoveryTimeoutSeconds = ReadInt("ResourceFarmFallback.RecoveryTimeoutSeconds", 8),
+                StopOnFirstMarchStarted = ReadBool("ResourceFarmFallback.StopOnFirstMarchStarted", true),
+                SaveAttemptScreenshots = ReadBool("ResourceFarmFallback.SaveAttemptScreenshots", true),
+                ScreenshotDirectory = ConfigurationManager.AppSettings["ResourceFarmFallback.ScreenshotDirectory"]
+                    ?? "Diagnostics/ResourceFarmFallback"
             };
             options.Validate(); return options;
         }
