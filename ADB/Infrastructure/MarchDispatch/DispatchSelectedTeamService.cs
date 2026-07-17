@@ -137,10 +137,11 @@ namespace ADB_Tool_Automation_Post_FB.Infrastructure.MarchDispatch
                 lastFrame = beforeDispatch;
                 await TapActionAsync(deviceName, result, action, cancellationToken, false);
                 DateTimeOffset lastTapAt = DateTimeOffset.UtcNow;
-                TimeSpan timeout = TimeSpan.FromSeconds(options.TransitionTimeoutSeconds);
+                DateTimeOffset transitionDeadline = DateTimeOffset.UtcNow.AddSeconds(
+                    options.TransitionTimeoutSeconds);
                 bool transitionObserved = false;
 
-                while (watch.Elapsed < timeout)
+                while (DateTimeOffset.UtcNow < transitionDeadline)
                 {
                     await Task.Delay(options.PollIntervalMs, cancellationToken);
                     lastFrame = await client.CaptureScreenshotPngAsync(deviceName, cancellationToken);

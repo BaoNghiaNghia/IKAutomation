@@ -34,12 +34,14 @@ namespace IKAutomation.FarmTeamSelection.Tests
             Run("Selected border in Team3 does not verify Team4", WrongRoiNotSuccess);
             Run("Multiple selected borders are ambiguous", Ambiguous);
             Run("Disabled Team4 is skipped", DisabledTeam4);
+            Run("Selected Team4 without farm action proceeds to Team3", BusyTeam4ProceedsToTeam3);
             Run("Missing disabled template uses verification", OptionalDisabledMissing);
             Run("Failed Team4 proceeds to Team3", Team4ThenTeam3);
             Run("Team3 success stops before Team2", Team3Stops);
             Run("No badge produces NoEligibleTeam", NoEligible);
             Run("Retry count is bounded", RetryBounded);
             Run("Retry uses fresh bounds", RetryFreshBounds);
+            Run("Preflight does not consume selection timeout", PreflightDoesNotConsumeSelectionTimeout);
             Run("Polling cancellation is returned", PollCancellation);
             Run("Retry cancellation is returned", RetryCancellation);
             Run("Lock-wait cancellation is returned", LockWaitCancellation);
@@ -104,6 +106,18 @@ namespace IKAutomation.FarmTeamSelection.Tests
         private static void DisabledTeam4()
         { Fixture f = Setup(); f.Registry.DisabledExists = true; f.Matcher.Badges.UnionWith(new[] { TeamNumber.Team4, TeamNumber.Team3 }); f.Matcher.Disabled.Add(TeamNumber.Team4); f.Matcher.SelectOnTap[TeamNumber.Team3] = TeamNumber.Team3; SelectFarmTeamResult r = Execute(f); Equal(TeamNumber.Team3, r.SelectedTeam.Value); Assert(!f.Client.Taps.Any(t => t.EndsWith(",470")), "Disabled Team4 was tapped."); }
 
+        private static void BusyTeam4ProceedsToTeam3()
+        {
+            Fixture f = Setup(maxAttempts: 1);
+            f.Matcher.Badges.UnionWith(new[] { TeamNumber.Team4, TeamNumber.Team3 });
+            f.Matcher.SelectOnTap[TeamNumber.Team4] = TeamNumber.Team4;
+            f.Matcher.SelectOnTap[TeamNumber.Team3] = TeamNumber.Team3;
+            f.Detector.ActionAvailable = () => !f.Matcher.Selected.Contains(TeamNumber.Team4);
+            SelectFarmTeamResult r = Execute(f);
+            Equal(TeamNumber.Team3, r.SelectedTeam.Value);
+            Sequence(new[] { TeamNumber.Team4, TeamNumber.Team3 }, r.AttemptedTeams.Take(2));
+        }
+
         private static void OptionalDisabledMissing()
         { Fixture f = Successful(TeamNumber.Team4); f.Registry.DisabledExists = false; Equal(SelectFarmTeamOutcome.TeamSelected, Execute(f).Outcome); }
 
@@ -121,6 +135,13 @@ namespace IKAutomation.FarmTeamSelection.Tests
 
         private static void RetryFreshBounds()
         { Fixture f = Setup(maxAttempts: 2); f.Matcher.Badges.Add(TeamNumber.Team4); f.Matcher.MoveBadgeEachCall = true; Execute(f, Only(TeamNumber.Team4)); Assert(f.Client.Taps.Distinct().Count() == 2, "Retry reused stale bounds."); }
+
+        private static void PreflightDoesNotConsumeSelectionTimeout()
+        {
+            Fixture f = Successful(TeamNumber.Team4); f.Detector.DelayMs = 1100;
+            SelectFarmTeamResult r = Execute(f, Only(TeamNumber.Team4));
+            Equal(SelectFarmTeamOutcome.TeamSelected, r.Outcome);
+        }
 
         private static void PollCancellation()
         { Fixture f = Setup(); f.Matcher.Badges.Add(TeamNumber.Team4); using (var source = new CancellationTokenSource()) { f.Client.CancelOnTap = source; Equal(SelectFarmTeamOutcome.Cancelled, Execute(f, Only(TeamNumber.Team4), source.Token).Outcome); } }
@@ -228,12 +249,17 @@ namespace IKAutomation.FarmTeamSelection.Tests
         private sealed class FakeDetector : IGameStateDetector
         {
             private int active; public bool Ready = true; public int DelayMs, MaxActive;
+            public Func<bool> ActionAvailable = () => true;
             public async Task<GameDetectionResult> DetectAsync(string d, CancellationToken t)
             { int now = Interlocked.Increment(ref active); MaxActive = Math.Max(MaxActive, now); try { if (DelayMs > 0) await Task.Delay(DelayMs, t); return Result(); } finally { Interlocked.Decrement(ref active); } }
             public GameDetectionResult Detect(byte[] p) => Result();
             private GameDetectionResult Result()
             {
-                TemplateId[] ids = Ready ? new[] { TemplateId.TeamSelectionPanelAnchor, TemplateId.TeamAdjustFormationButton, TemplateId.TeamActionButtonEnabled } : new[] { TemplateId.TeamSelectionPanelAnchor };
+                TemplateId[] ids = Ready
+                    ? (ActionAvailable()
+                        ? new[] { TemplateId.TeamSelectionPanelAnchor, TemplateId.TeamAdjustFormationButton, TemplateId.TeamActionButtonEnabled }
+                        : new[] { TemplateId.TeamSelectionPanelAnchor, TemplateId.TeamAdjustFormationButton })
+                    : new[] { TemplateId.TeamSelectionPanelAnchor };
                 return new GameDetectionResult { State = GameState.TeamSelection, IsSuccessful = true,
                     Evidence = ids.Select(id => new GameDetectionEvidence { TemplateId = id, TemplateExists = true, Found = true, MatchResult = ImageMatchResult.FoundAt(1, 1, 10, 10) }).ToArray() };
             }

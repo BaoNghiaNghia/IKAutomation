@@ -86,7 +86,7 @@ namespace ADB_Tool_Automation_Post_FB.Infrastructure.TeamSelection
                 GameDetectionResult initial = await detector.DetectAsync(deviceName, cancellationToken);
                 result.InitialState = initial.State;
                 result.FinalState = initial.State;
-                if (!IsReady(initial))
+                if (!IsSelectionScreen(initial))
                 {
                     lastFrame = await TryCaptureAsync(deviceName, cancellationToken);
                     return await CompleteAsync(deviceName, result,
@@ -98,7 +98,7 @@ namespace ADB_Tool_Automation_Post_FB.Infrastructure.TeamSelection
 
                 lastFrame = await client.CaptureScreenshotPngAsync(deviceName, cancellationToken);
                 GameDetectionResult freshState = detector.Detect(lastFrame);
-                if (!IsReady(freshState))
+                if (!IsSelectionScreen(freshState))
                     return await CompleteAsync(deviceName, result,
                         SelectFarmTeamOutcome.TeamSelectionNotReady,
                         "Team Selection was not ready on the fresh screenshot; no Tap was sent.",
@@ -112,7 +112,7 @@ namespace ADB_Tool_Automation_Post_FB.Infrastructure.TeamSelection
 
                 TeamNumber? allowedSelected = FirstByPriority(selected.Teams,
                     request.Priority, request.AllowedTeams, request.AllowTeam1);
-                if (allowedSelected.HasValue)
+                if (allowedSelected.HasValue && HasEnabledAction(freshState))
                 {
                     result.SelectedTeam = allowedSelected;
                     result.SelectedStateVerified = true;
@@ -128,7 +128,8 @@ namespace ADB_Tool_Automation_Post_FB.Infrastructure.TeamSelection
                         $"{allowedSelected.Value} was already selected.", null, watch);
                 }
 
-                TimeSpan timeout = TimeSpan.FromSeconds(options.SelectionTimeoutSeconds);
+                DateTimeOffset selectionDeadline = DateTimeOffset.UtcNow.AddSeconds(
+                    options.SelectionTimeoutSeconds);
                 foreach (TeamNumber team in request.Priority)
                 {
                     cancellationToken.ThrowIfCancellationRequested();
@@ -178,8 +179,9 @@ namespace ADB_Tool_Automation_Post_FB.Infrastructure.TeamSelection
                         attemptNumber <= options.MaxSelectionAttemptsPerTeam;
                         attemptNumber++)
                     {
+                        bool selectedButUnavailable = false;
                         cancellationToken.ThrowIfCancellationRequested();
-                        if (watch.Elapsed >= timeout)
+                        if (DateTimeOffset.UtcNow >= selectionDeadline)
                             return await CompleteAsync(deviceName, result,
                                 SelectFarmTeamOutcome.SelectionTimeout,
                                 "Farm team selection timed out before another safe attempt.",
@@ -187,7 +189,7 @@ namespace ADB_Tool_Automation_Post_FB.Infrastructure.TeamSelection
 
                         lastFrame = await client.CaptureScreenshotPngAsync(deviceName, cancellationToken);
                         GameDetectionResult state = detector.Detect(lastFrame);
-                        if (!IsReady(state))
+                        if (!IsSelectionScreen(state))
                             return await CompleteAsync(deviceName, result,
                                 SelectFarmTeamOutcome.TeamSelectionNotReady,
                                 "Team Selection stopped being ready; no further Tap was sent.",
@@ -223,12 +225,13 @@ namespace ADB_Tool_Automation_Post_FB.Infrastructure.TeamSelection
 
                         DateTimeOffset observationDeadline = DateTimeOffset.UtcNow.AddMilliseconds(
                             Math.Max(options.TapRetryDelayMs, options.PollIntervalMs * 2));
-                        while (DateTimeOffset.UtcNow < observationDeadline && watch.Elapsed < timeout)
+                        while (DateTimeOffset.UtcNow < observationDeadline
+                            && DateTimeOffset.UtcNow < selectionDeadline)
                         {
                             await Task.Delay(options.PollIntervalMs, cancellationToken);
                             lastFrame = await client.CaptureScreenshotPngAsync(deviceName, cancellationToken);
                             GameDetectionResult observedState = detector.Detect(lastFrame);
-                            if (!IsReady(observedState)) continue;
+                            if (!IsSelectionScreen(observedState)) continue;
                             SelectedScan observed = ScanSelected(lastFrame);
                             if (observed.IsAmbiguous)
                                 return await CompleteAsync(deviceName, result,
@@ -237,6 +240,14 @@ namespace ADB_Tool_Automation_Post_FB.Infrastructure.TeamSelection
                                     "Ambiguous selected-team evidence.", lastFrame, watch, cancellationToken);
                             if (observed.Teams.Count == 1 && observed.Teams[0] == team)
                             {
+                                if (!HasEnabledAction(observedState))
+                                {
+                                    attempt.SelectedVerified = true;
+                                    attempt.SelectedBorderMatch = observed.Matches[team];
+                                    attempt.Message = "Team was selected but has no enabled farm action; trying the next eligible team.";
+                                    selectedButUnavailable = true;
+                                    break;
+                                }
                                 attempt.SelectedVerified = true;
                                 attempt.SelectedBorderMatch = observed.Matches[team];
                                 attempt.Message = "Team selected border was verified in the target ROI.";
@@ -248,13 +259,15 @@ namespace ADB_Tool_Automation_Post_FB.Infrastructure.TeamSelection
                             }
                         }
 
+                        if (selectedButUnavailable) break;
                         attempt.Message = "Tap was sent but selected border was not verified in the target ROI.";
-                        if (attemptNumber < options.MaxSelectionAttemptsPerTeam && watch.Elapsed < timeout)
+                        if (attemptNumber < options.MaxSelectionAttemptsPerTeam
+                            && DateTimeOffset.UtcNow < selectionDeadline)
                             await Task.Delay(options.TapRetryDelayMs, cancellationToken);
                     }
                 }
 
-                SelectFarmTeamOutcome outcome = watch.Elapsed >= timeout
+                SelectFarmTeamOutcome outcome = DateTimeOffset.UtcNow >= selectionDeadline
                     ? SelectFarmTeamOutcome.SelectionTimeout
                     : SelectFarmTeamOutcome.NoEligibleTeam;
                 return await CompleteAsync(deviceName, result, outcome,
@@ -310,10 +323,17 @@ namespace ADB_Tool_Automation_Post_FB.Infrastructure.TeamSelection
             return true;
         }
 
-        private static bool IsReady(GameDetectionResult state) =>
+        private static bool IsSelectionScreen(GameDetectionResult state) =>
             state != null && state.IsSuccessful && state.State == GameState.TeamSelection
-            && ReadyTemplates.All(id => state.Evidence != null
-                && state.Evidence.Any(item => item.TemplateId == id && item.Found));
+            && Found(state, TemplateId.TeamSelectionPanelAnchor)
+            && Found(state, TemplateId.TeamAdjustFormationButton);
+
+        private static bool HasEnabledAction(GameDetectionResult state) =>
+            Found(state, TemplateId.TeamActionButtonEnabled);
+
+        private static bool Found(GameDetectionResult state, TemplateId id) =>
+            state != null && state.Evidence != null
+            && state.Evidence.Any(item => item.TemplateId == id && item.Found);
 
         private static TeamNumber? FirstByPriority(IReadOnlyList<TeamNumber> selected,
             IReadOnlyList<TeamNumber> priority, IReadOnlyList<TeamNumber> allowed, bool allowTeam1)

@@ -50,6 +50,7 @@ internal static class Program
         Run("Retry uses new action bounds", RetryFreshBounds);
         Run("Transient Unknown sends no extra input", UnknownNoInput);
         Run("Unknown limit returns controlled result", UnknownLimit);
+        Run("Preflight does not consume dispatch timeout", PreflightDoesNotConsumeDispatchTimeout);
         Run("Timeout is bounded", TimeoutBounded);
         Run("Polling cancellation is respected", PollCancellation);
         Run("Retry wait cancellation is respected", RetryCancellation);
@@ -111,6 +112,7 @@ internal static class Program
     private static void RetryFreshBounds() { var h=RetryHarness(); h.Matcher.DynamicRetryAction=true; var r=Execute(h); Eq(2,r.ActionTapCount,"retry"); Is(h.Client.Taps[0].Item1!=h.Client.Taps[1].Item1,"bounds reused"); }
     private static void UnknownNoInput() { var h=new Harness(); h.Detector.AfterState=GameState.Unknown; var r=Execute(h); Eq(1,r.ActionTapCount,"unknown caused input"); }
     private static void UnknownLimit() { var h=NoSuccessHarness(); h.Detector.AfterState=GameState.Unknown; h.Matcher.WorldAfter=false; var r=Execute(h); Eq(DispatchMarchOutcome.VerificationIndeterminate,r.Outcome,"outcome"); }
+    private static void PreflightDoesNotConsumeDispatchTimeout() { var h=new Harness(); h.Detector.DelayMs=1100; var r=Execute(h); Eq(DispatchMarchOutcome.MarchStarted,r.Outcome,"outcome"); }
     private static void TimeoutBounded() { var h=NoSuccessHarness(); var sw=Stopwatch.StartNew(); Execute(h); Is(sw.Elapsed<TimeSpan.FromSeconds(2),"unbounded"); }
     private static void PollCancellation() { var h=NoSuccessHarness(); using(var c=new CancellationTokenSource(20)){ var r=Execute(h,c.Token); Eq(DispatchMarchOutcome.Cancelled,r.Outcome,"outcome"); } }
     private static void RetryCancellation() { PollCancellation(); }
@@ -140,9 +142,9 @@ internal static class Program
 
     private sealed class FakeDetector:IGameStateDetector
     {
-        public GameDetectionResult Initial; public GameState AfterState=GameState.WorldMap;
+        public GameDetectionResult Initial; public GameState AfterState=GameState.WorldMap; public int DelayMs;
         public FakeDetector(){Initial=Result(GameState.TeamSelection,true);}
-        public Task<GameDetectionResult> DetectAsync(string d,CancellationToken t){t.ThrowIfCancellationRequested();return Task.FromResult(Initial);}
+        public async Task<GameDetectionResult> DetectAsync(string d,CancellationToken t){t.ThrowIfCancellationRequested();if(DelayMs>0)await Task.Delay(DelayMs,t);return Initial;}
         public GameDetectionResult Detect(byte[] f)=>Result(f[0]<=2?GameState.TeamSelection:AfterState,f[0]<=2);
         public GameDetectionResult Result(GameState s,bool ready)=>new GameDetectionResult{State=s,IsSuccessful=s!=GameState.Unknown,Evidence=ready?new[]{TemplateId.TeamSelectionPanelAnchor,TemplateId.TeamAdjustFormationButton,TemplateId.TeamActionButtonEnabled}.Select(id=>new GameDetectionEvidence{TemplateId=id,Found=true}).ToArray():new GameDetectionEvidence[0]};
     }
