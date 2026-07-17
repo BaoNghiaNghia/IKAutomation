@@ -121,7 +121,7 @@ namespace ADB_Tool_Automation_Post_FB.Infrastructure.Workflows
                 token.ThrowIfCancellationRequested(); started = Start(runId, deviceName, OneShotFarmStep.OpenSearchPanel);
                 NavigationResult panel = await navigation.OpenResourceSearchPanelAsync(deviceName, token);
                 result.NavigationResult = panel; result.FinalState = panel.FinalState;
-                bool panelEvidence = panel.FinalEvidence != null && panel.FinalEvidence.Any(x => x.TemplateId == TemplateId.ResourceSearchPanelAnchor && x.Found);
+                bool panelEvidence = HasResourceSearchPanelEvidence(panel.FinalEvidence);
                 if (!panel.Success || panel.FinalState != GameState.ResourceSearchPanel || !panelEvidence)
                 {
                     Add(steps, OneShotFarmStep.OpenSearchPanel, false, started, panel.Message, panel.ErrorMessage, panel);
@@ -265,6 +265,19 @@ namespace ADB_Tool_Automation_Post_FB.Infrastructure.Workflows
             if (request.TeamPriority.Any(x => !request.AllowedTeams.Contains(x))) return "TeamPriority must be a subset of AllowedTeams.";
             if (!request.AllowTeam1 && (request.AllowedTeams.Contains(TeamNumber.Team1) || request.TeamPriority.Contains(TeamNumber.Team1))) return "Team1 is not allowed.";
             return null;
+        }
+
+        private static bool HasResourceSearchPanelEvidence(
+            IReadOnlyList<GameDetectionEvidence> evidence)
+        {
+            if (evidence == null) return false;
+            bool searchButton = evidence.Any(x => x.TemplateId == TemplateId.SearchButtonEnabled && x.Found);
+            bool panelChrome = evidence.Any(x => x.Found
+                && (x.TemplateId == TemplateId.ResourceSearchPanelAnchor
+                    || x.TemplateId == TemplateId.LevelMinusButton
+                    || x.TemplateId == TemplateId.ResourceTabSelected
+                    || x.TemplateId == TemplateId.ResourceTabUnselected));
+            return searchButton && panelChrome;
         }
 
         private async Task<OneShotFarmResult> StopAsync(OneShotFarmResult result,
