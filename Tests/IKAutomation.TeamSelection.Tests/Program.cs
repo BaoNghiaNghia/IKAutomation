@@ -31,6 +31,7 @@ namespace IKAutomation.TeamSelection.Tests
             Run("Panel plus Adjust confirms", () => TwoSignalSuccess(TemplateId.TeamAdjustFormationButton));
             Run("Panel plus Action confirms", () => TwoSignalSuccess(TemplateId.TeamActionButtonEnabled));
             Run("All Team signals are ready", AllSignalsReady);
+            Run("Pre-tap work does not consume transition timeout", PreTapWorkDoesNotConsumeTransitionTimeout);
             Run("Panel alone is not confirmed", PanelAlone);
             Run("Controls without panel are not confirmed", ControlsWithoutPanel);
             Run("Ready required returns OpenedButNotReady", ReadyRequired);
@@ -99,6 +100,14 @@ namespace IKAutomation.TeamSelection.Tests
 
         private static void AllSignalsReady()
         { Fixture f = ReadyFlow(); OpenTeamSelectionResult r = Execute(f); Assert(r.TeamSelectionReady && r.Success, r.Message); }
+
+        private static void PreTapWorkDoesNotConsumeTransitionTimeout()
+        {
+            Fixture f = ReadyFlow(); f.Popup.DelayMs = 1100;
+            OpenTeamSelectionResult r = Execute(f);
+            Equal(OpenTeamSelectionOutcome.TeamSelectionOpened, r.Outcome);
+            Assert(r.ObservedFrameCount > 0, "No post-tap frame was observed.");
+        }
 
         private static void PanelAlone()
         {
@@ -243,7 +252,11 @@ namespace IKAutomation.TeamSelection.Tests
         }
 
         private sealed class FakePopup : IResourcePopupVerificationService
-        { public ResourcePopupVerificationResult Result; public Task<ResourcePopupVerificationResult> VerifyAsync(string d, CancellationToken t) { t.ThrowIfCancellationRequested(); return Task.FromResult(Result); } }
+        {
+            public ResourcePopupVerificationResult Result; public int DelayMs;
+            public async Task<ResourcePopupVerificationResult> VerifyAsync(string d, CancellationToken t)
+            { t.ThrowIfCancellationRequested(); if (DelayMs > 0) await Task.Delay(DelayMs, t); return Result; }
+        }
 
         private sealed class FakeRegistry : ITemplateRegistry
         {

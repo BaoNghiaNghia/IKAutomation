@@ -143,9 +143,10 @@ namespace ADB_Tool_Automation_Post_FB.Infrastructure.TeamSelection
                         lastFrame, watch, cancellationToken);
 
                 await TapGatherAsync(deviceName, freshPopup.Gather.MatchResult, result, cancellationToken);
-                TimeSpan timeout = TimeSpan.FromSeconds(options.TransitionTimeoutSeconds);
+                DateTimeOffset transitionDeadline = DateTimeOffset.UtcNow.AddSeconds(
+                    options.TransitionTimeoutSeconds);
                 bool confirmedObserved = false;
-                while (watch.Elapsed < timeout)
+                while (DateTimeOffset.UtcNow < transitionDeadline)
                 {
                     await Task.Delay(options.PollIntervalMs, cancellationToken);
                     lastFrame = await client.CaptureScreenshotPngAsync(deviceName, cancellationToken);
