@@ -29,6 +29,8 @@ internal static class Program
         Run("Panel composite evidence is accepted without panel anchor", CompositePanelEvidence);
         Run("Execute disables configure-before-search", ConfigureBeforeFalse); Run("ResourceNotFound stops before popup", NotFound);
         Run("ResourceNotFound is business outcome", NotFoundBusiness); Run("Search timeout stops before popup", SearchTimeout);
+        Run("ResourceNotFound records ExecuteSearch as last completed", NotFoundLastCompleted);
+        Run("ResourceNotFound skips popup team and dispatch", NotFoundSkipsDownstream);
         Run("ResourceLocated verifies popup", LocatedCallsPopup); Run("Popup not ready stops before team", PopupFail);
         Run("TeamSelection not ready stops before select", OpenTeamNotReady); Run("No eligible team stops before dispatch", NoTeam);
         Run("Selected team is passed to dispatch", SelectedPassed); Run("Team3 is not hard-coded to Team4", Team3Passed);
@@ -62,6 +64,8 @@ internal static class Program
     static void ConfigureBeforeFalse(){var h=new H();Go(h);Is(!h.Search.Last.ConfigureBeforeSearch,"double configure");}
     static void NotFound(){var h=new H();h.Search.Outcome=ResourceSearchOutcome.ResourceNotFound;var r=Go(h);Eq(OneShotFarmOutcome.ResourceNotFound,r.Outcome,"outcome");Eq(0,h.Popup.Calls,"popup");}
     static void NotFoundBusiness(){var h=new H();h.Search.Outcome=ResourceSearchOutcome.ResourceNotFound;var r=Go(h);Is(!r.Success&&r.ErrorMessage==null,"treated as exception");}
+    static void NotFoundLastCompleted(){var h=new H();h.Search.Outcome=ResourceSearchOutcome.ResourceNotFound;Eq(OneShotFarmStep.ExecuteSearch,Go(h).LastCompletedStep,"last");}
+    static void NotFoundSkipsDownstream(){var h=new H();h.Search.Outcome=ResourceSearchOutcome.ResourceNotFound;Go(h);Eq(0,h.Popup.Calls+h.Open.Calls+h.Select.Calls+h.Dispatch.Calls,"downstream calls");}
     static void SearchTimeout(){var h=new H();h.Search.Outcome=ResourceSearchOutcome.Timeout;h.Search.Success=false;Eq(OneShotFarmOutcome.SearchExecutionFailed,Go(h).Outcome,"outcome");Eq(0,h.Popup.Calls,"popup");}
     static void LocatedCallsPopup(){var h=new H();Go(h);Eq(1,h.Popup.Calls,"popup");}
     static void PopupFail(){var h=new H();h.Popup.Ready=false;Eq(OneShotFarmOutcome.ResourcePopupNotReady,Go(h).Outcome,"outcome");Eq(0,h.Open.Calls,"team");}

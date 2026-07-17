@@ -18,6 +18,9 @@ namespace ADB_Tool_Automation_Post_FB.Infrastructure.ResourceSearch
 {
     public sealed class ResourceSearchExecutionService : IResourceSearchExecutionService
     {
+        private const string LegacyMoveAreaVariant = "LegacyMoveArea";
+        private const string SearchOtherRegionVariant = "SearchOtherRegion";
+
         private static readonly TemplateId[] RequiredTemplates =
         {
             TemplateId.SearchButtonEnabled,
@@ -234,6 +237,10 @@ namespace ADB_Tool_Automation_Post_FB.Infrastructure.ResourceSearch
 
             ImageMatchResult toastAnchor = Match(frame, TemplateId.ResourceNotFoundToastAnchor, options.ToastRegion);
             ImageMatchResult actionAnchor = Match(frame, TemplateId.ResourceNotFoundToastActionAnchor, options.ToastRegion);
+            ImageMatchResult shortAnchor = MatchOptional(frame,
+                TemplateId.ResourceNotFoundToastShortAnchor, options.ToastRegion);
+            ImageMatchResult otherRegionAnchor = MatchOptional(frame,
+                TemplateId.ResourceNotFoundToastOtherRegionAnchor, options.ToastRegion);
             bool panelConfirmed = IsPanelConfirmed(detection);
             double? difference = null;
             bool stable = false;
@@ -252,10 +259,13 @@ namespace ADB_Tool_Automation_Post_FB.Infrastructure.ResourceSearch
 
             result.PanelClosed = !panelConfirmed;
             result.FinalState = detection.State;
-            bool anchorsClose = HasBounds(toastAnchor) && HasBounds(actionAnchor)
-                && Math.Abs(toastAnchor.CenterY - actionAnchor.CenterY)
-                    <= options.MaxToastAnchorVerticalDistancePx;
-            bool toastVerified = anchorsClose && (panelConfirmed || context.PreviousPanelConfirmed);
+            bool legacyPairClose = AreToastAnchorsClose(toastAnchor, actionAnchor);
+            bool alternatePairClose = AreToastAnchorsClose(shortAnchor, otherRegionAnchor);
+            bool panelConfirmedNowOrAdjacent = panelConfirmed || context.PreviousPanelConfirmed;
+            string matchedVariant = legacyPairClose
+                ? LegacyMoveAreaVariant
+                : alternatePairClose ? SearchOtherRegionVariant : null;
+            bool toastVerified = matchedVariant != null && panelConfirmedNowOrAdjacent;
 
             if (result.CameraMovementObserved && !panelConfirmed
                 && detection.State == GameState.WorldMap && stable)
@@ -264,9 +274,12 @@ namespace ADB_Tool_Automation_Post_FB.Infrastructure.ResourceSearch
                 context.StableFrameCount = 0;
             result.CameraStabilityVerified = context.StableFrameCount >= options.RequiredStableFrames;
 
-            string observationMessage = HasBounds(toastAnchor) && HasBounds(actionAnchor) && !anchorsClose
-                ? "Toast anchors were ambiguous because their vertical distance exceeded the configured maximum."
-                : toastVerified ? "Both not-found toast anchors matched and were latched."
+            bool legacyPairTooFar = HasBounds(toastAnchor) && HasBounds(actionAnchor) && !legacyPairClose;
+            bool alternatePairTooFar = HasBounds(shortAnchor)
+                && HasBounds(otherRegionAnchor) && !alternatePairClose;
+            string observationMessage = legacyPairTooFar || alternatePairTooFar
+                ? "A not-found toast pair was ambiguous because its vertical distance exceeded the configured maximum."
+                : toastVerified ? $"Not-found toast variant '{matchedVariant}' matched and was latched."
                 : "No conclusive search outcome in this frame.";
             var observation = new ResourceSearchObservation
             {
@@ -274,6 +287,9 @@ namespace ADB_Tool_Automation_Post_FB.Infrastructure.ResourceSearch
                 State = detection.State,
                 ToastAnchorFound = HasBounds(toastAnchor),
                 ToastActionAnchorFound = HasBounds(actionAnchor),
+                ShortAnchorFound = HasBounds(shortAnchor),
+                OtherRegionAnchorFound = HasBounds(otherRegionAnchor),
+                MatchedNotFoundVariant = toastVerified ? matchedVariant : null,
                 SearchPanelConfirmed = panelConfirmed,
                 FrameDifference = difference,
                 IsStable = stable,
@@ -281,14 +297,20 @@ namespace ADB_Tool_Automation_Post_FB.Infrastructure.ResourceSearch
             };
             observations.Add(observation);
             result.ObservedFrameCount = observations.Count;
-            LogObservation(deviceName, result, context, observation, toastAnchor, actionAnchor);
 
             if (toastVerified)
             {
                 result.NotFoundObserved = true;
                 result.NotFoundToastVerified = true;
+                result.MatchedNotFoundVariant = matchedVariant;
+            }
+            LogObservation(deviceName, result, context, observation,
+                toastAnchor, actionAnchor, shortAnchor, otherRegionAnchor);
+
+            if (toastVerified)
+            {
                 return ObservationDecision.Decided(ResourceSearchOutcome.ResourceNotFound,
-                    "ResourceNotFound toast was verified in one observation frame.", null);
+                    $"ResourceNotFound toast variant '{matchedVariant}' was verified in one observation frame.", null);
             }
             if (!result.NotFoundObserved && detection.State == GameState.ResourcePopup)
             {
@@ -366,6 +388,7 @@ namespace ADB_Tool_Automation_Post_FB.Infrastructure.ResourceSearch
                 + $"SearchTapCount={result.SearchTapCount}, ObservedFrameCount={result.ObservedFrameCount}, "
                 + $"PanelClosed={result.PanelClosed}, Movement={result.CameraMovementObserved}, "
                 + $"Stable={result.CameraStabilityVerified}, NotFoundLatch={result.NotFoundObserved}, "
+                + $"NotFoundVariant='{result.MatchedNotFoundVariant ?? string.Empty}', "
                 + $"DurationMs={result.Duration.TotalMilliseconds:F0}, Cancellation=false, Error='{error ?? string.Empty}'");
             return result;
         }
@@ -392,6 +415,21 @@ namespace ADB_Tool_Automation_Post_FB.Infrastructure.ResourceSearch
         private ImageMatchResult Match(byte[] screenshot, TemplateId id, ImageRegion? region)
         {
             return imageMatcher.Find(screenshot, templateRegistry.LoadBytes(id), region);
+        }
+
+        private ImageMatchResult MatchOptional(byte[] screenshot, TemplateId id, ImageRegion? region)
+        {
+            try
+            {
+                if (!templateRegistry.Exists(id)) return ImageMatchResult.NotFound();
+                return Match(screenshot, id, region) ?? ImageMatchResult.NotFound();
+            }
+            catch (Exception exception)
+            {
+                logger.Info($"[Resource Search Execution] OptionalTemplate='{id}', "
+                    + $"Available=false, Error='{exception.Message}'");
+                return ImageMatchResult.NotFound();
+            }
         }
 
         private string ValidateTemplates()
@@ -452,6 +490,11 @@ namespace ADB_Tool_Automation_Post_FB.Infrastructure.ResourceSearch
         private static bool HasBounds(ImageMatchResult match) =>
             match != null && match.Found && match.Width > 0 && match.Height > 0;
 
+        private bool AreToastAnchorsClose(ImageMatchResult first, ImageMatchResult second) =>
+            HasBounds(first) && HasBounds(second)
+            && Math.Abs(first.CenterY - second.CenterY)
+                <= options.MaxToastAnchorVerticalDistancePx;
+
         private static ResourceSearchExecutionResult NewResult(List<ResourceSearchObservation> observations) =>
             new ResourceSearchExecutionResult
             {
@@ -486,14 +529,20 @@ namespace ADB_Tool_Automation_Post_FB.Infrastructure.ResourceSearch
 
         private void LogObservation(string deviceName, ResourceSearchExecutionResult result,
             ObservationContext context, ResourceSearchObservation observation,
-            ImageMatchResult toast, ImageMatchResult action)
+            ImageMatchResult toast, ImageMatchResult action,
+            ImageMatchResult shortAnchor, ImageMatchResult otherRegionAnchor)
         {
             string toastBounds = HasBounds(toast) ? $"({toast.X},{toast.Y},{toast.Width},{toast.Height})" : string.Empty;
             string actionBounds = HasBounds(action) ? $"({action.X},{action.Y},{action.Width},{action.Height})" : string.Empty;
+            string shortBounds = HasBounds(shortAnchor) ? $"({shortAnchor.X},{shortAnchor.Y},{shortAnchor.Width},{shortAnchor.Height})" : string.Empty;
+            string otherRegionBounds = HasBounds(otherRegionAnchor) ? $"({otherRegionAnchor.X},{otherRegionAnchor.Y},{otherRegionAnchor.Width},{otherRegionAnchor.Height})" : string.Empty;
             logger.Info($"[Resource Search Observation] DeviceName='{deviceName}', Index={result.ObservedFrameCount}, "
                 + $"State='{observation.State}', ToastAnchorFound={observation.ToastAnchorFound}, "
                 + $"ToastActionAnchorFound={observation.ToastActionAnchorFound}, ToastBounds='{toastBounds}', "
-                + $"ActionBounds='{actionBounds}', SearchPanelConfirmed={observation.SearchPanelConfirmed}, "
+                + $"ActionBounds='{actionBounds}', ShortAnchorFound={observation.ShortAnchorFound}, "
+                + $"OtherRegionAnchorFound={observation.OtherRegionAnchorFound}, ShortBounds='{shortBounds}', "
+                + $"OtherRegionBounds='{otherRegionBounds}', MatchedVariant='{observation.MatchedNotFoundVariant ?? string.Empty}', "
+                + $"SearchPanelConfirmed={observation.SearchPanelConfirmed}, "
                 + $"FrameDifference={observation.FrameDifference?.ToString("F4") ?? "n/a"}, "
                 + $"Movement={result.CameraMovementObserved}, StableFrameCount={context.StableFrameCount}, "
                 + $"UnknownFrameCount={context.UnknownFrameCount}, NotFoundLatch={result.NotFoundObserved}");

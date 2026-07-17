@@ -30,6 +30,8 @@ namespace ADB_Tool_Automation_Post_FB.Infrastructure.Vision
                 { TemplateId.ResourceNotFoundToast, Define(TemplateId.ResourceNotFoundToast, "Errors/resource_not_found_toast.png") },
                 { TemplateId.ResourceNotFoundToastAnchor, Define(TemplateId.ResourceNotFoundToastAnchor, "Search/resource_not_found_toast_anchor.png") },
                 { TemplateId.ResourceNotFoundToastActionAnchor, Define(TemplateId.ResourceNotFoundToastActionAnchor, "Search/resource_not_found_toast_action_anchor.png") },
+                { TemplateId.ResourceNotFoundToastShortAnchor, Define(TemplateId.ResourceNotFoundToastShortAnchor, "Search/resource_not_found_toast_short_anchor.png") },
+                { TemplateId.ResourceNotFoundToastOtherRegionAnchor, Define(TemplateId.ResourceNotFoundToastOtherRegionAnchor, "Search/resource_not_found_toast_other_region_anchor.png") },
                 { TemplateId.ResourcePopup, Define(TemplateId.ResourcePopup, "Resources/resource_popup.png") },
                 { TemplateId.GatherButton, Define(TemplateId.GatherButton, "Resources/gather_button.png") },
                 { TemplateId.ResourcePopupInfoAnchor, Define(TemplateId.ResourcePopupInfoAnchor, "Resources/resource_popup_info_anchor.png") },

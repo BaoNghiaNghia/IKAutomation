@@ -376,6 +376,8 @@ namespace ADB_Tool_Automation_Post_FB.UI
         {
             string observations = string.Join(Environment.NewLine, result.Observations.Select((item, index) =>
                 $"- #{index + 1} {item.State}: toast={item.ToastAnchorFound}/{item.ToastActionAnchorFound}, "
+                + $"alternate={item.ShortAnchorFound}/{item.OtherRegionAnchorFound}, "
+                + $"variant={item.MatchedNotFoundVariant ?? string.Empty}, "
                 + $"panel={item.SearchPanelConfirmed}, diff={item.FrameDifference?.ToString("F4") ?? "n/a"}, "
                 + $"stable={item.IsStable}; {item.Message}"));
             return $"Outcome: {result.Outcome}{Environment.NewLine}Success: {result.Success}{Environment.NewLine}"
@@ -383,6 +385,7 @@ namespace ADB_Tool_Automation_Post_FB.UI
                 + $"Search taps: {result.SearchTapCount}{Environment.NewLine}Panel closed: {result.PanelClosed}{Environment.NewLine}"
                 + $"Camera movement: {result.CameraMovementObserved}{Environment.NewLine}Camera stable: {result.CameraStabilityVerified}{Environment.NewLine}"
                 + $"Not found observed: {result.NotFoundObserved}{Environment.NewLine}Toast verified: {result.NotFoundToastVerified}{Environment.NewLine}"
+                + $"Not found variant: {result.MatchedNotFoundVariant ?? string.Empty}{Environment.NewLine}"
                 + $"Observed frames: {result.ObservedFrameCount}{Environment.NewLine}Duration: {result.Duration.TotalMilliseconds:F0} ms{Environment.NewLine}"
                 + $"Diagnostic: {result.DiagnosticScreenshotPath ?? string.Empty}{Environment.NewLine}Message: {result.Message}{Environment.NewLine}"
                 + $"Error: {result.ErrorMessage ?? string.Empty}{Environment.NewLine}Observations:{Environment.NewLine}{observations}";

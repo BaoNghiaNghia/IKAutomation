@@ -20,6 +20,8 @@ namespace ADB_Tool_Automation_Post_FB.Core.Vision
         ResourceNotFoundToast,
         ResourceNotFoundToastAnchor,
         ResourceNotFoundToastActionAnchor,
+        ResourceNotFoundToastShortAnchor,
+        ResourceNotFoundToastOtherRegionAnchor,
         ResourcePopup,
         GatherButton,
         ResourcePopupInfoAnchor,

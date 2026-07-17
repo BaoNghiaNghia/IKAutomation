@@ -149,6 +149,7 @@ namespace ADB_Tool_Automation_Post_FB.Infrastructure.Workflows
                 if (searched.Outcome == ResourceSearchOutcome.ResourceNotFound)
                 {
                     Add(steps, OneShotFarmStep.ExecuteSearch, false, started, searched.Message, searched.ErrorMessage, searched);
+                    result.LastCompletedStep = OneShotFarmStep.ExecuteSearch;
                     return await StopAsync(result, OneShotFarmOutcome.ResourceNotFound, searched.Message,
                         searched.ErrorMessage, OneShotFarmStep.ExecuteSearch, watch, runId, token);
                 }

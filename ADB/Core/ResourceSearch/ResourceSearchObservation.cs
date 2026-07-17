@@ -10,6 +10,9 @@ namespace ADB_Tool_Automation_Post_FB.Core.ResourceSearch
         public GameState State { get; set; }
         public bool ToastAnchorFound { get; set; }
         public bool ToastActionAnchorFound { get; set; }
+        public bool ShortAnchorFound { get; set; }
+        public bool OtherRegionAnchorFound { get; set; }
+        public string MatchedNotFoundVariant { get; set; }
         public bool SearchPanelConfirmed { get; set; }
         public double? FrameDifference { get; set; }
         public bool IsStable { get; set; }

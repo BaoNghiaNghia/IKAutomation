@@ -11,10 +11,10 @@ namespace ADB_Tool_Automation_Post_FB.Infrastructure.ResourceSearch
         public static ResourceSearchExecutionOptions Load()
         {
             return new ResourceSearchExecutionOptions(
-                Int("NotFoundObservationWindowMs", 3000), Int("NotFoundFastPollIntervalMs", 150),
+                Int("NotFoundObservationWindowMs", 4000), Int("NotFoundFastPollIntervalMs", 120),
                 Int("NormalPollIntervalMs", 300), Int("SearchResultTimeoutSeconds", 10),
                 Int("MaxSearchTapAttempts", 2), Int("SearchTapVerificationTimeoutSeconds", 3),
-                Region("ToastRegion", 220, 120, 840, 360), Int("MaxToastAnchorVerticalDistancePx", 140),
+                Region("ToastRegion", 150, 120, 980, 400), Int("MaxToastAnchorVerticalDistancePx", 140),
                 Double("CameraMovementThreshold", .04), Double("CameraStableThreshold", .015),
                 Int("RequiredStableFrames", 3), Int("MaxTransientUnknownFrames", 5),
                 Bool("SaveResultScreenshots", true), Bool("SaveObservationBurst", false),

@@ -17,6 +17,7 @@
     <Compile Include="..\..\ADB\Infrastructure\ResourceSearch\ResourceSearchDiagnosticStore.cs" Link="Production\ResourceSearchDiagnosticStore.cs" />
     <Compile Include="..\..\ADB\Infrastructure\ResourceSearch\ResourceSearchExecutionService.cs" Link="Production\ResourceSearchExecutionService.cs" />
     <Compile Include="..\..\ADB\Infrastructure\Vision\FrameStabilityDetector.cs" Link="Production\FrameStabilityDetector.cs" />
+    <Compile Include="..\..\ADB\Infrastructure\Vision\TemplateRegistry.cs" Link="Production\TemplateRegistry.cs" />
   </ItemGroup>
   <ItemGroup><Reference Include="System.Drawing" /></ItemGroup>
 </Project>

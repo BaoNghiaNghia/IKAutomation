@@ -34,6 +34,18 @@ namespace IKAutomation.ResourceSearchExecution.Tests
             Run("Retry is bounded", RetryBounded);
             Run("NotFound latch prevents retry", NotFoundNoRetry);
             Run("Both toast anchors produce NotFound", BothToastAnchors);
+            Run("Alternate toast pair produces NotFound", AlternateToastPair);
+            Run("Alternate toast in one frame is latched", AlternateOneFrameToast);
+            Run("Alternate toast latch survives disappearance", AlternateLatchSurvivesDisappearance);
+            Run("Short toast anchor alone is insufficient", ShortOnly);
+            Run("Other-region toast anchor alone is insufficient", OtherRegionOnly);
+            Run("Alternate toast anchors too far apart are ambiguous", AlternateToastYFar);
+            Run("Alternate pair in ROI with panel open is verified", AlternatePairInRoiWithPanel);
+            Run("Alternate pair accepts adjacent panel confirmation", AlternatePairWithAdjacentPanel);
+            Run("Alternate templates are resource and level independent", AlternateTemplatesAreGeneric);
+            Run("Alternate NotFound prevents Search retry", AlternateNotFoundNoRetry);
+            Run("Missing alternate templates preserve legacy variant", MissingAlternateTemplatesPreserveLegacy);
+            Run("Service has no default cancellation token bypass", NoCancellationNone);
             Run("One-frame toast is latched", OneFrameToast);
             Run("Toast does not require consecutive frames", NoConsecutiveToastRequirement);
             Run("Toast anchors within Y distance match", ToastYWithin);
@@ -97,6 +109,18 @@ namespace IKAutomation.ResourceSearchExecution.Tests
         private static void RetryBounded() { Fixture f=Setup(maxAttempts:2); var r=Execute(f); Is(r.Outcome==ResourceSearchOutcome.Timeout,"outcome"); Eq(2,f.Client.TapCalls,"tap"); }
         private static void NotFoundNoRetry() { Fixture f=ToastFixture(); var r=Execute(f); Is(r.NotFoundObserved,"latch"); Eq(1,f.Client.TapCalls,"tap"); }
         private static void BothToastAnchors() { var r=Execute(ToastFixture()); Is(r.Outcome==ResourceSearchOutcome.ResourceNotFound,"outcome"); }
+        private static void AlternateToastPair() { var r=Execute(AlternateToastFixture()); Is(r.Outcome==ResourceSearchOutcome.ResourceNotFound&&r.MatchedNotFoundVariant=="SearchOtherRegion","outcome"); }
+        private static void AlternateOneFrameToast() { Fixture f=AlternateToastFixture(); var r=Execute(f); Is(r.NotFoundObserved,"latch"); Eq(1,r.ObservedFrameCount,"frames"); }
+        private static void AlternateLatchSurvivesDisappearance() { Fixture f=AlternateToastFixture(); f.Matcher.ToastFrames.Clear(); f.Matcher.ToastFrames.Add(2); var r=Execute(f); Is(r.NotFoundObserved&&r.NotFoundToastVerified,"latch"); Eq(1,r.ObservedFrameCount,"poll stopped"); }
+        private static void ShortOnly() { Fixture f=AlternateToastFixture(); f.Matcher.Other=false; Is(!Execute(f).NotFoundObserved,"latch"); }
+        private static void OtherRegionOnly() { Fixture f=AlternateToastFixture(); f.Matcher.Short=false; Is(!Execute(f).NotFoundObserved,"latch"); }
+        private static void AlternateToastYFar() { Fixture f=AlternateToastFixture(); f.Matcher.OtherY=400; Is(!Execute(f).NotFoundObserved,"latch"); }
+        private static void AlternatePairInRoiWithPanel() { Fixture f=AlternateToastFixture(); var r=Execute(f); Is(r.NotFoundToastVerified&&r.Observations[0].SearchPanelConfirmed,"verification"); }
+        private static void AlternatePairWithAdjacentPanel() { Fixture f=AlternateToastFixture(); f.Detector.SetStates(Panel(),World()); var r=Execute(f); Is(r.Outcome==ResourceSearchOutcome.ResourceNotFound&&!r.Observations[0].SearchPanelConfirmed,"adjacent panel"); }
+        private static void AlternateTemplatesAreGeneric() { var registry=new TemplateRegistry(Path.GetTempPath()); foreach(TemplateId id in new[]{TemplateId.ResourceNotFoundToastShortAnchor,TemplateId.ResourceNotFoundToastOtherRegionAnchor}){string path=registry.GetDefinition(id).RelativePath.ToLowerInvariant();Is(!path.Contains("iron")&&!path.Contains("wood")&&!path.Contains("stone")&&!path.Contains("lv"),"resource-specific template");} }
+        private static void AlternateNotFoundNoRetry() { Fixture f=AlternateToastFixture(); Execute(f); Eq(1,f.Client.TapCalls,"tap"); }
+        private static void MissingAlternateTemplatesPreserveLegacy() { Fixture f=ToastFixture(); f.Registry.MissingAlternate=true; var r=Execute(f); Is(r.Outcome==ResourceSearchOutcome.ResourceNotFound&&r.MatchedNotFoundVariant=="LegacyMoveArea","legacy"); }
+        private static void NoCancellationNone() { string source=File.ReadAllText(Path.Combine(Environment.CurrentDirectory,"ADB","Infrastructure","ResourceSearch","ResourceSearchExecutionService.cs")); Is(!source.Contains("CancellationToken"+".None"),"token bypass"); }
         private static void OneFrameToast() { Fixture f=ToastFixture(); f.Matcher.ToastFrames.Add(2); var r=Execute(f); Is(r.NotFoundObserved,"latch"); Eq(1,r.ObservedFrameCount,"frames"); }
         private static void NoConsecutiveToastRequirement() { var r=Execute(ToastFixture()); Eq(1,r.ObservedFrameCount,"frames"); }
         private static void ToastYWithin() { Fixture f=ToastFixture(); f.Matcher.ActionY=250; var r=Execute(f); Is(r.NotFoundToastVerified,"toast"); }
@@ -147,6 +171,7 @@ namespace IKAutomation.ResourceSearchExecution.Tests
         private static void PopupSendsNoGatherInput() { Fixture f=PopupFixture(); Execute(f); Eq(1,f.Client.TapCalls,"Search tap only"); Eq(0,f.Client.ProhibitedCalls,"prohibited"); }
 
         private static Fixture ToastFixture(bool saveResult=false) { Fixture f=Setup(saveResult:saveResult); f.Matcher.Primary=true; f.Matcher.Action=true; f.Matcher.ToastFrames.Add(2); return f; }
+        private static Fixture AlternateToastFixture() { Fixture f=Setup(); f.Matcher.Short=true; f.Matcher.Other=true; f.Matcher.ToastFrames.Add(2); return f; }
         private static Fixture LocatedFixture() { Fixture f=Setup(requiredStable:3,windowMs:30); f.Detector.SetStates(Panel(),World(),World(),World(),World()); f.Stability.Differences.Enqueue(.1); f.Stability.Differences.Enqueue(.001); f.Stability.Differences.Enqueue(.001); f.Stability.Differences.Enqueue(.001); return f; }
         private static Fixture PopupFixture() { Fixture f=Setup(windowMs:30); f.Detector.SetStates(Panel(),Popup()); f.PopupVerifier.Result=ReadyPopup(); return f; }
 
@@ -179,9 +204,9 @@ namespace IKAutomation.ResourceSearchExecution.Tests
         private sealed class FakeDetector:IGameStateDetector
         { private readonly Queue<GameDetectionResult> states=new Queue<GameDetectionResult>(); private GameDetectionResult last=Panel(); private int calls; public int ErrorAtCall; public GameDetectionResult AsyncResult=Panel(); public void SetStates(params GameDetectionResult[] s){states.Clear();foreach(var x in s)states.Enqueue(x);if(s.Length>0)last=s[s.Length-1];} public Task<GameDetectionResult> DetectAsync(string d,CancellationToken t)=>Task.FromResult(AsyncResult); public GameDetectionResult Detect(byte[] p){calls++;if(ErrorAtCall==calls)return new GameDetectionResult{State=GameState.Unknown,IsSuccessful=false,Evidence=new GameDetectionEvidence[0],ErrorMessage="detector error"};if(states.Count>0)return states.Dequeue();return last;} }
         private sealed class FakeRegistry:ITemplateRegistry
-        { public TemplateId? Missing; public TemplateDefinition GetDefinition(TemplateId id)=>new TemplateDefinition(id,"Search/"+id+".png",.8); public string GetPath(TemplateId id)=>Path.Combine("templates",id+".png"); public byte[] LoadBytes(TemplateId id)=>new[]{(byte)id}; public bool Exists(TemplateId id)=>Missing!=id; }
+        { public TemplateId? Missing; public bool MissingAlternate; public TemplateDefinition GetDefinition(TemplateId id)=>new TemplateDefinition(id,"Search/"+id+".png",.8); public string GetPath(TemplateId id)=>Path.Combine("templates",id+".png"); public byte[] LoadBytes(TemplateId id)=>new[]{(byte)id}; public bool Exists(TemplateId id)=>Missing!=id&&(!MissingAlternate||(id!=TemplateId.ResourceNotFoundToastShortAnchor&&id!=TemplateId.ResourceNotFoundToastOtherRegionAnchor)); }
         private sealed class FakeMatcher:IImageMatcher
-        { private readonly FakeClient client; private int searchMatches; public bool Primary,Action,InvalidSearchBounds,ToastOutsideRegion,MoveSearchOnRetry; public int PrimaryY=200,ActionY=230; public HashSet<int> ToastFrames=new HashSet<int>(); public FakeMatcher(FakeClient c){client=c;} public ImageMatchResult Find(byte[] s,byte[] t,ImageRegion? r=null){TemplateId id=(TemplateId)t[0];if(id==TemplateId.SearchButtonEnabled){searchMatches++;int x=MoveSearchOnRetry&&searchMatches>1?200:100;return InvalidSearchBounds?ImageMatchResult.FoundAt(x,200,0,0):ImageMatchResult.FoundAt(x,200,20,40);}bool active=ToastFrames.Count==0||ToastFrames.Contains(client.CaptureCount);if(ToastOutsideRegion&&r.HasValue)return ImageMatchResult.NotFound();if(id==TemplateId.ResourceNotFoundToastAnchor&&Primary&&active)return ImageMatchResult.FoundAt(300,PrimaryY,100,20);if(id==TemplateId.ResourceNotFoundToastActionAnchor&&Action&&active)return ImageMatchResult.FoundAt(320,ActionY,100,20);return ImageMatchResult.NotFound();} }
+        { private readonly FakeClient client; private int searchMatches; public bool Primary,Action,Short,Other,InvalidSearchBounds,ToastOutsideRegion,MoveSearchOnRetry; public int PrimaryY=200,ActionY=230,ShortY=200,OtherY=230; public HashSet<int> ToastFrames=new HashSet<int>(); public FakeMatcher(FakeClient c){client=c;} public ImageMatchResult Find(byte[] s,byte[] t,ImageRegion? r=null){TemplateId id=(TemplateId)t[0];if(id==TemplateId.SearchButtonEnabled){searchMatches++;int x=MoveSearchOnRetry&&searchMatches>1?200:100;return InvalidSearchBounds?ImageMatchResult.FoundAt(x,200,0,0):ImageMatchResult.FoundAt(x,200,20,40);}bool active=ToastFrames.Count==0||ToastFrames.Contains(client.CaptureCount);if(ToastOutsideRegion&&r.HasValue)return ImageMatchResult.NotFound();if(id==TemplateId.ResourceNotFoundToastAnchor&&Primary&&active)return ImageMatchResult.FoundAt(300,PrimaryY,100,20);if(id==TemplateId.ResourceNotFoundToastActionAnchor&&Action&&active)return ImageMatchResult.FoundAt(320,ActionY,100,20);if(id==TemplateId.ResourceNotFoundToastShortAnchor&&Short&&active)return ImageMatchResult.FoundAt(280,ShortY,100,20);if(id==TemplateId.ResourceNotFoundToastOtherRegionAnchor&&Other&&active)return ImageMatchResult.FoundAt(500,OtherY,140,20);return ImageMatchResult.NotFound();} }
         private sealed class FakeStability:IFrameStabilityDetector
         { public Queue<double> Differences=new Queue<double>(); public FrameComparisonResult Compare(byte[] a,byte[] b,ImageRegion? r=null){double d=Differences.Count>0?Differences.Dequeue():0;return new FrameComparisonResult{DifferenceRatio=d,IsStable=d<=.015};} }
         private sealed class FakeStore:IResourceSearchDiagnosticStore

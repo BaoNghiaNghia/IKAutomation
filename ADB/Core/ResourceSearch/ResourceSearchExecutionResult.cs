@@ -20,6 +20,7 @@ namespace ADB_Tool_Automation_Post_FB.Core.ResourceSearch
         public bool CameraStabilityVerified { get; set; }
         public bool NotFoundToastVerified { get; set; }
         public bool NotFoundObserved { get; set; }
+        public string MatchedNotFoundVariant { get; set; }
         public ResourcePopupVerificationResult PopupVerificationResult { get; set; }
         public TimeSpan Duration { get; set; }
         public string Message { get; set; }
