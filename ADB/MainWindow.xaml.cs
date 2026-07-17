@@ -9,6 +9,7 @@ using ADB_Tool_Automation_Post_FB.Infrastructure.Navigation;
 using ADB_Tool_Automation_Post_FB.Infrastructure.ResourceSearch;
 using ADB_Tool_Automation_Post_FB.Infrastructure.ResourcePopup;
 using ADB_Tool_Automation_Post_FB.Infrastructure.TeamSelection;
+using ADB_Tool_Automation_Post_FB.Infrastructure.Workflows;
 using ADB_Tool_Automation_Post_FB.UI;
 using Auto_LDPlayer;
 using Auto_LDPlayer.Enums;
@@ -213,7 +214,9 @@ namespace ADB_Tool_Automation_Post_FB
                 SelectFarmTeamServiceFactory.CreateFromAppConfig(),
                 AppConfigFarmTeamSelectionOptionsProvider.LoadRequest(),
                 DispatchSelectedTeamServiceFactory.CreateFromAppConfig(),
-                AppConfigDispatchSelectedTeamOptionsProvider.LoadRequest())
+                AppConfigDispatchSelectedTeamOptionsProvider.LoadRequest(),
+                OneShotFarmWorkflowFactory.CreateFromAppConfig(),
+                AppConfigOneShotFarmWorkflowOptionsProvider.LoadRequest())
             {
                 Owner = this
             };

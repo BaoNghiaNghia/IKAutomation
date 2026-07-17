@@ -140,6 +140,14 @@
     <Compile Include="Core\Vision\ITemplateRegistry.cs" />
     <Compile Include="Core\Vision\TemplateDefinition.cs" />
     <Compile Include="Core\Vision\TemplateId.cs" />
+    <Compile Include="Core\Workflows\IOneShotFarmDiagnosticService.cs" />
+    <Compile Include="Core\Workflows\IOneShotFarmWorkflow.cs" />
+    <Compile Include="Core\Workflows\OneShotFarmOutcome.cs" />
+    <Compile Include="Core\Workflows\OneShotFarmRequest.cs" />
+    <Compile Include="Core\Workflows\OneShotFarmResult.cs" />
+    <Compile Include="Core\Workflows\OneShotFarmStep.cs" />
+    <Compile Include="Core\Workflows\OneShotFarmStepResult.cs" />
+    <Compile Include="Core\Workflows\OneShotFarmWorkflowOptions.cs" />
     <Compile Include="Exceptions\TaskExepction.cs" />
     <Compile Include="Helpers\BitmapHelper.cs" />
     <Compile Include="Helpers\Delay.cs" />
@@ -193,6 +201,10 @@
     <Compile Include="Infrastructure\Vision\KAutoImageMatcher.cs" />
     <Compile Include="Infrastructure\Vision\TemplateMatchDiagnosticService.cs" />
     <Compile Include="Infrastructure\Vision\TemplateRegistry.cs" />
+    <Compile Include="Infrastructure\Workflows\AppConfigOneShotFarmWorkflowOptionsProvider.cs" />
+    <Compile Include="Infrastructure\Workflows\OneShotFarmDiagnosticService.cs" />
+    <Compile Include="Infrastructure\Workflows\OneShotFarmWorkflow.cs" />
+    <Compile Include="Infrastructure\Workflows\OneShotFarmWorkflowFactory.cs" />
     <Compile Include="MainWindow.xaml.cs">
       <DependentUpon>MainWindow.xaml</DependentUpon>
       <SubType>Code</SubType>

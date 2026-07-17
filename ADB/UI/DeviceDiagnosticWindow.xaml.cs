@@ -5,6 +5,7 @@ using ADB_Tool_Automation_Post_FB.Core.Navigation;
 using ADB_Tool_Automation_Post_FB.Core.ResourceSearch;
 using ADB_Tool_Automation_Post_FB.Core.ResourcePopup;
 using ADB_Tool_Automation_Post_FB.Core.TeamSelection;
+using ADB_Tool_Automation_Post_FB.Core.Workflows;
 using System;
 using System.Collections.Generic;
 using System.Globalization;
@@ -29,6 +30,8 @@ namespace ADB_Tool_Automation_Post_FB.UI
         private readonly TeamSelectionRequest defaultFarmTeamRequest;
         private readonly IDispatchSelectedTeamService dispatchSelectedTeamService;
         private readonly DispatchMarchRequest defaultDispatchRequest;
+        private readonly IOneShotFarmWorkflow oneShotFarmWorkflow;
+        private readonly OneShotFarmRequest defaultOneShotFarmRequest;
         private readonly CancellationTokenSource lifetimeCancellation = new CancellationTokenSource();
 
         public DeviceDiagnosticWindow(
@@ -42,7 +45,9 @@ namespace ADB_Tool_Automation_Post_FB.UI
             ISelectFarmTeamService selectFarmTeamService,
             TeamSelectionRequest defaultFarmTeamRequest,
             IDispatchSelectedTeamService dispatchSelectedTeamService,
-            DispatchMarchRequest defaultDispatchRequest)
+            DispatchMarchRequest defaultDispatchRequest,
+            IOneShotFarmWorkflow oneShotFarmWorkflow,
+            OneShotFarmRequest defaultOneShotFarmRequest)
         {
             this.diagnosticService = diagnosticService
                 ?? throw new ArgumentNullException(nameof(diagnosticService));
@@ -66,6 +71,10 @@ namespace ADB_Tool_Automation_Post_FB.UI
                 ?? throw new ArgumentNullException(nameof(dispatchSelectedTeamService));
             this.defaultDispatchRequest = defaultDispatchRequest
                 ?? throw new ArgumentNullException(nameof(defaultDispatchRequest));
+            this.oneShotFarmWorkflow = oneShotFarmWorkflow
+                ?? throw new ArgumentNullException(nameof(oneShotFarmWorkflow));
+            this.defaultOneShotFarmRequest = defaultOneShotFarmRequest
+                ?? throw new ArgumentNullException(nameof(defaultOneShotFarmRequest));
 
             InitializeComponent();
             PackageNameTextBox.Text = string.IsNullOrWhiteSpace(diagnosticService.Configuration.PackageName)
@@ -215,6 +224,13 @@ namespace ADB_Tool_Automation_Post_FB.UI
             await RunOperationAsync(async cancellationToken => FormatDispatchMarchResult(
                 await dispatchSelectedTeamService.DispatchAsync(GetSelectedDeviceName(),
                     defaultDispatchRequest, cancellationToken)));
+        }
+
+        private async void RunOneShotFarm_Click(object sender, RoutedEventArgs e)
+        {
+            await RunOperationAsync(async cancellationToken => FormatOneShotFarmResult(
+                await oneShotFarmWorkflow.RunAsync(GetSelectedDeviceName(),
+                    defaultOneShotFarmRequest, cancellationToken)));
         }
 
 
@@ -465,6 +481,20 @@ namespace ADB_Tool_Automation_Post_FB.UI
                 + $"Transient Unknown: {result.TransientUnknownFrameCount}{Environment.NewLine}Duration: {result.Duration.TotalMilliseconds:F0} ms{Environment.NewLine}"
                 + $"Diagnostic: {result.DiagnosticScreenshotPath ?? string.Empty}{Environment.NewLine}Message: {result.Message}{Environment.NewLine}"
                 + $"Error: {result.ErrorMessage ?? string.Empty}{Environment.NewLine}Observations:{Environment.NewLine}{observations}";
+        }
+
+        private static string FormatOneShotFarmResult(OneShotFarmResult result)
+        {
+            string steps = string.Join(Environment.NewLine, result.Steps.Select((item, index) =>
+                $"- #{index + 1} {item.Step}: success={item.Success}, duration={item.Duration.TotalMilliseconds:F0} ms; "
+                + $"{item.Message}; error={item.ErrorMessage ?? string.Empty}; diagnostic={item.DiagnosticScreenshotPath ?? string.Empty}"));
+            return $"Outcome: {result.Outcome}{Environment.NewLine}Success: {result.Success}{Environment.NewLine}"
+                + $"Initial: {result.InitialState}{Environment.NewLine}Final: {result.FinalState}{Environment.NewLine}"
+                + $"Last completed step: {result.LastCompletedStep}{Environment.NewLine}Resource: {result.RequestedResource}{Environment.NewLine}"
+                + $"Level: {result.RequestedLevel}{Environment.NewLine}Unoccupied only: {result.RequestedUnoccupiedOnly}{Environment.NewLine}"
+                + $"Selected team: {result.SelectedTeam?.ToString() ?? string.Empty}{Environment.NewLine}Dispatched team: {result.DispatchedTeam?.ToString() ?? string.Empty}{Environment.NewLine}"
+                + $"Duration: {result.Duration.TotalMilliseconds:F0} ms{Environment.NewLine}Diagnostic: {result.DiagnosticScreenshotPath ?? string.Empty}{Environment.NewLine}"
+                + $"Message: {result.Message}{Environment.NewLine}Error: {result.ErrorMessage ?? string.Empty}{Environment.NewLine}Steps:{Environment.NewLine}{steps}";
         }
 
 

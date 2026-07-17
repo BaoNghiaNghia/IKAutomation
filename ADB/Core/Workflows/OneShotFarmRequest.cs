@@ -1,0 +1,24 @@
+using ADB_Tool_Automation_Post_FB.Core.ResourceSearch;
+using ADB_Tool_Automation_Post_FB.Core.TeamSelection;
+using System.Collections.Generic;
+
+namespace ADB_Tool_Automation_Post_FB.Core.Workflows
+{
+    public sealed class OneShotFarmRequest
+    {
+        public OneShotFarmRequest()
+        {
+            ResourceType = ResourceType.Iron; TargetLevel = 7; UnoccupiedOnly = true;
+            AllowedTeams = new[] { TeamNumber.Team2, TeamNumber.Team3, TeamNumber.Team4 };
+            TeamPriority = new[] { TeamNumber.Team4, TeamNumber.Team3, TeamNumber.Team2 };
+            RequireMarchVerification = true;
+        }
+        public ResourceType ResourceType { get; set; }
+        public int TargetLevel { get; set; }
+        public bool UnoccupiedOnly { get; set; }
+        public IReadOnlyList<TeamNumber> AllowedTeams { get; set; }
+        public IReadOnlyList<TeamNumber> TeamPriority { get; set; }
+        public bool AllowTeam1 { get; set; }
+        public bool RequireMarchVerification { get; set; }
+    }
+}
