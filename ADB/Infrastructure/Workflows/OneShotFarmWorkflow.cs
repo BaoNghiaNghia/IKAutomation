@@ -32,6 +32,9 @@ namespace ADB_Tool_Automation_Post_FB.Infrastructure.Workflows
         private readonly IDiagnosticLogger logger;
         private readonly ResourceFarmFallbackOptions resourceFallbackOptions;
         private readonly IResourceFarmFallbackService resourceFarmFallback;
+        private readonly IResourceTemplateProfileProvider templateProfiles;
+        private readonly ITemplateRegistry templateRegistry;
+        private readonly IRandomProvider randomProvider;
 
         public OneShotFarmWorkflow(IWorldMapNavigationService navigation,
             IResourceLevelFallbackService fallback,
@@ -66,7 +69,10 @@ namespace ADB_Tool_Automation_Post_FB.Infrastructure.Workflows
             OneShotFarmWorkflowOptions options,
             IOneShotFarmDiagnosticService diagnostics, IDiagnosticLogger logger,
             ResourceFarmFallbackOptions resourceFallbackOptions,
-            IResourceFarmFallbackService resourceFarmFallback)
+            IResourceFarmFallbackService resourceFarmFallback,
+            IResourceTemplateProfileProvider templateProfiles = null,
+            ITemplateRegistry templateRegistry = null,
+            IRandomProvider randomProvider = null)
         {
             this.navigation = navigation ?? throw new ArgumentNullException(nameof(navigation));
             this.fallback = fallback ?? throw new ArgumentNullException(nameof(fallback));
@@ -82,6 +88,9 @@ namespace ADB_Tool_Automation_Post_FB.Infrastructure.Workflows
             this.resourceFallbackOptions = resourceFallbackOptions ?? throw new ArgumentNullException(nameof(resourceFallbackOptions));
             this.resourceFallbackOptions.Validate();
             this.resourceFarmFallback = resourceFarmFallback;
+            this.templateProfiles = templateProfiles;
+            this.templateRegistry = templateRegistry;
+            this.randomProvider = randomProvider;
         }
 
         public async Task<OneShotFarmResult> RunAsync(string deviceName, OneShotFarmRequest request,
@@ -89,6 +98,8 @@ namespace ADB_Tool_Automation_Post_FB.Infrastructure.Workflows
         {
             string validation = Validate(deviceName, request);
             if (validation != null) return Empty(deviceName, request, validation);
+            OneShotFarmResult preflightFailure = PrepareResourcePriority(deviceName, request);
+            if (preflightFailure != null) return preflightFailure;
             try
             {
                 cancellationToken.ThrowIfCancellationRequested();
@@ -387,6 +398,73 @@ namespace ADB_Tool_Automation_Post_FB.Infrastructure.Workflows
             }
         }
 
+        private OneShotFarmResult PrepareResourcePriority(string deviceName, OneShotFarmRequest request)
+        {
+            if (!request.ShuffleResourcePriority) return null;
+            IReadOnlyList<ResourceType> selected = request.SelectedResources ?? request.ResourcePriority;
+            if (selected == null || selected.Count < 2)
+                return PreflightFailure(deviceName, request, new MissingRuntimeTemplate[0],
+                    "At least two selected resources are required. No game input was sent.");
+            if (templateProfiles == null || templateRegistry == null || randomProvider == null)
+                return PreflightFailure(deviceName, request, new MissingRuntimeTemplate[0],
+                    "Resource template preflight is not configured. No game input was sent.");
+
+            var missing = new List<MissingRuntimeTemplate>();
+            foreach (ResourceType resource in selected)
+            {
+                ResourceTemplateProfile profile;
+                try { profile = templateProfiles.Get(resource); }
+                catch (Exception exception)
+                {
+                    missing.Add(new MissingRuntimeTemplate { ResourceType = resource,
+                        TemplateId = default(TemplateId), ExpectedPath = exception.Message });
+                    continue;
+                }
+                foreach (TemplateId templateId in new[] { profile.SelectedTemplate,
+                    profile.UnselectedTemplate, profile.PopupTitleTemplate })
+                {
+                    string path;
+                    try { path = templateRegistry.GetPath(templateId); }
+                    catch (Exception exception) { path = exception.Message; }
+                    bool exists;
+                    try { exists = templateRegistry.Exists(templateId); }
+                    catch (Exception) { exists = false; }
+                    if (!exists) missing.Add(new MissingRuntimeTemplate { ResourceType = resource,
+                        TemplateId = templateId, ExpectedPath = path });
+                }
+            }
+            if (missing.Count > 0)
+                return PreflightFailure(deviceName, request, missing,
+                    "Required runtime templates are missing. No game input was sent.");
+
+            var shuffled = new List<ResourceType>(selected);
+            for (int index = shuffled.Count - 1; index > 0; index--)
+            {
+                int other = randomProvider.Next(index + 1);
+                if (other < 0 || other > index)
+                    return PreflightFailure(deviceName, request, new MissingRuntimeTemplate[0],
+                        "Random provider returned an invalid index. No game input was sent.");
+                ResourceType value = shuffled[index];
+                shuffled[index] = shuffled[other];
+                shuffled[other] = value;
+            }
+            request.ResourcePriority = shuffled;
+            request.ResourceType = shuffled[0];
+            return null;
+        }
+
+        private static OneShotFarmResult PreflightFailure(string deviceName,
+            OneShotFarmRequest request, IReadOnlyList<MissingRuntimeTemplate> missing, string message)
+        {
+            OneShotFarmResult result = Empty(deviceName, request, message);
+            result.SelectedResources = request.SelectedResources ?? request.ResourcePriority;
+            result.ShuffledResourcePriority = new ResourceType[0];
+            result.AttemptedResources = new ResourceType[0];
+            result.MissingRuntimeTemplates = missing;
+            result.LastCompletedStep = OneShotFarmStep.Preflight;
+            return result;
+        }
+
         private string Validate(string deviceName, OneShotFarmRequest request)
         {
             if (string.IsNullOrWhiteSpace(deviceName)) return "LDPlayer device name is required.";
@@ -445,14 +523,17 @@ namespace ADB_Tool_Automation_Post_FB.Infrastructure.Workflows
         private void AddSuccess(OneShotFarmResult result, List<OneShotFarmStepResult> steps, OneShotFarmStep step, DateTimeOffset started, string message, object detail) { Add(steps, step, true, started, message, null, detail); result.LastCompletedStep = step; }
         private static void Add(List<OneShotFarmStepResult> steps, OneShotFarmStep step, bool success, DateTimeOffset started, string message, string error, object detail) { DateTimeOffset end = DateTimeOffset.UtcNow; steps.Add(new OneShotFarmStepResult { Step = step, Success = success, StartedAt = started, CompletedAt = end, Duration = end - started, Message = message, ErrorMessage = error, Detail = detail }); }
         private void LogEnd(Guid id, string device, OneShotFarmResult result) => logger.Info($"[OneShotFarm] RunId='{id}', DeviceName='{device}', LastCompletedStep='{result.LastCompletedStep}', AttemptedLevels='{string.Join(",", result.AttemptedLevels ?? new int[0])}', LocatedLevel='{result.LocatedLevel}', FallbackOutcome='{result.FallbackResult?.Outcome.ToString() ?? string.Empty}', SelectedTeam='{result.SelectedTeam}', Outcome='{result.Outcome}', DurationMs={result.Duration.TotalMilliseconds:F0}, Cancellation={result.Outcome == OneShotFarmOutcome.Cancelled}, Error='{result.ErrorMessage ?? string.Empty}'");
-        private static OneShotFarmResult NewResult(string device, OneShotFarmRequest request, IReadOnlyList<OneShotFarmStepResult> steps) => new OneShotFarmResult { DeviceName = device, RequestedResource = request.ResourceType, RequestedLevel = request.TargetLevel, RequestedUnoccupiedOnly = request.UnoccupiedOnly, AttemptedLevels = new int[0], AttemptedResources = new[] { request.ResourceType }, StorageFullResources = new ResourceType[0], InitialState = GameState.Unknown, FinalState = GameState.Unknown, LastCompletedStep = OneShotFarmStep.Preflight, Steps = steps };
-        private static OneShotFarmResult Empty(string device, OneShotFarmRequest request, string error, OneShotFarmOutcome outcome = OneShotFarmOutcome.PreconditionFailed) => new OneShotFarmResult { Outcome = outcome, Success = false, DeviceName = device, RequestedResource = request == null ? ResourceType.Iron : request.ResourceType, RequestedLevel = request == null ? 7 : request.TargetLevel, RequestedUnoccupiedOnly = request == null || request.UnoccupiedOnly, AttemptedLevels = new int[0], AttemptedResources = request == null ? new ResourceType[0] : new[] { request.ResourceType }, StorageFullResources = new ResourceType[0], InitialState = GameState.Unknown, FinalState = GameState.Unknown, LastCompletedStep = OneShotFarmStep.Preflight, Message = error, ErrorMessage = error, Steps = new OneShotFarmStepResult[0] };
+        private static OneShotFarmResult NewResult(string device, OneShotFarmRequest request, IReadOnlyList<OneShotFarmStepResult> steps) => new OneShotFarmResult { DeviceName = device, RequestedResource = request.ResourceType, RequestedLevel = request.TargetLevel, RequestedUnoccupiedOnly = request.UnoccupiedOnly, AttemptedLevels = new int[0], AttemptedResources = new[] { request.ResourceType }, SelectedResources = request.SelectedResources ?? request.ResourcePriority, ShuffledResourcePriority = request.ResourcePriority, MissingRuntimeTemplates = new MissingRuntimeTemplate[0], StorageFullResources = new ResourceType[0], InitialState = GameState.Unknown, FinalState = GameState.Unknown, LastCompletedStep = OneShotFarmStep.Preflight, Steps = steps };
+        private static OneShotFarmResult Empty(string device, OneShotFarmRequest request, string error, OneShotFarmOutcome outcome = OneShotFarmOutcome.PreconditionFailed) => new OneShotFarmResult { Outcome = outcome, Success = false, DeviceName = device, RequestedResource = request == null ? ResourceType.Iron : request.ResourceType, RequestedLevel = request == null ? 7 : request.TargetLevel, RequestedUnoccupiedOnly = request == null || request.UnoccupiedOnly, AttemptedLevels = new int[0], AttemptedResources = request == null ? new ResourceType[0] : new[] { request.ResourceType }, SelectedResources = request?.SelectedResources ?? request?.ResourcePriority ?? new ResourceType[0], ShuffledResourcePriority = request?.ResourcePriority ?? new ResourceType[0], StorageFullResources = new ResourceType[0], InitialState = GameState.Unknown, FinalState = GameState.Unknown, LastCompletedStep = OneShotFarmStep.Preflight, Message = error, ErrorMessage = error, Steps = new OneShotFarmStepResult[0] };
 
         private static OneShotFarmRequest CloneForResource(OneShotFarmRequest source, ResourceType resource) =>
             new OneShotFarmRequest
             {
                 ResourceType = resource, TargetLevel = source.TargetLevel,
                 ResourceLevelPriority = source.ResourceLevelPriority,
+                SelectedResources = source.SelectedResources,
+                ResourcePriority = source.ResourcePriority,
+                StorageLimitPolicy = source.StorageLimitPolicy,
                 AttemptsPerResourceLevel = source.AttemptsPerResourceLevel,
                 UnoccupiedOnly = source.UnoccupiedOnly, AllowedTeams = source.AllowedTeams,
                 TeamPriority = source.TeamPriority, AllowTeam1 = source.AllowTeam1,

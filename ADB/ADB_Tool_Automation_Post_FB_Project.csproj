@@ -159,8 +159,11 @@
     <Compile Include="Core\Vision\TemplateId.cs" />
     <Compile Include="Core\Workflows\IOneShotFarmDiagnosticService.cs" />
     <Compile Include="Core\Workflows\IOneShotFarmWorkflow.cs" />
+    <Compile Include="Core\Workflows\IRandomProvider.cs" />
+    <Compile Include="Core\Workflows\MissingRuntimeTemplate.cs" />
     <Compile Include="Core\Workflows\OneShotFarmOutcome.cs" />
     <Compile Include="Core\Workflows\OneShotFarmRequest.cs" />
+    <Compile Include="Core\Workflows\OneShotFarmResourceSelection.cs" />
     <Compile Include="Core\Workflows\OneShotFarmResult.cs" />
     <Compile Include="Core\Workflows\OneShotFarmStep.cs" />
     <Compile Include="Core\Workflows\OneShotFarmStepResult.cs" />
@@ -237,6 +240,7 @@
     <Compile Include="Infrastructure\Workflows\OneShotFarmWorkflow.cs" />
     <Compile Include="Infrastructure\Workflows\OneShotFarmWorkflowFactory.cs" />
     <Compile Include="Infrastructure\Workflows\ResourceFarmFallbackService.cs" />
+    <Compile Include="Infrastructure\Workflows\SystemRandomProvider.cs" />
     <Compile Include="MainWindow.xaml.cs">
       <DependentUpon>MainWindow.xaml</DependentUpon>
       <SubType>Code</SubType>
@@ -298,6 +302,7 @@
   <ItemGroup>
     <Content Include="Data\InfinityKingdom\**\*.png">
       <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
+      <CopyToPublishDirectory>PreserveNewest</CopyToPublishDirectory>
     </Content>
     <None Include="Data\InfinityKingdom\1280x720\vi\Errors\.gitkeep" />
     <None Include="Data\InfinityKingdom\1280x720\vi\Global\.gitkeep" />

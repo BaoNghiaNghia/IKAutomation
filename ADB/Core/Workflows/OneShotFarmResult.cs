@@ -19,6 +19,9 @@ namespace ADB_Tool_Automation_Post_FB.Core.Workflows
         public IReadOnlyList<int> AttemptedLevels { get; set; }
         public int? LocatedLevel { get; set; }
         public IReadOnlyList<ResourceType> AttemptedResources { get; set; }
+        public IReadOnlyList<ResourceType> SelectedResources { get; set; }
+        public IReadOnlyList<ResourceType> ShuffledResourcePriority { get; set; }
+        public IReadOnlyList<MissingRuntimeTemplate> MissingRuntimeTemplates { get; set; }
         public IReadOnlyList<ResourceType> StorageFullResources { get; set; }
         public IReadOnlyList<ResourceType> LevelsExhaustedResources { get; set; }
         public ResourceType? LocatedResource { get; set; }

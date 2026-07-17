@@ -21,6 +21,7 @@ namespace ADB_Tool_Automation_Post_FB.Infrastructure.Workflows
             ResourceType = Enum.TryParse(Text("ResourceType", "Iron"), true, out ResourceType resource) ? resource : ResourceType.Iron,
             TargetLevel = Int("TargetLevel", 7), UnoccupiedOnly = Bool("UnoccupiedOnly", true),
             ResourcePriority = fallback.ResourcePriority,
+            SelectedResources = fallback.ResourcePriority,
             ResourceLevelPriority = fallback.LevelPriority,
             AttemptsPerResourceLevel = fallback.AttemptsPerLevel,
             StorageLimitPolicy = fallback.StorageLimitPolicy,

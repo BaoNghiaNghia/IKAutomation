@@ -29,15 +29,16 @@ namespace ADB_Tool_Automation_Post_FB.Infrastructure.Workflows
             var selectTeam = SelectFarmTeamServiceFactory.CreateFromAppConfig();
             var dispatch = DispatchSelectedTeamServiceFactory.CreateFromAppConfig();
             var fallbackOptions = AppConfigResourceFarmFallbackOptionsProvider.Load();
+            var profiles = new ResourceTemplateProfileProvider(registry);
             var resourceFallback = new ResourceFarmFallbackService(navigation, levelFallback,
                 (ADB_Tool_Automation_Post_FB.Core.ResourcePopup.IResourceAwarePopupVerificationService)popup,
-                openTeam, selectTeam, dispatch, new ResourceTemplateProfileProvider(registry),
+                openTeam, selectTeam, dispatch, profiles,
                 fallbackOptions, logger);
             return new OneShotFarmWorkflow(navigation, levelFallback, popup,
                 openTeam, selectTeam, dispatch, detector,
                 DeviceOperationLock.Shared, workflowOptions,
                 new OneShotFarmDiagnosticService(client, workflowOptions.ScreenshotDirectory), logger,
-                fallbackOptions, resourceFallback);
+                fallbackOptions, resourceFallback, profiles, registry, new SystemRandomProvider());
         }
     }
 }

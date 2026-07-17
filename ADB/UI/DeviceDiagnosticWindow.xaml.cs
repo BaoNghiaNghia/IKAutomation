@@ -32,6 +32,7 @@ namespace ADB_Tool_Automation_Post_FB.UI
         private readonly DispatchMarchRequest defaultDispatchRequest;
         private readonly IOneShotFarmWorkflow oneShotFarmWorkflow;
         private readonly OneShotFarmRequest defaultOneShotFarmRequest;
+        private readonly OneShotFarmResourceSelection resourceSelection = new OneShotFarmResourceSelection();
         private readonly CancellationTokenSource lifetimeCancellation = new CancellationTokenSource();
 
         public DeviceDiagnosticWindow(
@@ -77,6 +78,7 @@ namespace ADB_Tool_Automation_Post_FB.UI
                 ?? throw new ArgumentNullException(nameof(defaultOneShotFarmRequest));
 
             InitializeComponent();
+            ApplyResourceSelection();
             PackageNameTextBox.Text = string.IsNullOrWhiteSpace(diagnosticService.Configuration.PackageName)
                 ? "(not configured)"
                 : diagnosticService.Configuration.PackageName;
@@ -228,9 +230,33 @@ namespace ADB_Tool_Automation_Post_FB.UI
 
         private async void RunOneShotFarm_Click(object sender, RoutedEventArgs e)
         {
+            ReadResourceSelection();
+            if (resourceSelection.GetSelectedResources().Count < 2)
+            {
+                StatusTextBlock.Text = "Vui lòng chọn ít nhất 2 loại tài nguyên.";
+                return;
+            }
+
+            OneShotFarmRequest request = resourceSelection.CreateRequest(defaultOneShotFarmRequest);
             await RunOperationAsync(async cancellationToken => FormatOneShotFarmResult(
                 await oneShotFarmWorkflow.RunAsync(GetSelectedDeviceName(),
-                    defaultOneShotFarmRequest, cancellationToken)));
+                    request, cancellationToken)));
+        }
+
+        private void ApplyResourceSelection()
+        {
+            IronResourceCheckBox.IsChecked = resourceSelection.Iron;
+            StoneResourceCheckBox.IsChecked = resourceSelection.Stone;
+            WoodResourceCheckBox.IsChecked = resourceSelection.Wood;
+            FoodResourceCheckBox.IsChecked = resourceSelection.Food;
+        }
+
+        private void ReadResourceSelection()
+        {
+            resourceSelection.Iron = IronResourceCheckBox.IsChecked == true;
+            resourceSelection.Stone = StoneResourceCheckBox.IsChecked == true;
+            resourceSelection.Wood = WoodResourceCheckBox.IsChecked == true;
+            resourceSelection.Food = FoodResourceCheckBox.IsChecked == true;
         }
 
 
@@ -516,6 +542,9 @@ namespace ADB_Tool_Automation_Post_FB.UI
                 + $"Preferred level: {result.RequestedLevel}{Environment.NewLine}Attempted levels: {string.Join(",", result.AttemptedLevels ?? new int[0])}{Environment.NewLine}"
                 + $"Located level: {result.LocatedLevel?.ToString() ?? string.Empty}{Environment.NewLine}Fallback outcome: {result.FallbackResult?.Outcome.ToString() ?? string.Empty}{Environment.NewLine}"
                 + $"Attempted resources: {string.Join(",", result.AttemptedResources ?? new ADB_Tool_Automation_Post_FB.Core.ResourceSearch.ResourceType[0])}{Environment.NewLine}"
+                + $"Selected resources: {string.Join(",", result.SelectedResources ?? new ADB_Tool_Automation_Post_FB.Core.ResourceSearch.ResourceType[0])}{Environment.NewLine}"
+                + $"Shuffled order: {string.Join(",", result.ShuffledResourcePriority ?? new ADB_Tool_Automation_Post_FB.Core.ResourceSearch.ResourceType[0])}{Environment.NewLine}"
+                + $"Missing templates: {string.Join(Environment.NewLine, (result.MissingRuntimeTemplates ?? new MissingRuntimeTemplate[0]).Select(item => $"resource={item.ResourceType}, TemplateId={item.TemplateId}, ExpectedPath={item.ExpectedPath}"))}{Environment.NewLine}"
                 + $"Storage full resources: {string.Join(",", result.StorageFullResources ?? new ADB_Tool_Automation_Post_FB.Core.ResourceSearch.ResourceType[0])}{Environment.NewLine}"
                 + $"Resource priority: {string.Join(",", resourcePlan?.RequestedResources ?? new ADB_Tool_Automation_Post_FB.Core.ResourceSearch.ResourceType[0])}{Environment.NewLine}"
                 + $"Levels exhausted resources: {string.Join(",", result.LevelsExhaustedResources ?? new ADB_Tool_Automation_Post_FB.Core.ResourceSearch.ResourceType[0])}{Environment.NewLine}"
