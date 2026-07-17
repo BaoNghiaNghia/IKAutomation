@@ -8,6 +8,9 @@ using ADB_Tool_Automation_Post_FB.Infrastructure.ResourceSearch;
 using System;
 using System.Collections.Generic;
 using System.Diagnostics;
+using System.Drawing;
+using System.Drawing.Imaging;
+using System.IO;
 using System.Threading;
 using System.Threading.Tasks;
 
@@ -95,7 +98,8 @@ namespace ADB_Tool_Automation_Post_FB.Infrastructure.ResourcePopup
                     result.FinalState = detection.State;
                     GameDetectionEvidence anchor = Match(lastFrame, TemplateId.ResourcePopupInfoAnchor);
                     ResourceTemplateProfile expectedProfile = profileProvider.Get(resourceType);
-                    GameDetectionEvidence iron = Match(lastFrame, expectedProfile.PopupTitleTemplate);
+                    GameDetectionEvidence iron = MatchPopupTitle(
+                        lastFrame, expectedProfile.PopupTitleTemplate);
                     ResourceType? mismatch = FindMismatchedResource(lastFrame, resourceType);
                     GameDetectionEvidence gather = Match(lastFrame, TemplateId.GatherButtonEnabled);
                     result.Evidence = new[] { anchor, iron, gather };
@@ -157,6 +161,57 @@ namespace ADB_Tool_Automation_Post_FB.Infrastructure.ResourcePopup
                     ? $"Template '{id}' matched inside ResourcePopup ROI."
                     : $"Template '{id}' did not match inside ResourcePopup ROI."
             };
+        }
+
+        private GameDetectionEvidence MatchPopupTitle(byte[] screenshot, TemplateId id)
+        {
+            GameDetectionEvidence direct = Match(screenshot, id);
+            if (direct.Found) return direct;
+
+            byte[] sourceTemplate = registry.LoadBytes(id);
+            byte[] stableTitle = TryCreateStablePopupTitleTemplate(sourceTemplate);
+            if (stableTitle == null) return direct;
+
+            ImageMatchResult match = matcher.Find(screenshot, stableTitle, options.PopupRegion);
+            return new GameDetectionEvidence
+            {
+                TemplateId = id,
+                TemplateExists = true,
+                Found = match != null && match.Found,
+                MatchResult = match,
+                Confidence = match?.Confidence,
+                SearchRegion = options.PopupRegion,
+                Message = match != null && match.Found
+                    ? $"Template '{id}' matched by its stable resource-title region inside ResourcePopup ROI."
+                    : $"Template '{id}' did not match directly or by its stable resource-title region inside ResourcePopup ROI."
+            };
+        }
+
+        private static byte[] TryCreateStablePopupTitleTemplate(byte[] templateBytes)
+        {
+            try
+            {
+                using (var input = new MemoryStream(templateBytes, writable: false))
+                using (var source = new Bitmap(input))
+                {
+                    int left = source.Width * 55 / 100;
+                    int height = source.Height * 55 / 100;
+                    int width = source.Width - left;
+                    if (width <= 0 || height <= 0) return null;
+
+                    using (Bitmap stable = source.Clone(
+                        new Rectangle(left, 0, width, height), PixelFormat.Format32bppArgb))
+                    using (var output = new MemoryStream())
+                    {
+                        stable.Save(output, ImageFormat.Png);
+                        return output.ToArray();
+                    }
+                }
+            }
+            catch (ArgumentException)
+            {
+                return null;
+            }
         }
 
         private string ValidateTemplates(ResourceType resourceType)
@@ -231,7 +286,7 @@ namespace ADB_Tool_Automation_Post_FB.Infrastructure.ResourcePopup
                 if (candidate == expected) continue;
                 ResourceTemplateProfile profile = profileProvider.Get(candidate);
                 if (registry.Exists(profile.PopupTitleTemplate)
-                    && Match(screenshot, profile.PopupTitleTemplate).Found) return candidate;
+                    && MatchPopupTitle(screenshot, profile.PopupTitleTemplate).Found) return candidate;
             }
             return null;
         }

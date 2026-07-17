@@ -43,6 +43,7 @@ namespace IKAutomation.ResourcePopup.Tests
             Run("Wood popup uses Wood title", WoodPopupReady);
             Run("Food popup uses Food title", FoodPopupReady);
             Run("Different resource title returns controlled mismatch", PopupMismatch);
+            Run("Stable title crop verifies popup when full title template changes", StableTitleFallback);
             Console.WriteLine($"Resource popup tests: {passed} passed, {failed} failed.");
             return failed == 0 ? 0 : 1;
         }
@@ -124,6 +125,14 @@ namespace IKAutomation.ResourcePopup.Tests
             Assert(!result.Success && result.MismatchedResource == ResourceType.Iron, result.Message);
             Equal(0, f.Client.InputCalls);
         }
+        private static void StableTitleFallback()
+        {
+            Fixture f = Setup(TemplateId.ResourcePopupInfoAnchor, TemplateId.GatherButtonEnabled);
+            f.Registry.UseImageIronTitleTemplate = true; f.Matcher.StableIronTitleOnly = true;
+            var result = Run(f);
+            Equal(ResourcePopupOutcome.ResourcePopupReady, result.Outcome);
+            Assert(result.ExpectedResourceVerified, result.Message);
+        }
 
         private static Fixture Setup(params TemplateId[] matches) => Setup(matches, 1);
         private static Fixture Setup(TemplateId a, TemplateId b, TemplateId c, int readyFrames)
@@ -149,9 +158,9 @@ namespace IKAutomation.ResourcePopup.Tests
         private sealed class FakeDetector : IGameStateDetector
         { public GameState State = GameState.Unknown; public GameDetectionResult Detect(byte[] p) => new GameDetectionResult { State = State, IsSuccessful = true, Evidence = new GameDetectionEvidence[0] }; public Task<GameDetectionResult> DetectAsync(string d, CancellationToken t) => Task.FromResult(Detect(null)); }
         private sealed class FakeRegistry : ITemplateRegistry
-        { public TemplateId? Missing; public TemplateDefinition GetDefinition(TemplateId id) => new TemplateDefinition(id, id + ".png", .8); public string GetPath(TemplateId id) => Path.Combine("templates", id + ".png"); public byte[] LoadBytes(TemplateId id) => new[] { (byte)id }; public bool Exists(TemplateId id) => Missing != id; }
+        { public TemplateId? Missing; public bool UseImageIronTitleTemplate; public TemplateDefinition GetDefinition(TemplateId id) => new TemplateDefinition(id, id + ".png", .8); public string GetPath(TemplateId id) => Path.Combine("templates", id + ".png"); public byte[] LoadBytes(TemplateId id) => id==TemplateId.ResourcePopupIronTitle&&UseImageIronTitleTemplate?CreateTitleTemplate():new[] { (byte)id }; public bool Exists(TemplateId id) => Missing != id; private static byte[] CreateTitleTemplate(){using(var b=new Bitmap(184,81))using(var g=Graphics.FromImage(b))using(var s=new MemoryStream()){g.Clear(Color.LightBlue);g.DrawString("Sắt",SystemFonts.DefaultFont,Brushes.DarkBlue,110,8);b.Save(s,ImageFormat.Png);return s.ToArray();}} }
         private sealed class FakeMatcher : IImageMatcher
-        { public HashSet<TemplateId> Matches = new HashSet<TemplateId>(); public Dictionary<TemplateId, ImageRegion?> Regions = new Dictionary<TemplateId, ImageRegion?>(); public ImageMatchResult Find(byte[] s, byte[] t, ImageRegion? r = null) { var id = (TemplateId)t[0]; Regions[id] = r; return Matches.Contains(id) ? ImageMatchResult.FoundAt(id == TemplateId.GatherButtonEnabled ? 700 : 600, id == TemplateId.GatherButtonEnabled ? 520 : 430, 80, 40) : ImageMatchResult.NotFound(); } }
+        { public HashSet<TemplateId> Matches = new HashSet<TemplateId>(); public Dictionary<TemplateId, ImageRegion?> Regions = new Dictionary<TemplateId, ImageRegion?>(); public bool StableIronTitleOnly; public ImageMatchResult Find(byte[] s, byte[] t, ImageRegion? r = null) { if(t.Length>1&&t[0]==137){using(var stream=new MemoryStream(t))using(var bitmap=new Bitmap(stream))return StableIronTitleOnly&&bitmap.Width<100?ImageMatchResult.FoundAt(850,240,bitmap.Width,bitmap.Height):ImageMatchResult.NotFound();} var id = (TemplateId)t[0]; Regions[id] = r; return Matches.Contains(id) ? ImageMatchResult.FoundAt(id == TemplateId.GatherButtonEnabled ? 700 : 600, id == TemplateId.GatherButtonEnabled ? 520 : 430, 80, 40) : ImageMatchResult.NotFound(); } }
         private sealed class FakeStore : IResourcePopupDiagnosticStore
         { public bool Throw; public Task<string> SaveAsync(string d, ResourcePopupOutcome o, byte[] p, CancellationToken t) { if (Throw) throw new IOException("disk full"); return Task.FromResult("popup.png"); } }
         private sealed class FakeLogger : IDiagnosticLogger
