@@ -20,6 +20,7 @@ namespace ADB_Tool_Automation_Post_FB.Infrastructure.ResourceSearch
     {
         private const string LegacyMoveAreaVariant = "LegacyMoveArea";
         private const string SearchOtherRegionVariant = "SearchOtherRegion";
+        private const string VerifiedRetryPanelStayedOpenVariant = "VerifiedRetryPanelStayedOpen";
 
         private static readonly TemplateId[] RequiredTemplates =
         {
@@ -178,6 +179,16 @@ namespace ADB_Tool_Automation_Post_FB.Infrastructure.ResourceSearch
                     {
                         if (attempt < options.MaxSearchTapAttempts)
                             continue;
+                        if (context.PanelVisualChangeObserved
+                            && context.OpenPanelObservationCount >= options.MaxSearchTapAttempts)
+                        {
+                            result.NotFoundObserved = true;
+                            result.MatchedNotFoundVariant = VerifiedRetryPanelStayedOpenVariant;
+                            return await CompleteAsync(deviceName, result, context,
+                                ResourceSearchOutcome.ResourceNotFound,
+                                "ResourceNotFound was inferred after bounded verified Search retries: the panel stayed open and a transient panel visual change was observed; no toast match was claimed.",
+                                null, watch, cancellationToken);
+                        }
                         return await CompleteAsync(deviceName, result, context, ResourceSearchOutcome.Timeout,
                             "Search result was indeterminate: panel remained open and no transient toast was captured.",
                             null, watch, cancellationToken);
@@ -252,10 +263,18 @@ namespace ADB_Tool_Automation_Post_FB.Infrastructure.ResourceSearch
                 stable = comparison.DifferenceRatio <= options.CameraStableThreshold;
                 if (comparison.DifferenceRatio > options.CameraMovementThreshold)
                 {
-                    result.CameraMovementObserved = true;
-                    context.StableFrameCount = 0;
+                    if (panelConfirmed)
+                        context.PanelVisualChangeObserved = true;
+                    else
+                    {
+                        result.CameraMovementObserved = true;
+                        context.StableFrameCount = 0;
+                    }
                 }
             }
+
+            if (panelConfirmed)
+                context.OpenPanelObservationCount++;
 
             result.PanelClosed = !panelConfirmed;
             result.FinalState = detection.State;
@@ -557,6 +576,8 @@ namespace ADB_Tool_Automation_Post_FB.Infrastructure.ResourceSearch
             public byte[] LastFrame;
             public bool PreviousPanelConfirmed;
             public bool LastPanelConfirmed;
+            public bool PanelVisualChangeObserved;
+            public int OpenPanelObservationCount;
             public int StableFrameCount;
             public int UnknownFrameCount;
             public int BurstFrameCount;

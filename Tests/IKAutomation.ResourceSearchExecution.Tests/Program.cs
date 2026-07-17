@@ -59,6 +59,7 @@ namespace IKAutomation.ResourceSearchExecution.Tests
             Run("NotFound is not an exception", NotFoundNotException);
             Run("Open panel without toast is not Located", OpenPanelNotLocated);
             Run("Open panel after retries is Timeout", OpenPanelTimeout);
+            Run("Verified retries infer NotFound after transient panel change", RetryPanelChangeInfersNotFound);
             Run("Located requires panel closed", LocatedNeedsClosedPanel);
             Run("Located requires WorldMap", LocatedNeedsWorldMap);
             Run("Located requires camera movement", LocatedNeedsMovement);
@@ -134,6 +135,7 @@ namespace IKAutomation.ResourceSearchExecution.Tests
         private static void NotFoundNotException() { ResourceSearchExecutionResult r=Execute(ToastFixture()); Is(r.ErrorMessage==null,"error"); }
         private static void OpenPanelNotLocated() { var r=Execute(Setup()); Is(!r.Success,"success"); }
         private static void OpenPanelTimeout() { var r=Execute(Setup()); Is(r.Outcome==ResourceSearchOutcome.Timeout,"outcome"); }
+        private static void RetryPanelChangeInfersNotFound() { Fixture f=Setup(maxAttempts:2,windowMs:3); f.Stability.Differences.Enqueue(.05); f.Stability.Differences.Enqueue(.05); var r=Execute(f); Is(r.Outcome==ResourceSearchOutcome.ResourceNotFound&&r.NotFoundObserved,"outcome"); Is(!r.NotFoundToastVerified&&r.MatchedNotFoundVariant=="VerifiedRetryPanelStayedOpen","inference evidence"); Eq(2,r.SearchTapCount,"bounded retries"); Is(!r.CameraMovementObserved,"panel animation was treated as camera movement"); }
         private static void LocatedNeedsClosedPanel() { Fixture f=Setup(requiredStable:1); f.Stability.Differences.Enqueue(.1); f.Stability.Differences.Enqueue(.001); var r=Execute(f); Is(!r.Success,"success"); }
         private static void LocatedNeedsWorldMap() { Fixture f=Setup(requiredStable:1); f.Detector.SetStates(Panel(),State(GameState.ContinentMap),State(GameState.ContinentMap)); f.Stability.Differences.Enqueue(.1); f.Stability.Differences.Enqueue(.001); Is(!Execute(f).Success,"success"); }
         private static void LocatedNeedsMovement() { Fixture f=Setup(requiredStable:1); f.Detector.SetStates(Panel(),World(),World()); f.Stability.Differences.Enqueue(.001); f.Stability.Differences.Enqueue(.001); Is(!Execute(f).Success,"success"); }
