@@ -34,9 +34,9 @@ namespace ADB_Tool_Automation_Post_FB.Infrastructure.GameDetection
                     ReadPositiveInteger("StorageLimitDialog.Region.Height", 520)),
                 new ImageRegion(
                     ReadPositiveInteger("ResourcePopupVerification.ActionRegion.X", 560, allowZero: true),
-                    ReadPositiveInteger("ResourcePopupVerification.ActionRegion.Y", 480, allowZero: true),
+                    ReadPositiveInteger("ResourcePopupVerification.ActionRegion.Y", 430, allowZero: true),
                     ReadPositiveInteger("ResourcePopupVerification.ActionRegion.Width", 500),
-                    ReadPositiveInteger("ResourcePopupVerification.ActionRegion.Height", 210)));
+                    ReadPositiveInteger("ResourcePopupVerification.ActionRegion.Height", 260)));
         }
 
         private static int ReadPositiveInteger(string key, int defaultValue, bool allowZero = false)

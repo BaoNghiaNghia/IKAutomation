@@ -39,6 +39,7 @@ namespace IKAutomation.ResourcePopup.Tests
             Run("Day and night pixels do not change popup rule", DayNightSafe);
             Run("Initial and final state are returned", StatesReturned);
             Run("Stone popup uses Stone title", StonePopupReady);
+            Run("Stone title verifies embedded popup anchor", StoneEmbeddedAnchorReady);
             Run("Missing Stone title fails before capture", MissingStoneTitleFails);
             Run("Wood popup uses Wood title", WoodPopupReady);
             Run("Food popup uses Food title", FoodPopupReady);
@@ -62,7 +63,7 @@ namespace IKAutomation.ResourcePopup.Tests
         private static void GatherAloneNotDetected()
         { Fixture f = Setup(TemplateId.GatherButtonEnabled); var r = Run(f); Equal(ResourcePopupOutcome.ResourcePopupNotDetected, r.Outcome); }
         private static void MatcherUsesRoi()
-        { Fixture f = Setup(TemplateId.ResourcePopupInfoAnchor, TemplateId.ResourcePopupIronTitle, TemplateId.GatherButtonEnabled); Run(f); Equal(new ImageRegion(450,230,680,310),f.Matcher.Regions[TemplateId.ResourcePopupInfoAnchor].Value);Equal(new ImageRegion(450,230,680,310),f.Matcher.Regions[TemplateId.ResourcePopupIronTitle].Value);Equal(new ImageRegion(560,480,500,210),f.Matcher.Regions[TemplateId.GatherButtonEnabled].Value); }
+        { Fixture f = Setup(TemplateId.ResourcePopupInfoAnchor, TemplateId.ResourcePopupIronTitle, TemplateId.GatherButtonEnabled); Run(f); Equal(new ImageRegion(450,230,680,310),f.Matcher.Regions[TemplateId.ResourcePopupInfoAnchor].Value);Equal(new ImageRegion(450,230,680,310),f.Matcher.Regions[TemplateId.ResourcePopupIronTitle].Value);Equal(new ImageRegion(560,430,500,260),f.Matcher.Regions[TemplateId.GatherButtonEnabled].Value); }
         private static void BoundsPreserved()
         { Fixture f = Setup(TemplateId.ResourcePopupInfoAnchor, TemplateId.ResourcePopupIronTitle, TemplateId.GatherButtonEnabled); var r = Run(f); Equal(700, r.GatherButtonMatch.X); Equal(520, r.GatherButtonMatch.Y); }
         private static void MissingTemplateFails()
@@ -96,6 +97,15 @@ namespace IKAutomation.ResourcePopup.Tests
                 .VerifyAsync("LDPlayer", ResourceType.Stone, Token).GetAwaiter().GetResult();
             Equal(ResourcePopupOutcome.ResourcePopupReady, result.Outcome);
             Assert(result.ResourceVerified && result.ResourceType == ResourceType.Stone, result.Message);
+        }
+        private static void StoneEmbeddedAnchorReady()
+        {
+            Fixture f = Setup(TemplateId.ResourcePopupStoneTitle, TemplateId.GatherButtonEnabled);
+            var result = ((IResourceAwarePopupVerificationService)f.Service)
+                .VerifyAsync("LDPlayer", ResourceType.Stone, Token).GetAwaiter().GetResult();
+            Equal(ResourcePopupOutcome.ResourcePopupReady, result.Outcome);
+            Assert(result.PopupAnchorVerified && !result.PopupAnchorFound
+                && result.ExpectedResourceVerified && result.GatherButtonVerified, result.Message);
         }
         private static void MissingStoneTitleFails()
         {
@@ -155,7 +165,7 @@ namespace IKAutomation.ResourcePopup.Tests
         }
         private static ResourcePopupVerificationOptions Options(int poll = 1, int ready = 1) =>
             new ResourcePopupVerificationOptions(poll, 1, ready,
-                new ImageRegion(450, 230, 680, 310), new ImageRegion(560, 480, 500, 210),
+                new ImageRegion(450, 230, 680, 310), new ImageRegion(560, 430, 500, 260),
                 true, "Diagnostics/ResourcePopup");
         private static ResourcePopupVerificationResult Run(Fixture f, CancellationToken? token = null) =>
             f.Service.VerifyAsync("LDPlayer", token ?? Token).GetAwaiter().GetResult();

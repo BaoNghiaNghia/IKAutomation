@@ -215,7 +215,7 @@ namespace IKAutomation.GameDetection.Tests
                 "GatherButtonEnabled did not use ROI.");
             Equal(560, matcher.Regions[TemplateId.GatherButtonEnabled].Value.X,
                 "GatherButtonEnabled ROI X.");
-            Equal(480, matcher.Regions[TemplateId.GatherButtonEnabled].Value.Y,
+            Equal(430, matcher.Regions[TemplateId.GatherButtonEnabled].Value.Y,
                 "GatherButtonEnabled ROI Y.");
         }
 

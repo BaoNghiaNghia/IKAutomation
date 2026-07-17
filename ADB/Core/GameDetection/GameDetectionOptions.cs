@@ -29,7 +29,7 @@ namespace ADB_Tool_Automation_Post_FB.Core.GameDetection
             SaveUnknownScreenshots = saveUnknownScreenshots;
             UnknownScreenshotDirectory = unknownScreenshotDirectory.Trim();
             ResourcePopupRegion = resourcePopupRegion ?? new ImageRegion(450, 230, 680, 310);
-            ResourcePopupActionRegion = resourcePopupActionRegion ?? new ImageRegion(560, 480, 500, 210);
+            ResourcePopupActionRegion = resourcePopupActionRegion ?? new ImageRegion(560, 430, 500, 260);
             TeamSelectionRegion = teamSelectionRegion ?? new ImageRegion(0, 0, 780, 720);
             StorageLimitDialogRegion = storageLimitDialogRegion ?? new ImageRegion(250, 100, 780, 520);
             if ((long)ResourcePopupRegion.X + ResourcePopupRegion.Width > expectedWidth

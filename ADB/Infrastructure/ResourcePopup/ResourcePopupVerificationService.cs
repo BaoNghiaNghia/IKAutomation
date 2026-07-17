@@ -102,7 +102,11 @@ namespace ADB_Tool_Automation_Post_FB.Infrastructure.ResourcePopup
                     GameDetectionEvidence gather = Match(lastFrame,
                         TemplateId.GatherButtonEnabled, options.ActionRegion, "ActionRegion");
                     result.Evidence = new[] { anchor, expectedTitle, gather };
-                    result.PopupAnchorVerified = anchor.Found;
+                    // Every resource-title template contains the stable info icon. A matched
+                    // resource header therefore verifies the popup anchor even when the older,
+                    // standalone anchor crop is too brittle for that resource variant.
+                    bool popupAnchorVerified = anchor.Found || expectedTitle.Found;
+                    result.PopupAnchorVerified = popupAnchorVerified;
                     result.IronResourceVerified = resourceType == ResourceType.Iron && expectedTitle.Found;
                     result.ResourceVerified = expectedTitle.Found;
                     result.ExpectedResourceVerified = expectedTitle.Found;
@@ -113,13 +117,13 @@ namespace ADB_Tool_Automation_Post_FB.Infrastructure.ResourcePopup
                     result.GatherButtonVerified = gather.Found;
                     result.GatherButtonMatch = gather.MatchResult;
 
-                    int signals = (anchor.Found ? 1 : 0) + (expectedTitle.Found ? 1 : 0) + (gather.Found ? 1 : 0);
-                    bool detected = signals >= 2 && (anchor.Found || expectedTitle.Found);
+                    int signals = (popupAnchorVerified ? 1 : 0) + (expectedTitle.Found ? 1 : 0) + (gather.Found ? 1 : 0);
+                    bool detected = signals >= 2 && popupAnchorVerified;
                     popupObserved |= detected || detection.State == GameState.ResourcePopup;
-                    if (!expectedTitle.Found && mismatch.HasValue && anchor.Found)
+                    if (!expectedTitle.Found && mismatch.HasValue && popupAnchorVerified)
                         return Complete(result, ResourcePopupOutcome.ResourcePopupMismatch, watch,
                             $"Popup title belongs to {mismatch.Value}, not expected {resourceType}; no Gather input was sent.", null);
-                    bool ready = anchor.Found && expectedTitle.Found && gather.Found;
+                    bool ready = popupAnchorVerified && expectedTitle.Found && gather.Found;
                     readyFrames = ready ? readyFrames + 1 : 0;
                     LogFrame(deviceName, result, anchor, expectedTitle, gather);
                     if (readyFrames >= options.RequiredConsecutiveReadyFrames)
