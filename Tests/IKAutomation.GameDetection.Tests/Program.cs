@@ -119,7 +119,7 @@ namespace IKAutomation.GameDetection.Tests
         private static void StorageLimitHasPriorityOverTeam()
         {
             GameDetectionResult result = DetectWithMatches(
-                TemplateId.StorageLimitDialogAnchor, TemplateId.StorageLimitConfirmButton,
+                TemplateId.StorageLimitDialogAnchor, TemplateId.StorageLimitCancelButton,
                 TemplateId.TeamSelectionPanelAnchor, TemplateId.TeamActionButtonEnabled);
             Equal(GameState.StorageLimitDialog, result.State,
                 "StorageLimitDialog must have priority over TeamSelection.");
@@ -128,7 +128,7 @@ namespace IKAutomation.GameDetection.Tests
         private static void StorageLimitHasPriorityOverWorld()
         {
             GameDetectionResult result = DetectWithMatches(
-                TemplateId.StorageLimitDialogAnchor, TemplateId.StorageLimitConfirmButton,
+                TemplateId.StorageLimitDialogAnchor, TemplateId.StorageLimitCancelButton,
                 TemplateId.WorldMapAnchor);
             Equal(GameState.StorageLimitDialog, result.State,
                 "StorageLimitDialog must have priority over WorldMap.");
@@ -384,7 +384,7 @@ namespace IKAutomation.GameDetection.Tests
         private static GameDetectionOptions Options(bool saveUnknown)
             => new GameDetectionOptions(1280, 720, true, saveUnknown, "Diagnostics/UnknownStates");
         private static TemplateId[] RequiredIds() => new[] { TemplateId.ResourceSearchPanelAnchor,
-            TemplateId.StorageLimitDialogAnchor, TemplateId.StorageLimitConfirmButton,
+            TemplateId.StorageLimitDialogAnchor, TemplateId.StorageLimitCancelButton,
             TemplateId.TeamSelectionPanelAnchor, TemplateId.TeamAdjustFormationButton,
             TemplateId.TeamActionButtonEnabled,
             TemplateId.SearchButtonEnabled, TemplateId.LevelMinusButton,

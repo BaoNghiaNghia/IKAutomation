@@ -168,21 +168,21 @@ namespace ADB_Tool_Automation_Post_FB.Infrastructure.MarchDispatch
                                 "StorageLimitDialog was detected but no dialog handler is configured.",
                                 "IStorageLimitDialogService is required.", watch);
                         StorageLimitDialogResult handled = await storageLimitDialog.HandleAsync(
-                            deviceName, StorageLimitPolicy.ConfirmAndSwitchResource, cancellationToken);
+                            deviceName, StorageLimitPolicy.CancelAndSwitchResource, cancellationToken);
                         result.StorageLimitResult = handled;
-                        result.FinalState = handled.StateAfterConfirmation;
+                        result.FinalState = handled.FinalState;
                         if (handled.Outcome == StorageLimitDialogOutcome.Cancelled)
                             throw new OperationCanceledException(cancellationToken);
-                        if (handled.Outcome == StorageLimitDialogOutcome.ConfirmedForResourceSwitch)
+                        if (handled.Outcome == StorageLimitDialogOutcome.CancelledForResourceSwitch)
                         {
-                            result.StorageLimitConfirmed = true;
+                            result.StorageLimitCancelled = true;
                             result.ResourceSwitchRequired = true;
                             result.StorageFullResource = request.CurrentResource;
                             result.DispatchedTeam = null;
                             result.MarchStartedVerified = false;
                             return Complete(result,
                                 DispatchMarchOutcome.StorageLimitResourceSwitchRequired,
-                                $"Storage for {request.CurrentResource} is full; switch to the next resource.",
+                                $"Storage for {request.CurrentResource} is full; warning was cancelled and the next resource is required.",
                                 handled.ErrorMessage, watch);
                         }
                         return Complete(result, DispatchMarchOutcome.Failed,

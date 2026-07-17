@@ -12,7 +12,7 @@ namespace ADB_Tool_Automation_Post_FB.Core.Workflows
             ResourceType = ResourceType.Iron; TargetLevel = 7; UnoccupiedOnly = true;
             ResourceLevelPriority = new[] { 7, 6, 5 };
             ResourcePriority = new[] { ResourceType.Iron, ResourceType.Stone, ResourceType.Wood, ResourceType.Food };
-            StorageLimitPolicy = StorageLimitPolicy.ConfirmAndSwitchResource;
+            StorageLimitPolicy = StorageLimitPolicy.CancelAndSwitchResource;
             AttemptsPerResourceLevel = 1;
             AllowedTeams = new[] { TeamNumber.Team2, TeamNumber.Team3, TeamNumber.Team4 };
             TeamPriority = new[] { TeamNumber.Team4, TeamNumber.Team3, TeamNumber.Team2 };

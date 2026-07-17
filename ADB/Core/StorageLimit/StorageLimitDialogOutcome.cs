@@ -8,6 +8,7 @@ namespace ADB_Tool_Automation_Post_FB.Core.StorageLimit
         TransitionTimeout,
         RecoveryFailed,
         Cancelled,
-        Failed
+        Failed,
+        CancelledForResourceSwitch
     }
 }

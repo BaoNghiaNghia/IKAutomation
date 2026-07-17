@@ -15,7 +15,7 @@ namespace ADB_Tool_Automation_Post_FB.Core.Workflows
         public bool SwitchWhenLevelsExhausted { get; set; } = true;
         public bool SwitchOnStorageLimit { get; set; } = true;
         public bool StopOnFirstMarchStarted { get; set; } = true;
-        public StorageLimitPolicy StorageLimitPolicy { get; set; } = StorageLimitPolicy.ConfirmAndSwitchResource;
+        public StorageLimitPolicy StorageLimitPolicy { get; set; } = StorageLimitPolicy.CancelAndSwitchResource;
 
         public void Validate()
         {

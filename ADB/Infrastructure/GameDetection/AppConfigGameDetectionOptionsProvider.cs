@@ -26,7 +26,12 @@ namespace ADB_Tool_Automation_Post_FB.Infrastructure.GameDetection
                     ReadPositiveInteger("OpenTeamSelection.TeamSelectionRegion.X", 0, allowZero: true),
                     ReadPositiveInteger("OpenTeamSelection.TeamSelectionRegion.Y", 0, allowZero: true),
                     ReadPositiveInteger("OpenTeamSelection.TeamSelectionRegion.Width", 780),
-                    ReadPositiveInteger("OpenTeamSelection.TeamSelectionRegion.Height", 720)));
+                    ReadPositiveInteger("OpenTeamSelection.TeamSelectionRegion.Height", 720)),
+                new ImageRegion(
+                    ReadPositiveInteger("StorageLimitDialog.Region.X", 250, allowZero: true),
+                    ReadPositiveInteger("StorageLimitDialog.Region.Y", 100, allowZero: true),
+                    ReadPositiveInteger("StorageLimitDialog.Region.Width", 780),
+                    ReadPositiveInteger("StorageLimitDialog.Region.Height", 520)));
         }
 
         private static int ReadPositiveInteger(string key, int defaultValue, bool allowZero = false)

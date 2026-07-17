@@ -12,7 +12,7 @@ namespace ADB_Tool_Automation_Post_FB.Core.Workflows
             { ResourceType.Iron, ResourceType.Stone, ResourceType.Wood, ResourceType.Food };
         public IReadOnlyList<int> LevelPriority { get; set; } = new[] { 7, 6, 5 };
         public int AttemptsPerLevel { get; set; } = 1;
-        public StorageLimitPolicy StorageLimitPolicy { get; set; } = StorageLimitPolicy.ConfirmAndSwitchResource;
+        public StorageLimitPolicy StorageLimitPolicy { get; set; } = StorageLimitPolicy.CancelAndSwitchResource;
         public bool SwitchOnStorageLimit { get; set; } = true;
         public bool SwitchWhenLevelsExhausted { get; set; } = true;
         public int MaxRecoveryTransitions { get; set; } = 3;
@@ -33,9 +33,9 @@ namespace ADB_Tool_Automation_Post_FB.Core.Workflows
                 || LevelPriority.Distinct().Count() != LevelPriority.Count
                 || LevelPriority.Any(x => x != 5 && x != 6 && x != 7))
                 throw new ArgumentException("LevelPriority supports unique levels 7, 6, and 5.");
-            if (StorageLimitPolicy != StorageLimitPolicy.ConfirmAndSwitchResource)
-                throw new ArgumentException("One-shot fallback requires ConfirmAndSwitchResource.");
-            if (MaxRecoveryTransitions < 1 || MaxRecoveryTransitions > 10) throw new ArgumentOutOfRangeException(nameof(MaxRecoveryTransitions));
+            if (StorageLimitPolicy != StorageLimitPolicy.CancelAndSwitchResource)
+                throw new ArgumentException("One-shot fallback requires CancelAndSwitchResource.");
+            if (MaxRecoveryTransitions < 1 || MaxRecoveryTransitions > 5) throw new ArgumentOutOfRangeException(nameof(MaxRecoveryTransitions));
             if (RecoveryPollIntervalMs < 50 || RecoveryPollIntervalMs > 5000) throw new ArgumentOutOfRangeException(nameof(RecoveryPollIntervalMs));
             if (RecoveryTimeoutSeconds < 1 || RecoveryTimeoutSeconds > 60) throw new ArgumentOutOfRangeException(nameof(RecoveryTimeoutSeconds));
             if (AttemptsPerLevel < 1 || AttemptsPerLevel > 3) throw new ArgumentOutOfRangeException(nameof(AttemptsPerLevel));

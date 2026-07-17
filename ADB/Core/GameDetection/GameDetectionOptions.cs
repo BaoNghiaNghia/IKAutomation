@@ -12,7 +12,8 @@ namespace ADB_Tool_Automation_Post_FB.Core.GameDetection
             bool saveUnknownScreenshots,
             string unknownScreenshotDirectory,
             ImageRegion? resourcePopupRegion = null,
-            ImageRegion? teamSelectionRegion = null)
+            ImageRegion? teamSelectionRegion = null,
+            ImageRegion? storageLimitDialogRegion = null)
         {
             if (expectedWidth <= 0)
                 throw new ArgumentOutOfRangeException(nameof(expectedWidth));
@@ -28,6 +29,7 @@ namespace ADB_Tool_Automation_Post_FB.Core.GameDetection
             UnknownScreenshotDirectory = unknownScreenshotDirectory.Trim();
             ResourcePopupRegion = resourcePopupRegion ?? new ImageRegion(650, 150, 550, 450);
             TeamSelectionRegion = teamSelectionRegion ?? new ImageRegion(0, 0, 780, 720);
+            StorageLimitDialogRegion = storageLimitDialogRegion ?? new ImageRegion(250, 100, 780, 520);
             if ((long)ResourcePopupRegion.X + ResourcePopupRegion.Width > expectedWidth
                 || (long)ResourcePopupRegion.Y + ResourcePopupRegion.Height > expectedHeight)
                 throw new ArgumentOutOfRangeException(nameof(resourcePopupRegion),
@@ -36,6 +38,10 @@ namespace ADB_Tool_Automation_Post_FB.Core.GameDetection
                 || (long)TeamSelectionRegion.Y + TeamSelectionRegion.Height > expectedHeight)
                 throw new ArgumentOutOfRangeException(nameof(teamSelectionRegion),
                     "Team Selection region must be inside the expected screenshot.");
+            if ((long)StorageLimitDialogRegion.X + StorageLimitDialogRegion.Width > expectedWidth
+                || (long)StorageLimitDialogRegion.Y + StorageLimitDialogRegion.Height > expectedHeight)
+                throw new ArgumentOutOfRangeException(nameof(storageLimitDialogRegion),
+                    "Storage-limit dialog region must be inside the expected screenshot.");
         }
 
         public int ExpectedWidth { get; }
@@ -45,5 +51,6 @@ namespace ADB_Tool_Automation_Post_FB.Core.GameDetection
         public string UnknownScreenshotDirectory { get; }
         public ImageRegion ResourcePopupRegion { get; }
         public ImageRegion TeamSelectionRegion { get; }
+        public ImageRegion StorageLimitDialogRegion { get; }
     }
 }

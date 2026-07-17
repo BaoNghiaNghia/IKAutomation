@@ -26,8 +26,14 @@ namespace ADB_Tool_Automation_Post_FB.Core.Workflows
         public ResourceFarmFallbackResult ResourceFallbackResult { get; set; }
         public bool StorageLimitDialogDetected { get; set; }
         public bool StorageLimitConfirmed { get; set; }
+        public bool StorageLimitCancelled { get; set; }
         public bool ResourceSwitchRequired { get; set; }
         public GameState StateAfterConfirmation { get; set; }
+        public GameState StateAfterCancel { get; set; }
+        public bool ReturnedToTeamSelection { get; set; }
+        public bool BackSent { get; set; }
+        public int BackCount { get; set; }
+        public bool ReturnedToWorldMap { get; set; }
         public ResourceType? CurrentResource { get; set; }
         public ResourceType? NextResource { get; set; }
         public int RecoveryTransitions { get; set; }

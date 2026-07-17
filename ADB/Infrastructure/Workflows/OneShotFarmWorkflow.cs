@@ -297,9 +297,16 @@ namespace ADB_Tool_Automation_Post_FB.Infrastructure.Workflows
                 {
                     result.StorageLimitDialogDetected = dispatched.StorageLimitDialogDetected;
                     result.StorageLimitConfirmed = dispatched.StorageLimitConfirmed;
+                    result.StorageLimitCancelled = dispatched.StorageLimitCancelled;
                     result.ResourceSwitchRequired = dispatched.ResourceSwitchRequired;
                     result.StateAfterConfirmation = dispatched.StorageLimitResult?.StateAfterConfirmation
                         ?? dispatched.FinalState;
+                    result.StateAfterCancel = dispatched.StorageLimitResult?.StateAfterCancel
+                        ?? dispatched.FinalState;
+                    result.ReturnedToTeamSelection = dispatched.StorageLimitResult?.ReturnedToTeamSelection ?? false;
+                    result.BackSent = dispatched.StorageLimitResult?.BackSent ?? false;
+                    result.BackCount = dispatched.StorageLimitResult?.BackCount ?? 0;
+                    result.ReturnedToWorldMap = dispatched.StorageLimitResult?.ReturnedToWorldMap ?? false;
                     result.CurrentResource = request.ResourceType;
                     result.NextResource = request.ResourceType == ResourceType.Iron
                         ? (ResourceType?)ResourceType.Stone : null;

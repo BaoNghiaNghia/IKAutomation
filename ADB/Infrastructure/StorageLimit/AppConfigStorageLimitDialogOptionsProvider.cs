@@ -10,11 +10,15 @@ namespace ADB_Tool_Automation_Post_FB.Infrastructure.StorageLimit
         {
             var options = new StorageLimitDialogOptions
             {
-                Policy = ReadEnum("StorageLimitDialog.Policy", StorageLimitPolicy.ConfirmAndSwitchResource),
+                Policy = ReadEnum("StorageLimitDialog.Policy", StorageLimitPolicy.CancelAndSwitchResource),
                 PollIntervalMs = ReadInt("StorageLimitDialog.PollIntervalMs", 200),
                 TransitionTimeoutSeconds = ReadInt("StorageLimitDialog.TransitionTimeoutSeconds", 8),
-                MaxActionAttempts = ReadInt("StorageLimitDialog.MaxActionAttempts", 2),
-                ActionRetryDelayMs = ReadInt("StorageLimitDialog.ActionRetryDelayMs", 500)
+                MaxActionAttempts = ReadInt("StorageLimitDialog.MaxCancelAttempts",
+                    ReadInt("StorageLimitDialog.MaxActionAttempts", 2)),
+                ActionRetryDelayMs = ReadInt("StorageLimitDialog.CancelRetryDelayMs",
+                    ReadInt("StorageLimitDialog.ActionRetryDelayMs", 500)),
+                MaxTransientUnknownFrames = ReadInt("StorageLimitDialog.MaxTransientUnknownFrames", 5),
+                MaxBackAttempts = ReadInt("ResourceFarmFallback.MaxBackAttempts", 1)
             };
             options.Validate();
             return options;

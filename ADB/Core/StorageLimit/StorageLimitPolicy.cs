@@ -6,6 +6,7 @@ namespace ADB_Tool_Automation_Post_FB.Core.StorageLimit
         ConfirmAndProceed,
         CancelDispatch,
         SwitchResource,
-        ConfirmAndSwitchResource
+        ConfirmAndSwitchResource,
+        CancelAndSwitchResource
     }
 }

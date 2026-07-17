@@ -27,6 +27,7 @@ namespace ADB_Tool_Automation_Post_FB.Core.MarchDispatch
         public bool MarchStartedVerified { get; set; }
         public bool StorageLimitDialogDetected { get; set; }
         public bool StorageLimitConfirmed { get; set; }
+        public bool StorageLimitCancelled { get; set; }
         public bool ResourceSwitchRequired { get; set; }
         public ResourceType? StorageFullResource { get; set; }
         public StorageLimitDialogResult StorageLimitResult { get; set; }

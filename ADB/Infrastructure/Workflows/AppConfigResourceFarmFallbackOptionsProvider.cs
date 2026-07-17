@@ -16,7 +16,7 @@ namespace ADB_Tool_Automation_Post_FB.Infrastructure.Workflows
                 ResourcePriority = ReadList("ResourceFarmFallback.ResourcePriority", "Iron,Stone,Wood,Food", ParseResource),
                 LevelPriority = ReadList("ResourceFarmFallback.LevelPriority", "7,6,5", int.Parse),
                 AttemptsPerLevel = ReadInt("ResourceFarmFallback.AttemptsPerLevel", 1),
-                StorageLimitPolicy = ReadEnum("ResourceFarmFallback.StorageLimitPolicy", StorageLimitPolicy.ConfirmAndSwitchResource),
+                StorageLimitPolicy = ReadEnum("ResourceFarmFallback.StorageLimitPolicy", StorageLimitPolicy.CancelAndSwitchResource),
                 SwitchOnStorageLimit = ReadBool("ResourceFarmFallback.SwitchOnStorageLimit", true),
                 SwitchWhenLevelsExhausted = ReadBool("ResourceFarmFallback.SwitchWhenLevelsExhausted", true),
                 MaxRecoveryTransitions = ReadInt("ResourceFarmFallback.MaxRecoveryTransitions", 3),

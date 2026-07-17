@@ -72,11 +72,12 @@ internal static class Program
         Run("No full-screen image comparison", NoFullScreenComparison);
         Run("GameState has no MarchStarted value", NoMarchGameState);
         Run("Storage limit requests resource switch", StorageLimitRequestsSwitch);
-        Run("Storage confirm uses fresh bounds center", StorageConfirmUsesCenter);
-        Run("Storage confirm returns WorldMap", StorageConfirmReturnsWorld);
-        Run("Storage confirm returns SearchPanel", StorageConfirmReturnsPanel);
+        Run("Storage cancel uses fresh bounds center", StorageCancelUsesCenter);
+        Run("Storage cancel returns directly to WorldMap without Back", StorageCancelReturnsWorld);
+        Run("Storage cancel returns SearchPanel without Back", StorageCancelReturnsPanel);
+        Run("Storage cancel verifies TeamSelection then sends one Back", StorageCancelTeamThenBack);
         Run("Storage transient Unknown sends no Back", StorageUnknownNoBack);
-        Run("Missing storage Confirm sends no input", StorageMissingConfirmNoInput);
+        Run("Missing storage Cancel sends no input", StorageMissingCancelNoInput);
         Console.WriteLine($"March dispatch tests: {passed} passed, {failed} failed.");
         return failed == 0 ? 0 : 1;
     }
@@ -141,17 +142,17 @@ internal static class Program
         h.Detector.AfterState = GameState.StorageLimitDialog;
         h.Storage.Result = new StorageLimitDialogResult
         {
-            Outcome = StorageLimitDialogOutcome.ConfirmedForResourceSwitch,
-            Policy = StorageLimitPolicy.ConfirmAndSwitchResource,
-            DialogVerified = true, ConfirmButtonVerified = true, ActionTapCount = 1,
+            Outcome = StorageLimitDialogOutcome.CancelledForResourceSwitch,
+            Policy = StorageLimitPolicy.CancelAndSwitchResource,
+            DialogVerified = true, CancelButtonVerified = true, ActionTapCount = 1,
             ModalClosed = true, ReturnedToWorldMap = true,
-            StateAfterConfirmation = GameState.WorldMap
+            StateAfterCancel = GameState.TeamSelection, FinalState = GameState.WorldMap
         };
         h.Rebuild();
         DispatchMarchResult result = Execute(h);
         Eq(DispatchMarchOutcome.StorageLimitResourceSwitchRequired, result.Outcome, "outcome");
         Is(result.StorageLimitDialogDetected, "dialog not recorded");
-        Is(result.StorageLimitConfirmed && result.ResourceSwitchRequired, "switch flags missing");
+        Is(result.StorageLimitCancelled && result.ResourceSwitchRequired, "switch flags missing");
         Eq((ResourceType?)ResourceType.Iron, result.StorageFullResource, "storage resource");
         Eq<TeamNumber?>(null, result.DispatchedTeam, "team must not be dispatched");
         Eq(1, result.ActionTapCount, "dispatch action must not retry");
@@ -162,39 +163,51 @@ internal static class Program
         h.Detector.AsyncStates.Enqueue(finalState);
         return h;
     }
-    private static void StorageConfirmUsesCenter()
+    private static void StorageCancelUsesCenter()
     {
         var h = StorageHarness(GameState.WorldMap); var result = h.Execute();
-        Eq((340,420), h.Client.Taps.Single(), "confirm center");
-        Eq(1, result.ActionTapCount, "confirm count");
-        Is(!h.Matcher.Calls.Any(x => x.id == TemplateId.StorageLimitCancelButton), "Cancel was matched or tapped");
+        Eq((340,420), h.Client.Taps.Single(), "cancel center");
+        Eq(1, result.ActionTapCount, "cancel count");
+        Is(!h.Matcher.Calls.Any(x => x.id == TemplateId.StorageLimitConfirmButton), "Confirm was matched or tapped");
     }
-    private static void StorageConfirmReturnsWorld()
+    private static void StorageCancelReturnsWorld()
     {
         var result = StorageHarness(GameState.WorldMap).Execute();
-        Eq(StorageLimitDialogOutcome.ConfirmedForResourceSwitch, result.Outcome, "outcome");
+        Eq(StorageLimitDialogOutcome.CancelledForResourceSwitch, result.Outcome, "outcome");
         Is(result.ModalClosed && result.ReturnedToWorldMap, "WorldMap flags");
+        Eq(0, result.BackCount, "direct WorldMap must not send Back");
     }
-    private static void StorageConfirmReturnsPanel()
+    private static void StorageCancelReturnsPanel()
     {
         var result = StorageHarness(GameState.ResourceSearchPanel).Execute();
-        Eq(StorageLimitDialogOutcome.ConfirmedForResourceSwitch, result.Outcome, "outcome");
+        Eq(StorageLimitDialogOutcome.CancelledForResourceSwitch, result.Outcome, "outcome");
         Is(result.ReturnedToSearchPanel, "panel flag");
+        Eq(0, result.BackCount, "SearchPanel must not send Back");
+    }
+    private static void StorageCancelTeamThenBack()
+    {
+        var h = StorageHarness(GameState.TeamSelection);
+        h.Detector.AsyncStates.Enqueue(GameState.WorldMap);
+        var result = h.Execute();
+        Eq(StorageLimitDialogOutcome.CancelledForResourceSwitch, result.Outcome, "outcome");
+        Is(result.ReturnedToTeamSelection && result.ReturnedToWorldMap, "recovery flags");
+        Eq(1, result.BackCount, "Back count");
+        Eq(1, h.Client.BackCalls, "client Back count");
     }
     private static void StorageUnknownNoBack()
     {
         var h = StorageHarness(GameState.Unknown); h.Detector.AsyncStates.Enqueue(GameState.WorldMap);
         var result = h.Execute();
-        Eq(StorageLimitDialogOutcome.ConfirmedForResourceSwitch, result.Outcome, "outcome");
+        Eq(StorageLimitDialogOutcome.CancelledForResourceSwitch, result.Outcome, "outcome");
         Eq(0, h.Client.BackCalls, "Unknown must not cause Back");
     }
-    private static void StorageMissingConfirmNoInput()
+    private static void StorageMissingCancelNoInput()
     {
-        var h = StorageHarness(GameState.WorldMap); h.Registry.Missing = TemplateId.StorageLimitConfirmButton;
+        var h = StorageHarness(GameState.WorldMap); h.Registry.Missing = TemplateId.StorageLimitCancelButton;
         var result = h.Execute();
         Eq(StorageLimitDialogOutcome.ActionButtonUnavailable, result.Outcome, "outcome");
         Eq(0, h.Client.Taps.Count, "Tap count");
-        Is(result.ErrorMessage.Contains("StorageLimitConfirmButton"), "missing TemplateId");
+        Is(result.ErrorMessage.Contains("StorageLimitCancelButton"), "missing TemplateId");
     }
 
     private static Harness NoSuccessHarness() { var h=new Harness(); h.Options=h.CreateOptions(1,2); h.Comparer.Ratio=0; h.Rebuild(); return h; }
@@ -260,15 +273,15 @@ internal static class Program
         {
             Matcher.Rule = (f,id,roi) => id == TemplateId.StorageLimitDialogAnchor
                 ? Found(100,200,200,100)
-                : id == TemplateId.StorageLimitConfirmButton ? Found(300,400,80,40)
+                : id == TemplateId.StorageLimitCancelButton ? Found(300,400,80,40)
                 : ImageMatchResult.NotFound();
             Service = new StorageLimitDialogService(Client, Detector, Registry, Matcher,
                 new StorageLimitDialogOptions { PollIntervalMs=50, TransitionTimeoutSeconds=1,
                     MaxActionAttempts=1, ActionRetryDelayMs=0,
-                    Policy=StorageLimitPolicy.ConfirmAndSwitchResource }, new FakeLogger());
+                    Policy=StorageLimitPolicy.CancelAndSwitchResource }, new FakeLogger());
         }
         public StorageLimitDialogResult Execute() => Service.HandleAsync("LDPlayer",
-            StorageLimitPolicy.ConfirmAndSwitchResource, new CancellationToken(false)).GetAwaiter().GetResult();
+            StorageLimitPolicy.CancelAndSwitchResource, new CancellationToken(false)).GetAwaiter().GetResult();
     }
     private sealed class FakeLogger:IDiagnosticLogger { public void Info(string m){} public void Error(string m,Exception e){} }
 }

@@ -185,8 +185,8 @@ namespace ADB_Tool_Automation_Post_FB.Infrastructure.Workflows
                     if (dispatched.Outcome == DispatchMarchOutcome.StorageLimitResourceSwitchRequired)
                     {
                         attempt.StorageLimitDetected = dispatched.StorageLimitDialogDetected;
-                        attempt.StorageLimitConfirmed = dispatched.StorageLimitConfirmed;
-                        attempt.MarkedStorageFull = dispatched.StorageLimitConfirmed;
+                        attempt.StorageLimitConfirmed = dispatched.StorageLimitCancelled;
+                        attempt.MarkedStorageFull = dispatched.StorageLimitCancelled;
                         attempt.RecoverySucceeded = dispatched.StorageLimitResult != null
                             && (dispatched.StorageLimitResult.ReturnedToWorldMap
                             || dispatched.StorageLimitResult.ReturnedToSearchPanel);

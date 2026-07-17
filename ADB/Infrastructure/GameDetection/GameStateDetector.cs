@@ -19,7 +19,7 @@ namespace ADB_Tool_Automation_Post_FB.Infrastructure.GameDetection
         private static readonly TemplateId[] DetectionTemplates =
         {
             TemplateId.StorageLimitDialogAnchor,
-            TemplateId.StorageLimitConfirmButton,
+            TemplateId.StorageLimitCancelButton,
             TemplateId.TeamSelectionPanelAnchor,
             TemplateId.TeamAdjustFormationButton,
             TemplateId.TeamActionButtonEnabled,
@@ -178,7 +178,7 @@ namespace ADB_Tool_Automation_Post_FB.Infrastructure.GameDetection
 
             GameDetectionEvidence panelAnchor = FindEvidence(evidence, TemplateId.ResourceSearchPanelAnchor);
             GameDetectionEvidence storageDialog = FindEvidence(evidence, TemplateId.StorageLimitDialogAnchor);
-            GameDetectionEvidence storageConfirm = FindEvidence(evidence, TemplateId.StorageLimitConfirmButton);
+            GameDetectionEvidence storageCancel = FindEvidence(evidence, TemplateId.StorageLimitCancelButton);
             GameDetectionEvidence teamPanel = FindEvidence(evidence, TemplateId.TeamSelectionPanelAnchor);
             GameDetectionEvidence teamAdjust = FindEvidence(evidence, TemplateId.TeamAdjustFormationButton);
             GameDetectionEvidence teamAction = FindEvidence(evidence, TemplateId.TeamActionButtonEnabled);
@@ -198,7 +198,7 @@ namespace ADB_Tool_Automation_Post_FB.Infrastructure.GameDetection
                 + (popupIron.Found ? 1 : 0) + (gatherButton.Found ? 1 : 0);
             bool popupConfirmed = popupSignals >= 2 && (popupAnchor.Found || popupIron.Found);
             bool teamSelectionConfirmed = teamPanel.Found && (teamAdjust.Found || teamAction.Found);
-            bool storageLimitConfirmed = storageDialog.Found && storageConfirm.Found;
+            bool storageLimitConfirmed = storageDialog.Found && storageCancel.Found;
             GameState state = storageLimitConfirmed
                 ? GameState.StorageLimitDialog
                 : teamSelectionConfirmed
@@ -214,11 +214,11 @@ namespace ADB_Tool_Automation_Post_FB.Infrastructure.GameDetection
                     : " Rule TeamSelection satisfied with a team action control."
                 : " Rule TeamSelection requires the panel anchor and an Adjust Formation or Team Action button.";
             storageDialog.Message += storageLimitConfirmed
-                ? " Rule StorageLimitDialog satisfied with a fresh Confirm button signal."
-                : " Rule StorageLimitDialog requires dialog and Confirm button anchors.";
-            storageConfirm.Message += storageLimitConfirmed
+                ? " Rule StorageLimitDialog satisfied with a fresh Cancel button signal."
+                : " Rule StorageLimitDialog requires dialog and Cancel button anchors.";
+            storageCancel.Message += storageLimitConfirmed
                 ? " StorageLimitDialog has highest state priority."
-                : " Confirm button alone does not identify StorageLimitDialog.";
+                : " Cancel button alone does not identify StorageLimitDialog.";
             teamAdjust.Message += teamSelectionConfirmed && teamAdjust.Found
                 ? " Adjust Formation contributed TeamSelection evidence."
                 : " Adjust Formation alone does not confirm TeamSelection.";
@@ -311,7 +311,9 @@ namespace ADB_Tool_Automation_Post_FB.Infrastructure.GameDetection
             try
             {
                 byte[] template = templateRegistry.LoadBytes(templateId);
-                ImageRegion? searchRegion = IsTeamSelectionTemplate(templateId)
+                ImageRegion? searchRegion = IsStorageLimitTemplate(templateId)
+                    ? options.StorageLimitDialogRegion
+                    : IsTeamSelectionTemplate(templateId)
                     ? options.TeamSelectionRegion
                     : IsPopupTemplate(templateId)
                     ? options.ResourcePopupRegion
@@ -359,6 +361,10 @@ namespace ADB_Tool_Automation_Post_FB.Infrastructure.GameDetection
             id == TemplateId.ResourcePopupInfoAnchor
             || id == TemplateId.ResourcePopupIronTitle
             || id == TemplateId.GatherButtonEnabled;
+
+        private static bool IsStorageLimitTemplate(TemplateId id) =>
+            id == TemplateId.StorageLimitDialogAnchor
+            || id == TemplateId.StorageLimitCancelButton;
 
         private static bool IsTeamSelectionTemplate(TemplateId id) =>
             id == TemplateId.TeamSelectionPanelAnchor
