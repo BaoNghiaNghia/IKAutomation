@@ -2,6 +2,7 @@ using ADB_Tool_Automation_Post_FB.Core.Abstractions;
 using ADB_Tool_Automation_Post_FB.Core.Diagnostics;
 using ADB_Tool_Automation_Post_FB.Core.GameDetection;
 using ADB_Tool_Automation_Post_FB.Core.ResourcePopup;
+using ADB_Tool_Automation_Post_FB.Core.ResourceSearch;
 using ADB_Tool_Automation_Post_FB.Core.Vision;
 using ADB_Tool_Automation_Post_FB.Infrastructure.ResourcePopup;
 using System;
@@ -37,6 +38,8 @@ namespace IKAutomation.ResourcePopup.Tests
             Run("Diagnostic path is sanitized and unique", DiagnosticPathSafe);
             Run("Day and night pixels do not change popup rule", DayNightSafe);
             Run("Initial and final state are returned", StatesReturned);
+            Run("Stone popup uses Stone title", StonePopupReady);
+            Run("Missing Stone title fails before capture", MissingStoneTitleFails);
             Console.WriteLine($"Resource popup tests: {passed} passed, {failed} failed.");
             return failed == 0 ? 0 : 1;
         }
@@ -80,6 +83,23 @@ namespace IKAutomation.ResourcePopup.Tests
         { Fixture day = Setup(TemplateId.ResourcePopupInfoAnchor, TemplateId.ResourcePopupIronTitle, TemplateId.GatherButtonEnabled); day.Client.Screenshot = Png(Color.SandyBrown); Fixture night = Setup(TemplateId.ResourcePopupInfoAnchor, TemplateId.ResourcePopupIronTitle, TemplateId.GatherButtonEnabled); night.Client.Screenshot = Png(Color.FromArgb(25, 25, 35)); Equal(Run(day).Outcome, Run(night).Outcome); }
         private static void StatesReturned()
         { Fixture f = Setup(TemplateId.ResourcePopupInfoAnchor, TemplateId.ResourcePopupIronTitle, TemplateId.GatherButtonEnabled); f.Detector.State = GameState.ResourcePopup; var r = Run(f); Equal(GameState.ResourcePopup, r.InitialState); Equal(GameState.ResourcePopup, r.FinalState); }
+        private static void StonePopupReady()
+        {
+            Fixture f = Setup(TemplateId.ResourcePopupInfoAnchor, TemplateId.ResourcePopupStoneTitle, TemplateId.GatherButtonEnabled);
+            var result = ((IResourceAwarePopupVerificationService)f.Service)
+                .VerifyAsync("LDPlayer", ResourceType.Stone, Token).GetAwaiter().GetResult();
+            Equal(ResourcePopupOutcome.ResourcePopupReady, result.Outcome);
+            Assert(result.ResourceVerified && result.ResourceType == ResourceType.Stone, result.Message);
+        }
+        private static void MissingStoneTitleFails()
+        {
+            Fixture f = Setup(); f.Registry.Missing = TemplateId.ResourcePopupStoneTitle;
+            var result = ((IResourceAwarePopupVerificationService)f.Service)
+                .VerifyAsync("LDPlayer", ResourceType.Stone, Token).GetAwaiter().GetResult();
+            Equal(ResourcePopupOutcome.Failed, result.Outcome);
+            Assert(result.ErrorMessage.Contains("ResourcePopupStoneTitle"), result.ErrorMessage);
+            Equal(0, f.Client.Captures);
+        }
 
         private static Fixture Setup(params TemplateId[] matches) => Setup(matches, 1);
         private static Fixture Setup(TemplateId a, TemplateId b, TemplateId c, int readyFrames)

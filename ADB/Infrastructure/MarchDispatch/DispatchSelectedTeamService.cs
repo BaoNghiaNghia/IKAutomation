@@ -4,6 +4,7 @@ using ADB_Tool_Automation_Post_FB.Core.Diagnostics;
 using ADB_Tool_Automation_Post_FB.Core.GameDetection;
 using ADB_Tool_Automation_Post_FB.Core.MarchDispatch;
 using ADB_Tool_Automation_Post_FB.Core.TeamSelection;
+using ADB_Tool_Automation_Post_FB.Core.StorageLimit;
 using ADB_Tool_Automation_Post_FB.Core.Vision;
 using System;
 using System.Collections.Generic;
@@ -33,12 +34,23 @@ namespace ADB_Tool_Automation_Post_FB.Infrastructure.MarchDispatch
         private readonly DispatchSelectedTeamOptions options;
         private readonly IDispatchMarchDiagnosticStore diagnosticStore;
         private readonly IDiagnosticLogger logger;
+        private readonly IStorageLimitDialogService storageLimitDialog;
 
         public DispatchSelectedTeamService(IGameStateDetector detector, ILdPlayerClient client,
             ITemplateRegistry registry, IImageMatcher matcher, IFrameStabilityDetector frameComparer,
             IDeviceOperationLock operationLock, FarmTeamSelectionOptions teamOptions,
             DispatchSelectedTeamOptions options, IDispatchMarchDiagnosticStore diagnosticStore,
             IDiagnosticLogger logger)
+            : this(detector, client, registry, matcher, frameComparer, operationLock,
+                teamOptions, options, diagnosticStore, logger, null)
+        {
+        }
+
+        public DispatchSelectedTeamService(IGameStateDetector detector, ILdPlayerClient client,
+            ITemplateRegistry registry, IImageMatcher matcher, IFrameStabilityDetector frameComparer,
+            IDeviceOperationLock operationLock, FarmTeamSelectionOptions teamOptions,
+            DispatchSelectedTeamOptions options, IDispatchMarchDiagnosticStore diagnosticStore,
+            IDiagnosticLogger logger, IStorageLimitDialogService storageLimitDialog)
         {
             this.detector = detector ?? throw new ArgumentNullException(nameof(detector));
             this.client = client ?? throw new ArgumentNullException(nameof(client));
@@ -50,6 +62,7 @@ namespace ADB_Tool_Automation_Post_FB.Infrastructure.MarchDispatch
             this.options = options ?? throw new ArgumentNullException(nameof(options));
             this.diagnosticStore = diagnosticStore ?? throw new ArgumentNullException(nameof(diagnosticStore));
             this.logger = logger ?? throw new ArgumentNullException(nameof(logger));
+            this.storageLimitDialog = storageLimitDialog;
         }
 
         public async Task<DispatchMarchResult> DispatchAsync(string deviceName,
@@ -147,6 +160,34 @@ namespace ADB_Tool_Automation_Post_FB.Infrastructure.MarchDispatch
                     lastFrame = await client.CaptureScreenshotPngAsync(deviceName, cancellationToken);
                     GameDetectionResult state = detector.Detect(lastFrame);
                     result.FinalState = state.State;
+                    if (state.State == GameState.StorageLimitDialog)
+                    {
+                        result.StorageLimitDialogDetected = true;
+                        if (storageLimitDialog == null)
+                            return Complete(result, DispatchMarchOutcome.Failed,
+                                "StorageLimitDialog was detected but no dialog handler is configured.",
+                                "IStorageLimitDialogService is required.", watch);
+                        StorageLimitDialogResult handled = await storageLimitDialog.HandleAsync(
+                            deviceName, StorageLimitPolicy.ConfirmAndSwitchResource, cancellationToken);
+                        result.StorageLimitResult = handled;
+                        result.FinalState = handled.StateAfterConfirmation;
+                        if (handled.Outcome == StorageLimitDialogOutcome.Cancelled)
+                            throw new OperationCanceledException(cancellationToken);
+                        if (handled.Outcome == StorageLimitDialogOutcome.ConfirmedForResourceSwitch)
+                        {
+                            result.StorageLimitConfirmed = true;
+                            result.ResourceSwitchRequired = true;
+                            result.StorageFullResource = request.CurrentResource;
+                            result.DispatchedTeam = null;
+                            result.MarchStartedVerified = false;
+                            return Complete(result,
+                                DispatchMarchOutcome.StorageLimitResourceSwitchRequired,
+                                $"Storage for {request.CurrentResource} is full; switch to the next resource.",
+                                handled.ErrorMessage, watch);
+                        }
+                        return Complete(result, DispatchMarchOutcome.Failed,
+                            handled.Message, handled.ErrorMessage, watch);
+                    }
                     MarchDispatchObservation observation = Observe(lastFrame, beforeDispatch,
                         state, request, badgeId, teamRegion);
                     observations.Add(observation);

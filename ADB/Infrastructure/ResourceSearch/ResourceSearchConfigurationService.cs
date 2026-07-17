@@ -23,7 +23,6 @@ namespace ADB_Tool_Automation_Post_FB.Infrastructure.ResourceSearch
         {
             TemplateId.ResourceSearchPanelAnchor, TemplateId.SearchButtonEnabled,
             TemplateId.ResourceTabSelected, TemplateId.ResourceTabUnselected,
-            TemplateId.ResourceIronSelected, TemplateId.ResourceIronUnselected,
             TemplateId.LevelMinusButton, TemplateId.LevelPlusButton,
             TemplateId.UnoccupiedFilterChecked, TemplateId.UnoccupiedFilterUnchecked
         };
@@ -64,7 +63,7 @@ namespace ADB_Tool_Automation_Post_FB.Infrastructure.ResourceSearch
             if (validationError != null)
                 return Task.FromResult(InvalidResult(request, validationError));
 
-            string templateError = ValidateTemplates(request.TargetLevel);
+            string templateError = ValidateTemplates(request.ResourceType, request.TargetLevel);
             if (templateError != null)
                 return Task.FromResult(InvalidResult(request, templateError));
 
@@ -106,7 +105,7 @@ namespace ADB_Tool_Automation_Post_FB.Infrastructure.ResourceSearch
                 if (!await EnsureResourceTabAsync(deviceName, result, steps, cancellationToken))
                     return Complete(result, watch, "Resource search tab could not be selected.", LastError(steps));
                 if (!await ConfigureResourceAsync(deviceName, result, steps, cancellationToken))
-                    return Complete(result, watch, "Iron selection failed.", LastError(steps));
+                    return Complete(result, watch, $"{request.ResourceType} selection failed.", LastError(steps));
                 if (!await ConfigureLevelAsync(deviceName, result, steps, cancellationToken))
                     return Complete(result, watch, "Level configuration failed.", LastError(steps));
                 if (!await ConfigureFilterAsync(deviceName, request.UnoccupiedOnly, result, steps, cancellationToken))
@@ -115,7 +114,7 @@ namespace ADB_Tool_Automation_Post_FB.Infrastructure.ResourceSearch
                     return Complete(result, watch, "Final configuration verification failed.", LastError(steps));
 
                 result.Success = true;
-                return Complete(result, watch, $"Iron level {request.TargetLevel} search criteria verified; Search was not pressed.", null);
+                return Complete(result, watch, $"{request.ResourceType} level {request.TargetLevel} search criteria verified; Search was not pressed.", null);
             }
             catch (OperationCanceledException)
             {
@@ -171,41 +170,41 @@ namespace ADB_Tool_Automation_Post_FB.Infrastructure.ResourceSearch
             {
                 byte[] screenshot = await ldPlayerClient.CaptureScreenshotPngAsync(deviceName, cancellationToken);
                 ConfigurationTemplateEvidence search = Match(screenshot, TemplateId.SearchButtonEnabled);
-                ConfigurationTemplateEvidence selected = MatchResourceState(
-                    screenshot, TemplateId.ResourceIronSelected, search);
-                ConfigurationTemplateEvidence unselected = MatchResourceState(
-                    screenshot, TemplateId.ResourceIronUnselected, search);
+                TemplateId selectedId = ResourceTemplateMap.Selected(result.RequestedResource);
+                TemplateId unselectedId = ResourceTemplateMap.Unselected(result.RequestedResource);
+                ConfigurationTemplateEvidence selected = MatchResourceState(screenshot, selectedId, search);
+                ConfigurationTemplateEvidence unselected = MatchResourceState(screenshot, unselectedId, search);
                 evidence.Add(selected); evidence.Add(unselected);
                 if (selected.Found)
                 {
                     string message = unselected.Found
-                        ? "Iron selected verified; unselected also matched and was ignored as ambiguous evidence."
-                        : "Iron selected verified without input.";
+                        ? $"{result.RequestedResource} selected verified; unselected also matched and was ignored as ambiguous evidence."
+                        : $"{result.RequestedResource} selected verified without input.";
                     result.ResourceVerified = true;
-                    AddStep(steps, "SelectIron", true, attempt, evidence, message, null);
+                    AddStep(steps, "SelectResource", true, attempt, evidence, message, null);
                     return true;
                 }
                 if (!HasBounds(unselected))
                 {
-                    AddStep(steps, "SelectIron", false, attempt, evidence,
-                        "Iron unselected template was not found with valid bounds; no Tap was sent.", null);
+                    AddStep(steps, "SelectResource", false, attempt, evidence,
+                        $"{result.RequestedResource} unselected template was not found with valid bounds; no Tap was sent.", null);
                     return false;
                 }
 
-                await TapAsync(deviceName, unselected, "SelectIron", result, cancellationToken);
+                await TapAsync(deviceName, unselected, "SelectResource", result, cancellationToken);
                 ConfigurationTemplateEvidence verified = await PollForResourceStateAsync(
-                    deviceName, TemplateId.ResourceIronSelected, search, cancellationToken);
+                    deviceName, selectedId, search, cancellationToken);
                 evidence.Add(verified);
                 if (verified.Found)
                 {
                     result.ResourceVerified = true;
-                    AddStep(steps, "SelectIron", true, attempt, evidence,
-                        "Iron selected template verified after Tap.", null);
+                    AddStep(steps, "SelectResource", true, attempt, evidence,
+                        $"{result.RequestedResource} selected template verified after Tap.", null);
                     return true;
                 }
             }
-            AddStep(steps, "SelectIron", false, options.MaxSelectionAttempts, evidence,
-                "Iron selected template was not verified before the attempt limit.", null);
+            AddStep(steps, "SelectResource", false, options.MaxSelectionAttempts, evidence,
+                $"{result.RequestedResource} selected template was not verified before the attempt limit.", null);
             return false;
         }
 
@@ -354,7 +353,7 @@ namespace ADB_Tool_Automation_Post_FB.Infrastructure.ResourceSearch
             var evidence = new List<ConfigurationTemplateEvidence>
             {
                 Match(screenshot, TemplateId.ResourceTabSelected),
-                MatchResourceState(screenshot, TemplateId.ResourceIronSelected, search),
+                MatchResourceState(screenshot, ResourceTemplateMap.Selected(request.ResourceType), search),
                 MatchLevel(screenshot, GetLevelTemplateId(request.TargetLevel), minus, plus),
                 MatchFilterState(screenshot, request.UnoccupiedOnly
                     ? TemplateId.UnoccupiedFilterChecked : TemplateId.UnoccupiedFilterUnchecked, search),
@@ -705,8 +704,8 @@ namespace ADB_Tool_Automation_Post_FB.Infrastructure.ResourceSearch
         private string ValidateRequest(ResourceSearchConfigurationRequest request)
         {
             if (request == null) return "ResourceSearchConfigurationRequest is required.";
-            if (request.ResourceType != ResourceType.Iron)
-                return $"Resource type '{request.ResourceType}' is not supported; only Iron is supported.";
+            if (request.ResourceType != ResourceType.Iron && request.ResourceType != ResourceType.Stone)
+                return $"Resource type '{request.ResourceType}' is not supported.";
             if (request.TargetLevel < options.MinimumLevel || request.TargetLevel > options.MaximumLevel)
                 return $"TargetLevel must be between {options.MinimumLevel} and {options.MaximumLevel}.";
             if (request.TargetLevel != 5 && request.TargetLevel != 6 && request.TargetLevel != 7)
@@ -714,9 +713,13 @@ namespace ADB_Tool_Automation_Post_FB.Infrastructure.ResourceSearch
             return null;
         }
 
-        private string ValidateTemplates(int targetLevel)
+        private string ValidateTemplates(ResourceType resourceType, int targetLevel)
         {
-            foreach (TemplateId templateId in RequiredTemplates.Concat(new[] { GetLevelTemplateId(targetLevel) }))
+            foreach (TemplateId templateId in RequiredTemplates.Concat(new[]
+            {
+                ResourceTemplateMap.Selected(resourceType), ResourceTemplateMap.Unselected(resourceType),
+                GetLevelTemplateId(targetLevel)
+            }))
             {
                 try
                 {

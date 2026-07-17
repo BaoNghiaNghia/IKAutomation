@@ -119,6 +119,13 @@
     <Compile Include="Core\ResourceSearch\ResourceSearchObservation.cs" />
     <Compile Include="Core\ResourceSearch\ResourceSearchOutcome.cs" />
     <Compile Include="Core\ResourceSearch\ResourceType.cs" />
+    <Compile Include="Core\ResourceSearch\ResourceTemplateMap.cs" />
+    <Compile Include="Core\ResourcePopup\IResourceAwarePopupVerificationService.cs" />
+    <Compile Include="Core\StorageLimit\IStorageLimitDialogService.cs" />
+    <Compile Include="Core\StorageLimit\StorageLimitDialogOptions.cs" />
+    <Compile Include="Core\StorageLimit\StorageLimitDialogOutcome.cs" />
+    <Compile Include="Core\StorageLimit\StorageLimitDialogResult.cs" />
+    <Compile Include="Core\StorageLimit\StorageLimitPolicy.cs" />
     <Compile Include="Core\MarchDispatch\DispatchMarchOutcome.cs" />
     <Compile Include="Core\MarchDispatch\DispatchMarchRequest.cs" />
     <Compile Include="Core\MarchDispatch\DispatchMarchResult.cs" />
@@ -156,6 +163,8 @@
     <Compile Include="Core\Workflows\OneShotFarmStep.cs" />
     <Compile Include="Core\Workflows\OneShotFarmStepResult.cs" />
     <Compile Include="Core\Workflows\OneShotFarmWorkflowOptions.cs" />
+    <Compile Include="Core\Workflows\ResourceFarmFallbackResult.cs" />
+    <Compile Include="Core\Workflows\ResourceFarmFallbackOptions.cs" />
     <Compile Include="Exceptions\TaskExepction.cs" />
     <Compile Include="Helpers\BitmapHelper.cs" />
     <Compile Include="Helpers\Delay.cs" />
@@ -201,6 +210,8 @@
     <Compile Include="Infrastructure\MarchDispatch\DispatchMarchDiagnosticStore.cs" />
     <Compile Include="Infrastructure\MarchDispatch\DispatchSelectedTeamService.cs" />
     <Compile Include="Infrastructure\MarchDispatch\DispatchSelectedTeamServiceFactory.cs" />
+    <Compile Include="Infrastructure\StorageLimit\AppConfigStorageLimitDialogOptionsProvider.cs" />
+    <Compile Include="Infrastructure\StorageLimit\StorageLimitDialogService.cs" />
     <Compile Include="Infrastructure\TeamSelection\AppConfigOpenTeamSelectionOptionsProvider.cs" />
     <Compile Include="Infrastructure\TeamSelection\AppConfigFarmTeamSelectionOptionsProvider.cs" />
     <Compile Include="Infrastructure\TeamSelection\OpenTeamSelectionDiagnosticStore.cs" />
@@ -214,6 +225,7 @@
     <Compile Include="Infrastructure\Vision\TemplateMatchDiagnosticService.cs" />
     <Compile Include="Infrastructure\Vision\TemplateRegistry.cs" />
     <Compile Include="Infrastructure\Workflows\AppConfigOneShotFarmWorkflowOptionsProvider.cs" />
+    <Compile Include="Infrastructure\Workflows\AppConfigResourceFarmFallbackOptionsProvider.cs" />
     <Compile Include="Infrastructure\Workflows\OneShotFarmDiagnosticService.cs" />
     <Compile Include="Infrastructure\Workflows\OneShotFarmWorkflow.cs" />
     <Compile Include="Infrastructure\Workflows\OneShotFarmWorkflowFactory.cs" />

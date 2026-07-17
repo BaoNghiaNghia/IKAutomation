@@ -10,10 +10,13 @@
     <Compile Include="..\..\ADB\Core\Diagnostics\IDiagnosticLogger.cs" Link="Production\IDiagnosticLogger.cs" />
     <Compile Include="..\..\ADB\Core\GameDetection\*.cs" Link="Production\GameDetection\%(Filename)%(Extension)" />
     <Compile Include="..\..\ADB\Core\MarchDispatch\*.cs" Link="Production\MarchDispatch\%(Filename)%(Extension)" />
+    <Compile Include="..\..\ADB\Core\ResourceSearch\ResourceType.cs" Link="Production\ResourceSearch\ResourceType.cs" />
+    <Compile Include="..\..\ADB\Core\StorageLimit\*.cs" Link="Production\StorageLimit\%(Filename)%(Extension)" />
     <Compile Include="..\..\ADB\Core\TeamSelection\FarmTeamSelectionOptions.cs" Link="Production\FarmTeamSelectionOptions.cs" />
     <Compile Include="..\..\ADB\Core\TeamSelection\TeamNumber.cs" Link="Production\TeamNumber.cs" />
     <Compile Include="..\..\ADB\Core\Vision\*.cs" Link="Production\Vision\%(Filename)%(Extension)" />
     <Compile Include="..\..\ADB\Infrastructure\Concurrency\DeviceOperationLock.cs" Link="Production\DeviceOperationLock.cs" />
     <Compile Include="..\..\ADB\Infrastructure\MarchDispatch\DispatchSelectedTeamService.cs" Link="Production\DispatchSelectedTeamService.cs" />
+    <Compile Include="..\..\ADB\Infrastructure\StorageLimit\StorageLimitDialogService.cs" Link="Production\StorageLimitDialogService.cs" />
   </ItemGroup>
 </Project>

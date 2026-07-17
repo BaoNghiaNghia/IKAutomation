@@ -29,7 +29,8 @@ namespace ADB_Tool_Automation_Post_FB.Infrastructure.Workflows
                 SelectFarmTeamServiceFactory.CreateFromAppConfig(),
                 DispatchSelectedTeamServiceFactory.CreateFromAppConfig(), detector,
                 DeviceOperationLock.Shared, workflowOptions,
-                new OneShotFarmDiagnosticService(client, workflowOptions.ScreenshotDirectory), logger);
+                new OneShotFarmDiagnosticService(client, workflowOptions.ScreenshotDirectory), logger,
+                AppConfigResourceFarmFallbackOptionsProvider.Load());
         }
     }
 }

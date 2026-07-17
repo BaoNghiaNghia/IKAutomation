@@ -18,6 +18,8 @@ namespace ADB_Tool_Automation_Post_FB.Infrastructure.GameDetection
     {
         private static readonly TemplateId[] DetectionTemplates =
         {
+            TemplateId.StorageLimitDialogAnchor,
+            TemplateId.StorageLimitConfirmButton,
             TemplateId.TeamSelectionPanelAnchor,
             TemplateId.TeamAdjustFormationButton,
             TemplateId.TeamActionButtonEnabled,
@@ -175,6 +177,8 @@ namespace ADB_Tool_Automation_Post_FB.Infrastructure.GameDetection
             }
 
             GameDetectionEvidence panelAnchor = FindEvidence(evidence, TemplateId.ResourceSearchPanelAnchor);
+            GameDetectionEvidence storageDialog = FindEvidence(evidence, TemplateId.StorageLimitDialogAnchor);
+            GameDetectionEvidence storageConfirm = FindEvidence(evidence, TemplateId.StorageLimitConfirmButton);
             GameDetectionEvidence teamPanel = FindEvidence(evidence, TemplateId.TeamSelectionPanelAnchor);
             GameDetectionEvidence teamAdjust = FindEvidence(evidence, TemplateId.TeamAdjustFormationButton);
             GameDetectionEvidence teamAction = FindEvidence(evidence, TemplateId.TeamActionButtonEnabled);
@@ -194,7 +198,10 @@ namespace ADB_Tool_Automation_Post_FB.Infrastructure.GameDetection
                 + (popupIron.Found ? 1 : 0) + (gatherButton.Found ? 1 : 0);
             bool popupConfirmed = popupSignals >= 2 && (popupAnchor.Found || popupIron.Found);
             bool teamSelectionConfirmed = teamPanel.Found && (teamAdjust.Found || teamAction.Found);
-            GameState state = teamSelectionConfirmed
+            bool storageLimitConfirmed = storageDialog.Found && storageConfirm.Found;
+            GameState state = storageLimitConfirmed
+                ? GameState.StorageLimitDialog
+                : teamSelectionConfirmed
                 ? GameState.TeamSelection
                 : panelConfirmed ? GameState.ResourceSearchPanel
                 : popupConfirmed ? GameState.ResourcePopup
@@ -202,8 +209,16 @@ namespace ADB_Tool_Automation_Post_FB.Infrastructure.GameDetection
                         : worldAnchor.Found ? GameState.WorldMap : GameState.Unknown;
 
             teamPanel.Message += teamSelectionConfirmed
-                ? " Rule TeamSelection satisfied with a team action control."
+                ? storageLimitConfirmed
+                    ? " StorageLimitDialog has priority over TeamSelection."
+                    : " Rule TeamSelection satisfied with a team action control."
                 : " Rule TeamSelection requires the panel anchor and an Adjust Formation or Team Action button.";
+            storageDialog.Message += storageLimitConfirmed
+                ? " Rule StorageLimitDialog satisfied with a fresh Confirm button signal."
+                : " Rule StorageLimitDialog requires dialog and Confirm button anchors.";
+            storageConfirm.Message += storageLimitConfirmed
+                ? " StorageLimitDialog has highest state priority."
+                : " Confirm button alone does not identify StorageLimitDialog.";
             teamAdjust.Message += teamSelectionConfirmed && teamAdjust.Found
                 ? " Adjust Formation contributed TeamSelection evidence."
                 : " Adjust Formation alone does not confirm TeamSelection.";

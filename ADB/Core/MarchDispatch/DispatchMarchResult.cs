@@ -1,5 +1,7 @@
 using ADB_Tool_Automation_Post_FB.Core.GameDetection;
 using ADB_Tool_Automation_Post_FB.Core.TeamSelection;
+using ADB_Tool_Automation_Post_FB.Core.ResourceSearch;
+using ADB_Tool_Automation_Post_FB.Core.StorageLimit;
 using System;
 using System.Collections.Generic;
 
@@ -23,6 +25,11 @@ namespace ADB_Tool_Automation_Post_FB.Core.MarchDispatch
         public bool BusyStatusVerified { get; set; }
         public bool MarchTimerVerified { get; set; }
         public bool MarchStartedVerified { get; set; }
+        public bool StorageLimitDialogDetected { get; set; }
+        public bool StorageLimitConfirmed { get; set; }
+        public bool ResourceSwitchRequired { get; set; }
+        public ResourceType? StorageFullResource { get; set; }
+        public StorageLimitDialogResult StorageLimitResult { get; set; }
         public double? TeamRegionDifference { get; set; }
         public int ActionTapCount { get; set; }
         public int ObservedFrameCount { get; set; }

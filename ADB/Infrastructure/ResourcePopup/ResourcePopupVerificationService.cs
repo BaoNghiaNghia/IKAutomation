@@ -3,6 +3,7 @@ using ADB_Tool_Automation_Post_FB.Core.Diagnostics;
 using ADB_Tool_Automation_Post_FB.Core.GameDetection;
 using ADB_Tool_Automation_Post_FB.Core.ResourcePopup;
 using ADB_Tool_Automation_Post_FB.Core.Vision;
+using ADB_Tool_Automation_Post_FB.Core.ResourceSearch;
 using System;
 using System.Collections.Generic;
 using System.Diagnostics;
@@ -11,12 +12,11 @@ using System.Threading.Tasks;
 
 namespace ADB_Tool_Automation_Post_FB.Infrastructure.ResourcePopup
 {
-    public sealed class ResourcePopupVerificationService : IResourcePopupVerificationService
+    public sealed class ResourcePopupVerificationService : IResourceAwarePopupVerificationService
     {
         private static readonly TemplateId[] RequiredTemplates =
         {
             TemplateId.ResourcePopupInfoAnchor,
-            TemplateId.ResourcePopupIronTitle,
             TemplateId.GatherButtonEnabled
         };
 
@@ -44,8 +44,14 @@ namespace ADB_Tool_Automation_Post_FB.Infrastructure.ResourcePopup
         public async Task<ResourcePopupVerificationResult> VerifyAsync(
             string deviceName, CancellationToken cancellationToken)
         {
+            return await VerifyAsync(deviceName, ResourceType.Iron, cancellationToken);
+        }
+
+        public async Task<ResourcePopupVerificationResult> VerifyAsync(
+            string deviceName, ResourceType resourceType, CancellationToken cancellationToken)
+        {
             var watch = Stopwatch.StartNew();
-            var result = NewResult();
+            var result = NewResult(resourceType);
             byte[] lastFrame = null;
             try
             {
@@ -53,7 +59,7 @@ namespace ADB_Tool_Automation_Post_FB.Infrastructure.ResourcePopup
                 if (string.IsNullOrWhiteSpace(deviceName))
                     return Complete(result, ResourcePopupOutcome.Failed, watch,
                         "LDPlayer device name is required.", "LDPlayer device name is required.");
-                string templateError = ValidateTemplates();
+                string templateError = ValidateTemplates(resourceType);
                 if (templateError != null)
                     return Complete(result, ResourcePopupOutcome.Failed, watch, templateError, templateError);
 
@@ -74,11 +80,12 @@ namespace ADB_Tool_Automation_Post_FB.Infrastructure.ResourcePopup
                     if (result.ObservedFrameCount == 1) result.InitialState = detection.State;
                     result.FinalState = detection.State;
                     GameDetectionEvidence anchor = Match(lastFrame, TemplateId.ResourcePopupInfoAnchor);
-                    GameDetectionEvidence iron = Match(lastFrame, TemplateId.ResourcePopupIronTitle);
+                    GameDetectionEvidence iron = Match(lastFrame, ResourceTemplateMap.PopupTitle(resourceType));
                     GameDetectionEvidence gather = Match(lastFrame, TemplateId.GatherButtonEnabled);
                     result.Evidence = new[] { anchor, iron, gather };
                     result.PopupAnchorVerified = anchor.Found;
                     result.IronResourceVerified = iron.Found;
+                    result.ResourceVerified = iron.Found;
                     result.GatherButtonVerified = gather.Found;
                     result.GatherButtonMatch = gather.MatchResult;
 
@@ -90,7 +97,7 @@ namespace ADB_Tool_Automation_Post_FB.Infrastructure.ResourcePopup
                     LogFrame(deviceName, result, anchor, iron, gather);
                     if (readyFrames >= options.RequiredConsecutiveReadyFrames)
                         return Complete(result, ResourcePopupOutcome.ResourcePopupReady, watch,
-                            "Iron resource popup and enabled Gather button were verified.", null);
+                            $"{resourceType} resource popup and enabled Gather button were verified.", null);
                     await Task.Delay(options.PollIntervalMs, cancellationToken);
                 }
 
@@ -98,7 +105,7 @@ namespace ADB_Tool_Automation_Post_FB.Infrastructure.ResourcePopup
                     ? ResourcePopupOutcome.ResourcePopupDetectedButNotReady
                     : ResourcePopupOutcome.ResourcePopupNotDetected;
                 string message = popupObserved
-                    ? "Resource popup was detected but Iron/Gather readiness was not fully verified."
+                    ? $"Resource popup was detected but {resourceType}/Gather readiness was not fully verified."
                     : "Resource popup was not detected before timeout.";
                 return await CompleteWithDiagnosticAsync(deviceName, result, outcome, watch,
                     message, null, lastFrame, cancellationToken);
@@ -131,9 +138,12 @@ namespace ADB_Tool_Automation_Post_FB.Infrastructure.ResourcePopup
             };
         }
 
-        private string ValidateTemplates()
+        private string ValidateTemplates(ResourceType resourceType)
         {
-            foreach (TemplateId id in RequiredTemplates)
+            foreach (TemplateId id in new List<TemplateId>(RequiredTemplates)
+            {
+                ResourceTemplateMap.PopupTitle(resourceType)
+            })
             {
                 try
                 {
@@ -193,9 +203,10 @@ namespace ADB_Tool_Automation_Post_FB.Infrastructure.ResourcePopup
             ? $"true:({evidence.MatchResult.X},{evidence.MatchResult.Y},{evidence.MatchResult.Width},{evidence.MatchResult.Height})"
             : "false";
 
-        private static ResourcePopupVerificationResult NewResult() => new ResourcePopupVerificationResult
+        private static ResourcePopupVerificationResult NewResult(ResourceType resourceType) => new ResourcePopupVerificationResult
         {
             Outcome = ResourcePopupOutcome.Failed,
+            ResourceType = resourceType,
             InitialState = GameState.Unknown,
             FinalState = GameState.Unknown,
             Evidence = new GameDetectionEvidence[0]

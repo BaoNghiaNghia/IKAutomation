@@ -60,6 +60,8 @@ namespace IKAutomation.ResourceSearch.Tests
             Run("Missing template fails without input", MissingTemplateNoInput);
             Run("Null request is rejected before input", NullRequestNoInput);
             Run("Ambiguous resource evidence prefers selected", AmbiguousPrefersSelected);
+            Run("Stone selected template is used", StoneSelectedTemplate);
+            Run("Missing Stone template prevents input", MissingStoneTemplateNoInput);
             Console.WriteLine($"Resource search tests: {passed} passed, {failed} failed.");
             return failed == 0 ? 0 : 1;
         }
@@ -309,6 +311,23 @@ namespace IKAutomation.ResourceSearch.Tests
         private static ResourceSearchConfigurationRequest Request() => new ResourceSearchConfigurationRequest
         { ResourceType = ResourceType.Iron, TargetLevel = 7, UnoccupiedOnly = true };
 
+        private static void StoneSelectedTemplate()
+        {
+            Fixture f = Setup(); f.Ui.ResourceSelected = true;
+            ResourceSearchConfigurationRequest request = Request(); request.ResourceType = ResourceType.Stone;
+            ResourceSearchConfigurationResult result = Execute(f, request);
+            Assert(result.Success && result.ResourceVerified, result.ErrorMessage);
+        }
+
+        private static void MissingStoneTemplateNoInput()
+        {
+            Fixture f = Setup(); f.Registry.Missing = TemplateId.ResourceStoneSelected;
+            ResourceSearchConfigurationRequest request = Request(); request.ResourceType = ResourceType.Stone;
+            ResourceSearchConfigurationResult result = Execute(f, request);
+            Assert(!result.Success && result.ErrorMessage.Contains("ResourceStoneSelected"), "missing Stone template");
+            Equal(0, f.Client.TotalInput, "input");
+        }
+
         private static ResourceSearchConfigurationResult Execute(Fixture fixture,
             ResourceSearchConfigurationRequest request = null, CancellationToken? token = null) =>
             fixture.Service.ConfigureAsync("LDPlayer", request ?? Request(), token ?? Token).GetAwaiter().GetResult();
@@ -375,10 +394,16 @@ namespace IKAutomation.ResourceSearch.Tests
                     case TemplateId.ResourceTabUnselected: return Found(!ui.ResourceTabSelected, 158, 648, 104, 52);
                     case TemplateId.ResourceIronSelected: return Found(ui.ResourceSelected
                         && (!ui.ResourceRequiresStableIcon || region.HasValue), 10, 10, 20, 30);
+                    case TemplateId.ResourceStoneSelected: return Found(ui.ResourceSelected
+                        && (!ui.ResourceRequiresStableIcon || region.HasValue), 40, 10, 20, 30);
                     case TemplateId.ResourceIronUnselected: return ui.InvalidResourceBounds
                         ? ImageMatchResult.FoundAt(10, 10, 0, 0)
                         : Found((!ui.ResourceSelected || ui.AmbiguousResource)
                             && (!ui.ResourceRequiresStableIcon || region.HasValue), 10, 10, 20, 30);
+                    case TemplateId.ResourceStoneUnselected: return ui.InvalidResourceBounds
+                        ? ImageMatchResult.FoundAt(40, 10, 0, 0)
+                        : Found((!ui.ResourceSelected || ui.AmbiguousResource)
+                            && (!ui.ResourceRequiresStableIcon || region.HasValue), 40, 10, 20, 30);
                     case TemplateId.LevelMinusButton: return ImageMatchResult.FoundAt(100, 100, 20, 20);
                     case TemplateId.LevelPlusButton: return ImageMatchResult.FoundAt(200, 100, 20, 20);
                     case TemplateId.LevelValue7: return Found(ui.Level == 7 && !ui.HideLevelValue

@@ -1,5 +1,6 @@
 using ADB_Tool_Automation_Post_FB.Core.GameDetection;
 using ADB_Tool_Automation_Post_FB.Core.Vision;
+using ADB_Tool_Automation_Post_FB.Core.ResourceSearch;
 using System;
 using System.Collections.Generic;
 
@@ -13,6 +14,8 @@ namespace ADB_Tool_Automation_Post_FB.Core.ResourcePopup
         public GameState FinalState { get; set; }
         public bool PopupAnchorVerified { get; set; }
         public bool IronResourceVerified { get; set; }
+        public bool ResourceVerified { get; set; }
+        public ResourceType ResourceType { get; set; }
         public bool GatherButtonVerified { get; set; }
         public ImageMatchResult GatherButtonMatch { get; set; }
         public int ObservedFrameCount { get; set; }

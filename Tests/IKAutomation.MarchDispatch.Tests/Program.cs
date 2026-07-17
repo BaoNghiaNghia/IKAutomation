@@ -5,8 +5,11 @@ using ADB_Tool_Automation_Post_FB.Core.GameDetection;
 using ADB_Tool_Automation_Post_FB.Core.MarchDispatch;
 using ADB_Tool_Automation_Post_FB.Core.TeamSelection;
 using ADB_Tool_Automation_Post_FB.Core.Vision;
+using ADB_Tool_Automation_Post_FB.Core.StorageLimit;
+using ADB_Tool_Automation_Post_FB.Core.ResourceSearch;
 using ADB_Tool_Automation_Post_FB.Infrastructure.Concurrency;
 using ADB_Tool_Automation_Post_FB.Infrastructure.MarchDispatch;
+using ADB_Tool_Automation_Post_FB.Infrastructure.StorageLimit;
 using System;
 using System.Collections.Generic;
 using System.Diagnostics;
@@ -68,6 +71,12 @@ internal static class Program
         Run("Matcher bounds stay in screenshot coordinates", ScreenshotCoordinates);
         Run("No full-screen image comparison", NoFullScreenComparison);
         Run("GameState has no MarchStarted value", NoMarchGameState);
+        Run("Storage limit requests resource switch", StorageLimitRequestsSwitch);
+        Run("Storage confirm uses fresh bounds center", StorageConfirmUsesCenter);
+        Run("Storage confirm returns WorldMap", StorageConfirmReturnsWorld);
+        Run("Storage confirm returns SearchPanel", StorageConfirmReturnsPanel);
+        Run("Storage transient Unknown sends no Back", StorageUnknownNoBack);
+        Run("Missing storage Confirm sends no input", StorageMissingConfirmNoInput);
         Console.WriteLine($"March dispatch tests: {passed} passed, {failed} failed.");
         return failed == 0 ? 0 : 1;
     }
@@ -126,6 +135,67 @@ internal static class Program
     private static void ScreenshotCoordinates() { var h=new Harness(); h.Matcher.ActionX=1000; Execute(h); Eq(1050,h.Client.Taps[0].Item1,"screen X"); }
     private static void NoFullScreenComparison() { var h=new Harness(); Execute(h); Is(h.Comparer.Regions.All(x=>x.HasValue),"full-screen comparison used"); }
     private static void NoMarchGameState() { Is(!Enum.GetNames(typeof(GameState)).Contains("MarchStarted"),"invalid GameState"); }
+    private static void StorageLimitRequestsSwitch()
+    {
+        var h = new Harness();
+        h.Detector.AfterState = GameState.StorageLimitDialog;
+        h.Storage.Result = new StorageLimitDialogResult
+        {
+            Outcome = StorageLimitDialogOutcome.ConfirmedForResourceSwitch,
+            Policy = StorageLimitPolicy.ConfirmAndSwitchResource,
+            DialogVerified = true, ConfirmButtonVerified = true, ActionTapCount = 1,
+            ModalClosed = true, ReturnedToWorldMap = true,
+            StateAfterConfirmation = GameState.WorldMap
+        };
+        h.Rebuild();
+        DispatchMarchResult result = Execute(h);
+        Eq(DispatchMarchOutcome.StorageLimitResourceSwitchRequired, result.Outcome, "outcome");
+        Is(result.StorageLimitDialogDetected, "dialog not recorded");
+        Is(result.StorageLimitConfirmed && result.ResourceSwitchRequired, "switch flags missing");
+        Eq((ResourceType?)ResourceType.Iron, result.StorageFullResource, "storage resource");
+        Eq<TeamNumber?>(null, result.DispatchedTeam, "team must not be dispatched");
+        Eq(1, result.ActionTapCount, "dispatch action must not retry");
+    }
+    private static StorageDialogHarness StorageHarness(GameState finalState)
+    {
+        var h = new StorageDialogHarness();
+        h.Detector.AsyncStates.Enqueue(finalState);
+        return h;
+    }
+    private static void StorageConfirmUsesCenter()
+    {
+        var h = StorageHarness(GameState.WorldMap); var result = h.Execute();
+        Eq((340,420), h.Client.Taps.Single(), "confirm center");
+        Eq(1, result.ActionTapCount, "confirm count");
+        Is(!h.Matcher.Calls.Any(x => x.id == TemplateId.StorageLimitCancelButton), "Cancel was matched or tapped");
+    }
+    private static void StorageConfirmReturnsWorld()
+    {
+        var result = StorageHarness(GameState.WorldMap).Execute();
+        Eq(StorageLimitDialogOutcome.ConfirmedForResourceSwitch, result.Outcome, "outcome");
+        Is(result.ModalClosed && result.ReturnedToWorldMap, "WorldMap flags");
+    }
+    private static void StorageConfirmReturnsPanel()
+    {
+        var result = StorageHarness(GameState.ResourceSearchPanel).Execute();
+        Eq(StorageLimitDialogOutcome.ConfirmedForResourceSwitch, result.Outcome, "outcome");
+        Is(result.ReturnedToSearchPanel, "panel flag");
+    }
+    private static void StorageUnknownNoBack()
+    {
+        var h = StorageHarness(GameState.Unknown); h.Detector.AsyncStates.Enqueue(GameState.WorldMap);
+        var result = h.Execute();
+        Eq(StorageLimitDialogOutcome.ConfirmedForResourceSwitch, result.Outcome, "outcome");
+        Eq(0, h.Client.BackCalls, "Unknown must not cause Back");
+    }
+    private static void StorageMissingConfirmNoInput()
+    {
+        var h = StorageHarness(GameState.WorldMap); h.Registry.Missing = TemplateId.StorageLimitConfirmButton;
+        var result = h.Execute();
+        Eq(StorageLimitDialogOutcome.ActionButtonUnavailable, result.Outcome, "outcome");
+        Eq(0, h.Client.Taps.Count, "Tap count");
+        Is(result.ErrorMessage.Contains("StorageLimitConfirmButton"), "missing TemplateId");
+    }
 
     private static Harness NoSuccessHarness() { var h=new Harness(); h.Options=h.CreateOptions(1,2); h.Comparer.Ratio=0; h.Rebuild(); return h; }
     private static Harness RetryHarness() { var h=NoSuccessHarness(); h.Matcher.PanelAfter=true; h.Matcher.WorldAfter=false; h.Matcher.SelectedAfter=true; h.Detector.AfterState=GameState.TeamSelection; return h; }
@@ -133,25 +203,27 @@ internal static class Program
 
     private sealed class Harness
     {
-        public FakeClient Client=new FakeClient(); public FakeDetector Detector=new FakeDetector(); public FakeRegistry Registry=new FakeRegistry(); public FakeMatcher Matcher=new FakeMatcher(); public FakeComparer Comparer=new FakeComparer(); public IDeviceOperationLock Lock=new ImmediateLock(); public FakeStore Store=new FakeStore(); public DispatchMarchRequest Request=new DispatchMarchRequest(); public DispatchSelectedTeamOptions Options; public DispatchSelectedTeamService Service;
+        public FakeClient Client=new FakeClient(); public FakeDetector Detector=new FakeDetector(); public FakeRegistry Registry=new FakeRegistry(); public FakeMatcher Matcher=new FakeMatcher(); public FakeComparer Comparer=new FakeComparer(); public IDeviceOperationLock Lock=new ImmediateLock(); public FakeStore Store=new FakeStore(); public FakeStorage Storage=new FakeStorage(); public DispatchMarchRequest Request=new DispatchMarchRequest(); public DispatchSelectedTeamOptions Options; public DispatchSelectedTeamService Service;
         public Harness(){ Options=CreateOptions(1,2); Rebuild(); }
         public DispatchSelectedTeamOptions CreateOptions(int seconds,int taps)=>new DispatchSelectedTeamOptions(2,seconds,taps,8,5,2,0.025,true,true,"Diagnostics/MarchDispatch");
-        public void Rebuild(){ Service=new DispatchSelectedTeamService(Detector,Client,Registry,Matcher,Comparer,Lock,TeamOptions(),Options,Store,new FakeLogger()); }
+        public void Rebuild(){ Service=new DispatchSelectedTeamService(Detector,Client,Registry,Matcher,Comparer,Lock,TeamOptions(),Options,Store,new FakeLogger(),Storage); }
         private static FarmTeamSelectionOptions TeamOptions()=>new FarmTeamSelectionOptions(1,1,1,1,false,"Diagnostics/x",new Dictionary<TeamNumber,ImageRegion>{{TeamNumber.Team1,new ImageRegion(0,0,235,150)},{TeamNumber.Team2,new ImageRegion(0,145,235,145)},{TeamNumber.Team3,new ImageRegion(0,290,235,145)},{TeamNumber.Team4,new ImageRegion(0,435,235,155)}});
     }
 
     private sealed class FakeDetector:IGameStateDetector
     {
         public GameDetectionResult Initial; public GameState AfterState=GameState.WorldMap; public int DelayMs;
+        public Queue<GameState> AsyncStates = new Queue<GameState>();
         public FakeDetector(){Initial=Result(GameState.TeamSelection,true);}
-        public async Task<GameDetectionResult> DetectAsync(string d,CancellationToken t){t.ThrowIfCancellationRequested();if(DelayMs>0)await Task.Delay(DelayMs,t);return Initial;}
+        public async Task<GameDetectionResult> DetectAsync(string d,CancellationToken t){t.ThrowIfCancellationRequested();if(DelayMs>0)await Task.Delay(DelayMs,t);return AsyncStates.Count>0?Result(AsyncStates.Dequeue(),false):Initial;}
         public GameDetectionResult Detect(byte[] f)=>Result(f[0]<=2?GameState.TeamSelection:AfterState,f[0]<=2);
         public GameDetectionResult Result(GameState s,bool ready)=>new GameDetectionResult{State=s,IsSuccessful=s!=GameState.Unknown,Evidence=ready?new[]{TemplateId.TeamSelectionPanelAnchor,TemplateId.TeamAdjustFormationButton,TemplateId.TeamActionButtonEnabled}.Select(id=>new GameDetectionEvidence{TemplateId=id,Found=true}).ToArray():new GameDetectionEvidence[0]};
     }
     private sealed class FakeRegistry:ITemplateRegistry
     {
         public HashSet<TemplateId> Optional=new HashSet<TemplateId>();
-        public bool Exists(TemplateId id)=>id!=TemplateId.TeamBusyStatusAnchor&&id!=TemplateId.TeamMarchTimerAnchor||Optional.Contains(id);
+        public TemplateId? Missing;
+        public bool Exists(TemplateId id)=>(!Missing.HasValue||Missing.Value!=id)&&(id!=TemplateId.TeamBusyStatusAnchor&&id!=TemplateId.TeamMarchTimerAnchor||Optional.Contains(id));
         public byte[] LoadBytes(TemplateId id)=>new[]{(byte)id}; public string GetPath(TemplateId id)=>id.ToString(); public TemplateDefinition GetDefinition(TemplateId id)=>null;
     }
     private sealed class FakeMatcher:IImageMatcher
@@ -166,12 +238,37 @@ internal static class Program
     private sealed class FakeComparer:IFrameStabilityDetector { public double Ratio=0.2; public Func<int,double> Rule; public int Calls; public List<ImageRegion?> Regions=new List<ImageRegion?>(); public FrameComparisonResult Compare(byte[] a,byte[] b,ImageRegion? r=null){Regions.Add(r);Calls++;double value=Rule==null?Ratio:Rule(Calls);return new FrameComparisonResult{DifferenceRatio=value,IsStable=value<=0.025};} }
     private sealed class FakeClient:ILdPlayerClient
     {
-        private int frame; public List<(int,int)> Taps=new List<(int,int)>(); public int ProhibitedCalls;
+        private int frame; public List<(int,int)> Taps=new List<(int,int)>(); public int ProhibitedCalls; public int BackCalls;
         public Task<byte[]> CaptureScreenshotPngAsync(string d,CancellationToken t){t.ThrowIfCancellationRequested();return Task.FromResult(new[]{(byte)Interlocked.Increment(ref frame)});} public Task TapAsync(string d,int x,int y,CancellationToken t){t.ThrowIfCancellationRequested();Taps.Add((x,y));return Task.CompletedTask;}
-        private Task Bad(){ProhibitedCalls++;return Task.CompletedTask;} public Task<IReadOnlyList<string>> GetDeviceNamesAsync(CancellationToken t)=>Task.FromResult((IReadOnlyList<string>)new string[0]); public Task<bool> IsRunningAsync(string d,CancellationToken t)=>Task.FromResult(true); public Task OpenAsync(string d,CancellationToken t)=>Bad(); public Task CloseAsync(string d,CancellationToken t)=>Bad(); public Task RunAppAsync(string d,string p,CancellationToken t)=>Bad(); public Task TapByPercentAsync(string d,double x,double y,CancellationToken t)=>Bad(); public Task LongPressAsync(string d,int x,int y,int m,CancellationToken t)=>Bad(); public Task SwipeByPercentAsync(string d,double a,double b,double c,double e,int m,CancellationToken t)=>Bad(); public Task BackAsync(string d,CancellationToken t)=>Bad(); public Task InputTextAsync(string d,string s,CancellationToken t)=>Bad(); public Task PressKeyAsync(string d,AndroidKeyCode k,CancellationToken t)=>Bad();
+        private Task Bad(){ProhibitedCalls++;return Task.CompletedTask;} public Task<IReadOnlyList<string>> GetDeviceNamesAsync(CancellationToken t)=>Task.FromResult((IReadOnlyList<string>)new string[0]); public Task<bool> IsRunningAsync(string d,CancellationToken t)=>Task.FromResult(true); public Task OpenAsync(string d,CancellationToken t)=>Bad(); public Task CloseAsync(string d,CancellationToken t)=>Bad(); public Task RunAppAsync(string d,string p,CancellationToken t)=>Bad(); public Task TapByPercentAsync(string d,double x,double y,CancellationToken t)=>Bad(); public Task LongPressAsync(string d,int x,int y,int m,CancellationToken t)=>Bad(); public Task SwipeByPercentAsync(string d,double a,double b,double c,double e,int m,CancellationToken t)=>Bad(); public Task BackAsync(string d,CancellationToken t){BackCalls++;return Bad();} public Task InputTextAsync(string d,string s,CancellationToken t)=>Bad(); public Task PressKeyAsync(string d,AndroidKeyCode k,CancellationToken t)=>Bad();
     }
     private sealed class ImmediateLock:IDeviceOperationLock { public Task<T> RunAsync<T>(string d,Func<CancellationToken,Task<T>> o,CancellationToken t)=>o(t); }
     private sealed class BlockingLock:IDeviceOperationLock { public async Task<T> RunAsync<T>(string d,Func<CancellationToken,Task<T>> o,CancellationToken t){await Task.Delay(500,t);return await o(t);} }
     private sealed class FakeStore:IDispatchMarchDiagnosticStore { public bool Throw; public Task<string> SaveAsync(string d,DispatchMarchOutcome o,byte[] p,CancellationToken t){if(Throw)throw new Exception("disk");return Task.FromResult("diag.png");} }
+    private sealed class FakeStorage:IStorageLimitDialogService
+    {
+        public StorageLimitDialogResult Result = new StorageLimitDialogResult { Outcome = StorageLimitDialogOutcome.Failed };
+        public Task<StorageLimitDialogResult> HandleAsync(string d, StorageLimitPolicy p, CancellationToken t)
+        { t.ThrowIfCancellationRequested(); return Task.FromResult(Result); }
+    }
+    private sealed class StorageDialogHarness
+    {
+        public FakeClient Client = new FakeClient(); public FakeDetector Detector = new FakeDetector();
+        public FakeRegistry Registry = new FakeRegistry(); public FakeMatcher Matcher = new FakeMatcher();
+        public StorageLimitDialogService Service;
+        public StorageDialogHarness()
+        {
+            Matcher.Rule = (f,id,roi) => id == TemplateId.StorageLimitDialogAnchor
+                ? Found(100,200,200,100)
+                : id == TemplateId.StorageLimitConfirmButton ? Found(300,400,80,40)
+                : ImageMatchResult.NotFound();
+            Service = new StorageLimitDialogService(Client, Detector, Registry, Matcher,
+                new StorageLimitDialogOptions { PollIntervalMs=50, TransitionTimeoutSeconds=1,
+                    MaxActionAttempts=1, ActionRetryDelayMs=0,
+                    Policy=StorageLimitPolicy.ConfirmAndSwitchResource }, new FakeLogger());
+        }
+        public StorageLimitDialogResult Execute() => Service.HandleAsync("LDPlayer",
+            StorageLimitPolicy.ConfirmAndSwitchResource, new CancellationToken(false)).GetAwaiter().GetResult();
+    }
     private sealed class FakeLogger:IDiagnosticLogger { public void Info(string m){} public void Error(string m,Exception e){} }
 }

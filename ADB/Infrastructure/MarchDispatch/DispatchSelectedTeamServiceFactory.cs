@@ -5,6 +5,7 @@ using ADB_Tool_Automation_Post_FB.Infrastructure.GameDetection;
 using ADB_Tool_Automation_Post_FB.Infrastructure.LDPlayer;
 using ADB_Tool_Automation_Post_FB.Infrastructure.TeamSelection;
 using ADB_Tool_Automation_Post_FB.Infrastructure.Vision;
+using ADB_Tool_Automation_Post_FB.Infrastructure.StorageLimit;
 
 namespace ADB_Tool_Automation_Post_FB.Infrastructure.MarchDispatch
 {
@@ -20,10 +21,14 @@ namespace ADB_Tool_Automation_Post_FB.Infrastructure.MarchDispatch
             var detector = new GameStateDetector(client, registry, matcher, detectionOptions,
                 new UnknownScreenshotStore(detectionOptions.UnknownScreenshotDirectory), logger);
             var options = AppConfigDispatchSelectedTeamOptionsProvider.Load();
+            var storageOptions = AppConfigStorageLimitDialogOptionsProvider.Load();
+            var storageHandler = new StorageLimitDialogService(client, detector, registry,
+                matcher, storageOptions, logger);
             return new DispatchSelectedTeamService(detector, client, registry, matcher,
                 new FrameStabilityDetector(options.TeamRegionChangeThreshold),
                 DeviceOperationLock.Shared, AppConfigFarmTeamSelectionOptionsProvider.Load(), options,
-                new DispatchMarchDiagnosticStore(options.FailureScreenshotDirectory), logger);
+                new DispatchMarchDiagnosticStore(options.FailureScreenshotDirectory), logger,
+                storageHandler);
         }
     }
 }

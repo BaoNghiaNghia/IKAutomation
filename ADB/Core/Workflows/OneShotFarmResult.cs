@@ -18,6 +18,18 @@ namespace ADB_Tool_Automation_Post_FB.Core.Workflows
         public int RequestedLevel { get; set; }
         public IReadOnlyList<int> AttemptedLevels { get; set; }
         public int? LocatedLevel { get; set; }
+        public IReadOnlyList<ResourceType> AttemptedResources { get; set; }
+        public IReadOnlyList<ResourceType> StorageFullResources { get; set; }
+        public ResourceType? LocatedResource { get; set; }
+        public ResourceType? DispatchedResource { get; set; }
+        public ResourceFarmFallbackResult ResourceFallbackResult { get; set; }
+        public bool StorageLimitDialogDetected { get; set; }
+        public bool StorageLimitConfirmed { get; set; }
+        public bool ResourceSwitchRequired { get; set; }
+        public GameState StateAfterConfirmation { get; set; }
+        public ResourceType? CurrentResource { get; set; }
+        public ResourceType? NextResource { get; set; }
+        public int RecoveryTransitions { get; set; }
         public bool RequestedUnoccupiedOnly { get; set; }
         public TeamNumber? SelectedTeam { get; set; }
         public TeamNumber? DispatchedTeam { get; set; }
