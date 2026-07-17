@@ -22,6 +22,8 @@ namespace ADB_Tool_Automation_Post_FB.Infrastructure.Vision
                 { TemplateId.ResourceIronUnselected, Define(TemplateId.ResourceIronUnselected, "Search/resource_iron_unselected.png") },
                 { TemplateId.LevelMinusButton, Define(TemplateId.LevelMinusButton, "Search/level_minus_button.png") },
                 { TemplateId.LevelPlusButton, Define(TemplateId.LevelPlusButton, "Search/level_plus_button.png") },
+                { TemplateId.LevelValue5, Define(TemplateId.LevelValue5, "Search/level_value_5.png") },
+                { TemplateId.LevelValue6, Define(TemplateId.LevelValue6, "Search/level_value_6.png") },
                 { TemplateId.LevelValue7, Define(TemplateId.LevelValue7, "Search/level_value_7.png") },
                 { TemplateId.UnoccupiedFilterChecked, Define(TemplateId.UnoccupiedFilterChecked, "Search/unoccupied_filter_checked.png") },
                 { TemplateId.UnoccupiedFilterUnchecked, Define(TemplateId.UnoccupiedFilterUnchecked, "Search/unoccupied_filter_unchecked.png") },

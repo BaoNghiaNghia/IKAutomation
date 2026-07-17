@@ -24,7 +24,7 @@ namespace ADB_Tool_Automation_Post_FB.Infrastructure.ResourceSearch
             TemplateId.ResourceSearchPanelAnchor, TemplateId.SearchButtonEnabled,
             TemplateId.ResourceTabSelected, TemplateId.ResourceTabUnselected,
             TemplateId.ResourceIronSelected, TemplateId.ResourceIronUnselected,
-            TemplateId.LevelMinusButton, TemplateId.LevelPlusButton, TemplateId.LevelValue7,
+            TemplateId.LevelMinusButton, TemplateId.LevelPlusButton,
             TemplateId.UnoccupiedFilterChecked, TemplateId.UnoccupiedFilterUnchecked
         };
 
@@ -64,7 +64,7 @@ namespace ADB_Tool_Automation_Post_FB.Infrastructure.ResourceSearch
             if (validationError != null)
                 return Task.FromResult(InvalidResult(request, validationError));
 
-            string templateError = ValidateTemplates();
+            string templateError = ValidateTemplates(request.TargetLevel);
             if (templateError != null)
                 return Task.FromResult(InvalidResult(request, templateError));
 
@@ -115,7 +115,7 @@ namespace ADB_Tool_Automation_Post_FB.Infrastructure.ResourceSearch
                     return Complete(result, watch, "Final configuration verification failed.", LastError(steps));
 
                 result.Success = true;
-                return Complete(result, watch, "Iron level 7 search criteria verified; Search was not pressed.", null);
+                return Complete(result, watch, $"Iron level {request.TargetLevel} search criteria verified; Search was not pressed.", null);
             }
             catch (OperationCanceledException)
             {
@@ -214,13 +214,14 @@ namespace ADB_Tool_Automation_Post_FB.Infrastructure.ResourceSearch
             CancellationToken cancellationToken)
         {
             byte[] screenshot = await ldPlayerClient.CaptureScreenshotPngAsync(deviceName, cancellationToken);
-            ConfigurationTemplateEvidence currentLevel = Match(screenshot, TemplateId.LevelValue7);
+            TemplateId levelTemplateId = GetLevelTemplateId(result.RequestedLevel);
+            ConfigurationTemplateEvidence currentLevel = Match(screenshot, levelTemplateId);
             var evidence = new List<ConfigurationTemplateEvidence> { currentLevel };
             if (currentLevel.Found)
             {
                 result.LevelVerified = true;
                 AddStep(steps, "SetLevel", true, 1, evidence,
-                    "Level 7 was already verified; no level input was sent.", null);
+                    $"Level {result.RequestedLevel} was already verified; no level input was sent.", null);
                 return true;
             }
 
@@ -237,24 +238,36 @@ namespace ADB_Tool_Automation_Post_FB.Infrastructure.ResourceSearch
 
             for (int index = 0; index < options.ResetMinusTapCount; index++)
             {
-                await TapAsync(deviceName, minus, "ResetLevel", result, cancellationToken);
+                if (!await TapFreshAsync(deviceName, TemplateId.LevelMinusButton,
+                    "ResetLevel", result, cancellationToken))
+                {
+                    AddStep(steps, "SetLevel", false, 1, evidence,
+                        "Fresh LevelMinusButton bounds were unavailable; level sequence stopped.", null);
+                    return false;
+                }
                 await Task.Delay(options.TapIntervalMs, cancellationToken);
             }
             int plusTapCount = result.RequestedLevel - options.MinimumLevel;
             for (int index = 0; index < plusTapCount; index++)
             {
-                await TapAsync(deviceName, plus, "IncreaseLevel", result, cancellationToken);
+                if (!await TapFreshAsync(deviceName, TemplateId.LevelPlusButton,
+                    "IncreaseLevel", result, cancellationToken))
+                {
+                    AddStep(steps, "SetLevel", false, 1, evidence,
+                        "Fresh LevelPlusButton bounds were unavailable; level sequence stopped.", null);
+                    return false;
+                }
                 await Task.Delay(options.TapIntervalMs, cancellationToken);
             }
 
-            ConfigurationTemplateEvidence level = await PollForLevel7Async(
-                deviceName, minus, plus, cancellationToken);
+            ConfigurationTemplateEvidence level = await PollForLevelAsync(
+                deviceName, levelTemplateId, minus, plus, cancellationToken);
             evidence.Add(level);
             result.LevelVerified = level.Found;
             AddStep(steps, "SetLevel", level.Found, 1, evidence,
                 level.Found
-                    ? $"Level 7 verified after {options.ResetMinusTapCount} minus and {plusTapCount} plus Taps."
-                    : "LevelValue7 was not verified after the bounded Tap sequence.", null);
+                    ? $"Level {result.RequestedLevel} verified after {options.ResetMinusTapCount} minus and {plusTapCount} plus Taps."
+                    : $"{levelTemplateId} was not verified after the bounded Tap sequence.", null);
             return level.Found;
         }
 
@@ -342,7 +355,7 @@ namespace ADB_Tool_Automation_Post_FB.Infrastructure.ResourceSearch
             {
                 Match(screenshot, TemplateId.ResourceTabSelected),
                 MatchResourceState(screenshot, TemplateId.ResourceIronSelected, search),
-                MatchLevel7(screenshot, minus, plus),
+                MatchLevel(screenshot, GetLevelTemplateId(request.TargetLevel), minus, plus),
                 MatchFilterState(screenshot, request.UnoccupiedOnly
                     ? TemplateId.UnoccupiedFilterChecked : TemplateId.UnoccupiedFilterUnchecked, search),
                 search
@@ -373,19 +386,20 @@ namespace ADB_Tool_Automation_Post_FB.Infrastructure.ResourceSearch
             return last;
         }
 
-        private async Task<ConfigurationTemplateEvidence> PollForLevel7Async(string deviceName,
+        private async Task<ConfigurationTemplateEvidence> PollForLevelAsync(string deviceName,
+            TemplateId levelTemplateId,
             ConfigurationTemplateEvidence minus, ConfigurationTemplateEvidence plus,
             CancellationToken cancellationToken)
         {
             var watch = Stopwatch.StartNew();
             ConfigurationTemplateEvidence last = Evidence(
-                TemplateId.LevelValue7, null, "Not checked.");
+                levelTemplateId, null, "Not checked.");
             while (watch.Elapsed < TimeSpan.FromSeconds(options.ActionVerificationTimeoutSeconds))
             {
                 cancellationToken.ThrowIfCancellationRequested();
                 byte[] screenshot = await ldPlayerClient.CaptureScreenshotPngAsync(
                     deviceName, cancellationToken);
-                last = MatchLevel7(screenshot, minus, plus);
+                last = MatchLevel(screenshot, levelTemplateId, minus, plus);
                 if (last.Found) return last;
                 await Task.Delay(options.StatePollIntervalMs, cancellationToken);
             }
@@ -428,23 +442,23 @@ namespace ADB_Tool_Automation_Post_FB.Infrastructure.ResourceSearch
             return last;
         }
 
-        private ConfigurationTemplateEvidence MatchLevel7(byte[] screenshot,
+        private ConfigurationTemplateEvidence MatchLevel(byte[] screenshot, TemplateId levelTemplateId,
             ConfigurationTemplateEvidence minus, ConfigurationTemplateEvidence plus)
         {
-            ConfigurationTemplateEvidence direct = Match(screenshot, TemplateId.LevelValue7);
+            ConfigurationTemplateEvidence direct = Match(screenshot, levelTemplateId);
             if (direct.Found || !HasBounds(minus) || !HasBounds(plus)) return direct;
 
             ImageRegion? region = CreateLevelValueRegion(minus, plus);
             if (!region.HasValue) return direct;
 
-            byte[] sourceTemplate = templateRegistry.LoadBytes(TemplateId.LevelValue7);
+            byte[] sourceTemplate = templateRegistry.LoadBytes(levelTemplateId);
             byte[] stableTemplate = TryCreateStableLevelTemplate(sourceTemplate) ?? sourceTemplate;
             ImageMatchResult match = imageMatcher.Find(screenshot, stableTemplate, region);
             if (match == null || !match.Found)
                 match = TryMatchBinarizedCurrentLevel(screenshot, sourceTemplate, minus, plus);
-            return Evidence(TemplateId.LevelValue7, match, match != null && match.Found
-                ? "LevelValue7 matched inside the current-value region using stable UI text."
-                : "LevelValue7 did not match directly, by its stable chip, or by binary UI text.");
+            return Evidence(levelTemplateId, match, match != null && match.Found
+                ? $"{levelTemplateId} matched inside the current-value region using stable UI text."
+                : $"{levelTemplateId} did not match directly, by its stable chip, or by binary UI text.");
         }
 
         private static ImageRegion? CreateLevelValueRegion(
@@ -676,6 +690,18 @@ namespace ADB_Tool_Automation_Post_FB.Infrastructure.ResourceSearch
             result.TapCount++;
         }
 
+        private async Task<bool> TapFreshAsync(string deviceName, TemplateId templateId,
+            string action, ResourceSearchConfigurationResult result,
+            CancellationToken cancellationToken)
+        {
+            cancellationToken.ThrowIfCancellationRequested();
+            byte[] screenshot = await ldPlayerClient.CaptureScreenshotPngAsync(deviceName, cancellationToken);
+            ConfigurationTemplateEvidence fresh = Match(screenshot, templateId);
+            if (!HasBounds(fresh)) return false;
+            await TapAsync(deviceName, fresh, action, result, cancellationToken);
+            return true;
+        }
+
         private string ValidateRequest(ResourceSearchConfigurationRequest request)
         {
             if (request == null) return "ResourceSearchConfigurationRequest is required.";
@@ -683,14 +709,14 @@ namespace ADB_Tool_Automation_Post_FB.Infrastructure.ResourceSearch
                 return $"Resource type '{request.ResourceType}' is not supported; only Iron is supported.";
             if (request.TargetLevel < options.MinimumLevel || request.TargetLevel > options.MaximumLevel)
                 return $"TargetLevel must be between {options.MinimumLevel} and {options.MaximumLevel}.";
-            if (request.TargetLevel != 7)
-                return "Only target level 7 is supported by the available verification template.";
+            if (request.TargetLevel != 5 && request.TargetLevel != 6 && request.TargetLevel != 7)
+                return "Only target levels 5, 6, and 7 are supported by the available verification templates.";
             return null;
         }
 
-        private string ValidateTemplates()
+        private string ValidateTemplates(int targetLevel)
         {
-            foreach (TemplateId templateId in RequiredTemplates)
+            foreach (TemplateId templateId in RequiredTemplates.Concat(new[] { GetLevelTemplateId(targetLevel) }))
             {
                 try
                 {
@@ -704,6 +730,18 @@ namespace ADB_Tool_Automation_Post_FB.Infrastructure.ResourceSearch
                 }
             }
             return null;
+        }
+
+        private static TemplateId GetLevelTemplateId(int level)
+        {
+            switch (level)
+            {
+                case 5: return TemplateId.LevelValue5;
+                case 6: return TemplateId.LevelValue6;
+                case 7: return TemplateId.LevelValue7;
+                default: throw new ArgumentOutOfRangeException(nameof(level), level,
+                    "Only target levels 5, 6, and 7 are supported.");
+            }
         }
 
         private static bool IsVerifiedPanel(GameDetectionResult result)

@@ -15,6 +15,7 @@ namespace IKAutomation.Vision.Tests
             var tests = new List<KeyValuePair<string, Action>>
             {
                 Test("Registry returns relative path", RegistryReturnsRelativePath),
+                Test("Registry maps level 5 and 6 templates", RegistryMapsFallbackLevels),
                 Test("Registry reports missing file", RegistryReportsMissingFile),
                 Test("Matcher finds generated template", MatcherFindsGeneratedTemplate),
                 Test("Matcher translates ROI coordinates", MatcherTranslatesRoiCoordinates),
@@ -90,6 +91,18 @@ namespace IKAutomation.Vision.Tests
             {
                 Directory.Delete(root, true);
             }
+        }
+
+        private static void RegistryMapsFallbackLevels()
+        {
+            string root = CreateTemporaryDirectory();
+            try
+            {
+                var registry = new TemplateRegistry(root);
+                AssertEqual("Search/level_value_5.png", registry.GetDefinition(TemplateId.LevelValue5).RelativePath, "Level 5 path.");
+                AssertEqual("Search/level_value_6.png", registry.GetDefinition(TemplateId.LevelValue6).RelativePath, "Level 6 path.");
+            }
+            finally { Directory.Delete(root, true); }
         }
 
         private static void MatcherFindsGeneratedTemplate()

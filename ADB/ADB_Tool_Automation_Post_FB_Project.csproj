@@ -102,6 +102,14 @@
     <Compile Include="Core\ResourceSearch\IResourceSearchConfigurationService.cs" />
     <Compile Include="Core\ResourceSearch\IResourceSearchDiagnosticStore.cs" />
     <Compile Include="Core\ResourceSearch\IResourceSearchExecutionService.cs" />
+    <Compile Include="Core\ResourceSearch\IResourceLevelFallbackService.cs" />
+    <Compile Include="Core\ResourceSearch\IResourceLevelFallbackDiagnosticStore.cs" />
+    <Compile Include="Core\ResourceSearch\ResourceLevelAttemptResult.cs" />
+    <Compile Include="Core\ResourceSearch\ResourceLevelFallbackOptions.cs" />
+    <Compile Include="Core\ResourceSearch\ResourceLevelFallbackOutcome.cs" />
+    <Compile Include="Core\ResourceSearch\ResourceLevelFallbackPolicy.cs" />
+    <Compile Include="Core\ResourceSearch\ResourceLevelFallbackResult.cs" />
+    <Compile Include="Core\ResourceSearch\ToastClearResult.cs" />
     <Compile Include="Core\ResourceSearch\ResourceSearchConfigurationOptions.cs" />
     <Compile Include="Core\ResourceSearch\ResourceSearchConfigurationRequest.cs" />
     <Compile Include="Core\ResourceSearch\ResourceSearchConfigurationResult.cs" />
@@ -180,6 +188,10 @@
     <Compile Include="Infrastructure\ResourcePopup\ResourcePopupVerificationServiceFactory.cs" />
     <Compile Include="Infrastructure\ResourceSearch\AppConfigResourceSearchConfigurationOptionsProvider.cs" />
     <Compile Include="Infrastructure\ResourceSearch\AppConfigResourceSearchExecutionOptionsProvider.cs" />
+    <Compile Include="Infrastructure\ResourceSearch\AppConfigResourceLevelFallbackOptionsProvider.cs" />
+    <Compile Include="Infrastructure\ResourceSearch\ResourceLevelFallbackDiagnosticStore.cs" />
+    <Compile Include="Infrastructure\ResourceSearch\ResourceLevelFallbackService.cs" />
+    <Compile Include="Infrastructure\ResourceSearch\ResourceLevelFallbackServiceFactory.cs" />
     <Compile Include="Infrastructure\ResourceSearch\ResourceSearchDiagnosticStore.cs" />
     <Compile Include="Infrastructure\ResourceSearch\ResourceSearchConfigurationService.cs" />
     <Compile Include="Infrastructure\ResourceSearch\ResourceSearchConfigurationServiceFactory.cs" />

@@ -488,13 +488,21 @@ namespace ADB_Tool_Automation_Post_FB.UI
 
         private static string FormatOneShotFarmResult(OneShotFarmResult result)
         {
+            string fallbackAttempts = result.FallbackResult?.Attempts == null ? string.Empty
+                : string.Join(Environment.NewLine, result.FallbackResult.Attempts.Select(item =>
+                    $"- level={item.Level}, attempt={item.AttemptNumber}, configured={item.ConfigurationSucceeded}, "
+                    + $"search={item.SearchOutcome?.ToString() ?? string.Empty}, variant={item.MatchedNotFoundVariant ?? string.Empty}, "
+                    + $"toastClear={item.ToastClearVerifiedBeforeAttempt}, clearFrames={item.ToastClearResult?.ConsecutiveClearFrames ?? 0}, "
+                    + $"duration={item.Duration.TotalMilliseconds:F0} ms, error={item.ErrorMessage ?? string.Empty}"));
             string steps = string.Join(Environment.NewLine, result.Steps.Select((item, index) =>
                 $"- #{index + 1} {item.Step}: success={item.Success}, duration={item.Duration.TotalMilliseconds:F0} ms; "
                 + $"{item.Message}; error={item.ErrorMessage ?? string.Empty}; diagnostic={item.DiagnosticScreenshotPath ?? string.Empty}"));
             return $"Outcome: {result.Outcome}{Environment.NewLine}Success: {result.Success}{Environment.NewLine}"
                 + $"Initial: {result.InitialState}{Environment.NewLine}Final: {result.FinalState}{Environment.NewLine}"
                 + $"Last completed step: {result.LastCompletedStep}{Environment.NewLine}Resource: {result.RequestedResource}{Environment.NewLine}"
-                + $"Level: {result.RequestedLevel}{Environment.NewLine}Unoccupied only: {result.RequestedUnoccupiedOnly}{Environment.NewLine}"
+                + $"Preferred level: {result.RequestedLevel}{Environment.NewLine}Attempted levels: {string.Join(",", result.AttemptedLevels ?? new int[0])}{Environment.NewLine}"
+                + $"Located level: {result.LocatedLevel?.ToString() ?? string.Empty}{Environment.NewLine}Fallback outcome: {result.FallbackResult?.Outcome.ToString() ?? string.Empty}{Environment.NewLine}"
+                + $"Unoccupied only: {result.RequestedUnoccupiedOnly}{Environment.NewLine}Fallback attempts:{Environment.NewLine}{fallbackAttempts}{Environment.NewLine}"
                 + $"Selected team: {result.SelectedTeam?.ToString() ?? string.Empty}{Environment.NewLine}Dispatched team: {result.DispatchedTeam?.ToString() ?? string.Empty}{Environment.NewLine}"
                 + $"Duration: {result.Duration.TotalMilliseconds:F0} ms{Environment.NewLine}Diagnostic: {result.DiagnosticScreenshotPath ?? string.Empty}{Environment.NewLine}"
                 + $"Message: {result.Message}{Environment.NewLine}Error: {result.ErrorMessage ?? string.Empty}{Environment.NewLine}Steps:{Environment.NewLine}{steps}";

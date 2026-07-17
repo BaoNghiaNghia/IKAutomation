@@ -20,37 +20,33 @@ namespace ADB_Tool_Automation_Post_FB.Infrastructure.Workflows
     public sealed class OneShotFarmWorkflow : IOneShotFarmWorkflow
     {
         private readonly IWorldMapNavigationService navigation;
-        private readonly IResourceSearchConfigurationService configuration;
-        private readonly IResourceSearchExecutionService search;
+        private readonly IResourceLevelFallbackService fallback;
         private readonly IResourcePopupVerificationService popup;
         private readonly IOpenTeamSelectionService openTeam;
         private readonly ISelectFarmTeamService selectTeam;
         private readonly IDispatchSelectedTeamService dispatch;
         private readonly IGameStateDetector detector;
         private readonly IDeviceOperationLock operationLock;
-        private readonly ResourceSearchConfigurationOptions searchOptions;
         private readonly OneShotFarmWorkflowOptions options;
         private readonly IOneShotFarmDiagnosticService diagnostics;
         private readonly IDiagnosticLogger logger;
 
         public OneShotFarmWorkflow(IWorldMapNavigationService navigation,
-            IResourceSearchConfigurationService configuration, IResourceSearchExecutionService search,
+            IResourceLevelFallbackService fallback,
             IResourcePopupVerificationService popup, IOpenTeamSelectionService openTeam,
             ISelectFarmTeamService selectTeam, IDispatchSelectedTeamService dispatch,
             IGameStateDetector detector, IDeviceOperationLock operationLock,
-            ResourceSearchConfigurationOptions searchOptions, OneShotFarmWorkflowOptions options,
+            OneShotFarmWorkflowOptions options,
             IOneShotFarmDiagnosticService diagnostics, IDiagnosticLogger logger)
         {
             this.navigation = navigation ?? throw new ArgumentNullException(nameof(navigation));
-            this.configuration = configuration ?? throw new ArgumentNullException(nameof(configuration));
-            this.search = search ?? throw new ArgumentNullException(nameof(search));
+            this.fallback = fallback ?? throw new ArgumentNullException(nameof(fallback));
             this.popup = popup ?? throw new ArgumentNullException(nameof(popup));
             this.openTeam = openTeam ?? throw new ArgumentNullException(nameof(openTeam));
             this.selectTeam = selectTeam ?? throw new ArgumentNullException(nameof(selectTeam));
             this.dispatch = dispatch ?? throw new ArgumentNullException(nameof(dispatch));
             this.detector = detector ?? throw new ArgumentNullException(nameof(detector));
             this.operationLock = operationLock ?? throw new ArgumentNullException(nameof(operationLock));
-            this.searchOptions = searchOptions ?? throw new ArgumentNullException(nameof(searchOptions));
             this.options = options ?? throw new ArgumentNullException(nameof(options));
             this.diagnostics = diagnostics ?? throw new ArgumentNullException(nameof(diagnostics));
             this.logger = logger ?? throw new ArgumentNullException(nameof(logger));
@@ -130,37 +126,42 @@ namespace ADB_Tool_Automation_Post_FB.Infrastructure.Workflows
                 }
                 AddSuccess(result, steps, OneShotFarmStep.OpenSearchPanel, started, panel.Message, panel);
 
-                var configRequest = new ResourceSearchConfigurationRequest { ResourceType = request.ResourceType, TargetLevel = request.TargetLevel, UnoccupiedOnly = request.UnoccupiedOnly };
-                token.ThrowIfCancellationRequested(); started = Start(runId, deviceName, OneShotFarmStep.ConfigureSearch);
-                ResourceSearchConfigurationResult configured = await configuration.ConfigureAsync(deviceName, configRequest, token);
-                result.ConfigurationResult = configured; result.FinalState = configured.FinalState;
-                if (!configured.Success || !configured.ResourceVerified || !configured.LevelVerified || !configured.FilterVerified)
+                var fallbackPolicy = new ResourceLevelFallbackPolicy
                 {
-                    Add(steps, OneShotFarmStep.ConfigureSearch, false, started, configured.Message, configured.ErrorMessage, configured);
-                    return await StopAsync(result, OneShotFarmOutcome.SearchConfigurationFailed, configured.Message,
-                        configured.ErrorMessage, OneShotFarmStep.ConfigureSearch, watch, runId, token);
-                }
-                AddSuccess(result, steps, OneShotFarmStep.ConfigureSearch, started, configured.Message, configured);
-
-                token.ThrowIfCancellationRequested(); started = Start(runId, deviceName, OneShotFarmStep.ExecuteSearch);
-                ResourceSearchExecutionResult searched = await search.ExecuteAsync(deviceName,
-                    new ResourceSearchExecutionRequest { Configuration = configRequest, ConfigureBeforeSearch = false }, token);
-                result.SearchResult = searched; result.FinalState = searched.FinalState;
-                if (searched.Outcome == ResourceSearchOutcome.ResourceNotFound)
+                    Levels = request.ResourceLevelPriority ?? new[] { request.TargetLevel },
+                    AttemptsPerLevel = request.AttemptsPerResourceLevel,
+                    StopOnFirstLocated = true,
+                    WaitForToastClearBetweenAttempts = true,
+                    RunId = runId.ToString()
+                };
+                token.ThrowIfCancellationRequested(); started = Start(runId, deviceName, OneShotFarmStep.SearchWithLevelFallback);
+                ResourceLevelFallbackResult fallbackResult = await fallback.SearchAsync(deviceName,
+                    request.ResourceType, fallbackPolicy, request.UnoccupiedOnly, token);
+                result.FallbackResult = fallbackResult; result.FinalState = fallbackResult.FinalState;
+                result.AttemptedLevels = fallbackResult.Attempts.Select(item => item.Level).Distinct().ToArray();
+                result.LocatedLevel = fallbackResult.LocatedLevel;
+                ResourceLevelAttemptResult lastAttempt = fallbackResult.Attempts.LastOrDefault();
+                result.ConfigurationResult = lastAttempt?.ConfigurationResult;
+                result.SearchResult = lastAttempt?.SearchResult;
+                if (fallbackResult.Outcome == ResourceLevelFallbackOutcome.Cancelled) throw new OperationCanceledException(token);
+                if (fallbackResult.Outcome != ResourceLevelFallbackOutcome.ResourceLocated || !fallbackResult.Success)
                 {
-                    Add(steps, OneShotFarmStep.ExecuteSearch, false, started, searched.Message, searched.ErrorMessage, searched);
-                    result.LastCompletedStep = OneShotFarmStep.ExecuteSearch;
-                    return await StopAsync(result, OneShotFarmOutcome.ResourceNotFound, searched.Message,
-                        searched.ErrorMessage, OneShotFarmStep.ExecuteSearch, watch, runId, token);
+                    Add(steps, OneShotFarmStep.SearchWithLevelFallback, false, started,
+                        fallbackResult.Message, fallbackResult.ErrorMessage, fallbackResult);
+                    if (fallbackResult.Outcome == ResourceLevelFallbackOutcome.ResourceLevelsExhausted)
+                        result.LastCompletedStep = OneShotFarmStep.SearchWithLevelFallback;
+                    OneShotFarmOutcome mapped = fallbackResult.Outcome == ResourceLevelFallbackOutcome.ResourceLevelsExhausted
+                        ? OneShotFarmOutcome.ResourceLevelsExhausted
+                        : fallbackResult.Outcome == ResourceLevelFallbackOutcome.ConfigurationFailed
+                            ? OneShotFarmOutcome.SearchConfigurationFailed
+                            : fallbackResult.Outcome == ResourceLevelFallbackOutcome.PanelUnavailable
+                                ? OneShotFarmOutcome.SearchPanelUnavailable
+                                : OneShotFarmOutcome.SearchExecutionFailed;
+                    return await StopAsync(result, mapped, fallbackResult.Message,
+                        fallbackResult.ErrorMessage, OneShotFarmStep.SearchWithLevelFallback, watch, runId, token);
                 }
-                if (searched.Outcome == ResourceSearchOutcome.Cancelled) throw new OperationCanceledException(token);
-                if (!searched.Success || searched.Outcome != ResourceSearchOutcome.ResourceLocated)
-                {
-                    Add(steps, OneShotFarmStep.ExecuteSearch, false, started, searched.Message, searched.ErrorMessage, searched);
-                    return await StopAsync(result, OneShotFarmOutcome.SearchExecutionFailed, searched.Message,
-                        searched.ErrorMessage, OneShotFarmStep.ExecuteSearch, watch, runId, token);
-                }
-                AddSuccess(result, steps, OneShotFarmStep.ExecuteSearch, started, searched.Message, searched);
+                AddSuccess(result, steps, OneShotFarmStep.SearchWithLevelFallback, started,
+                    fallbackResult.Message, fallbackResult);
 
                 token.ThrowIfCancellationRequested(); started = Start(runId, deviceName, OneShotFarmStep.VerifyResourcePopup);
                 ResourcePopupVerificationResult verifiedPopup = await popup.VerifyAsync(deviceName, token);
@@ -259,7 +260,10 @@ namespace ADB_Tool_Automation_Post_FB.Infrastructure.Workflows
             if (string.IsNullOrWhiteSpace(deviceName)) return "LDPlayer device name is required.";
             if (request == null) return "One-shot farm request is required.";
             if (request.ResourceType != ResourceType.Iron) return "Only Iron is supported by the MVP.";
-            if (request.TargetLevel < searchOptions.MinimumLevel || request.TargetLevel > searchOptions.MaximumLevel) return $"TargetLevel must be between {searchOptions.MinimumLevel} and {searchOptions.MaximumLevel}.";
+            if (request.ResourceLevelPriority == null || request.ResourceLevelPriority.Count == 0) return "ResourceLevelPriority cannot be empty.";
+            if (request.ResourceLevelPriority.Distinct().Count() != request.ResourceLevelPriority.Count) return "ResourceLevelPriority cannot contain duplicates.";
+            if (request.ResourceLevelPriority.Any(level => level != 5 && level != 6 && level != 7)) return "ResourceLevelPriority supports only levels 5, 6, and 7.";
+            if (request.AttemptsPerResourceLevel < 1 || request.AttemptsPerResourceLevel > 3) return "AttemptsPerResourceLevel must be between 1 and 3.";
             if (request.AllowedTeams == null || request.AllowedTeams.Count == 0) return "AllowedTeams cannot be empty.";
             if (request.TeamPriority == null || request.TeamPriority.Count == 0) return "TeamPriority cannot be empty.";
             if (request.TeamPriority.Distinct().Count() != request.TeamPriority.Count) return "TeamPriority cannot contain duplicates.";
@@ -301,8 +305,8 @@ namespace ADB_Tool_Automation_Post_FB.Infrastructure.Workflows
         private DateTimeOffset Start(Guid id, string device, OneShotFarmStep step) { DateTimeOffset now = DateTimeOffset.UtcNow; logger.Info($"[OneShotFarm] RunId='{id}', DeviceName='{device}', Step='{step}', StartedAt='{now:O}'"); return now; }
         private void AddSuccess(OneShotFarmResult result, List<OneShotFarmStepResult> steps, OneShotFarmStep step, DateTimeOffset started, string message, object detail) { Add(steps, step, true, started, message, null, detail); result.LastCompletedStep = step; }
         private static void Add(List<OneShotFarmStepResult> steps, OneShotFarmStep step, bool success, DateTimeOffset started, string message, string error, object detail) { DateTimeOffset end = DateTimeOffset.UtcNow; steps.Add(new OneShotFarmStepResult { Step = step, Success = success, StartedAt = started, CompletedAt = end, Duration = end - started, Message = message, ErrorMessage = error, Detail = detail }); }
-        private void LogEnd(Guid id, string device, OneShotFarmResult result) => logger.Info($"[OneShotFarm] RunId='{id}', DeviceName='{device}', LastCompletedStep='{result.LastCompletedStep}', SelectedTeam='{result.SelectedTeam}', Outcome='{result.Outcome}', DurationMs={result.Duration.TotalMilliseconds:F0}, Cancellation={result.Outcome == OneShotFarmOutcome.Cancelled}, Error='{result.ErrorMessage ?? string.Empty}'");
-        private static OneShotFarmResult NewResult(string device, OneShotFarmRequest request, IReadOnlyList<OneShotFarmStepResult> steps) => new OneShotFarmResult { DeviceName = device, RequestedResource = request.ResourceType, RequestedLevel = request.TargetLevel, RequestedUnoccupiedOnly = request.UnoccupiedOnly, InitialState = GameState.Unknown, FinalState = GameState.Unknown, LastCompletedStep = OneShotFarmStep.Preflight, Steps = steps };
-        private static OneShotFarmResult Empty(string device, OneShotFarmRequest request, string error, OneShotFarmOutcome outcome = OneShotFarmOutcome.PreconditionFailed) => new OneShotFarmResult { Outcome = outcome, Success = false, DeviceName = device, RequestedResource = request == null ? ResourceType.Iron : request.ResourceType, RequestedLevel = request == null ? 7 : request.TargetLevel, RequestedUnoccupiedOnly = request == null || request.UnoccupiedOnly, InitialState = GameState.Unknown, FinalState = GameState.Unknown, LastCompletedStep = OneShotFarmStep.Preflight, Message = error, ErrorMessage = error, Steps = new OneShotFarmStepResult[0] };
+        private void LogEnd(Guid id, string device, OneShotFarmResult result) => logger.Info($"[OneShotFarm] RunId='{id}', DeviceName='{device}', LastCompletedStep='{result.LastCompletedStep}', AttemptedLevels='{string.Join(",", result.AttemptedLevels ?? new int[0])}', LocatedLevel='{result.LocatedLevel}', FallbackOutcome='{result.FallbackResult?.Outcome.ToString() ?? string.Empty}', SelectedTeam='{result.SelectedTeam}', Outcome='{result.Outcome}', DurationMs={result.Duration.TotalMilliseconds:F0}, Cancellation={result.Outcome == OneShotFarmOutcome.Cancelled}, Error='{result.ErrorMessage ?? string.Empty}'");
+        private static OneShotFarmResult NewResult(string device, OneShotFarmRequest request, IReadOnlyList<OneShotFarmStepResult> steps) => new OneShotFarmResult { DeviceName = device, RequestedResource = request.ResourceType, RequestedLevel = request.TargetLevel, RequestedUnoccupiedOnly = request.UnoccupiedOnly, AttemptedLevels = new int[0], InitialState = GameState.Unknown, FinalState = GameState.Unknown, LastCompletedStep = OneShotFarmStep.Preflight, Steps = steps };
+        private static OneShotFarmResult Empty(string device, OneShotFarmRequest request, string error, OneShotFarmOutcome outcome = OneShotFarmOutcome.PreconditionFailed) => new OneShotFarmResult { Outcome = outcome, Success = false, DeviceName = device, RequestedResource = request == null ? ResourceType.Iron : request.ResourceType, RequestedLevel = request == null ? 7 : request.TargetLevel, RequestedUnoccupiedOnly = request == null || request.UnoccupiedOnly, AttemptedLevels = new int[0], InitialState = GameState.Unknown, FinalState = GameState.Unknown, LastCompletedStep = OneShotFarmStep.Preflight, Message = error, ErrorMessage = error, Steps = new OneShotFarmStepResult[0] };
     }
 }

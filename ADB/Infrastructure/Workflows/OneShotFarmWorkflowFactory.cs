@@ -23,14 +23,13 @@ namespace ADB_Tool_Automation_Post_FB.Infrastructure.Workflows
                 new UnknownScreenshotStore(detectionOptions.UnknownScreenshotDirectory), logger);
             var workflowOptions = AppConfigOneShotFarmWorkflowOptionsProvider.Load();
             return new OneShotFarmWorkflow(WorldMapNavigationServiceFactory.CreateFromAppConfig(),
-                ResourceSearchConfigurationServiceFactory.CreateFromAppConfig(),
-                ResourceSearchExecutionServiceFactory.CreateFromAppConfig(),
+                ResourceLevelFallbackServiceFactory.CreateFromAppConfig(),
                 ResourcePopupVerificationServiceFactory.CreateFromAppConfig(),
                 OpenTeamSelectionServiceFactory.CreateFromAppConfig(),
                 SelectFarmTeamServiceFactory.CreateFromAppConfig(),
                 DispatchSelectedTeamServiceFactory.CreateFromAppConfig(), detector,
-                DeviceOperationLock.Shared, AppConfigResourceSearchConfigurationOptionsProvider.Load(),
-                workflowOptions, new OneShotFarmDiagnosticService(client, workflowOptions.ScreenshotDirectory), logger);
+                DeviceOperationLock.Shared, workflowOptions,
+                new OneShotFarmDiagnosticService(client, workflowOptions.ScreenshotDirectory), logger);
         }
     }
 }

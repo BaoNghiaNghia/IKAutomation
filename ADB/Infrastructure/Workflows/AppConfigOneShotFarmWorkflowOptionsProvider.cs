@@ -17,6 +17,8 @@ namespace ADB_Tool_Automation_Post_FB.Infrastructure.Workflows
         {
             ResourceType = Enum.TryParse(Text("ResourceType", "Iron"), true, out ResourceType resource) ? resource : ResourceType.Iron,
             TargetLevel = Int("TargetLevel", 7), UnoccupiedOnly = Bool("UnoccupiedOnly", true),
+            ResourceLevelPriority = Levels("ResourceLevelPriority", new[] { 7, 6, 5 }),
+            AttemptsPerResourceLevel = Int("AttemptsPerResourceLevel", 1),
             AllowedTeams = Teams("AllowedTeams", new[] { TeamNumber.Team2, TeamNumber.Team3, TeamNumber.Team4 }),
             TeamPriority = Teams("TeamPriority", new[] { TeamNumber.Team4, TeamNumber.Team3, TeamNumber.Team2 }),
             AllowTeam1 = Bool("AllowTeam1", false), RequireMarchVerification = Bool("RequireMarchVerification", true)
@@ -26,5 +28,6 @@ namespace ADB_Tool_Automation_Post_FB.Infrastructure.Workflows
         private static bool Bool(string n, bool f) { string v = ConfigurationManager.AppSettings[Key(n)]; return string.IsNullOrWhiteSpace(v) ? f : bool.Parse(v); }
         private static int Int(string n, int f) { string v = ConfigurationManager.AppSettings[Key(n)]; return string.IsNullOrWhiteSpace(v) ? f : int.Parse(v, CultureInfo.InvariantCulture); }
         private static TeamNumber[] Teams(string n, TeamNumber[] f) { string v = ConfigurationManager.AppSettings[Key(n)]; return string.IsNullOrWhiteSpace(v) ? f : v.Split(',').Select(x => (TeamNumber)int.Parse(x.Trim(), CultureInfo.InvariantCulture)).ToArray(); }
+        private static int[] Levels(string n, int[] f) { string v = ConfigurationManager.AppSettings[Key(n)]; return string.IsNullOrWhiteSpace(v) ? f : v.Split(',').Select(x => int.Parse(x.Trim(), CultureInfo.InvariantCulture)).ToArray(); }
     }
 }

@@ -12,6 +12,8 @@ namespace ADB_Tool_Automation_Post_FB.Core.Vision
         ResourceIronUnselected,
         LevelMinusButton,
         LevelPlusButton,
+        LevelValue5,
+        LevelValue6,
         LevelValue7,
         UnoccupiedFilterChecked,
         UnoccupiedFilterUnchecked,

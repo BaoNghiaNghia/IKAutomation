@@ -36,6 +36,9 @@ namespace IKAutomation.ResourceSearch.Tests
             Run("Missing Iron bounds prevents fallback", MissingIronBounds);
             Run("Level reset taps minus eight times", MinusEight);
             Run("Level seven taps plus six times", PlusSix);
+            Run("Level six taps plus five times and verifies", LevelSix);
+            Run("Level five taps plus four times and verifies", LevelFive);
+            Run("Missing level six template fails before input", MissingLevelSixTemplate);
             Run("Level seven already selected sends no level input", LevelSevenAlreadySelected);
             Run("Level requires LevelValue7 verification", LevelRequiresVerification);
             Run("Level verification uses stable chip fallback", LevelStableChipFallback);
@@ -128,6 +131,9 @@ namespace IKAutomation.ResourceSearch.Tests
 
         private static void MinusEight() { Fixture f = Setup(); Execute(f); Equal(8, f.Client.MinusTaps, "Minus taps."); }
         private static void PlusSix() { Fixture f = Setup(); Execute(f); Equal(6, f.Client.PlusTaps, "Plus taps."); }
+        private static void LevelSix() { Fixture f = Setup(); ResourceSearchConfigurationRequest q = Request(); q.TargetLevel = 6; ResourceSearchConfigurationResult r = Execute(f, q); Assert(r.Success && r.LevelVerified, r.ErrorMessage); Equal(5, f.Client.PlusTaps, "Plus taps."); }
+        private static void LevelFive() { Fixture f = Setup(); ResourceSearchConfigurationRequest q = Request(); q.TargetLevel = 5; ResourceSearchConfigurationResult r = Execute(f, q); Assert(r.Success && r.LevelVerified, r.ErrorMessage); Equal(4, f.Client.PlusTaps, "Plus taps."); }
+        private static void MissingLevelSixTemplate() { Fixture f = Setup(); f.Registry.Missing = TemplateId.LevelValue6; ResourceSearchConfigurationRequest q = Request(); q.TargetLevel = 6; ResourceSearchConfigurationResult r = Execute(f, q); Assert(!r.Success && r.ErrorMessage.Contains("LevelValue6"), "missing target template"); Equal(0, f.Client.TotalInput, "input"); }
 
         private static void LevelSevenAlreadySelected()
         {
@@ -376,6 +382,10 @@ namespace IKAutomation.ResourceSearch.Tests
                     case TemplateId.LevelMinusButton: return ImageMatchResult.FoundAt(100, 100, 20, 20);
                     case TemplateId.LevelPlusButton: return ImageMatchResult.FoundAt(200, 100, 20, 20);
                     case TemplateId.LevelValue7: return Found(ui.Level == 7 && !ui.HideLevelValue
+                        && (!ui.LevelRequiresStableChip || region.HasValue), 150, 50, 20, 20);
+                    case TemplateId.LevelValue6: return Found(ui.Level == 6 && !ui.HideLevelValue
+                        && (!ui.LevelRequiresStableChip || region.HasValue), 150, 50, 20, 20);
+                    case TemplateId.LevelValue5: return Found(ui.Level == 5 && !ui.HideLevelValue
                         && (!ui.LevelRequiresStableChip || region.HasValue), 150, 50, 20, 20);
                     case TemplateId.UnoccupiedFilterChecked: return Found(ui.FilterChecked
                         && (!ui.FilterRequiresStableControl || region.HasValue), 300, 100, 20, 20);

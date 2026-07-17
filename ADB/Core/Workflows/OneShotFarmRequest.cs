@@ -9,6 +9,8 @@ namespace ADB_Tool_Automation_Post_FB.Core.Workflows
         public OneShotFarmRequest()
         {
             ResourceType = ResourceType.Iron; TargetLevel = 7; UnoccupiedOnly = true;
+            ResourceLevelPriority = new[] { 7, 6, 5 };
+            AttemptsPerResourceLevel = 1;
             AllowedTeams = new[] { TeamNumber.Team2, TeamNumber.Team3, TeamNumber.Team4 };
             TeamPriority = new[] { TeamNumber.Team4, TeamNumber.Team3, TeamNumber.Team2 };
             RequireMarchVerification = true;
@@ -16,6 +18,8 @@ namespace ADB_Tool_Automation_Post_FB.Core.Workflows
         public ResourceType ResourceType { get; set; }
         public int TargetLevel { get; set; }
         public bool UnoccupiedOnly { get; set; }
+        public IReadOnlyList<int> ResourceLevelPriority { get; set; }
+        public int AttemptsPerResourceLevel { get; set; }
         public IReadOnlyList<TeamNumber> AllowedTeams { get; set; }
         public IReadOnlyList<TeamNumber> TeamPriority { get; set; }
         public bool AllowTeam1 { get; set; }
