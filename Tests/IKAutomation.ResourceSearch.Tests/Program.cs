@@ -43,6 +43,7 @@ namespace IKAutomation.ResourceSearch.Tests
             Run("Level requires LevelValue7 verification", LevelRequiresVerification);
             Run("Level verification uses stable chip fallback", LevelStableChipFallback);
             Run("Level verification tolerates translucent panel background", LevelBinaryTextFallback);
+            Run("Level controls use bounded stable-center refresh", LevelControlLocalFallback);
             Run("Out-of-range level rejected before input", InvalidLevelNoInput);
             Run("Checked filter is not tapped", CheckedFilterNoTap);
             Run("Unchecked filter is tapped and verified", UncheckedFilterToggled);
@@ -118,6 +119,14 @@ namespace IKAutomation.ResourceSearch.Tests
             Fixture f = Setup(); f.Ui.IgnoreResourceTap = true;
             ResourceSearchConfigurationResult r = Execute(f);
             Assert(!r.Success && !r.ResourceVerified, "Resource falsely verified.");
+        }
+
+        private static void LevelControlLocalFallback()
+        {
+            Fixture f = Setup(); f.Ui.LevelControlsLoseDirectMatchAfterTap = true;
+            ResourceSearchConfigurationResult result = Execute(f);
+            Assert(result.Success && result.LevelVerified, result.ErrorMessage);
+            Equal(8, f.Client.MinusTaps, "minus taps"); Equal(6, f.Client.PlusTaps, "plus taps");
         }
 
         private static void IronStableIconFallback()
@@ -415,7 +424,7 @@ namespace IKAutomation.ResourceSearch.Tests
             public bool ResourceSelected, FilterChecked, IgnoreResourceTap, InvalidResourceBounds,
                 HideLevelValue, AmbiguousResource, LevelRequiresStableChip,
                 FilterRequiresStableControl, ResourceRequiresStableIcon, HideUncheckedFilter,
-                BinaryLevelFallback;
+                BinaryLevelFallback, LevelControlsLoseDirectMatchAfterTap, LevelControlDirectMatchDisabled;
             public bool ResourceTabSelected = true;
             public int Level = 3;
         }
@@ -459,8 +468,8 @@ namespace IKAutomation.ResourceSearch.Tests
                         ? ImageMatchResult.FoundAt(100, 10, 0, 0)
                         : Found((!ui.ResourceSelected || ui.AmbiguousResource)
                             && (!ui.ResourceRequiresStableIcon || region.HasValue), 100, 10, 20, 30);
-                    case TemplateId.LevelMinusButton: return ImageMatchResult.FoundAt(100, 100, 20, 20);
-                    case TemplateId.LevelPlusButton: return ImageMatchResult.FoundAt(200, 100, 20, 20);
+                    case TemplateId.LevelMinusButton: return Found(!ui.LevelControlDirectMatchDisabled || region.HasValue, 100, 100, 20, 20);
+                    case TemplateId.LevelPlusButton: return Found(!ui.LevelControlDirectMatchDisabled || region.HasValue, 200, 100, 20, 20);
                     case TemplateId.LevelValue7: return Found(ui.Level == 7 && !ui.HideLevelValue
                         && (!ui.LevelRequiresStableChip || region.HasValue), 150, 50, 20, 20);
                     case TemplateId.LevelValue6: return Found(ui.Level == 6 && !ui.HideLevelValue
@@ -555,8 +564,8 @@ namespace IKAutomation.ResourceSearch.Tests
                 t.ThrowIfCancellationRequested(); Taps.Add(x + "," + y);
                 if (x == 210 && y == 674) { ResourceTabTaps++; ui.ResourceTabSelected = true; }
                 else if ((x == 20 || x == 50 || x == 80 || x == 110) && y == 25) { ResourceTaps++; if (!ui.IgnoreResourceTap) ui.ResourceSelected = true; }
-                else if (x == 110) { MinusTaps++; ui.Level = Math.Max(1, ui.Level - 1); }
-                else if (x == 210) { PlusTaps++; ui.Level = Math.Min(7, ui.Level + 1); }
+                else if (x == 110) { MinusTaps++; ui.Level = Math.Max(1, ui.Level - 1); if (ui.LevelControlsLoseDirectMatchAfterTap) ui.LevelControlDirectMatchDisabled = true; }
+                else if (x == 210) { PlusTaps++; ui.Level = Math.Min(7, ui.Level + 1); if (ui.LevelControlsLoseDirectMatchAfterTap) ui.LevelControlDirectMatchDisabled = true; }
                 else if (x == 310) { FilterTaps++; ui.FilterChecked = !ui.FilterChecked; }
                 else if (x == 408 && y == 362) { FilterTaps++; ui.FilterChecked = !ui.FilterChecked; }
                 else if (x == 410) SearchTaps++;

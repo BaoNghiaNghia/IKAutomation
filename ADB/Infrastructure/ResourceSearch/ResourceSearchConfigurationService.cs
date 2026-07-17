@@ -253,7 +253,7 @@ namespace ADB_Tool_Automation_Post_FB.Infrastructure.ResourceSearch
             for (int index = 0; index < options.ResetMinusTapCount; index++)
             {
                 if (!await TapFreshAsync(deviceName, TemplateId.LevelMinusButton,
-                    "ResetLevel", result, cancellationToken))
+                    minus, "ResetLevel", result, cancellationToken))
                 {
                     AddStep(steps, "SetLevel", false, 1, evidence,
                         "Fresh LevelMinusButton bounds were unavailable; level sequence stopped.", null);
@@ -265,7 +265,7 @@ namespace ADB_Tool_Automation_Post_FB.Infrastructure.ResourceSearch
             for (int index = 0; index < plusTapCount; index++)
             {
                 if (!await TapFreshAsync(deviceName, TemplateId.LevelPlusButton,
-                    "IncreaseLevel", result, cancellationToken))
+                    plus, "IncreaseLevel", result, cancellationToken))
                 {
                     AddStep(steps, "SetLevel", false, 1, evidence,
                         "Fresh LevelPlusButton bounds were unavailable; level sequence stopped.", null);
@@ -705,15 +705,64 @@ namespace ADB_Tool_Automation_Post_FB.Infrastructure.ResourceSearch
         }
 
         private async Task<bool> TapFreshAsync(string deviceName, TemplateId templateId,
+            ConfigurationTemplateEvidence lastVerifiedBounds,
             string action, ResourceSearchConfigurationResult result,
             CancellationToken cancellationToken)
         {
             cancellationToken.ThrowIfCancellationRequested();
             byte[] screenshot = await ldPlayerClient.CaptureScreenshotPngAsync(deviceName, cancellationToken);
             ConfigurationTemplateEvidence fresh = Match(screenshot, templateId);
+            if (!HasBounds(fresh) && HasBounds(lastVerifiedBounds))
+                fresh = MatchStableLevelControl(screenshot, templateId, lastVerifiedBounds);
             if (!HasBounds(fresh)) return false;
             await TapAsync(deviceName, fresh, action, result, cancellationToken);
             return true;
+        }
+
+        private ConfigurationTemplateEvidence MatchStableLevelControl(byte[] screenshot,
+            TemplateId templateId, ConfigurationTemplateEvidence lastVerifiedBounds)
+        {
+            const int padding = 16;
+            int left = Math.Max(0, lastVerifiedBounds.X - padding);
+            int top = Math.Max(0, lastVerifiedBounds.Y - padding);
+            int width = lastVerifiedBounds.Width + padding * 2;
+            int height = lastVerifiedBounds.Height + padding * 2;
+            var region = new ImageRegion(left, top, width, height);
+            byte[] sourceTemplate = templateRegistry.LoadBytes(templateId);
+            byte[] stableTemplate = TryCreateStableLevelControlTemplate(sourceTemplate) ?? sourceTemplate;
+
+            ImageMatchResult match = imageMatcher.Find(screenshot, stableTemplate, region);
+            return Evidence(templateId, match, match != null && match.Found
+                ? $"Template '{templateId}' matched by its stable center inside the last verified local bounds."
+                : $"Template '{templateId}' did not match directly or by its stable center inside the last verified local bounds.");
+        }
+
+        private static byte[] TryCreateStableLevelControlTemplate(byte[] templateBytes)
+        {
+            try
+            {
+                using (var input = new MemoryStream(templateBytes, writable: false))
+                using (var source = new Bitmap(input))
+                {
+                    int marginX = source.Width / 4;
+                    int marginY = source.Height / 4;
+                    int width = source.Width - marginX * 2;
+                    int height = source.Height - marginY * 2;
+                    if (width <= 0 || height <= 0) return null;
+
+                    using (Bitmap stable = source.Clone(
+                        new Rectangle(marginX, marginY, width, height), PixelFormat.Format32bppArgb))
+                    using (var output = new MemoryStream())
+                    {
+                        stable.Save(output, ImageFormat.Png);
+                        return output.ToArray();
+                    }
+                }
+            }
+            catch (ArgumentException)
+            {
+                return null;
+            }
         }
 
         private string ValidateRequest(ResourceSearchConfigurationRequest request)
