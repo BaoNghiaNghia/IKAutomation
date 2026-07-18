@@ -137,6 +137,7 @@
     <Compile Include="Core\MarchDispatch\MarchDispatchObservation.cs" />
     <Compile Include="Core\TeamSelection\IOpenTeamSelectionDiagnosticStore.cs" />
     <Compile Include="Core\TeamSelection\IOpenTeamSelectionService.cs" />
+    <Compile Include="Core\TeamSelection\IResourceAwareOpenTeamSelectionService.cs" />
     <Compile Include="Core\TeamSelection\ISelectFarmTeamDiagnosticStore.cs" />
     <Compile Include="Core\TeamSelection\ISelectFarmTeamService.cs" />
     <Compile Include="Core\TeamSelection\FarmTeamSelectionOptions.cs" />

@@ -153,7 +153,9 @@ namespace ADB_Tool_Automation_Post_FB.Infrastructure.Workflows
 
                     result.LastCompletedStep = OneShotFarmStep.VerifyResourcePopup;
 
-                    OpenTeamSelectionResult opened = await openTeam.OpenAsync(deviceName, cancellationToken);
+                    OpenTeamSelectionResult opened = openTeam is IResourceAwareOpenTeamSelectionService resourceAwareOpen
+                        ? await resourceAwareOpen.OpenAsync(deviceName, resource, cancellationToken)
+                        : await openTeam.OpenAsync(deviceName, cancellationToken);
                     attempt.OpenTeamResult = opened; result.FinalState = opened.FinalState;
                     if (opened.Outcome == OpenTeamSelectionOutcome.Cancelled)
                         throw new OperationCanceledException(cancellationToken);

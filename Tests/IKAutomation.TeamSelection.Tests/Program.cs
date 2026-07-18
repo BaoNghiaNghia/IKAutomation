@@ -3,6 +3,7 @@ using ADB_Tool_Automation_Post_FB.Core.Concurrency;
 using ADB_Tool_Automation_Post_FB.Core.Diagnostics;
 using ADB_Tool_Automation_Post_FB.Core.GameDetection;
 using ADB_Tool_Automation_Post_FB.Core.ResourcePopup;
+using ADB_Tool_Automation_Post_FB.Core.ResourceSearch;
 using ADB_Tool_Automation_Post_FB.Core.TeamSelection;
 using ADB_Tool_Automation_Post_FB.Core.Vision;
 using ADB_Tool_Automation_Post_FB.Infrastructure.Concurrency;
@@ -25,6 +26,7 @@ namespace IKAutomation.TeamSelection.Tests
             Run("Already open does not tap", AlreadyOpen);
             Run("Unverified TeamSelection does not tap", UnverifiedAlreadyOpen);
             Run("Non popup state does not tap", NonPopup);
+            Run("Food popup can supersede generic WorldMap state", FoodPopupFromWorldMap);
             Run("Popup not ready does not tap", PopupNotReady);
             Run("Missing fresh Gather bounds does not tap", MissingGatherBounds);
             Run("Fresh Gather center is tapped", FreshGatherCenter);
@@ -71,7 +73,20 @@ namespace IKAutomation.TeamSelection.Tests
         }
 
         private static void NonPopup()
-        { Fixture f = Setup(); f.Detector.Initial = State(GameState.WorldMap, true); Equal(OpenTeamSelectionOutcome.ResourcePopupNotReady, Execute(f).Outcome); Equal(0, f.Client.Taps); }
+        { Fixture f = Setup(); f.Detector.Initial = State(GameState.WorldMap, true); f.Popup.Result = Popup(false); Equal(OpenTeamSelectionOutcome.ResourcePopupNotReady, Execute(f).Outcome); Equal(0, f.Client.Taps); }
+
+        private static void FoodPopupFromWorldMap()
+        {
+            Fixture f = Setup(); f.Detector.Initial = State(GameState.WorldMap, true);
+            f.Popup.Result = Popup(true, ResourceType.Food);
+            f.Client.Frames.Enqueue(Frame(1)); f.Detector.Offline[1] = GameState.WorldMap;
+            MatchPopup(f, 1, 700, 520, true, ResourceType.Food);
+            PrepareTeamFrame(f, 2, TemplateId.TeamSelectionPanelAnchor,
+                TemplateId.TeamAdjustFormationButton, TemplateId.TeamActionButtonEnabled);
+            OpenTeamSelectionResult r = Execute(f, ResourceType.Food);
+            Equal(OpenTeamSelectionOutcome.TeamSelectionOpened, r.Outcome);
+            Equal(ResourceType.Food, f.Popup.LastResource); Equal(1, f.Client.Taps);
+        }
 
         private static void PopupNotReady()
         { Fixture f = Setup(); f.Popup.Result = Popup(false); Equal(OpenTeamSelectionOutcome.ResourcePopupNotReady, Execute(f).Outcome); Equal(0, f.Client.Taps); }
@@ -202,10 +217,11 @@ namespace IKAutomation.TeamSelection.Tests
             MatchPopup(f, 1, gatherBounds ? 700 : 0, gatherBounds ? 520 : 0, gatherBounds);
         }
 
-        private static void MatchPopup(Fixture f, byte marker, int x, int y, bool gather = true)
+        private static void MatchPopup(Fixture f, byte marker, int x, int y, bool gather = true,
+            ResourceType resource = ResourceType.Iron)
         {
             f.Matcher.Add(marker, TemplateId.ResourcePopupInfoAnchor, 680, 200, 30, 30);
-            f.Matcher.Add(marker, TemplateId.ResourcePopupIronTitle, 760, 260, 70, 25);
+            f.Matcher.Add(marker, ResourceTemplateMap.PopupTitle(resource), 760, 260, 70, 25);
             if (gather) f.Matcher.Add(marker, TemplateId.GatherButtonEnabled, x, y, 80, 40);
         }
 
@@ -215,10 +231,13 @@ namespace IKAutomation.TeamSelection.Tests
             foreach (TemplateId id in matches) f.Matcher.Add(marker, id, 100 + (int)id, 300, 100, 40);
         }
 
-        private static ResourcePopupVerificationResult Popup(bool ready) => new ResourcePopupVerificationResult
+        private static ResourcePopupVerificationResult Popup(bool ready,
+            ResourceType resource = ResourceType.Iron) => new ResourcePopupVerificationResult
         {
             Outcome = ready ? ResourcePopupOutcome.ResourcePopupReady : ResourcePopupOutcome.ResourcePopupDetectedButNotReady,
             Success = ready, PopupAnchorVerified = ready, IronResourceVerified = ready,
+            ResourceVerified = ready, ExpectedResourceVerified = ready, ResourceType = resource,
+            ExpectedResource = resource,
             GatherButtonVerified = ready, GatherButtonMatch = ready ? ImageMatchResult.FoundAt(900, 600, 40, 20) : null,
             Evidence = new GameDetectionEvidence[0]
         };
@@ -232,6 +251,8 @@ namespace IKAutomation.TeamSelection.Tests
 
         private static byte[] Frame(byte marker) => new[] { marker };
         private static OpenTeamSelectionResult Execute(Fixture f, CancellationToken? token = null) => f.Service.OpenAsync("LDPlayer", token ?? Token).GetAwaiter().GetResult();
+        private static OpenTeamSelectionResult Execute(Fixture f, ResourceType resource) =>
+            ((IResourceAwareOpenTeamSelectionService)f.Service).OpenAsync("LDPlayer", resource, Token).GetAwaiter().GetResult();
         private static void Assert(bool value, string message) { if (!value) throw new Exception(message); }
         private static void Equal<T>(T expected, T actual) { if (!EqualityComparer<T>.Default.Equals(expected, actual)) throw new Exception($"Expected {expected}, actual {actual}."); }
         private static void Throws<T>(Action action) where T : Exception { try { action(); } catch (T) { return; } throw new Exception("Expected " + typeof(T).Name); }
@@ -251,11 +272,14 @@ namespace IKAutomation.TeamSelection.Tests
             public GameDetectionResult Detect(byte[] p) { GameState state = Offline.TryGetValue(p[0], out GameState value) ? value : GameState.Unknown; return State(state, true); }
         }
 
-        private sealed class FakePopup : IResourcePopupVerificationService
+        private sealed class FakePopup : IResourceAwarePopupVerificationService
         {
             public ResourcePopupVerificationResult Result; public int DelayMs;
+            public ResourceType LastResource = ResourceType.Iron;
             public async Task<ResourcePopupVerificationResult> VerifyAsync(string d, CancellationToken t)
-            { t.ThrowIfCancellationRequested(); if (DelayMs > 0) await Task.Delay(DelayMs, t); return Result; }
+            { return await VerifyAsync(d, ResourceType.Iron, t); }
+            public async Task<ResourcePopupVerificationResult> VerifyAsync(string d, ResourceType resource, CancellationToken t)
+            { LastResource = resource; t.ThrowIfCancellationRequested(); if (DelayMs > 0) await Task.Delay(DelayMs, t); return Result; }
         }
 
         private sealed class FakeRegistry : ITemplateRegistry

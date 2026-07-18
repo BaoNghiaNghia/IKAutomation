@@ -3,6 +3,7 @@ using ADB_Tool_Automation_Post_FB.Core.Concurrency;
 using ADB_Tool_Automation_Post_FB.Core.Diagnostics;
 using ADB_Tool_Automation_Post_FB.Core.GameDetection;
 using ADB_Tool_Automation_Post_FB.Core.ResourcePopup;
+using ADB_Tool_Automation_Post_FB.Core.ResourceSearch;
 using ADB_Tool_Automation_Post_FB.Core.TeamSelection;
 using ADB_Tool_Automation_Post_FB.Core.Vision;
 using System;
@@ -14,12 +15,12 @@ using System.Threading.Tasks;
 
 namespace ADB_Tool_Automation_Post_FB.Infrastructure.TeamSelection
 {
-    public sealed class OpenTeamSelectionService : IOpenTeamSelectionService
+    public sealed class OpenTeamSelectionService : IResourceAwareOpenTeamSelectionService
     {
         private static readonly TemplateId[] RequiredTemplates =
         {
-            TemplateId.ResourcePopupInfoAnchor, TemplateId.ResourcePopupIronTitle,
-            TemplateId.GatherButtonEnabled, TemplateId.TeamSelectionPanelAnchor,
+            TemplateId.ResourcePopupInfoAnchor, TemplateId.GatherButtonEnabled,
+            TemplateId.TeamSelectionPanelAnchor,
             TemplateId.TeamAdjustFormationButton, TemplateId.TeamActionButtonEnabled
         };
 
@@ -52,16 +53,22 @@ namespace ADB_Tool_Automation_Post_FB.Infrastructure.TeamSelection
 
         public async Task<OpenTeamSelectionResult> OpenAsync(string deviceName, CancellationToken cancellationToken)
         {
+            return await OpenAsync(deviceName, ResourceType.Iron, cancellationToken);
+        }
+
+        public async Task<OpenTeamSelectionResult> OpenAsync(string deviceName,
+            ResourceType resourceType, CancellationToken cancellationToken)
+        {
             if (string.IsNullOrWhiteSpace(deviceName))
                 return Empty(OpenTeamSelectionOutcome.Failed, "LDPlayer device name is required.");
-            string templateError = ValidateTemplates();
+            string templateError = ValidateTemplates(resourceType);
             if (templateError != null)
                 return Empty(OpenTeamSelectionOutcome.Failed, templateError);
             try
             {
                 cancellationToken.ThrowIfCancellationRequested();
                 return await operationLock.RunAsync(deviceName.Trim(),
-                    token => OpenCoreAsync(deviceName.Trim(), token), cancellationToken);
+                    token => OpenCoreAsync(deviceName.Trim(), resourceType, token), cancellationToken);
             }
             catch (OperationCanceledException)
             {
@@ -71,7 +78,7 @@ namespace ADB_Tool_Automation_Post_FB.Infrastructure.TeamSelection
         }
 
         private async Task<OpenTeamSelectionResult> OpenCoreAsync(
-            string deviceName, CancellationToken cancellationToken)
+            string deviceName, ResourceType expectedResource, CancellationToken cancellationToken)
         {
             var watch = Stopwatch.StartNew();
             var observations = new List<TeamSelectionObservation>();
@@ -109,17 +116,19 @@ namespace ADB_Tool_Automation_Post_FB.Infrastructure.TeamSelection
                         lastFrame, watch, cancellationToken);
                 }
 
-                if (initial.State != GameState.ResourcePopup)
-                {
-                    lastFrame = await TryCaptureDiagnosticFrameAsync(deviceName, cancellationToken);
+                ResourcePopupVerificationResult popup;
+                if (popupVerifier is IResourceAwarePopupVerificationService resourceAware)
+                    popup = await resourceAware.VerifyAsync(deviceName, expectedResource, cancellationToken);
+                else if (expectedResource == ResourceType.Iron)
+                    popup = await popupVerifier.VerifyAsync(deviceName, cancellationToken);
+                else
                     return await CompleteAsync(deviceName, result, OpenTeamSelectionOutcome.ResourcePopupNotReady,
-                        "Current state is not a verified ResourcePopup; no Tap was sent.", null,
+                        $"The popup verifier is not resource-aware for {expectedResource}; no Tap was sent.", null,
                         lastFrame, watch, cancellationToken);
-                }
-
-                ResourcePopupVerificationResult popup = await popupVerifier.VerifyAsync(deviceName, cancellationToken);
                 result.ResourcePopupVerified = popup.Outcome == ResourcePopupOutcome.ResourcePopupReady
-                    && popup.PopupAnchorVerified && popup.IronResourceVerified && popup.GatherButtonVerified
+                    && popup.PopupAnchorVerified && popup.GatherButtonVerified
+                    && (popup.ExpectedResourceVerified || popup.ResourceVerified
+                        || (expectedResource == ResourceType.Iron && popup.IronResourceVerified))
                     && HasBounds(popup.GatherButtonMatch);
                 if (!result.ResourcePopupVerified)
                 {
@@ -130,14 +139,14 @@ namespace ADB_Tool_Automation_Post_FB.Infrastructure.TeamSelection
                 }
 
                 lastFrame = await client.CaptureScreenshotPngAsync(deviceName, cancellationToken);
-                PopupMatch freshPopup = MatchPopup(lastFrame);
+                PopupMatch freshPopup = MatchPopup(lastFrame, expectedResource);
                 GameDetectionResult freshState = detector.Detect(lastFrame);
                 result.FinalEvidence = freshPopup.Evidence;
-                if (!freshState.IsSuccessful || freshState.State != GameState.ResourcePopup)
+                if (!freshState.IsSuccessful || !freshPopup.Resource.Found)
                     return await CompleteAsync(deviceName, result, OpenTeamSelectionOutcome.ResourcePopupNotReady,
                         "Resource Popup disappeared before Gather could be tapped.", freshState.ErrorMessage,
                         lastFrame, watch, cancellationToken);
-                if (!freshPopup.Ready || !HasBounds(freshPopup.Gather.MatchResult))
+                if (!HasBounds(freshPopup.Gather.MatchResult))
                     return await CompleteAsync(deviceName, result, OpenTeamSelectionOutcome.GatherButtonNotAvailable,
                         "Fresh Gather button bounds are unavailable; no Tap was sent.", null,
                         lastFrame, watch, cancellationToken);
@@ -202,9 +211,9 @@ namespace ADB_Tool_Automation_Post_FB.Infrastructure.TeamSelection
                     {
                         lastFrame = await client.CaptureScreenshotPngAsync(deviceName, cancellationToken);
                         GameDetectionResult retryState = detector.Detect(lastFrame);
-                        PopupMatch retryPopup = MatchPopup(lastFrame);
-                        if (!retryState.IsSuccessful || retryState.State != GameState.ResourcePopup
-                            || !retryPopup.Ready || !HasBounds(retryPopup.Gather.MatchResult))
+                        PopupMatch retryPopup = MatchPopup(lastFrame, expectedResource);
+                        if (!retryState.IsSuccessful || !retryPopup.Ready
+                            || !HasBounds(retryPopup.Gather.MatchResult))
                             return await CompleteAsync(deviceName, result, OpenTeamSelectionOutcome.TransitionTimeout,
                                 "Gather retry was unsafe because Resource Popup was no longer ready.",
                                 retryState.ErrorMessage, lastFrame, watch, cancellationToken);
@@ -279,12 +288,13 @@ namespace ADB_Tool_Automation_Post_FB.Infrastructure.TeamSelection
                 panel.Found && adjust.Found && action.Found);
         }
 
-        private PopupMatch MatchPopup(byte[] frame)
+        private PopupMatch MatchPopup(byte[] frame, ResourceType expectedResource)
         {
             GameDetectionEvidence anchor = Match(frame, TemplateId.ResourcePopupInfoAnchor, options.ResourcePopupRegion);
-            GameDetectionEvidence iron = Match(frame, TemplateId.ResourcePopupIronTitle, options.ResourcePopupRegion);
+            GameDetectionEvidence resource = Match(frame,
+                ResourceTemplateMap.PopupTitle(expectedResource), options.ResourcePopupRegion);
             GameDetectionEvidence gather = Match(frame, TemplateId.GatherButtonEnabled, options.ResourcePopupRegion);
-            return new PopupMatch(anchor, iron, gather, anchor.Found && iron.Found && gather.Found);
+            return new PopupMatch(anchor, resource, gather, resource.Found && gather.Found);
         }
 
         private GameDetectionEvidence Match(byte[] frame, TemplateId id, ImageRegion region)
@@ -329,9 +339,19 @@ namespace ADB_Tool_Automation_Post_FB.Infrastructure.TeamSelection
         private static bool Found(IReadOnlyList<GameDetectionEvidence> evidence, TemplateId id) =>
             evidence != null && evidence.Any(item => item.TemplateId == id && item.Found);
 
-        private string ValidateTemplates()
+        private string ValidateTemplates(ResourceType expectedResource)
         {
-            foreach (TemplateId id in RequiredTemplates)
+            TemplateId[] templates;
+            try
+            {
+                templates = RequiredTemplates.Concat(new[]
+                    { ResourceTemplateMap.PopupTitle(expectedResource) }).ToArray();
+            }
+            catch (ArgumentOutOfRangeException exception)
+            {
+                return exception.Message;
+            }
+            foreach (TemplateId id in templates)
             {
                 try
                 {
@@ -413,11 +433,11 @@ namespace ADB_Tool_Automation_Post_FB.Infrastructure.TeamSelection
 
         private sealed class PopupMatch
         {
-            public PopupMatch(GameDetectionEvidence anchor, GameDetectionEvidence iron,
+            public PopupMatch(GameDetectionEvidence anchor, GameDetectionEvidence resource,
                 GameDetectionEvidence gather, bool ready)
-            { Anchor = anchor; Iron = iron; Gather = gather; Ready = ready; Evidence = new[] { anchor, iron, gather }; }
+            { Anchor = anchor; Resource = resource; Gather = gather; Ready = ready; Evidence = new[] { anchor, resource, gather }; }
             public GameDetectionEvidence Anchor { get; }
-            public GameDetectionEvidence Iron { get; }
+            public GameDetectionEvidence Resource { get; }
             public GameDetectionEvidence Gather { get; }
             public bool Ready { get; }
             public IReadOnlyList<GameDetectionEvidence> Evidence { get; }

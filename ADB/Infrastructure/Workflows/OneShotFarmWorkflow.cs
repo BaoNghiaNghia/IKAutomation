@@ -270,7 +270,9 @@ namespace ADB_Tool_Automation_Post_FB.Infrastructure.Workflows
                 AddSuccess(result, steps, OneShotFarmStep.VerifyResourcePopup, started, verifiedPopup.Message, verifiedPopup);
 
                 token.ThrowIfCancellationRequested(); started = Start(runId, deviceName, OneShotFarmStep.OpenTeamSelection);
-                OpenTeamSelectionResult opened = await openTeam.OpenAsync(deviceName, token);
+                OpenTeamSelectionResult opened = openTeam is IResourceAwareOpenTeamSelectionService resourceAwareOpen
+                    ? await resourceAwareOpen.OpenAsync(deviceName, request.ResourceType, token)
+                    : await openTeam.OpenAsync(deviceName, token);
                 result.OpenTeamResult = opened; result.FinalState = opened.FinalState;
                 if (opened.Outcome == OpenTeamSelectionOutcome.Cancelled) throw new OperationCanceledException(token);
                 if (!opened.Success || opened.FinalState != GameState.TeamSelection || !opened.TeamSelectionVerified || !opened.TeamSelectionReady)
