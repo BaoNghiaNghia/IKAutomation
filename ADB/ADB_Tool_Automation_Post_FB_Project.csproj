@@ -132,6 +132,10 @@
     <Compile Include="Core\MarchDispatch\DispatchMarchRequest.cs" />
     <Compile Include="Core\MarchDispatch\DispatchMarchResult.cs" />
     <Compile Include="Core\MarchDispatch\DispatchSelectedTeamOptions.cs" />
+    <Compile Include="Core\MarchDispatch\ITeamMarchTimerDetector.cs" />
+    <Compile Include="Core\MarchDispatch\MarchVerificationMode.cs" />
+    <Compile Include="Core\MarchDispatch\TeamMarchTimerDetectionResult.cs" />
+    <Compile Include="Core\MarchDispatch\TeamMarchTimerProgressionResult.cs" />
     <Compile Include="Core\MarchDispatch\IDispatchMarchDiagnosticStore.cs" />
     <Compile Include="Core\MarchDispatch\IDispatchSelectedTeamService.cs" />
     <Compile Include="Core\MarchDispatch\MarchDispatchObservation.cs" />
@@ -225,6 +229,7 @@
     <Compile Include="Infrastructure\MarchDispatch\DispatchMarchDiagnosticStore.cs" />
     <Compile Include="Infrastructure\MarchDispatch\DispatchSelectedTeamService.cs" />
     <Compile Include="Infrastructure\MarchDispatch\DispatchSelectedTeamServiceFactory.cs" />
+    <Compile Include="Infrastructure\MarchDispatch\TeamMarchTimerDetector.cs" />
     <Compile Include="Infrastructure\StorageLimit\AppConfigStorageLimitDialogOptionsProvider.cs" />
     <Compile Include="Infrastructure\StorageLimit\StorageLimitDialogService.cs" />
     <Compile Include="Infrastructure\TeamSelection\AppConfigOpenTeamSelectionOptionsProvider.cs" />

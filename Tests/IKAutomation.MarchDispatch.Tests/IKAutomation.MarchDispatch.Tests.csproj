@@ -5,6 +5,8 @@
     <AssemblyName>IKAutomation.MarchDispatch.Tests</AssemblyName>
   </PropertyGroup>
   <ItemGroup>
+    <Reference Include="System.Drawing" />
+    <Reference Include="System.Configuration" />
     <Compile Include="..\..\ADB\Core\Abstractions\ILdPlayerClient.cs" Link="Production\ILdPlayerClient.cs" />
     <Compile Include="..\..\ADB\Core\Concurrency\IDeviceOperationLock.cs" Link="Production\IDeviceOperationLock.cs" />
     <Compile Include="..\..\ADB\Core\Diagnostics\IDiagnosticLogger.cs" Link="Production\IDiagnosticLogger.cs" />
@@ -14,9 +16,13 @@
     <Compile Include="..\..\ADB\Core\StorageLimit\*.cs" Link="Production\StorageLimit\%(Filename)%(Extension)" />
     <Compile Include="..\..\ADB\Core\TeamSelection\FarmTeamSelectionOptions.cs" Link="Production\FarmTeamSelectionOptions.cs" />
     <Compile Include="..\..\ADB\Core\TeamSelection\TeamNumber.cs" Link="Production\TeamNumber.cs" />
+    <Compile Include="..\..\ADB\Core\TeamSelection\WorldMapTeamAvailabilityOptions.cs" Link="Production\WorldMapTeamAvailabilityOptions.cs" />
     <Compile Include="..\..\ADB\Core\Vision\*.cs" Link="Production\Vision\%(Filename)%(Extension)" />
     <Compile Include="..\..\ADB\Infrastructure\Concurrency\DeviceOperationLock.cs" Link="Production\DeviceOperationLock.cs" />
     <Compile Include="..\..\ADB\Infrastructure\MarchDispatch\DispatchSelectedTeamService.cs" Link="Production\DispatchSelectedTeamService.cs" />
+    <Compile Include="..\..\ADB\Infrastructure\MarchDispatch\AppConfigDispatchSelectedTeamOptionsProvider.cs" Link="Production\AppConfigDispatchSelectedTeamOptionsProvider.cs" />
+    <Compile Include="..\..\ADB\Infrastructure\MarchDispatch\TeamMarchTimerDetector.cs" Link="Production\TeamMarchTimerDetector.cs" />
+    <Compile Include="..\..\ADB\Infrastructure\TeamSelection\AppConfigWorldMapTeamAvailabilityOptionsProvider.cs" Link="Production\AppConfigWorldMapTeamAvailabilityOptionsProvider.cs" />
     <Compile Include="..\..\ADB\Infrastructure\StorageLimit\StorageLimitDialogService.cs" Link="Production\StorageLimitDialogService.cs" />
   </ItemGroup>
 </Project>

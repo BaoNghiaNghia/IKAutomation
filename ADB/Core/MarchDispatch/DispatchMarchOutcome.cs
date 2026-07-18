@@ -6,6 +6,7 @@ namespace ADB_Tool_Automation_Post_FB.Core.MarchDispatch
         AlreadyMarching,
         TeamSelectionNotReady,
         ExpectedTeamNotSelected,
+        TeamAlreadyBusy,
         ActionButtonUnavailable,
         DispatchRejected,
         TransitionTimeout,

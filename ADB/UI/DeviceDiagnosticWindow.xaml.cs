@@ -535,9 +535,13 @@ namespace ADB_Tool_Automation_Post_FB.UI
         {
             string observations = string.Join(Environment.NewLine, result.Observations.Select((item, index) =>
                 $"- #{index + 1} {item.State}: panel={item.TeamSelectionFound}, world={item.WorldMapFound}, "
-                + $"badge={item.ExpectedTeamBadgeFound}, selected={item.SelectedBorderFound}, busy={item.BusyStatusFound}, "
-                + $"timer={item.MarchTimerFound}, diff={item.TeamRegionDifference?.ToString("F4") ?? "n/a"}, "
-                + $"changed={item.TeamRegionChanged}, success={item.SuccessRuleMatched}; {item.Message}"));
+                + $"badge={item.ExpectedTeamBadgeFound}, selected={item.SelectedBorderFound}, "
+                + $"readyBefore={item.ExpectedTeamReadyBeforeDispatch}, readyAfter={item.ExpectedTeamReadyAfterDispatch}, "
+                + $"readyDisappeared={item.ReadyAnchorDisappeared}, timerContent={item.TimerContentDetected}, "
+                + $"timerProgression={item.TimerProgressionDetected}, timerForeground={item.TimerForegroundRatio:F4}, "
+                + $"timerDifference={item.TimerDifferenceRatio:F4}, timerRegion=({item.TimerRegion.X},{item.TimerRegion.Y},{item.TimerRegion.Width},{item.TimerRegion.Height}), "
+                + $"mode={item.VerificationMode}, direct={item.DirectSuccessRuleMatched}, structural={item.StructuralSuccessRuleMatched}, "
+                + $"diff={item.TeamRegionDifference?.ToString("F4") ?? "n/a"}, changed={item.TeamRegionChanged}, success={item.SuccessRuleMatched}; {item.Message}"));
             return $"Outcome: {result.Outcome}{Environment.NewLine}Success: {result.Success}{Environment.NewLine}"
                 + $"Expected team: {result.ExpectedTeam}{Environment.NewLine}Dispatched team: {result.DispatchedTeam?.ToString() ?? string.Empty}{Environment.NewLine}"
                 + $"Initial: {result.InitialState}{Environment.NewLine}Final: {result.FinalState}{Environment.NewLine}"
@@ -545,7 +549,9 @@ namespace ADB_Tool_Automation_Post_FB.UI
                 + $"Action button verified: {result.ActionButtonVerified}{Environment.NewLine}Team Selection closed: {result.TeamSelectionClosed}{Environment.NewLine}"
                 + $"World Map verified: {result.WorldMapVerified}{Environment.NewLine}Selected border disappeared: {result.SelectedBorderDisappeared}{Environment.NewLine}"
                 + $"Team region changed: {result.TeamRegionChanged}{Environment.NewLine}Team region difference: {result.TeamRegionDifference?.ToString("F4") ?? "n/a"}{Environment.NewLine}"
-                + $"Busy status: {result.BusyStatusVerified}{Environment.NewLine}March timer: {result.MarchTimerVerified}{Environment.NewLine}"
+                + $"Ready before dispatch: {result.ExpectedTeamReadyBeforeDispatch}{Environment.NewLine}Ready after dispatch: {result.ExpectedTeamReadyAfterDispatch}{Environment.NewLine}Ready anchor disappeared: {result.ReadyAnchorDisappeared}{Environment.NewLine}"
+                + $"Timer content before dispatch: {result.TimerContentBeforeDispatch}{Environment.NewLine}Expected team timer verified: {result.ExpectedTeamTimerVerified}{Environment.NewLine}Timer foreground ratio: {result.FinalTimerForegroundRatio:F4}{Environment.NewLine}Timer difference ratio: {result.FinalTimerDifferenceRatio:F4}{Environment.NewLine}"
+                + $"Verification mode: {result.VerificationMode}{Environment.NewLine}Direct march verified: {result.DirectMarchVerified}{Environment.NewLine}Structural march verified: {result.StructuralMarchVerified}{Environment.NewLine}"
                 + $"March started: {result.MarchStartedVerified}{Environment.NewLine}Action taps: {result.ActionTapCount}{Environment.NewLine}"
                 + $"StorageLimitDialog detected: {result.StorageLimitDialogDetected}{Environment.NewLine}ResourceExpiryDialog detected: {result.ResourceExpiryDialogDetected}{Environment.NewLine}Resource expiry cancelled: {result.ResourceExpiryCancelled}{Environment.NewLine}Storage limit policy: {result.StorageLimitResult?.Policy.ToString() ?? string.Empty}{Environment.NewLine}Storage limit cancelled: {result.StorageLimitCancelled}{Environment.NewLine}"
                 + $"Resource switch required: {result.ResourceSwitchRequired}{Environment.NewLine}Storage full resource: {result.StorageFullResource?.ToString() ?? string.Empty}{Environment.NewLine}"

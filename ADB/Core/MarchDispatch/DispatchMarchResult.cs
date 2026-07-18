@@ -24,6 +24,16 @@ namespace ADB_Tool_Automation_Post_FB.Core.MarchDispatch
         public bool TeamRegionChanged { get; set; }
         public bool BusyStatusVerified { get; set; }
         public bool MarchTimerVerified { get; set; }
+        public bool ExpectedTeamReadyBeforeDispatch { get; set; }
+        public bool ExpectedTeamReadyAfterDispatch { get; set; }
+        public bool TimerContentBeforeDispatch { get; set; }
+        public bool DirectMarchVerified { get; set; }
+        public bool StructuralMarchVerified { get; set; }
+        public bool ReadyAnchorDisappeared { get; set; }
+        public bool ExpectedTeamTimerVerified { get; set; }
+        public double FinalTimerForegroundRatio { get; set; }
+        public double FinalTimerDifferenceRatio { get; set; }
+        public MarchVerificationMode VerificationMode { get; set; }
         public bool MarchStartedVerified { get; set; }
         public bool StorageLimitDialogDetected { get; set; }
         public bool ResourceExpiryDialogDetected { get; set; }

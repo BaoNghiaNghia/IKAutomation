@@ -36,6 +36,7 @@ namespace ADB_Tool_Automation_Post_FB.Infrastructure.MarchDispatch
         private readonly IDispatchMarchDiagnosticStore diagnosticStore;
         private readonly IDiagnosticLogger logger;
         private readonly IStorageLimitDialogService storageLimitDialog;
+        private readonly ITeamMarchTimerDetector timerDetector;
 
         public DispatchSelectedTeamService(IGameStateDetector detector, ILdPlayerClient client,
             ITemplateRegistry registry, IImageMatcher matcher, IFrameStabilityDetector frameComparer,
@@ -43,7 +44,7 @@ namespace ADB_Tool_Automation_Post_FB.Infrastructure.MarchDispatch
             DispatchSelectedTeamOptions options, IDispatchMarchDiagnosticStore diagnosticStore,
             IDiagnosticLogger logger)
             : this(detector, client, registry, matcher, frameComparer, operationLock,
-                teamOptions, options, diagnosticStore, logger, null)
+                teamOptions, options, diagnosticStore, logger, null, null)
         {
         }
 
@@ -52,6 +53,17 @@ namespace ADB_Tool_Automation_Post_FB.Infrastructure.MarchDispatch
             IDeviceOperationLock operationLock, FarmTeamSelectionOptions teamOptions,
             DispatchSelectedTeamOptions options, IDispatchMarchDiagnosticStore diagnosticStore,
             IDiagnosticLogger logger, IStorageLimitDialogService storageLimitDialog)
+            : this(detector, client, registry, matcher, frameComparer, operationLock,
+                teamOptions, options, diagnosticStore, logger, storageLimitDialog, null)
+        {
+        }
+
+        public DispatchSelectedTeamService(IGameStateDetector detector, ILdPlayerClient client,
+            ITemplateRegistry registry, IImageMatcher matcher, IFrameStabilityDetector frameComparer,
+            IDeviceOperationLock operationLock, FarmTeamSelectionOptions teamOptions,
+            DispatchSelectedTeamOptions options, IDispatchMarchDiagnosticStore diagnosticStore,
+            IDiagnosticLogger logger, IStorageLimitDialogService storageLimitDialog,
+            ITeamMarchTimerDetector timerDetector)
         {
             this.detector = detector ?? throw new ArgumentNullException(nameof(detector));
             this.client = client ?? throw new ArgumentNullException(nameof(client));
@@ -64,6 +76,7 @@ namespace ADB_Tool_Automation_Post_FB.Infrastructure.MarchDispatch
             this.diagnosticStore = diagnosticStore ?? throw new ArgumentNullException(nameof(diagnosticStore));
             this.logger = logger ?? throw new ArgumentNullException(nameof(logger));
             this.storageLimitDialog = storageLimitDialog;
+            this.timerDetector = timerDetector ?? new TeamMarchTimerDetector(options);
         }
 
         public async Task<DispatchMarchResult> DispatchAsync(string deviceName,
@@ -111,6 +124,7 @@ namespace ADB_Tool_Automation_Post_FB.Infrastructure.MarchDispatch
                 result.TeamSelectionVerified = true;
 
                 ImageRegion teamRegion = teamOptions.TeamRegions[request.ExpectedTeam];
+                ImageRegion timerRegion = options.TeamTimerRegions[request.ExpectedTeam];
                 TemplateId badgeId = BadgeId(request.ExpectedTeam);
                 lastFrame = await client.CaptureScreenshotPngAsync(deviceName, cancellationToken);
                 Verification precheck = VerifySelection(lastFrame, request.ExpectedTeam, badgeId);
@@ -124,13 +138,6 @@ namespace ADB_Tool_Automation_Post_FB.Infrastructure.MarchDispatch
                         "Expected team is not selected; no Tap was sent.", null,
                         lastFrame, watch, cancellationToken);
                 result.ExpectedTeamSelectedBeforeTap = true;
-
-                bool optionalBeforeTap = OptionalFound(lastFrame, TemplateId.TeamBusyStatusAnchor, teamRegion)
-                    || OptionalFound(lastFrame, TemplateId.TeamMarchTimerAnchor, teamRegion);
-                if (optionalBeforeTap)
-                    return await CompleteAsync(deviceName, result, DispatchMarchOutcome.VerificationIndeterminate,
-                        "Busy or march-timer evidence appeared while Team Selection was still ready; no Tap was sent.",
-                        "Pre-dispatch state is ambiguous.", lastFrame, watch, cancellationToken);
 
                 byte[] beforeDispatch = await client.CaptureScreenshotPngAsync(deviceName, cancellationToken);
                 GameDetectionResult freshState = detector.Detect(beforeDispatch);
@@ -147,6 +154,19 @@ namespace ADB_Tool_Automation_Post_FB.Infrastructure.MarchDispatch
                         "Team action button has no valid fresh bounds; no Tap was sent.", null,
                         beforeDispatch, watch, cancellationToken);
 
+                TeamMarchTimerDetectionResult timerBefore = timerDetector.DetectContent(
+                    beforeDispatch, timerRegion);
+                result.TimerContentBeforeDispatch = timerBefore.ContentDetected;
+                result.FinalTimerForegroundRatio = timerBefore.ForegroundRatio;
+                result.ExpectedTeamReadyBeforeDispatch = options.EnableReadyDisappearanceVerification
+                    && OptionalFound(beforeDispatch, TemplateId.WorldMapTeamReadyAnchor, timerRegion);
+                logger.Info($"[March Dispatch] DeviceName='{deviceName}', ExpectedTeam='{request.ExpectedTeam}', ReadyBeforeDispatch={result.ExpectedTeamReadyBeforeDispatch}, TimerContentBeforeDispatch={timerBefore.ContentDetected}, TimerForegroundRatio={timerBefore.ForegroundRatio:F4}, TimerRegion=({timerRegion.X},{timerRegion.Y},{timerRegion.Width},{timerRegion.Height})");
+                if (timerBefore.ContentDetected)
+                    return await CompleteAsync(deviceName, result, DispatchMarchOutcome.TeamAlreadyBusy,
+                        $"{request.ExpectedTeam} already has active timer content; no Tap was sent.",
+                        "Expected team was already busy before dispatch.", beforeDispatch,
+                        watch, cancellationToken);
+
                 result.ActionButtonVerified = true;
                 lastFrame = beforeDispatch;
                 await TapActionAsync(deviceName, result, action, cancellationToken, false);
@@ -154,6 +174,7 @@ namespace ADB_Tool_Automation_Post_FB.Infrastructure.MarchDispatch
                 DateTimeOffset transitionDeadline = DateTimeOffset.UtcNow.AddSeconds(
                     options.TransitionTimeoutSeconds);
                 bool transitionObserved = false;
+                MarchVerificationMode consecutiveMode = MarchVerificationMode.None;
 
                 while (DateTimeOffset.UtcNow < transitionDeadline)
                 {
@@ -200,16 +221,43 @@ namespace ADB_Tool_Automation_Post_FB.Infrastructure.MarchDispatch
                         return Complete(result, DispatchMarchOutcome.Failed,
                             handled.Message, handled.ErrorMessage, watch);
                     }
+                    TeamMarchTimerDetectionResult timerContent = options.EnableTimerProgressionVerification
+                        ? timerDetector.DetectContent(lastFrame, timerRegion)
+                        : new TeamMarchTimerDetectionResult { TimerRegion = timerRegion };
+                    TeamMarchTimerProgressionResult timerProgression = null;
+                    if (options.EnableTimerProgressionVerification && timerContent.ContentDetected)
+                    {
+                        byte[] timerPreviousFrame = lastFrame;
+                        await Task.Delay(options.TimerSampleIntervalMs, cancellationToken);
+                        lastFrame = await client.CaptureScreenshotPngAsync(deviceName, cancellationToken);
+                        timerProgression = timerDetector.Compare(timerPreviousFrame,
+                            lastFrame, timerRegion);
+                        state = detector.Detect(lastFrame);
+                        result.FinalState = state.State;
+                    }
                     MarchDispatchObservation observation = Observe(lastFrame, beforeDispatch,
-                        state, request, badgeId, teamRegion);
+                        state, request, badgeId, teamRegion, timerRegion,
+                        result.ExpectedTeamReadyBeforeDispatch, timerContent, timerProgression);
                     observations.Add(observation);
                     result.ObservedFrameCount = observations.Count;
                     Apply(result, observation);
 
                     if (state.State == GameState.Unknown) result.TransientUnknownFrameCount++;
                     bool success = observation.SuccessRuleMatched;
-                    result.ConsecutiveSuccessFrames = success
-                        ? result.ConsecutiveSuccessFrames + 1 : 0;
+                    if (!success)
+                    {
+                        result.ConsecutiveSuccessFrames = 0;
+                        consecutiveMode = MarchVerificationMode.None;
+                    }
+                    else if (observation.VerificationMode == consecutiveMode)
+                    {
+                        result.ConsecutiveSuccessFrames++;
+                    }
+                    else
+                    {
+                        consecutiveMode = observation.VerificationMode;
+                        result.ConsecutiveSuccessFrames = 1;
+                    }
                     observation.Message = success
                         ? $"March-start rule matched ({result.ConsecutiveSuccessFrames}/{options.RequiredConsecutiveSuccessFrames})."
                         : "March-start rule was not yet satisfied.";
@@ -224,8 +272,8 @@ namespace ADB_Tool_Automation_Post_FB.Infrastructure.MarchDispatch
                     }
 
                     transitionObserved |= !observation.TeamSelectionFound || observation.WorldMapFound
-                        || observation.BusyStatusFound || observation.MarchTimerFound
-                        || !observation.SelectedBorderFound;
+                        || observation.ReadyAnchorDisappeared || observation.TimerContentDetected
+                        || observation.TimerProgressionDetected || !observation.SelectedBorderFound;
                     if (result.TransientUnknownFrameCount > options.MaxTransientUnknownFrames
                         && !observation.WorldMapFound)
                         return await CompleteAsync(deviceName, result, DispatchMarchOutcome.VerificationIndeterminate,
@@ -259,21 +307,41 @@ namespace ADB_Tool_Automation_Post_FB.Infrastructure.MarchDispatch
 
         private MarchDispatchObservation Observe(byte[] frame, byte[] before,
             GameDetectionResult state, DispatchMarchRequest request, TemplateId badgeId,
-            ImageRegion teamRegion)
+            ImageRegion teamRegion, ImageRegion timerRegion, bool readyBeforeDispatch,
+            TeamMarchTimerDetectionResult timerContent,
+            TeamMarchTimerProgressionResult timerProgression)
         {
             bool panel = Match(frame, TemplateId.TeamSelectionPanelAnchor, null).Found;
             bool world = state.State == GameState.WorldMap
                 || Match(frame, TemplateId.WorldMapAnchor, null).Found;
             bool badge = Match(frame, badgeId, teamRegion).Found;
             bool selected = Match(frame, TemplateId.TeamSelectedBorderAnchor, teamRegion).Found;
-            bool busy = OptionalFound(frame, TemplateId.TeamBusyStatusAnchor, teamRegion);
-            bool timer = OptionalFound(frame, TemplateId.TeamMarchTimerAnchor, teamRegion);
+            bool readyAfter = options.EnableReadyDisappearanceVerification
+                && OptionalFound(frame, TemplateId.WorldMapTeamReadyAnchor, timerRegion);
+            bool readyDisappeared = options.EnableReadyDisappearanceVerification
+                && readyBeforeDispatch && !readyAfter;
+            bool timerFound = timerProgression != null
+                ? timerProgression.CurrentContentDetected
+                : timerContent != null && timerContent.ContentDetected;
+            bool timerChanged = timerProgression != null
+                && timerProgression.ProgressionDetected;
+            double timerForeground = timerProgression != null
+                ? timerProgression.CurrentForegroundRatio
+                : timerContent?.ForegroundRatio ?? 0d;
+            double timerDifference = timerProgression?.DifferenceRatio ?? 0d;
             FrameComparisonResult comparison = frameComparer.Compare(before, frame, teamRegion);
             bool changed = comparison.DifferenceRatio > options.TeamRegionChangeThreshold;
-            bool strong = !panel && world && (busy || timer);
             bool allowFallback = options.AllowStructuralVerificationFallback
                 && request.AllowStructuralVerificationFallback;
             bool structural = allowFallback && !panel && world && !selected && changed;
+            bool direct = !panel && world && !selected && readyDisappeared
+                && timerFound && timerChanged;
+            bool timerPlusStructural = !readyBeforeDispatch && timerChanged && structural;
+            MarchVerificationMode mode = direct
+                ? MarchVerificationMode.ReadyDisappearedAndTimerProgression
+                : timerPlusStructural ? MarchVerificationMode.TimerProgressionPlusStructural
+                : structural ? MarchVerificationMode.StructuralFallback
+                : MarchVerificationMode.None;
             return new MarchDispatchObservation
             {
                 Timestamp = DateTimeOffset.UtcNow,
@@ -282,11 +350,22 @@ namespace ADB_Tool_Automation_Post_FB.Infrastructure.MarchDispatch
                 WorldMapFound = world,
                 ExpectedTeamBadgeFound = badge,
                 SelectedBorderFound = selected,
-                BusyStatusFound = busy,
-                MarchTimerFound = timer,
+                BusyStatusFound = false,
+                MarchTimerFound = timerFound,
+                ExpectedTeamReadyBeforeDispatch = readyBeforeDispatch,
+                ExpectedTeamReadyAfterDispatch = readyAfter,
+                ReadyAnchorDisappeared = readyDisappeared,
+                TimerContentDetected = timerFound,
+                TimerProgressionDetected = timerChanged,
+                TimerForegroundRatio = timerForeground,
+                TimerDifferenceRatio = timerDifference,
+                TimerRegion = timerRegion,
+                VerificationMode = mode,
+                DirectSuccessRuleMatched = direct,
+                StructuralSuccessRuleMatched = structural,
                 TeamRegionDifference = comparison.DifferenceRatio,
                 TeamRegionChanged = changed,
-                SuccessRuleMatched = strong || structural
+                SuccessRuleMatched = direct || timerPlusStructural || structural
             };
         }
 
@@ -389,8 +468,29 @@ namespace ADB_Tool_Automation_Post_FB.Infrastructure.MarchDispatch
             result.SelectedBorderDisappeared |= !item.SelectedBorderFound;
             result.TeamRegionChanged |= item.TeamRegionChanged;
             result.BusyStatusVerified |= item.BusyStatusFound;
-            result.MarchTimerVerified |= item.MarchTimerFound;
+            result.MarchTimerVerified |= item.TimerProgressionDetected;
+            result.ExpectedTeamReadyBeforeDispatch |= item.ExpectedTeamReadyBeforeDispatch;
+            result.ExpectedTeamReadyAfterDispatch = item.ExpectedTeamReadyAfterDispatch;
+            result.ReadyAnchorDisappeared |= item.ReadyAnchorDisappeared;
+            result.ExpectedTeamTimerVerified |= item.TimerProgressionDetected;
+            result.FinalTimerForegroundRatio = item.TimerForegroundRatio;
+            result.FinalTimerDifferenceRatio = item.TimerDifferenceRatio;
+            result.DirectMarchVerified |= item.DirectSuccessRuleMatched;
+            result.StructuralMarchVerified |= item.StructuralSuccessRuleMatched;
+            if (ModePriority(item.VerificationMode) > ModePriority(result.VerificationMode))
+                result.VerificationMode = item.VerificationMode;
             result.TeamRegionDifference = item.TeamRegionDifference;
+        }
+
+        private static int ModePriority(MarchVerificationMode mode)
+        {
+            switch (mode)
+            {
+                case MarchVerificationMode.ReadyDisappearedAndTimerProgression: return 3;
+                case MarchVerificationMode.TimerProgressionPlusStructural: return 2;
+                case MarchVerificationMode.StructuralFallback: return 1;
+                default: return 0;
+            }
         }
 
         private async Task<byte[]> TryCaptureAsync(string deviceName, CancellationToken token)
@@ -424,13 +524,13 @@ namespace ADB_Tool_Automation_Post_FB.Infrastructure.MarchDispatch
             result.Duration = watch.Elapsed;
             result.Message = message;
             result.ErrorMessage = error;
-            logger.Info($"[March Dispatch] ExpectedTeam='{result.ExpectedTeam}', InitialState='{result.InitialState}', FinalState='{result.FinalState}', ActionTapCount={result.ActionTapCount}, ObservedFrames={result.ObservedFrameCount}, ConsecutiveSuccessFrames={result.ConsecutiveSuccessFrames}, Outcome='{outcome}', DurationMs={result.Duration.TotalMilliseconds:F0}, Cancellation={outcome == DispatchMarchOutcome.Cancelled}, Error='{error ?? string.Empty}'");
+            logger.Info($"[March Dispatch] ExpectedTeam='{result.ExpectedTeam}', InitialState='{result.InitialState}', FinalState='{result.FinalState}', ReadyBeforeDispatch={result.ExpectedTeamReadyBeforeDispatch}, ReadyAfterDispatch={result.ExpectedTeamReadyAfterDispatch}, ReadyAnchorDisappeared={result.ReadyAnchorDisappeared}, TimerVerified={result.ExpectedTeamTimerVerified}, TimerForegroundRatio={result.FinalTimerForegroundRatio:F4}, TimerDifferenceRatio={result.FinalTimerDifferenceRatio:F4}, VerificationMode='{result.VerificationMode}', DirectVerified={result.DirectMarchVerified}, StructuralVerified={result.StructuralMarchVerified}, ActionTapCount={result.ActionTapCount}, ObservedFrames={result.ObservedFrameCount}, ConsecutiveSuccessFrames={result.ConsecutiveSuccessFrames}, Outcome='{outcome}', DurationMs={result.Duration.TotalMilliseconds:F0}, Cancellation={outcome == DispatchMarchOutcome.Cancelled}, Error='{error ?? string.Empty}'");
             return result;
         }
 
         private void LogObservation(string deviceName, DispatchMarchResult result,
             MarchDispatchObservation item) => logger.Info(
-            $"[March Dispatch] DeviceName='{deviceName}', Observation={result.ObservedFrameCount}, GameState='{item.State}', TeamSelectionClosed={!item.TeamSelectionFound}, WorldMapVerified={item.WorldMapFound}, SelectedBorderFound={item.SelectedBorderFound}, TeamRegionDifference={item.TeamRegionDifference?.ToString("F4") ?? "n/a"}, BusyStatusFound={item.BusyStatusFound}, MarchTimerFound={item.MarchTimerFound}, ConsecutiveSuccessFrames={result.ConsecutiveSuccessFrames}");
+            $"[March Dispatch] DeviceName='{deviceName}', Observation={result.ObservedFrameCount}, GameState='{item.State}', TeamSelectionClosed={!item.TeamSelectionFound}, WorldMapVerified={item.WorldMapFound}, SelectedBorderFound={item.SelectedBorderFound}, ReadyBeforeDispatch={item.ExpectedTeamReadyBeforeDispatch}, ReadyAfterDispatch={item.ExpectedTeamReadyAfterDispatch}, ReadyAnchorDisappeared={item.ReadyAnchorDisappeared}, TimerContentDetected={item.TimerContentDetected}, TimerProgressionDetected={item.TimerProgressionDetected}, TimerForegroundRatio={item.TimerForegroundRatio:F4}, TimerDifferenceRatio={item.TimerDifferenceRatio:F4}, TimerRegion=({item.TimerRegion.X},{item.TimerRegion.Y},{item.TimerRegion.Width},{item.TimerRegion.Height}), VerificationMode='{item.VerificationMode}', DirectRule={item.DirectSuccessRuleMatched}, StructuralRule={item.StructuralSuccessRuleMatched}, TeamRegionDifference={item.TeamRegionDifference?.ToString("F4") ?? "n/a"}, ConsecutiveSuccessFrames={result.ConsecutiveSuccessFrames}, ActionTapCount={result.ActionTapCount}");
 
         private static bool IsFailure(DispatchMarchOutcome outcome) =>
             outcome != DispatchMarchOutcome.MarchStarted

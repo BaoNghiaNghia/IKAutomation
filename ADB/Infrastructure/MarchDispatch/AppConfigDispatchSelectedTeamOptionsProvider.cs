@@ -1,4 +1,8 @@
 using ADB_Tool_Automation_Post_FB.Core.MarchDispatch;
+using ADB_Tool_Automation_Post_FB.Core.TeamSelection;
+using ADB_Tool_Automation_Post_FB.Core.Vision;
+using ADB_Tool_Automation_Post_FB.Infrastructure.TeamSelection;
+using System.Collections.Generic;
 using System.Configuration;
 using System.Globalization;
 
@@ -13,7 +17,22 @@ namespace ADB_Tool_Automation_Post_FB.Infrastructure.MarchDispatch
             Double("TeamRegionChangeThreshold", 0.025),
             Bool("AllowStructuralVerificationFallback", true),
             Bool("SaveFailureScreenshots", true),
-            Text("FailureScreenshotDirectory", "Diagnostics/MarchDispatch"));
+            Text("FailureScreenshotDirectory", "Diagnostics/MarchDispatch"),
+            Bool("EnableReadyDisappearanceVerification", true),
+            Bool("EnableTimerProgressionVerification", true),
+            Int("TimerSampleIntervalMs", 1000),
+            Double("MinimumTimerForegroundRatio", 0.01),
+            Double("MaximumTimerForegroundRatio", 0.35),
+            Double("MinimumTimerDifferenceRatio", 0.003),
+            Double("MaximumTimerDifferenceRatio", 0.25),
+            new Dictionary<TeamNumber, ImageRegion>
+            {
+                { TeamNumber.Team1, TimerRegion(1, 55, 310, 95, 28) },
+                { TeamNumber.Team2, TimerRegion(2, 55, 380, 95, 28) },
+                { TeamNumber.Team3, TimerRegion(3, 55, 450, 95, 28) },
+                { TeamNumber.Team4, TimerRegion(4, 55, 520, 95, 28) }
+            },
+            AppConfigWorldMapTeamAvailabilityOptionsProvider.Load().TeamRosterRegion);
 
         public static DispatchMarchRequest LoadRequest() => new DispatchMarchRequest
         {
@@ -21,6 +40,11 @@ namespace ADB_Tool_Automation_Post_FB.Infrastructure.MarchDispatch
         };
 
         private static string Key(string name) => "DispatchSelectedTeam." + name;
+        private static ImageRegion TimerRegion(int team, int x, int y, int width, int height) =>
+            new ImageRegion(Int($"TeamTimerRegions.{team}.X", x),
+                Int($"TeamTimerRegions.{team}.Y", y),
+                Int($"TeamTimerRegions.{team}.Width", width),
+                Int($"TeamTimerRegions.{team}.Height", height));
         private static string Text(string name, string fallback) =>
             ConfigurationManager.AppSettings[Key(name)] ?? fallback;
         private static int Int(string name, int fallback)

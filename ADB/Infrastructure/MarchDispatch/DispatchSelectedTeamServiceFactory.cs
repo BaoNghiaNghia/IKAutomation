@@ -28,7 +28,7 @@ namespace ADB_Tool_Automation_Post_FB.Infrastructure.MarchDispatch
                 new FrameStabilityDetector(options.TeamRegionChangeThreshold),
                 DeviceOperationLock.Shared, AppConfigFarmTeamSelectionOptionsProvider.Load(), options,
                 new DispatchMarchDiagnosticStore(options.FailureScreenshotDirectory), logger,
-                storageHandler);
+                storageHandler, new TeamMarchTimerDetector(options));
         }
     }
 }
