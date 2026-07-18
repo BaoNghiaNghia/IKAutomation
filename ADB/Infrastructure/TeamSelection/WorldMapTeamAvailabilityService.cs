@@ -6,6 +6,8 @@ using ADB_Tool_Automation_Post_FB.Core.Navigation;
 using ADB_Tool_Automation_Post_FB.Core.TeamSelection;
 using ADB_Tool_Automation_Post_FB.Core.Vision;
 using System;
+using System.Collections.Generic;
+using System.Linq;
 using System.Threading;
 using System.Threading.Tasks;
 
@@ -77,22 +79,49 @@ namespace ADB_Tool_Automation_Post_FB.Infrastructure.TeamSelection
                     state?.ErrorMessage, state?.State ?? GameState.Unknown);
             }
 
-            ImageMatchResult match = matcher.Find(screenshot,
-                registry.LoadBytes(TemplateId.WorldMapTeamReadyAnchor),
-                options.TeamRosterRegion) ?? ImageMatchResult.NotFound();
-            bool ready = match.Found && match.Width > 0 && match.Height > 0;
+            byte[] readyTemplate = registry.LoadBytes(TemplateId.WorldMapTeamReadyAnchor);
+            var readyTeams = new List<TeamNumber>();
+            var readyMatches = new List<ImageMatchResult>();
+            TeamNumber[] teams =
+            {
+                TeamNumber.Team1, TeamNumber.Team2, TeamNumber.Team3, TeamNumber.Team4
+            };
+            int rowHeight = options.TeamRosterRegion.Height / teams.Length;
+            for (int index = 0; index < teams.Length; index++)
+            {
+                int rowY = options.TeamRosterRegion.Y + (index * rowHeight);
+                int height = index == teams.Length - 1
+                    ? options.TeamRosterRegion.Y + options.TeamRosterRegion.Height - rowY
+                    : rowHeight;
+                var rowRegion = new ImageRegion(options.TeamRosterRegion.X, rowY,
+                    options.TeamRosterRegion.Width, height);
+                ImageMatchResult rowMatch = matcher.Find(screenshot, readyTemplate,
+                    rowRegion) ?? ImageMatchResult.NotFound();
+                if (rowMatch.Found && rowMatch.Width > 0 && rowMatch.Height > 0)
+                {
+                    readyTeams.Add(teams[index]);
+                    readyMatches.Add(rowMatch);
+                }
+            }
+
+            ImageMatchResult match = readyMatches.FirstOrDefault()
+                ?? ImageMatchResult.NotFound();
+            bool ready = readyTeams.Count > 0;
             logger.Info($"[WorldMap Team Availability] DeviceName='{deviceName}', "
-                + $"Ready={ready}, Bounds=({match.X},{match.Y},{match.Width},{match.Height}), "
+                + $"Ready={ready}, ReadyTeams='{string.Join(",", readyTeams)}', "
+                + $"Bounds=({match.X},{match.Y},{match.Width},{match.Height}), "
                 + $"Region=({options.TeamRosterRegion.X},{options.TeamRosterRegion.Y},"
                 + $"{options.TeamRosterRegion.Width},{options.TeamRosterRegion.Height}), Cancellation=false");
             return new WorldMapTeamAvailabilityResult
             {
                 Success = true,
                 AnyReadyTeam = ready,
+                ReadyTeams = readyTeams.AsReadOnly(),
                 FinalState = GameState.WorldMap,
                 ReadyMatch = match,
+                ReadyMatches = readyMatches.AsReadOnly(),
                 Message = ready
-                    ? "At least one ready team was verified on WorldMap."
+                    ? $"Ready teams verified on WorldMap: {string.Join(", ", readyTeams)}."
                     : "No ready team was found in the WorldMap roster."
             };
         }
@@ -103,10 +132,12 @@ namespace ADB_Tool_Automation_Post_FB.Infrastructure.TeamSelection
             {
                 Success = false,
                 AnyReadyTeam = false,
+                ReadyTeams = new TeamNumber[0],
                 FinalState = state,
                 Message = message,
                 ErrorMessage = error ?? message,
-                ReadyMatch = ImageMatchResult.NotFound()
+                ReadyMatch = ImageMatchResult.NotFound(),
+                ReadyMatches = new ImageMatchResult[0]
             };
     }
 }

@@ -90,6 +90,9 @@
                         Click="DispatchSelectedTeam_Click" Padding="14,7" Margin="0,0,8,8"/>
                 <Button x:Name="RunOneShotFarmButton" Content="Run One-Shot Farm"
                         Click="RunOneShotFarm_Click" Padding="14,7" Margin="0,0,8,8"/>
+                <Button x:Name="StopOneShotFarmButton" Content="Stop"
+                        Click="StopOneShotFarm_Click" Padding="14,7" Margin="0,0,8,8"
+                        IsEnabled="False"/>
                 <Button Content="Back Test" Click="BackTest_Click" Padding="14,7" Margin="0,0,8,8"/>
             </WrapPanel>
 

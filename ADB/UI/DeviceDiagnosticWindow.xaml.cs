@@ -34,6 +34,7 @@ namespace ADB_Tool_Automation_Post_FB.UI
         private readonly OneShotFarmRequest defaultOneShotFarmRequest;
         private readonly OneShotFarmResourceSelection resourceSelection = new OneShotFarmResourceSelection();
         private readonly CancellationTokenSource lifetimeCancellation = new CancellationTokenSource();
+        private CancellationTokenSource oneShotFarmCancellation;
 
         public DeviceDiagnosticWindow(
             IDeviceDiagnosticService diagnosticService,
@@ -83,7 +84,11 @@ namespace ADB_Tool_Automation_Post_FB.UI
                 ? "(not configured)"
                 : diagnosticService.Configuration.PackageName;
             Loaded += async (sender, args) => await RefreshDeviceListAsync();
-            Closed += (sender, args) => lifetimeCancellation.Cancel();
+            Closed += (sender, args) =>
+            {
+                oneShotFarmCancellation?.Cancel();
+                lifetimeCancellation.Cancel();
+            };
         }
 
         private async void RefreshDevices_Click(object sender, RoutedEventArgs e)
@@ -230,6 +235,7 @@ namespace ADB_Tool_Automation_Post_FB.UI
 
         private async void RunOneShotFarm_Click(object sender, RoutedEventArgs e)
         {
+            if (oneShotFarmCancellation != null) return;
             ReadResourceSelection();
             if (resourceSelection.GetSelectedResources().Count < 2)
             {
@@ -238,9 +244,43 @@ namespace ADB_Tool_Automation_Post_FB.UI
             }
 
             OneShotFarmRequest request = resourceSelection.CreateRequest(defaultOneShotFarmRequest);
-            await RunOperationAsync(async cancellationToken => FormatOneShotFarmResult(
-                await oneShotFarmWorkflow.RunAsync(GetSelectedDeviceName(),
-                    request, cancellationToken)));
+            var runCancellation = CancellationTokenSource.CreateLinkedTokenSource(
+                lifetimeCancellation.Token);
+            oneShotFarmCancellation = runCancellation;
+            RunOneShotFarmButton.IsEnabled = false;
+            StopOneShotFarmButton.IsEnabled = true;
+            StatusTextBlock.Text = "Waiting for an allowed ready team or running One-Shot Farm...";
+            try
+            {
+                OneShotFarmResult result = await oneShotFarmWorkflow.RunAsync(
+                    GetSelectedDeviceName(), request, runCancellation.Token);
+                StatusTextBlock.Text = FormatOneShotFarmResult(result);
+            }
+            catch (OperationCanceledException)
+            {
+                StatusTextBlock.Text = "One-Shot Farm canceled.";
+            }
+            catch (Exception exception)
+            {
+                StatusTextBlock.Text = $"Error: {exception.Message}";
+            }
+            finally
+            {
+                if (ReferenceEquals(oneShotFarmCancellation, runCancellation))
+                    oneShotFarmCancellation = null;
+                runCancellation.Dispose();
+                RunOneShotFarmButton.IsEnabled = true;
+                StopOneShotFarmButton.IsEnabled = false;
+            }
+        }
+
+        private void StopOneShotFarm_Click(object sender, RoutedEventArgs e)
+        {
+            CancellationTokenSource currentRun = oneShotFarmCancellation;
+            if (currentRun == null) return;
+            StopOneShotFarmButton.IsEnabled = false;
+            StatusTextBlock.Text = "Stopping One-Shot Farm...";
+            currentRun.Cancel();
         }
 
         private void ApplyResourceSelection()
@@ -557,6 +597,7 @@ namespace ADB_Tool_Automation_Post_FB.UI
                 + $"Resource attempts:{Environment.NewLine}{resourceAttempts}{Environment.NewLine}"
                 + $"Selected team: {result.SelectedTeam?.ToString() ?? string.Empty}{Environment.NewLine}Dispatched team: {result.DispatchedTeam?.ToString() ?? string.Empty}{Environment.NewLine}"
                 + $"Team availability checks: {result.TeamAvailabilityChecks}{Environment.NewLine}Ready team observed: {result.ReadyTeamObserved}{Environment.NewLine}"
+                + $"Eligible ready teams: {string.Join(",", result.ReadyTeams ?? new TeamNumber[0])}{Environment.NewLine}"
                 + $"Duration: {result.Duration.TotalMilliseconds:F0} ms{Environment.NewLine}Diagnostic: {result.DiagnosticScreenshotPath ?? string.Empty}{Environment.NewLine}"
                 + $"Message: {result.Message}{Environment.NewLine}Error: {result.ErrorMessage ?? string.Empty}{Environment.NewLine}Steps:{Environment.NewLine}{steps}";
         }
