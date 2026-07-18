@@ -160,6 +160,11 @@ namespace ADB_Tool_Automation_Post_FB.Infrastructure.ResourceSearch
                     context.PreviousPanelConfirmed = true;
                     context.LastPanelConfirmed = true;
 
+                    // LDPlayer can return from Tap before the transient toast has rendered.
+                    // Wait one fast-poll interval so the first observation is not just the
+                    // unchanged pre-toast panel frame.
+                    await Task.Delay(options.NotFoundFastPollIntervalMs, cancellationToken);
+
                     int fastWindowMs = Math.Min(options.NotFoundObservationWindowMs,
                         options.SearchTapVerificationTimeoutSeconds * 1000);
                     var fastWatch = Stopwatch.StartNew();
