@@ -67,6 +67,7 @@ namespace ADB_Tool_Automation_Post_FB.Infrastructure.Vision
                 { TemplateId.TeamFree, Define(TemplateId.TeamFree, "Teams/team_free.png") },
                 { TemplateId.TeamBusy, Define(TemplateId.TeamBusy, "Teams/team_busy.png") },
                 { TemplateId.TeamSelected, Define(TemplateId.TeamSelected, "Teams/team_selected.png") },
+                { TemplateId.WorldMapTeamReadyAnchor, Define(TemplateId.WorldMapTeamReadyAnchor, "Teams/world_map_team_ready_anchor.png") },
                 { TemplateId.NetworkError, Define(TemplateId.NetworkError, "Errors/network_error.png") },
                 { TemplateId.ReconnectButton, Define(TemplateId.ReconnectButton, "Errors/reconnect_button.png") }
             };

@@ -34,11 +34,16 @@ namespace ADB_Tool_Automation_Post_FB.Infrastructure.Workflows
                 (ADB_Tool_Automation_Post_FB.Core.ResourcePopup.IResourceAwarePopupVerificationService)popup,
                 openTeam, selectTeam, dispatch, profiles,
                 fallbackOptions, logger);
-            return new OneShotFarmWorkflow(navigation, levelFallback, popup,
+            var inner = new OneShotFarmWorkflow(navigation, levelFallback, popup,
                 openTeam, selectTeam, dispatch, detector,
                 DeviceOperationLock.Shared, workflowOptions,
                 new OneShotFarmDiagnosticService(client, workflowOptions.ScreenshotDirectory), logger,
                 fallbackOptions, resourceFallback, profiles, registry, new SystemRandomProvider());
+            var availability = new WorldMapTeamAvailabilityService(navigation,
+                detector, client, registry, matcher, DeviceOperationLock.Shared,
+                AppConfigWorldMapTeamAvailabilityOptionsProvider.Load(), logger);
+            return new ReadyTeamOneShotFarmWorkflow(inner, availability,
+                AppConfigReadyTeamGateOptionsProvider.Load(), logger);
         }
     }
 }

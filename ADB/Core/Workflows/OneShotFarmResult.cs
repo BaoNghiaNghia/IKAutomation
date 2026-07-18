@@ -43,6 +43,8 @@ namespace ADB_Tool_Automation_Post_FB.Core.Workflows
         public bool RequestedUnoccupiedOnly { get; set; }
         public TeamNumber? SelectedTeam { get; set; }
         public TeamNumber? DispatchedTeam { get; set; }
+        public int TeamAvailabilityChecks { get; set; }
+        public bool ReadyTeamObserved { get; set; }
         public GameState InitialState { get; set; }
         public GameState FinalState { get; set; }
         public OneShotFarmStep LastCompletedStep { get; set; }

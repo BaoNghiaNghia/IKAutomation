@@ -57,6 +57,7 @@ namespace ADB_Tool_Automation_Post_FB.Core.Vision
         TeamFree,
         TeamBusy,
         TeamSelected,
+        WorldMapTeamReadyAnchor,
         NetworkError,
         ReconnectButton
     }
