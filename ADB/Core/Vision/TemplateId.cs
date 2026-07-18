@@ -44,6 +44,7 @@ namespace ADB_Tool_Automation_Post_FB.Core.Vision
         TeamSelectionPanelAnchor,
         TeamAdjustFormationButton,
         TeamActionButtonEnabled,
+        Team1Badge,
         Team2Badge,
         Team3Badge,
         Team4Badge,

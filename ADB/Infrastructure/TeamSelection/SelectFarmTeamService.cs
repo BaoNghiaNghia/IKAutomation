@@ -140,11 +140,8 @@ namespace ADB_Tool_Automation_Post_FB.Infrastructure.TeamSelection
                     TemplateId? badgeIdValue = BadgeId(team);
                     if (!badgeIdValue.HasValue)
                     {
-                        attempts.Add(new TeamSelectionAttempt
-                        {
-                            TeamNumber = team,
-                            Message = "Team1 selection is outside the MVP because no Team1 badge template is registered; no Tap was sent."
-                        });
+                        attempts.Add(new TeamSelectionAttempt { TeamNumber = team,
+                            Message = $"No badge template is registered for {team}; no Tap was sent." });
                         continue;
                     }
                     TemplateId badgeId = badgeIdValue.Value;
@@ -389,6 +386,7 @@ namespace ADB_Tool_Automation_Post_FB.Infrastructure.TeamSelection
         {
             switch (team)
             {
+                case TeamNumber.Team1: return TemplateId.Team1Badge;
                 case TeamNumber.Team2: return TemplateId.Team2Badge;
                 case TeamNumber.Team3: return TemplateId.Team3Badge;
                 case TeamNumber.Team4: return TemplateId.Team4Badge;

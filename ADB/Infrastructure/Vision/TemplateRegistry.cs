@@ -54,6 +54,7 @@ namespace ADB_Tool_Automation_Post_FB.Infrastructure.Vision
                 { TemplateId.TeamSelectionPanelAnchor, Define(TemplateId.TeamSelectionPanelAnchor, "Teams/team_selection_panel_anchor.png") },
                 { TemplateId.TeamAdjustFormationButton, Define(TemplateId.TeamAdjustFormationButton, "Teams/team_adjust_formation_button.png") },
                 { TemplateId.TeamActionButtonEnabled, Define(TemplateId.TeamActionButtonEnabled, "Teams/team_action_button_enabled.png") },
+                { TemplateId.Team1Badge, Define(TemplateId.Team1Badge, "Teams/team_1_badge.png") },
                 { TemplateId.Team2Badge, Define(TemplateId.Team2Badge, "Teams/team_2_badge.png") },
                 { TemplateId.Team3Badge, Define(TemplateId.Team3Badge, "Teams/team_3_badge.png") },
                 { TemplateId.Team4Badge, Define(TemplateId.Team4Badge, "Teams/team_4_badge.png") },

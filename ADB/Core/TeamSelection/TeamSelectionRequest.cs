@@ -6,9 +6,9 @@ namespace ADB_Tool_Automation_Post_FB.Core.TeamSelection
     {
         public TeamSelectionRequest()
         {
-            AllowedTeams = new[] { TeamNumber.Team2, TeamNumber.Team3, TeamNumber.Team4 };
-            Priority = new[] { TeamNumber.Team4, TeamNumber.Team3, TeamNumber.Team2 };
-            AllowTeam1 = false;
+            AllowedTeams = new[] { TeamNumber.Team1, TeamNumber.Team2, TeamNumber.Team3, TeamNumber.Team4 };
+            Priority = new[] { TeamNumber.Team4, TeamNumber.Team3, TeamNumber.Team2, TeamNumber.Team1 };
+            AllowTeam1 = true;
         }
 
         public IReadOnlyList<TeamNumber> AllowedTeams { get; set; }

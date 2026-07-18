@@ -353,6 +353,7 @@ namespace ADB_Tool_Automation_Post_FB.Infrastructure.MarchDispatch
         {
             switch (team)
             {
+                case TeamNumber.Team1: return TemplateId.Team1Badge;
                 case TeamNumber.Team2: return TemplateId.Team2Badge;
                 case TeamNumber.Team3: return TemplateId.Team3Badge;
                 case TeamNumber.Team4: return TemplateId.Team4Badge;
@@ -363,9 +364,9 @@ namespace ADB_Tool_Automation_Post_FB.Infrastructure.MarchDispatch
         {
             if (string.IsNullOrWhiteSpace(deviceName)) return "LDPlayer device name is required.";
             if (request == null) return "March dispatch request is required.";
-            if (request.ExpectedTeam != TeamNumber.Team2 && request.ExpectedTeam != TeamNumber.Team3
+            if (request.ExpectedTeam != TeamNumber.Team1 && request.ExpectedTeam != TeamNumber.Team2 && request.ExpectedTeam != TeamNumber.Team3
                 && request.ExpectedTeam != TeamNumber.Team4)
-                return "ExpectedTeam must be Team2, Team3, or Team4 for the MVP.";
+                return "ExpectedTeam must be Team1, Team2, Team3, or Team4.";
             return null;
         }
 

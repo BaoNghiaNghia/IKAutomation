@@ -26,7 +26,7 @@ namespace IKAutomation.FarmTeamSelection.Tests
             Run("TeamSelection not ready sends no Tap", NotReady);
             Run("Team4 already selected returns AlreadySelected", AlreadySelected);
             Run("Disallowed Team1 does not block Team4", Team1DoesNotBlock);
-            Run("Priority is Team4 Team3 Team2", PriorityOrder);
+            Run("Priority is Team4 Team3 Team2 Team1", PriorityOrder);
             Run("Team4 badge center is tapped", BadgeCenter);
             Run("Tap coordinate is derived from current bounds", DynamicCoordinate);
             Run("Badge is recaptured before Tap", BadgeRecaptured);
@@ -37,6 +37,7 @@ namespace IKAutomation.FarmTeamSelection.Tests
             Run("Selected Team4 without farm action proceeds to Team3", BusyTeam4ProceedsToTeam3);
             Run("Late selected border without badge proceeds to next team", LateSelectedBorderProceedsToNextTeam);
             Run("Busy Team4 and Team3 can proceed to Team2 after deadline", BusyTeamsProceedAfterDeadline);
+            Run("Busy Team4 Team3 Team2 falls back to idle Team1", BusyTeamsFallBackToTeam1);
             Run("Missing disabled template uses verification", OptionalDisabledMissing);
             Run("Failed Team4 proceeds to Team3", Team4ThenTeam3);
             Run("Team3 success stops before Team2", Team3Stops);
@@ -64,7 +65,7 @@ namespace IKAutomation.FarmTeamSelection.Tests
             Run("Duplicate priority is rejected", DuplicatePriorityRejected);
             Run("Priority outside allowed teams is rejected", PriorityOutsideAllowedRejected);
             Run("Team1 is rejected when disabled", Team1Rejected);
-            Run("Allowed Team1 remains unsupported without blind Tap", AllowedTeam1Safe);
+            Run("Allowed Team1 uses fresh badge bounds", AllowedTeam1UsesBounds);
             Run("Empty lists are rejected", EmptyListsRejected);
             Run("Options reject invalid polling", InvalidOptionsRejected);
             Run("Options reject invalid ROI", InvalidRoiRejected);
@@ -86,10 +87,10 @@ namespace IKAutomation.FarmTeamSelection.Tests
         { Fixture f = Setup(); f.Matcher.Selected.Add(TeamNumber.Team4); SelectFarmTeamResult r = Execute(f); Equal(SelectFarmTeamOutcome.AlreadySelected, r.Outcome); Equal(TeamNumber.Team4, r.SelectedTeam.Value); Equal(0, f.Client.Taps.Count); }
 
         private static void Team1DoesNotBlock()
-        { Fixture f = Setup(); f.Matcher.Selected.Add(TeamNumber.Team1); f.Matcher.Badges.Add(TeamNumber.Team4); f.Matcher.SelectOnTap[TeamNumber.Team4] = TeamNumber.Team4; Equal(TeamNumber.Team4, Execute(f).SelectedTeam.Value); }
+        { Fixture f = Setup(); f.Matcher.Selected.Add(TeamNumber.Team1); f.Matcher.Badges.Add(TeamNumber.Team4); f.Matcher.SelectOnTap[TeamNumber.Team4] = TeamNumber.Team4; var q = new TeamSelectionRequest { AllowedTeams = new[] { TeamNumber.Team2, TeamNumber.Team3, TeamNumber.Team4 }, Priority = new[] { TeamNumber.Team4, TeamNumber.Team3, TeamNumber.Team2 }, AllowTeam1 = false }; Equal(TeamNumber.Team4, Execute(f, q).SelectedTeam.Value); }
 
         private static void PriorityOrder()
-        { Fixture f = Setup(); SelectFarmTeamResult r = Execute(f); Sequence(new[] { TeamNumber.Team4, TeamNumber.Team3, TeamNumber.Team2 }, r.AttemptedTeams); }
+        { Fixture f = Setup(); SelectFarmTeamResult r = Execute(f); Sequence(new[] { TeamNumber.Team4, TeamNumber.Team3, TeamNumber.Team2, TeamNumber.Team1 }, r.AttemptedTeams); }
 
         private static void BadgeCenter()
         { Fixture f = Successful(TeamNumber.Team4); SelectFarmTeamResult r = Execute(f); Equal(SelectFarmTeamOutcome.TeamSelected, r.Outcome); Equal("1040,470", f.Client.Taps[0]); }
@@ -132,6 +133,19 @@ namespace IKAutomation.FarmTeamSelection.Tests
             Equal(SelectFarmTeamOutcome.TeamSelected, r.Outcome);
             Equal(TeamNumber.Team2, r.SelectedTeam.Value);
             Sequence(new[] { TeamNumber.Team4, TeamNumber.Team3, TeamNumber.Team2 }, r.AttemptedTeams);
+        }
+
+        private static void BusyTeamsFallBackToTeam1()
+        {
+            Fixture f = Setup(maxAttempts: 1);
+            TeamNumber[] teams = { TeamNumber.Team4, TeamNumber.Team3, TeamNumber.Team2, TeamNumber.Team1 };
+            f.Matcher.Badges.UnionWith(teams);
+            foreach (TeamNumber team in teams) f.Matcher.SelectOnTap[team] = team;
+            f.Detector.ActionAvailable = () => f.Matcher.Selected.Contains(TeamNumber.Team1);
+            SelectFarmTeamResult result = Execute(f);
+            Equal(SelectFarmTeamOutcome.TeamSelected, result.Outcome);
+            Equal(TeamNumber.Team1, result.SelectedTeam.Value);
+            Sequence(teams, result.AttemptedTeams);
         }
 
         private static void LateSelectedBorderProceedsToNextTeam()
@@ -238,8 +252,8 @@ namespace IKAutomation.FarmTeamSelection.Tests
         private static void Team1Rejected()
         { Fixture f = Setup(); var q = new TeamSelectionRequest { AllowedTeams = new[] { TeamNumber.Team1 }, Priority = new[] { TeamNumber.Team1 }, AllowTeam1 = false }; Equal(SelectFarmTeamOutcome.Failed, Execute(f, q).Outcome); }
 
-        private static void AllowedTeam1Safe()
-        { Fixture f = Setup(); var q = new TeamSelectionRequest { AllowedTeams = new[] { TeamNumber.Team1 }, Priority = new[] { TeamNumber.Team1 }, AllowTeam1 = true }; Equal(SelectFarmTeamOutcome.NoEligibleTeam, Execute(f, q).Outcome); Equal(0, f.Client.Taps.Count); }
+        private static void AllowedTeam1UsesBounds()
+        { Fixture f = Successful(TeamNumber.Team1); SelectFarmTeamResult r = Execute(f, Only(TeamNumber.Team1)); Equal(SelectFarmTeamOutcome.TeamSelected, r.Outcome); Equal(TeamNumber.Team1, r.SelectedTeam.Value); Equal("1040,35", f.Client.Taps[0]); Assert(f.Matcher.BadgeCalls[TeamNumber.Team1] >= 2, "Team1 badge was not refreshed before Tap."); }
 
         private static void EmptyListsRejected()
         { Fixture f = Setup(); var q = new TeamSelectionRequest { AllowedTeams = new TeamNumber[0], Priority = new TeamNumber[0] }; Equal(SelectFarmTeamOutcome.Failed, Execute(f, q).Outcome); }
@@ -342,7 +356,7 @@ namespace IKAutomation.FarmTeamSelection.Tests
                 }
                 if (id == TemplateId.TeamDisabledAnchor)
                     return Disabled.Contains(team) ? ImageMatchResult.FoundAt(15, region.Value.Y + 20, 30, 20) : ImageMatchResult.NotFound();
-                if (id == TemplateId.Team2Badge || id == TemplateId.Team3Badge || id == TemplateId.Team4Badge)
+                if (id == TemplateId.Team1Badge || id == TemplateId.Team2Badge || id == TemplateId.Team3Badge || id == TemplateId.Team4Badge)
                 {
                     BadgeCalls[team] = BadgeCalls.TryGetValue(team, out int calls) ? calls + 1 : 1;
                     if (HideBadgeWhenSelected && Selected.Contains(team)) return ImageMatchResult.NotFound();

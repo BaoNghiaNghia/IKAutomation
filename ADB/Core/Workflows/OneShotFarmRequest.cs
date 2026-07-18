@@ -15,8 +15,9 @@ namespace ADB_Tool_Automation_Post_FB.Core.Workflows
             SelectedResources = ResourcePriority;
             StorageLimitPolicy = StorageLimitPolicy.CancelAndSwitchResource;
             AttemptsPerResourceLevel = 1;
-            AllowedTeams = new[] { TeamNumber.Team2, TeamNumber.Team3, TeamNumber.Team4 };
-            TeamPriority = new[] { TeamNumber.Team4, TeamNumber.Team3, TeamNumber.Team2 };
+            AllowedTeams = new[] { TeamNumber.Team1, TeamNumber.Team2, TeamNumber.Team3, TeamNumber.Team4 };
+            TeamPriority = new[] { TeamNumber.Team4, TeamNumber.Team3, TeamNumber.Team2, TeamNumber.Team1 };
+            AllowTeam1 = true;
             RequireMarchVerification = true;
         }
         public ResourceType ResourceType { get; set; }
