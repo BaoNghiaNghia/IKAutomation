@@ -9,6 +9,7 @@
     <Compile Include="..\..\ADB\Core\Concurrency\IDeviceOperationLock.cs" Link="Production\IDeviceOperationLock.cs" />
     <Compile Include="..\..\ADB\Core\Diagnostics\IDiagnosticLogger.cs" Link="Production\IDiagnosticLogger.cs" />
     <Compile Include="..\..\ADB\Core\GameDetection\*.cs" Link="Production\GameDetection\%(Filename)%(Extension)" />
+    <Compile Include="..\..\ADB\Core\ResourceSearch\ResourceType.cs" Link="Production\ResourceSearch\ResourceType.cs" />
     <Compile Include="..\..\ADB\Core\TeamSelection\*.cs" Link="Production\TeamSelection\%(Filename)%(Extension)" />
     <Compile Include="..\..\ADB\Core\Vision\*.cs" Link="Production\Vision\%(Filename)%(Extension)" />
     <Compile Include="..\..\ADB\Infrastructure\Concurrency\DeviceOperationLock.cs" Link="Production\DeviceOperationLock.cs" />
