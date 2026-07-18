@@ -37,6 +37,8 @@ namespace IKAutomation.GameDetection.Tests
             Run("Popup templates use configured ROI", PopupTemplatesUseRoi);
             Run("WorldMap from WorldMapAnchor only", WorldMapFromAnchor);
             Run("WorldMap uses stable anchor fallback", WorldMapStableAnchorFallback);
+            Run("City from lower-left map button", CityFromMapButton);
+            Run("City map button uses lower-left ROI", CityMapButtonUsesLowerLeftRoi);
             Run("ContinentMap from ContinentMapTitle", ContinentMapFromTitle);
             Run("Unknown when no template matches", UnknownWhenNoMatches);
             Run("Unknown is not an exception", UnknownIsSuccessful);
@@ -253,6 +255,24 @@ namespace IKAutomation.GameDetection.Tests
             Equal(GameState.ContinentMap, DetectWithMatches(TemplateId.ContinentMapTitle).State, "Continent map rule failed.");
         }
 
+        private static void CityFromMapButton()
+        {
+            Equal(GameState.City, DetectWithMatches(TemplateId.CityToWorldMapButton).State,
+                "City rule failed.");
+        }
+
+        private static void CityMapButtonUsesLowerLeftRoi()
+        {
+            var matcher = new FakeImageMatcher();
+            matcher.Matches.Add(TemplateId.CityToWorldMapButton);
+            CreateDetector(new FakeLdPlayerClient(), matcher: matcher)
+                .DetectAsync("IK-1", TestToken).GetAwaiter().GetResult();
+            ImageRegion? region = matcher.Regions[TemplateId.CityToWorldMapButton];
+            Assert(region.HasValue && region.Value.X == 0 && region.Value.Y == 360
+                && region.Value.Width == 640 && region.Value.Height == 360,
+                "City map button must be matched only in the lower-left ROI.");
+        }
+
 
         private static void UnknownWhenNoMatches()
         {
@@ -311,7 +331,7 @@ namespace IKAutomation.GameDetection.Tests
         private static void EvidenceContainsThreeTemplates()
         {
             GameDetectionResult result = DetectWithMatches();
-            Equal(16, result.Evidence.Count, "Detector must check exactly sixteen templates.");
+            Equal(17, result.Evidence.Count, "Detector must check exactly seventeen templates.");
             foreach (TemplateId id in RequiredIds())
                 Assert(result.Evidence.Any(item => item.TemplateId == id), "Missing evidence for " + id);
         }
@@ -363,6 +383,7 @@ namespace IKAutomation.GameDetection.Tests
         {
             var registry = new TemplateRegistry(DataRoot());
             Equal("Global/world_map_anchor.png", registry.GetDefinition(TemplateId.WorldMapAnchor).RelativePath, "World template path mismatch.");
+            Equal("Global/city_to_world_map_button.png", registry.GetDefinition(TemplateId.CityToWorldMapButton).RelativePath, "City map button template path mismatch.");
             Equal("Global/continent_map_title.png", registry.GetDefinition(TemplateId.ContinentMapTitle).RelativePath, "Continent template path mismatch.");
             Equal("Search/resource_search_panel_anchor.png", registry.GetDefinition(TemplateId.ResourceSearchPanelAnchor).RelativePath, "Panel template path mismatch.");
             Equal("Search/search_button_enabled.png", registry.GetDefinition(TemplateId.SearchButtonEnabled).RelativePath, "Button template path mismatch.");
@@ -407,7 +428,8 @@ namespace IKAutomation.GameDetection.Tests
             TemplateId.SearchButtonEnabled, TemplateId.LevelMinusButton,
             TemplateId.ResourceTabSelected, TemplateId.ResourceTabUnselected,
             TemplateId.ResourcePopupInfoAnchor, TemplateId.ResourcePopupIronTitle,
-            TemplateId.GatherButtonEnabled, TemplateId.ContinentMapTitle, TemplateId.WorldMapAnchor };
+            TemplateId.GatherButtonEnabled, TemplateId.ContinentMapTitle,
+            TemplateId.CityToWorldMapButton, TemplateId.WorldMapAnchor };
         private static string DataRoot() => Path.Combine(AppContext.BaseDirectory, "Data", "InfinityKingdom", "1280x720", "vi");
         private static string TempDirectory() { string path = Path.Combine(Path.GetTempPath(), "IKGameDetectionTests", Guid.NewGuid().ToString("N")); Directory.CreateDirectory(path); return path; }
 

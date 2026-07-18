@@ -59,6 +59,7 @@ namespace ADB_Tool_Automation_Post_FB.Core.Vision
         TeamSelected,
         WorldMapTeamReadyAnchor,
         NetworkError,
-        ReconnectButton
+        ReconnectButton,
+        CityToWorldMapButton
     }
 }

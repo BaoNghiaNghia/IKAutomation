@@ -12,6 +12,7 @@ namespace ADB_Tool_Automation_Post_FB.Infrastructure.Vision
         private static readonly IReadOnlyDictionary<TemplateId, TemplateDefinition> Definitions =
             new Dictionary<TemplateId, TemplateDefinition>
             {
+                { TemplateId.CityToWorldMapButton, Define(TemplateId.CityToWorldMapButton, "Global/city_to_world_map_button.png") },
                 { TemplateId.WorldMapAnchor, Define(TemplateId.WorldMapAnchor, "Global/world_map_anchor.png") },
                 { TemplateId.ContinentMapTitle, Define(TemplateId.ContinentMapTitle, "Global/continent_map_title.png") },
                 { TemplateId.ResourceSearchPanelAnchor, Define(TemplateId.ResourceSearchPanelAnchor, "Search/resource_search_panel_anchor.png") },

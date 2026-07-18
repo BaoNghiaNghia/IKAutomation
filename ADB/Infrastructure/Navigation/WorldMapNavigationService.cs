@@ -83,6 +83,30 @@ namespace ADB_Tool_Automation_Post_FB.Infrastructure.Navigation
             if (!initial.IsSuccessful) return Result(false, initial, initial, 0, watch, "State detection failed.", initial.ErrorMessage, transitions);
             if (initial.State == GameState.WorldMap) return Result(true, initial, initial, 0, watch, "Device is already on WorldMap.", null, transitions);
             if (initial.State == GameState.Unknown) return Result(false, initial, initial, 0, watch, "Unknown state; no blind input was sent.", null, transitions);
+            if (initial.State == GameState.City)
+            {
+                GameDetectionEvidence mapButton = initial.Evidence?.FirstOrDefault(item =>
+                    item.TemplateId == TemplateId.CityToWorldMapButton);
+                if (mapButton?.MatchResult == null || !mapButton.Found
+                    || mapButton.MatchResult.Width <= 0 || mapButton.MatchResult.Height <= 0)
+                    return Result(false, initial, initial, 0, watch,
+                        "City was detected but the World Map button had no valid fresh bounds; no Tap was sent.",
+                        null, transitions);
+
+                int x = mapButton.MatchResult.CenterX;
+                int y = mapButton.MatchResult.CenterY;
+                await ldPlayerClient.TapAsync(deviceName, x, y, cancellationToken);
+                AddTransition(transitions, "Tap",
+                    $"Tapped freshly matched CityToWorldMapButton center ({x},{y}).");
+                GameDetectionResult cityFinal = await PollAsync(deviceName,
+                    GameState.WorldMap, transitions, cancellationToken);
+                return cityFinal.IsSuccessful && cityFinal.State == GameState.WorldMap
+                    ? Result(true, initial, cityFinal, 1, watch,
+                        "WorldMap verified after tapping the City navigation button.", null, transitions)
+                    : Result(false, initial, cityFinal, 1, watch,
+                        "City navigation button was tapped but WorldMap was not verified before timeout.",
+                        cityFinal.ErrorMessage, transitions);
+            }
             if (initial.State != GameState.ResourceSearchPanel && initial.State != GameState.ContinentMap)
                 return Result(false, initial, initial, 0, watch, "Unsupported initial state.", null, transitions);
 

@@ -33,6 +33,7 @@ namespace ADB_Tool_Automation_Post_FB.Infrastructure.GameDetection
             TemplateId.ResourcePopupIronTitle,
             TemplateId.GatherButtonEnabled,
             TemplateId.ContinentMapTitle,
+            TemplateId.CityToWorldMapButton,
             TemplateId.WorldMapAnchor
         };
 
@@ -193,6 +194,7 @@ namespace ADB_Tool_Automation_Post_FB.Infrastructure.GameDetection
             GameDetectionEvidence gatherButton = FindEvidence(evidence, TemplateId.GatherButtonEnabled);
             GameDetectionEvidence worldAnchor = FindEvidence(evidence, TemplateId.WorldMapAnchor);
             GameDetectionEvidence continentTitle = FindEvidence(evidence, TemplateId.ContinentMapTitle);
+            GameDetectionEvidence cityMapButton = FindEvidence(evidence, TemplateId.CityToWorldMapButton);
             bool panelChromeFound = panelAnchor.Found || levelMinusButton.Found
                 || resourceTabSelected.Found || resourceTabUnselected.Found;
             bool panelConfirmed = panelChromeFound && searchButton.Found;
@@ -211,7 +213,8 @@ namespace ADB_Tool_Automation_Post_FB.Infrastructure.GameDetection
                 : panelConfirmed ? GameState.ResourceSearchPanel
                 : popupConfirmed ? GameState.ResourcePopup
                     : continentTitle.Found ? GameState.ContinentMap
-                        : worldAnchor.Found ? GameState.WorldMap : GameState.Unknown;
+                        : worldAnchor.Found ? GameState.WorldMap
+                            : cityMapButton.Found ? GameState.City : GameState.Unknown;
 
             teamPanel.Message += teamSelectionConfirmed
                 ? resourceExpiryConfirmed
@@ -283,6 +286,11 @@ namespace ADB_Tool_Automation_Post_FB.Infrastructure.GameDetection
                     : popupConfirmed
                         ? " ResourcePopup has priority over ContinentMap."
                     : " Rule ContinentMap not satisfied.";
+            cityMapButton.Message += state == GameState.City
+                ? " Rule City selected from the lower-left World Map navigation button."
+                : worldAnchor.Found
+                    ? " WorldMap has priority over City."
+                    : " Rule City not satisfied.";
 
             return new GameDetectionResult
             {
@@ -331,6 +339,9 @@ namespace ADB_Tool_Automation_Post_FB.Infrastructure.GameDetection
                     ? options.ResourcePopupActionRegion
                     : IsPopupTemplate(templateId)
                     ? options.ResourcePopupRegion
+                    : templateId == TemplateId.CityToWorldMapButton
+                    ? new ImageRegion(0, screenshotHeight / 2,
+                        screenshotWidth / 2, screenshotHeight - screenshotHeight / 2)
                     : IsSearchPanelTemplate(templateId)
                         ? new ImageRegion(0, screenshotHeight / 2,
                             screenshotWidth, screenshotHeight - screenshotHeight / 2)
