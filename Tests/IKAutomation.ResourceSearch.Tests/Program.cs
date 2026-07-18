@@ -41,6 +41,9 @@ namespace IKAutomation.ResourceSearch.Tests
             Run("Level five taps plus four times and verifies", LevelFive);
             Run("Missing level six template fails before input", MissingLevelSixTemplate);
             Run("Level seven already selected sends no level input", LevelSevenAlreadySelected);
+            Run("Level seven already selected does not require level controls", LevelSevenAlreadySelectedWithoutControls);
+            Run("Binary level verification does not require level controls", BinaryLevelVerificationWithoutControls);
+            Run("Missing level controls fail safely when target level is not verified", MissingLevelControlsWithoutTargetLevel);
             Run("Level requires LevelValue7 verification", LevelRequiresVerification);
             Run("Level verification uses stable chip fallback", LevelStableChipFallback);
             Run("Level verification tolerates translucent panel background", LevelBinaryTextFallback);
@@ -168,6 +171,43 @@ namespace IKAutomation.ResourceSearch.Tests
             Fixture f = Setup(); f.Ui.Level = 7;
             ResourceSearchConfigurationResult r = Execute(f);
             Assert(r.Success && r.LevelVerified, r.ErrorMessage);
+            Equal(0, f.Client.MinusTaps, "Minus taps.");
+            Equal(0, f.Client.PlusTaps, "Plus taps.");
+        }
+
+        private static void LevelSevenAlreadySelectedWithoutControls()
+        {
+            Fixture f = Setup();
+            f.Ui.Level = 7;
+            f.Ui.LevelRequiresStableChip = true;
+            f.Ui.LevelControlDirectMatchDisabled = true;
+            ResourceSearchConfigurationResult result = Execute(f);
+            Assert(result.Success && result.LevelVerified, result.ErrorMessage);
+            Equal(0, f.Client.MinusTaps, "Minus taps.");
+            Equal(0, f.Client.PlusTaps, "Plus taps.");
+        }
+
+        private static void MissingLevelControlsWithoutTargetLevel()
+        {
+            Fixture f = Setup();
+            f.Ui.LevelControlDirectMatchDisabled = true;
+            ResourceSearchConfigurationResult result = Execute(f);
+            Assert(!result.Success && !result.LevelVerified,
+                "Unverified target level was accepted without controls.");
+            Equal(0, f.Client.MinusTaps, "Minus taps.");
+            Equal(0, f.Client.PlusTaps, "Plus taps.");
+        }
+
+        private static void BinaryLevelVerificationWithoutControls()
+        {
+            Fixture f = Setup();
+            f.Ui.Level = 7;
+            f.Ui.HideLevelValue = true;
+            f.Ui.BinaryLevelFallback = true;
+            f.Ui.LevelControlDirectMatchDisabled = true;
+            f.Registry.UseImageLevelTemplate = true;
+            ResourceSearchConfigurationResult result = Execute(f);
+            Assert(result.Success && result.LevelVerified, result.ErrorMessage);
             Equal(0, f.Client.MinusTaps, "Minus taps.");
             Equal(0, f.Client.PlusTaps, "Plus taps.");
         }

@@ -229,8 +229,15 @@ namespace ADB_Tool_Automation_Post_FB.Infrastructure.ResourceSearch
         {
             byte[] screenshot = await ldPlayerClient.CaptureScreenshotPngAsync(deviceName, cancellationToken);
             TemplateId levelTemplateId = GetLevelTemplateId(result.RequestedLevel);
-            ConfigurationTemplateEvidence currentLevel = Match(screenshot, levelTemplateId);
-            var evidence = new List<ConfigurationTemplateEvidence> { currentLevel };
+            ConfigurationTemplateEvidence minus = Match(screenshot, TemplateId.LevelMinusButton);
+            ConfigurationTemplateEvidence plus = Match(screenshot, TemplateId.LevelPlusButton);
+            ConfigurationTemplateEvidence search = Match(screenshot, TemplateId.SearchButtonEnabled);
+            ConfigurationTemplateEvidence currentLevel = MatchLevel(
+                screenshot, levelTemplateId, minus, plus, search);
+            var evidence = new List<ConfigurationTemplateEvidence>
+            {
+                currentLevel, minus, plus, search
+            };
             if (currentLevel.Found)
             {
                 result.LevelVerified = true;
@@ -239,10 +246,6 @@ namespace ADB_Tool_Automation_Post_FB.Infrastructure.ResourceSearch
                 return true;
             }
 
-            ConfigurationTemplateEvidence minus = Match(screenshot, TemplateId.LevelMinusButton);
-            ConfigurationTemplateEvidence plus = Match(screenshot, TemplateId.LevelPlusButton);
-            evidence.Add(minus);
-            evidence.Add(plus);
             if (!HasBounds(minus) || !HasBounds(plus))
             {
                 AddStep(steps, "SetLevel", false, 1, evidence,
@@ -369,7 +372,7 @@ namespace ADB_Tool_Automation_Post_FB.Infrastructure.ResourceSearch
             {
                 Match(screenshot, TemplateId.ResourceTabSelected),
                 MatchResourceState(screenshot, profileProvider.Get(request.ResourceType).SelectedTemplate, search),
-                MatchLevel(screenshot, GetLevelTemplateId(request.TargetLevel), minus, plus),
+                MatchLevel(screenshot, GetLevelTemplateId(request.TargetLevel), minus, plus, search),
                 MatchFilterState(screenshot, request.UnoccupiedOnly
                     ? TemplateId.UnoccupiedFilterChecked : TemplateId.UnoccupiedFilterUnchecked, search),
                 search
@@ -413,7 +416,14 @@ namespace ADB_Tool_Automation_Post_FB.Infrastructure.ResourceSearch
                 cancellationToken.ThrowIfCancellationRequested();
                 byte[] screenshot = await ldPlayerClient.CaptureScreenshotPngAsync(
                     deviceName, cancellationToken);
-                last = MatchLevel(screenshot, levelTemplateId, minus, plus);
+                ConfigurationTemplateEvidence currentMinus = Match(
+                    screenshot, TemplateId.LevelMinusButton);
+                ConfigurationTemplateEvidence currentPlus = Match(
+                    screenshot, TemplateId.LevelPlusButton);
+                ConfigurationTemplateEvidence search = Match(
+                    screenshot, TemplateId.SearchButtonEnabled);
+                last = MatchLevel(screenshot, levelTemplateId,
+                    currentMinus, currentPlus, search);
                 if (last.Found) return last;
                 await Task.Delay(options.StatePollIntervalMs, cancellationToken);
             }
@@ -457,22 +467,40 @@ namespace ADB_Tool_Automation_Post_FB.Infrastructure.ResourceSearch
         }
 
         private ConfigurationTemplateEvidence MatchLevel(byte[] screenshot, TemplateId levelTemplateId,
-            ConfigurationTemplateEvidence minus, ConfigurationTemplateEvidence plus)
+            ConfigurationTemplateEvidence minus, ConfigurationTemplateEvidence plus,
+            ConfigurationTemplateEvidence search)
         {
             ConfigurationTemplateEvidence direct = Match(screenshot, levelTemplateId);
-            if (direct.Found || !HasBounds(minus) || !HasBounds(plus)) return direct;
+            if (direct.Found) return direct;
 
-            ImageRegion? region = CreateLevelValueRegion(minus, plus);
+            ImageRegion? region = CreateLevelValueRegion(minus, plus)
+                ?? CreateSearchRelativeLevelValueRegion(search);
             if (!region.HasValue) return direct;
 
             byte[] sourceTemplate = templateRegistry.LoadBytes(levelTemplateId);
             byte[] stableTemplate = TryCreateStableLevelTemplate(sourceTemplate) ?? sourceTemplate;
             ImageMatchResult match = imageMatcher.Find(screenshot, stableTemplate, region);
             if (match == null || !match.Found)
-                match = TryMatchBinarizedCurrentLevel(screenshot, sourceTemplate, minus, plus);
+                match = TryMatchBinarizedCurrentLevel(
+                    screenshot, sourceTemplate, minus, plus, region.Value);
             return Evidence(levelTemplateId, match, match != null && match.Found
                 ? $"{levelTemplateId} matched inside the current-value region using stable UI text."
                 : $"{levelTemplateId} did not match directly, by its stable chip, or by binary UI text.");
+        }
+
+        private static ImageRegion? CreateSearchRelativeLevelValueRegion(
+            ConfigurationTemplateEvidence search)
+        {
+            if (!HasBounds(search)) return null;
+
+            // The level value and Search button share the fixed 1280x720 panel overlay.
+            // This ROI is used only for matching the already-visible level; it is never
+            // used as an input coordinate fallback.
+            int left = Math.Max(0, search.X - 480);
+            int top = Math.Max(0, search.Y + 70);
+            const int width = 330;
+            const int height = 70;
+            return new ImageRegion(left, top, width, height);
         }
 
         private static ImageRegion? CreateLevelValueRegion(
@@ -518,15 +546,23 @@ namespace ADB_Tool_Automation_Post_FB.Infrastructure.ResourceSearch
 
         private ImageMatchResult TryMatchBinarizedCurrentLevel(byte[] screenshot,
             byte[] templateBytes, ConfigurationTemplateEvidence minus,
-            ConfigurationTemplateEvidence plus)
+            ConfigurationTemplateEvidence plus, ImageRegion fallbackRegion)
         {
             try
             {
-                int controlCenterX = (minus.X + minus.Width / 2
-                    + plus.X + plus.Width / 2) / 2;
-                int top = Math.Max(0, Math.Min(minus.Y, plus.Y) - 110);
-                var currentValueRegion = new ImageRegion(
-                    Math.Max(0, controlCenterX - 80), top, 100, 130);
+                ImageRegion currentValueRegion;
+                if (HasBounds(minus) && HasBounds(plus))
+                {
+                    int controlCenterX = (minus.X + minus.Width / 2
+                        + plus.X + plus.Width / 2) / 2;
+                    int top = Math.Max(0, Math.Min(minus.Y, plus.Y) - 110);
+                    currentValueRegion = new ImageRegion(
+                        Math.Max(0, controlCenterX - 80), top, 100, 130);
+                }
+                else
+                {
+                    currentValueRegion = fallbackRegion;
+                }
 
                 using (var screenshotStream = new MemoryStream(screenshot, writable: false))
                 using (var screenshotBitmap = new Bitmap(screenshotStream))
