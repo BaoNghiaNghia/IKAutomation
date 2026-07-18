@@ -33,6 +33,7 @@ namespace IKAutomation.ResourceSearch.Tests
             Run("Unselected Iron center is tapped", UnselectedIronCenter);
             Run("Iron requires selected verification", IronRequiresVerification);
             Run("Iron verification uses stable icon fallback", IronStableIconFallback);
+            Run("Food selection uses compact stable icon fallback", FoodCompactStableIconFallback);
             Run("Missing Iron bounds prevents fallback", MissingIronBounds);
             Run("Level reset taps minus eight times", MinusEight);
             Run("Level seven taps plus six times", PlusSix);
@@ -135,6 +136,18 @@ namespace IKAutomation.ResourceSearch.Tests
             ResourceSearchConfigurationResult r = Execute(f);
             Assert(r.Success && r.ResourceVerified, r.ErrorMessage);
             Equal(1, f.Client.ResourceTaps, "Resource taps.");
+        }
+
+        private static void FoodCompactStableIconFallback()
+        {
+            Fixture f = Setup();
+            f.Ui.ResourceRequiresCompactStableIcon = true;
+            f.Registry.UseImageFoodUnselectedTemplate = true;
+            var request = Request(); request.ResourceType = ResourceType.Food;
+            ResourceSearchConfigurationResult result = Execute(f, request);
+            Assert(result.Success && result.ResourceVerified, result.ErrorMessage);
+            Equal(1, f.Client.ResourceTaps, "Resource taps.");
+            Assert(f.Client.Taps.Contains("110,25"), "Compact Food icon center was not tapped.");
         }
 
         private static void MissingIronBounds()
@@ -424,7 +437,8 @@ namespace IKAutomation.ResourceSearch.Tests
             public bool ResourceSelected, FilterChecked, IgnoreResourceTap, InvalidResourceBounds,
                 HideLevelValue, AmbiguousResource, LevelRequiresStableChip,
                 FilterRequiresStableControl, ResourceRequiresStableIcon, HideUncheckedFilter,
-                BinaryLevelFallback, LevelControlsLoseDirectMatchAfterTap, LevelControlDirectMatchDisabled;
+                ResourceRequiresCompactStableIcon, BinaryLevelFallback,
+                LevelControlsLoseDirectMatchAfterTap, LevelControlDirectMatchDisabled;
             public bool ResourceTabSelected = true;
             public int Level = 3;
         }
@@ -435,6 +449,14 @@ namespace IKAutomation.ResourceSearch.Tests
             public FakeMatcher(FakeUi ui) { this.ui = ui; }
             public ImageMatchResult Find(byte[] screenshot, byte[] template, ImageRegion? region = null)
             {
+                if (ui.ResourceRequiresCompactStableIcon && IsPng(template))
+                {
+                    using (var stream = new MemoryStream(template, writable: false))
+                    using (var bitmap = new Bitmap(stream))
+                        return bitmap.Width == 50 && bitmap.Height == 50 && region.HasValue
+                            ? ImageMatchResult.FoundAt(85, 0, 50, 50)
+                            : ImageMatchResult.NotFound();
+                }
                 if (template.Length > 1 && template[0] == 137)
                     return ui.BinaryLevelFallback && IsBinaryMask(template)
                         ? ImageMatchResult.FoundAt(10, 20, 45, 33)
@@ -503,15 +525,23 @@ namespace IKAutomation.ResourceSearch.Tests
                     return true;
                 }
             }
+
+            private static bool IsPng(byte[] bytes) => bytes != null && bytes.Length > 8
+                && bytes[0] == 137 && bytes[1] == 80 && bytes[2] == 78 && bytes[3] == 71;
         }
 
         private sealed class FakeRegistry : ITemplateRegistry
         {
-            public TemplateId? Missing; public bool UseImageLevelTemplate;
+            public TemplateId? Missing; public bool UseImageLevelTemplate, UseImageFoodUnselectedTemplate;
             public TemplateDefinition GetDefinition(TemplateId id) => new TemplateDefinition(id, id + ".png", .8);
             public string GetPath(TemplateId id) => Path.Combine("templates", id + ".png");
-            public byte[] LoadBytes(TemplateId id) => id == TemplateId.LevelValue7 && UseImageLevelTemplate
-                ? CreateLevelTemplate() : new[] { (byte)id };
+            public byte[] LoadBytes(TemplateId id)
+            {
+                if (id == TemplateId.LevelValue7 && UseImageLevelTemplate) return CreateLevelTemplate();
+                if (id == TemplateId.ResourceFoodUnselected && UseImageFoodUnselectedTemplate)
+                    return CreateResourceTemplate();
+                return new[] { (byte)id };
+            }
             public bool Exists(TemplateId id) => Missing != id;
 
             private static byte[] CreateLevelTemplate()
@@ -522,6 +552,19 @@ namespace IKAutomation.ResourceSearch.Tests
                 {
                     graphics.Clear(Color.DarkRed);
                     graphics.DrawString("7", SystemFonts.DefaultFont, Brushes.White, 55, 5);
+                    bitmap.Save(stream, ImageFormat.Png);
+                    return stream.ToArray();
+                }
+            }
+
+            private static byte[] CreateResourceTemplate()
+            {
+                using (var bitmap = new Bitmap(150, 150))
+                using (var graphics = Graphics.FromImage(bitmap))
+                using (var stream = new MemoryStream())
+                {
+                    graphics.Clear(Color.DarkSlateGray);
+                    graphics.FillEllipse(Brushes.Gold, 40, 40, 70, 70);
                     bitmap.Save(stream, ImageFormat.Png);
                     return stream.ToArray();
                 }

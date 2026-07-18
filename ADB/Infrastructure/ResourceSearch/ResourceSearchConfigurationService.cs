@@ -620,22 +620,40 @@ namespace ADB_Tool_Automation_Post_FB.Infrastructure.ResourceSearch
             int top = Math.Max(0, search.Y - 180);
             ImageRegion region = new ImageRegion(left, top, search.X - left, 210);
             byte[] sourceTemplate = templateRegistry.LoadBytes(templateId);
-            byte[] stableTemplate = TryCreateStableResourceTemplate(sourceTemplate) ?? sourceTemplate;
-            ImageMatchResult match = imageMatcher.Find(screenshot, stableTemplate, region);
+            ImageMatchResult match = ImageMatchResult.NotFound();
+            int matchedDivisor = 0;
+            bool stableCropCreated = false;
+            foreach (int divisor in new[] { 4, 3 })
+            {
+                byte[] stableTemplate = TryCreateStableResourceTemplate(sourceTemplate, divisor);
+                if (stableTemplate == null) continue;
+                stableCropCreated = true;
+                match = imageMatcher.Find(screenshot, stableTemplate, region);
+                if (match != null && match.Found)
+                {
+                    matchedDivisor = divisor;
+                    break;
+                }
+            }
+            if (!stableCropCreated)
+                match = imageMatcher.Find(screenshot, sourceTemplate, region);
+            string matchedMessage = matchedDivisor > 0
+                ? $"Template '{templateId}' matched by its stable icon center crop (1/{matchedDivisor} margins) inside the Search-relative region."
+                : $"Template '{templateId}' matched inside the Search-relative region.";
             return Evidence(templateId, match, match != null && match.Found
-                ? $"Template '{templateId}' matched by its stable icon center inside the Search-relative region."
-                : $"Template '{templateId}' did not match directly or by its stable icon center.");
+                ? matchedMessage
+                : $"Template '{templateId}' did not match directly or by either stable icon center crop.");
         }
 
-        private static byte[] TryCreateStableResourceTemplate(byte[] templateBytes)
+        private static byte[] TryCreateStableResourceTemplate(byte[] templateBytes, int marginDivisor)
         {
             try
             {
                 using (var input = new MemoryStream(templateBytes, writable: false))
                 using (var source = new Bitmap(input))
                 {
-                    int marginX = source.Width / 4;
-                    int marginY = source.Height / 4;
+                    int marginX = source.Width / marginDivisor;
+                    int marginY = source.Height / marginDivisor;
                     int width = source.Width - marginX * 2;
                     int height = source.Height - marginY * 2;
                     if (width <= 0 || height <= 0) return null;
