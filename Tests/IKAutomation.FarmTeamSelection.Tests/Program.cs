@@ -35,6 +35,7 @@ namespace IKAutomation.FarmTeamSelection.Tests
             Run("Multiple selected borders are ambiguous", Ambiguous);
             Run("Disabled Team4 is skipped", DisabledTeam4);
             Run("Selected Team4 without farm action proceeds to Team3", BusyTeam4ProceedsToTeam3);
+            Run("Late selected border without badge proceeds to next team", LateSelectedBorderProceedsToNextTeam);
             Run("Busy Team4 and Team3 can proceed to Team2 after deadline", BusyTeamsProceedAfterDeadline);
             Run("Missing disabled template uses verification", OptionalDisabledMissing);
             Run("Failed Team4 proceeds to Team3", Team4ThenTeam3);
@@ -131,6 +132,21 @@ namespace IKAutomation.FarmTeamSelection.Tests
             Equal(SelectFarmTeamOutcome.TeamSelected, r.Outcome);
             Equal(TeamNumber.Team2, r.SelectedTeam.Value);
             Sequence(new[] { TeamNumber.Team4, TeamNumber.Team3, TeamNumber.Team2 }, r.AttemptedTeams);
+        }
+
+        private static void LateSelectedBorderProceedsToNextTeam()
+        {
+            Fixture f = Setup(maxAttempts: 2);
+            f.Matcher.Badges.UnionWith(new[] { TeamNumber.Team4, TeamNumber.Team3 });
+            f.Matcher.SelectOnTap[TeamNumber.Team4] = TeamNumber.Team4;
+            f.Matcher.SelectOnTap[TeamNumber.Team3] = TeamNumber.Team3;
+            f.Matcher.HideSelectedForFirstPostTapScan = true;
+            f.Matcher.HideBadgeWhenSelected = true;
+            f.Detector.ActionAvailable = () => !f.Matcher.Selected.Contains(TeamNumber.Team4);
+            SelectFarmTeamResult result = Execute(f);
+            Equal(SelectFarmTeamOutcome.TeamSelected, result.Outcome);
+            Equal(TeamNumber.Team3, result.SelectedTeam.Value);
+            Sequence(new[] { TeamNumber.Team4, TeamNumber.Team3 }, result.AttemptedTeams.Take(2));
         }
 
         private static void OptionalDisabledMissing()
@@ -307,7 +323,8 @@ namespace IKAutomation.FarmTeamSelection.Tests
             public readonly Dictionary<TeamNumber, int> BadgeCalls = new Dictionary<TeamNumber, int>();
             public readonly Dictionary<TeamNumber, ImageRegion> Regions = new Dictionary<TeamNumber, ImageRegion>();
             public readonly Dictionary<TeamNumber, ImageMatchResult> LastBadge = new Dictionary<TeamNumber, ImageMatchResult>();
-            public bool MoveBadgeEachCall;
+            public bool MoveBadgeEachCall, HideSelectedForFirstPostTapScan, HideBadgeWhenSelected;
+            private int hiddenSelectedChecksRemaining;
 
             public ImageMatchResult Find(byte[] screenshot, byte[] template, ImageRegion? region = null)
             {
@@ -315,12 +332,20 @@ namespace IKAutomation.FarmTeamSelection.Tests
                 TeamNumber team = TeamFromRegion(region);
                 if (region.HasValue) Regions[team] = region.Value;
                 if (id == TemplateId.TeamSelectedBorderAnchor)
+                {
+                    if (hiddenSelectedChecksRemaining > 0)
+                    {
+                        hiddenSelectedChecksRemaining--;
+                        return ImageMatchResult.NotFound();
+                    }
                     return Selected.Contains(team) ? ImageMatchResult.FoundAt(5, region.Value.Y + 5, 180, 12) : ImageMatchResult.NotFound();
+                }
                 if (id == TemplateId.TeamDisabledAnchor)
                     return Disabled.Contains(team) ? ImageMatchResult.FoundAt(15, region.Value.Y + 20, 30, 20) : ImageMatchResult.NotFound();
                 if (id == TemplateId.Team2Badge || id == TemplateId.Team3Badge || id == TemplateId.Team4Badge)
                 {
                     BadgeCalls[team] = BadgeCalls.TryGetValue(team, out int calls) ? calls + 1 : 1;
+                    if (HideBadgeWhenSelected && Selected.Contains(team)) return ImageMatchResult.NotFound();
                     if (!Badges.Contains(team)) return ImageMatchResult.NotFound();
                     int x = 1000 + (BaseX.TryGetValue(team, out int offset) ? offset : 0)
                         + (MoveBadgeEachCall ? BadgeCalls[team] * 10 : 0);
@@ -335,7 +360,10 @@ namespace IKAutomation.FarmTeamSelection.Tests
             {
                 TeamNumber? tapped = LastBadge.Where(item => item.Value.CenterX == x && item.Value.CenterY == y).Select(item => (TeamNumber?)item.Key).FirstOrDefault();
                 if (tapped.HasValue && SelectOnTap.TryGetValue(tapped.Value, out TeamNumber selected))
-                { Selected.Clear(); Selected.Add(selected); }
+                {
+                    Selected.Clear(); Selected.Add(selected);
+                    if (HideSelectedForFirstPostTapScan) hiddenSelectedChecksRemaining = 4;
+                }
             }
 
             private static TeamNumber TeamFromRegion(ImageRegion? region)

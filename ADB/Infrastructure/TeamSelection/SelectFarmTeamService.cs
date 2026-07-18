@@ -198,6 +198,37 @@ namespace ADB_Tool_Automation_Post_FB.Infrastructure.TeamSelection
                                 "Team Selection stopped being ready; no further Tap was sent.",
                                 state.ErrorMessage, lastFrame, watch, cancellationToken);
 
+                        SelectedScan currentSelected = ScanSelected(lastFrame);
+                        if (currentSelected.IsAmbiguous)
+                            return await CompleteAsync(deviceName, result,
+                                SelectFarmTeamOutcome.Failed,
+                                "Selected border appeared in multiple team ROIs before Tap.",
+                                "Ambiguous selected-team evidence.", lastFrame, watch, cancellationToken);
+                        if (currentSelected.Teams.Count == 1
+                            && currentSelected.Teams[0] == team)
+                        {
+                            bool actionAvailable = HasEnabledAction(state);
+                            attempts.Add(new TeamSelectionAttempt
+                            {
+                                TeamNumber = team,
+                                SelectedVerified = true,
+                                SelectedBorderMatch = currentSelected.Matches[team],
+                                Message = actionAvailable
+                                    ? "Team selection became visible on the fresh retry frame; no repeated Tap was sent."
+                                    : "Team selection became visible on the fresh retry frame but has no enabled farm action; trying the next eligible team."
+                            });
+                            if (actionAvailable)
+                            {
+                                result.SelectedTeam = team;
+                                result.SelectedStateVerified = true;
+                                result.FinalState = GameState.TeamSelection;
+                                return Complete(result, SelectFarmTeamOutcome.TeamSelected,
+                                    $"{team} was selected and verified on a fresh retry frame.", null, watch);
+                            }
+                            continueAfterConfirmedUnavailable = true;
+                            break;
+                        }
+
                         ImageRegion region = teamRegion;
                         ImageMatchResult badge = Match(lastFrame, badgeId, region);
                         bool disabled = IsDisabled(lastFrame, region);
