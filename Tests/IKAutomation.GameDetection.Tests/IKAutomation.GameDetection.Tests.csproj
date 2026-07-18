@@ -32,22 +32,7 @@
     <Content Include="..\..\ADB\bin\Debug\x64\*.dll" Link="x64\%(Filename)%(Extension)">
       <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
     </Content>
-    <Content Include="..\..\ADB\Data\InfinityKingdom\1280x720\vi\Global\world_map_anchor.png" Link="Data\InfinityKingdom\1280x720\vi\Global\world_map_anchor.png">
-      <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
-    </Content>
-    <Content Include="..\..\ADB\Data\InfinityKingdom\1280x720\vi\Global\continent_map_title.png" Link="Data\InfinityKingdom\1280x720\vi\Global\continent_map_title.png">
-      <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
-    </Content>
-    <Content Include="..\..\ADB\Data\InfinityKingdom\1280x720\vi\Search\resource_search_panel_anchor.png" Link="Data\InfinityKingdom\1280x720\vi\Search\resource_search_panel_anchor.png">
-      <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
-    </Content>
-    <Content Include="..\..\ADB\Data\InfinityKingdom\1280x720\vi\Search\search_button_enabled.png" Link="Data\InfinityKingdom\1280x720\vi\Search\search_button_enabled.png">
-      <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
-    </Content>
-    <Content Include="..\..\ADB\Data\InfinityKingdom\1280x720\vi\Search\level_minus_button.png" Link="Data\InfinityKingdom\1280x720\vi\Search\level_minus_button.png">
-      <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
-    </Content>
-    <Content Include="..\..\ADB\Data\InfinityKingdom\1280x720\vi\Fixtures\resource_search_screen.png" Link="Data\InfinityKingdom\1280x720\vi\Fixtures\resource_search_screen.png">
+    <Content Include="..\..\ADB\Data\InfinityKingdom\1280x720\vi\**\*.png" Link="Data\InfinityKingdom\1280x720\vi\%(RecursiveDir)%(Filename)%(Extension)">
       <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
     </Content>
   </ItemGroup>

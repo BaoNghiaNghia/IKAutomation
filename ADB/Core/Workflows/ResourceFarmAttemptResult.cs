@@ -14,6 +14,7 @@ namespace ADB_Tool_Automation_Post_FB.Core.Workflows
         public int? LocatedLevel { get; set; }
         public bool SearchLevelsExhausted { get; set; }
         public bool StorageLimitDetected { get; set; }
+        public bool ResourceExpiryDetected { get; set; }
         public bool StorageLimitConfirmed { get; set; }
         public bool MarkedStorageFull { get; set; }
         public bool RecoverySucceeded { get; set; }

@@ -73,10 +73,12 @@ internal static class Program
         Run("No full-screen image comparison", NoFullScreenComparison);
         Run("GameState has no MarchStarted value", NoMarchGameState);
         Run("Storage limit requests resource switch", StorageLimitRequestsSwitch);
+        Run("Resource expiry requests resource switch", ResourceExpiryRequestsSwitch);
         Run("Storage cancel uses fresh bounds center", StorageCancelUsesCenter);
         Run("Storage cancel returns directly to WorldMap without Back", StorageCancelReturnsWorld);
         Run("Storage cancel returns SearchPanel without Back", StorageCancelReturnsPanel);
         Run("Storage cancel verifies TeamSelection then sends one Back", StorageCancelTeamThenBack);
+        Run("Resource expiry cancel verifies TeamSelection then sends one Back", ResourceExpiryCancelTeamThenBack);
         Run("Storage transient Unknown sends no Back", StorageUnknownNoBack);
         Run("Missing storage Cancel sends no input", StorageMissingCancelNoInput);
         Console.WriteLine($"March dispatch tests: {passed} passed, {failed} failed.");
@@ -159,6 +161,23 @@ internal static class Program
         Eq<TeamNumber?>(null, result.DispatchedTeam, "team must not be dispatched");
         Eq(1, result.ActionTapCount, "dispatch action must not retry");
     }
+    private static void ResourceExpiryRequestsSwitch()
+    {
+        var h = new Harness(); h.Detector.AfterState = GameState.ResourceExpiryDialog;
+        h.Storage.Result = new StorageLimitDialogResult
+        {
+            Outcome = StorageLimitDialogOutcome.CancelledForResourceSwitch,
+            DialogVerified = true, CancelButtonVerified = true, ActionTapCount = 1,
+            ModalClosed = true, ReturnedToTeamSelection = true, BackSent = true,
+            BackCount = 1, ReturnedToWorldMap = true, FinalState = GameState.WorldMap
+        };
+        h.Rebuild(); DispatchMarchResult result = Execute(h);
+        Eq(DispatchMarchOutcome.ResourceExpiryResourceSwitchRequired, result.Outcome, "outcome");
+        Is(result.ResourceExpiryDialogDetected && result.ResourceExpiryCancelled, "expiry flags");
+        Is(result.ResourceSwitchRequired && result.StorageFullResource == null, "switch mapping");
+        Eq<TeamNumber?>(null, result.DispatchedTeam, "team must not be dispatched");
+        Eq(1, result.ActionTapCount, "dispatch action must not retry");
+    }
     private static StorageDialogHarness StorageHarness(GameState finalState)
     {
         var h = new StorageDialogHarness();
@@ -194,6 +213,17 @@ internal static class Program
         Eq(StorageLimitDialogOutcome.CancelledForResourceSwitch, result.Outcome, "outcome");
         Is(result.ReturnedToTeamSelection && result.ReturnedToWorldMap, "recovery flags");
         Eq(1, result.BackCount, "Back count");
+        Eq(1, h.Client.BackCalls, "client Back count");
+    }
+    private static void ResourceExpiryCancelTeamThenBack()
+    {
+        var h = new StorageDialogHarness(TemplateId.ResourceExpiryDialogAnchor);
+        h.Detector.AsyncStates.Enqueue(GameState.TeamSelection);
+        h.Detector.AsyncStates.Enqueue(GameState.WorldMap);
+        StorageLimitDialogResult result = h.ExecuteResourceExpiry();
+        Eq(StorageLimitDialogOutcome.CancelledForResourceSwitch, result.Outcome, "outcome");
+        Is(result.ReturnedToTeamSelection && result.ReturnedToWorldMap, "recovery flags");
+        Eq(1, result.ActionTapCount, "Cancel tap count"); Eq(1, result.BackCount, "Back count");
         Eq(1, h.Client.BackCalls, "client Back count");
     }
     private static void StorageUnknownNoBack()
@@ -265,15 +295,17 @@ internal static class Program
         public StorageLimitDialogResult Result = new StorageLimitDialogResult { Outcome = StorageLimitDialogOutcome.Failed };
         public Task<StorageLimitDialogResult> HandleAsync(string d, StorageLimitPolicy p, CancellationToken t)
         { t.ThrowIfCancellationRequested(); return Task.FromResult(Result); }
+        public Task<StorageLimitDialogResult> HandleResourceExpiryAsync(string d, CancellationToken t)
+        { t.ThrowIfCancellationRequested(); return Task.FromResult(Result); }
     }
     private sealed class StorageDialogHarness
     {
         public FakeClient Client = new FakeClient(); public FakeDetector Detector = new FakeDetector();
         public FakeRegistry Registry = new FakeRegistry(); public FakeMatcher Matcher = new FakeMatcher();
         public StorageLimitDialogService Service;
-        public StorageDialogHarness()
+        public StorageDialogHarness(TemplateId dialogTemplate = TemplateId.StorageLimitDialogAnchor)
         {
-            Matcher.Rule = (f,id,roi) => id == TemplateId.StorageLimitDialogAnchor
+            Matcher.Rule = (f,id,roi) => id == dialogTemplate
                 ? Found(100,200,200,100)
                 : id == TemplateId.StorageLimitCancelButton ? Found(300,400,80,40)
                 : ImageMatchResult.NotFound();
@@ -284,6 +316,8 @@ internal static class Program
         }
         public StorageLimitDialogResult Execute() => Service.HandleAsync("LDPlayer",
             StorageLimitPolicy.CancelAndSwitchResource, new CancellationToken(false)).GetAwaiter().GetResult();
+        public StorageLimitDialogResult ExecuteResourceExpiry() => Service.HandleResourceExpiryAsync(
+            "LDPlayer", new CancellationToken(false)).GetAwaiter().GetResult();
     }
     private sealed class FakeLogger:IDiagnosticLogger { public void Info(string m){} public void Error(string m,Exception e){} }
 }

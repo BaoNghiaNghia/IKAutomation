@@ -11,6 +11,7 @@ namespace ADB_Tool_Automation_Post_FB.Core.MarchDispatch
         TransitionTimeout,
         VerificationIndeterminate,
         StorageLimitResourceSwitchRequired,
+        ResourceExpiryResourceSwitchRequired,
         Failed,
         Cancelled
     }

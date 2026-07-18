@@ -51,6 +51,7 @@ namespace ADB_Tool_Automation_Post_FB.Infrastructure.Vision
                 { TemplateId.StorageLimitDialogAnchor, Define(TemplateId.StorageLimitDialogAnchor, "Dialogs/storage_limit_dialog_anchor.png") },
                 { TemplateId.StorageLimitConfirmButton, Define(TemplateId.StorageLimitConfirmButton, "Dialogs/storage_limit_confirm_button.png") },
                 { TemplateId.StorageLimitCancelButton, Define(TemplateId.StorageLimitCancelButton, "Dialogs/storage_limit_cancel_button.png") },
+                { TemplateId.ResourceExpiryDialogAnchor, Define(TemplateId.ResourceExpiryDialogAnchor, "Dialogs/resource_expiry_dialog_anchor.png") },
                 { TemplateId.TeamSelectionPanelAnchor, Define(TemplateId.TeamSelectionPanelAnchor, "Teams/team_selection_panel_anchor.png") },
                 { TemplateId.TeamAdjustFormationButton, Define(TemplateId.TeamAdjustFormationButton, "Teams/team_adjust_formation_button.png") },
                 { TemplateId.TeamActionButtonEnabled, Define(TemplateId.TeamActionButtonEnabled, "Teams/team_action_button_enabled.png") },

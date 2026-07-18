@@ -3,6 +3,7 @@ using ADB_Tool_Automation_Post_FB.Core.Concurrency;
 using ADB_Tool_Automation_Post_FB.Core.Diagnostics;
 using ADB_Tool_Automation_Post_FB.Core.GameDetection;
 using ADB_Tool_Automation_Post_FB.Core.MarchDispatch;
+using ADB_Tool_Automation_Post_FB.Core.ResourceSearch;
 using ADB_Tool_Automation_Post_FB.Core.TeamSelection;
 using ADB_Tool_Automation_Post_FB.Core.StorageLimit;
 using ADB_Tool_Automation_Post_FB.Core.Vision;
@@ -160,29 +161,40 @@ namespace ADB_Tool_Automation_Post_FB.Infrastructure.MarchDispatch
                     lastFrame = await client.CaptureScreenshotPngAsync(deviceName, cancellationToken);
                     GameDetectionResult state = detector.Detect(lastFrame);
                     result.FinalState = state.State;
-                    if (state.State == GameState.StorageLimitDialog)
+                    if (state.State == GameState.StorageLimitDialog
+                        || state.State == GameState.ResourceExpiryDialog)
                     {
-                        result.StorageLimitDialogDetected = true;
+                        bool resourceExpiry = state.State == GameState.ResourceExpiryDialog;
+                        result.ResourceExpiryDialogDetected = resourceExpiry;
+                        result.StorageLimitDialogDetected = !resourceExpiry;
                         if (storageLimitDialog == null)
                             return Complete(result, DispatchMarchOutcome.Failed,
-                                "StorageLimitDialog was detected but no dialog handler is configured.",
+                                $"{state.State} was detected but no dialog handler is configured.",
                                 "IStorageLimitDialogService is required.", watch);
-                        StorageLimitDialogResult handled = await storageLimitDialog.HandleAsync(
-                            deviceName, StorageLimitPolicy.CancelAndSwitchResource, cancellationToken);
+                        StorageLimitDialogResult handled = resourceExpiry
+                            ? await storageLimitDialog.HandleResourceExpiryAsync(deviceName, cancellationToken)
+                            : await storageLimitDialog.HandleAsync(deviceName,
+                                StorageLimitPolicy.CancelAndSwitchResource, cancellationToken);
                         result.StorageLimitResult = handled;
                         result.FinalState = handled.FinalState;
                         if (handled.Outcome == StorageLimitDialogOutcome.Cancelled)
                             throw new OperationCanceledException(cancellationToken);
                         if (handled.Outcome == StorageLimitDialogOutcome.CancelledForResourceSwitch)
                         {
-                            result.StorageLimitCancelled = true;
+                            result.StorageLimitCancelled = !resourceExpiry;
+                            result.ResourceExpiryCancelled = resourceExpiry;
                             result.ResourceSwitchRequired = true;
-                            result.StorageFullResource = request.CurrentResource;
+                            result.StorageFullResource = resourceExpiry
+                                ? (ResourceType?)null : request.CurrentResource;
                             result.DispatchedTeam = null;
                             result.MarchStartedVerified = false;
                             return Complete(result,
-                                DispatchMarchOutcome.StorageLimitResourceSwitchRequired,
-                                $"Storage for {request.CurrentResource} is full; warning was cancelled and the next resource is required.",
+                                resourceExpiry
+                                    ? DispatchMarchOutcome.ResourceExpiryResourceSwitchRequired
+                                    : DispatchMarchOutcome.StorageLimitResourceSwitchRequired,
+                                resourceExpiry
+                                    ? $"{request.CurrentResource} expires too soon; warning was cancelled, TeamSelection was closed, and the next resource is required."
+                                    : $"Storage for {request.CurrentResource} is full; warning was cancelled and the next resource is required.",
                                 handled.ErrorMessage, watch);
                         }
                         return Complete(result, DispatchMarchOutcome.Failed,

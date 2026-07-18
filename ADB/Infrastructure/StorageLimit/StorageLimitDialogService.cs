@@ -35,16 +35,33 @@ namespace ADB_Tool_Automation_Post_FB.Infrastructure.StorageLimit
         public async Task<StorageLimitDialogResult> HandleAsync(string deviceName,
             StorageLimitPolicy policy, CancellationToken cancellationToken)
         {
+            return await HandleCoreAsync(deviceName, policy,
+                TemplateId.StorageLimitDialogAnchor, GameState.StorageLimitDialog,
+                "Storage limit", cancellationToken);
+        }
+
+        public async Task<StorageLimitDialogResult> HandleResourceExpiryAsync(
+            string deviceName, CancellationToken cancellationToken)
+        {
+            return await HandleCoreAsync(deviceName, StorageLimitPolicy.CancelAndSwitchResource,
+                TemplateId.ResourceExpiryDialogAnchor, GameState.ResourceExpiryDialog,
+                "Resource expiry", cancellationToken);
+        }
+
+        private async Task<StorageLimitDialogResult> HandleCoreAsync(string deviceName,
+            StorageLimitPolicy policy, TemplateId dialogTemplate, GameState dialogState,
+            string logName, CancellationToken cancellationToken)
+        {
             var watch = Stopwatch.StartNew();
             var result = NewResult(policy);
             try
             {
                 cancellationToken.ThrowIfCancellationRequested();
-                string missing = MissingTemplate(TemplateId.StorageLimitDialogAnchor)
+                string missing = MissingTemplate(dialogTemplate)
                     ?? MissingTemplate(TemplateId.StorageLimitCancelButton);
                 if (missing != null)
                     return Complete(result, StorageLimitDialogOutcome.ActionButtonUnavailable,
-                        "Storage-limit Cancel templates are incomplete; no input was sent.", missing, watch);
+                        $"{logName} Cancel templates are incomplete; no input was sent.", missing, watch);
                 if (policy != StorageLimitPolicy.CancelAndSwitchResource)
                     return Complete(result, StorageLimitDialogOutcome.Failed,
                         $"Storage-limit policy '{policy}' is not handled by the cancel-and-switch workflow.", null, watch);
@@ -53,16 +70,16 @@ namespace ADB_Tool_Automation_Post_FB.Infrastructure.StorageLimit
                 {
                     cancellationToken.ThrowIfCancellationRequested();
                     byte[] fresh = await client.CaptureScreenshotPngAsync(deviceName, cancellationToken);
-                    GameDetectionEvidence dialog = Match(fresh, TemplateId.StorageLimitDialogAnchor);
+                    GameDetectionEvidence dialog = Match(fresh, dialogTemplate);
                     GameDetectionEvidence cancel = Match(fresh, TemplateId.StorageLimitCancelButton);
                     result.Evidence = new[] { dialog, cancel };
                     result.DialogVerified = dialog.Found;
                     result.CancelButtonVerified = HasBounds(cancel.MatchResult);
                     result.InitialState = result.DialogVerified
-                        ? GameState.StorageLimitDialog : GameState.Unknown;
+                        ? dialogState : GameState.Unknown;
                     if (!result.DialogVerified)
                         return Complete(result, StorageLimitDialogOutcome.DialogNotVerified,
-                            "StorageLimitDialog was not present in the fresh frame; no input was sent.", null, watch);
+                            $"{dialogState} was not present in the fresh frame; no input was sent.", null, watch);
                     if (!result.CancelButtonVerified)
                         return Complete(result, StorageLimitDialogOutcome.ActionButtonUnavailable,
                             "StorageLimitCancelButton had no valid fresh bounds; no input was sent.",
@@ -71,10 +88,10 @@ namespace ADB_Tool_Automation_Post_FB.Infrastructure.StorageLimit
                     await client.TapAsync(deviceName, cancel.MatchResult.CenterX,
                         cancel.MatchResult.CenterY, cancellationToken);
                     result.ActionTapCount++;
-                    logger.Info($"[Storage Limit] DeviceName='{deviceName}', Policy='{policy}', CancelBounds=({cancel.MatchResult.X},{cancel.MatchResult.Y},{cancel.MatchResult.Width},{cancel.MatchResult.Height}), Tap=({cancel.MatchResult.CenterX},{cancel.MatchResult.CenterY}), Attempt={result.ActionTapCount}");
+                    logger.Info($"[{logName}] DeviceName='{deviceName}', Policy='{policy}', CancelBounds=({cancel.MatchResult.X},{cancel.MatchResult.Y},{cancel.MatchResult.Width},{cancel.MatchResult.Height}), Tap=({cancel.MatchResult.CenterX},{cancel.MatchResult.CenterY}), Attempt={result.ActionTapCount}");
 
                     StorageLimitDialogResult recovered = await RecoverAfterCancelAsync(
-                        deviceName, result, cancellationToken, watch);
+                        deviceName, result, dialogState, logName, cancellationToken, watch);
                     if (recovered != null) return recovered;
                     if (attempt + 1 < options.MaxCancelAttempts)
                         await Task.Delay(options.CancelRetryDelayMs, cancellationToken);
@@ -84,24 +101,25 @@ namespace ADB_Tool_Automation_Post_FB.Infrastructure.StorageLimit
                     ? StorageLimitDialogOutcome.RecoveryFailed
                     : StorageLimitDialogOutcome.TransitionTimeout,
                     result.ModalClosed
-                        ? "StorageLimitDialog closed but WorldMap recovery was not verified."
-                        : "StorageLimitDialog did not close before timeout.", null, watch);
+                        ? $"{dialogState} closed but WorldMap recovery was not verified."
+                        : $"{dialogState} did not close before timeout.", null, watch);
             }
             catch (OperationCanceledException)
             {
                 return Complete(result, StorageLimitDialogOutcome.Cancelled,
-                    "Storage-limit handling was cancelled.", null, watch);
+                    $"{logName} handling was cancelled.", null, watch);
             }
             catch (Exception exception)
             {
-                logger.Error($"[Storage Limit] DeviceName='{deviceName}', Error='{exception.Message}'", exception);
+                logger.Error($"[{logName}] DeviceName='{deviceName}', Error='{exception.Message}'", exception);
                 return Complete(result, StorageLimitDialogOutcome.Failed,
-                    "Storage-limit handling failed.", exception.Message, watch);
+                    $"{logName} handling failed.", exception.Message, watch);
             }
         }
 
         private async Task<StorageLimitDialogResult> RecoverAfterCancelAsync(string deviceName,
-            StorageLimitDialogResult result, CancellationToken cancellationToken, Stopwatch watch)
+            StorageLimitDialogResult result, GameState dialogState, string logName,
+            CancellationToken cancellationToken, Stopwatch watch)
         {
             DateTimeOffset deadline = DateTimeOffset.UtcNow.AddSeconds(options.TransitionTimeoutSeconds);
             int unknownFrames = 0;
@@ -119,20 +137,20 @@ namespace ADB_Tool_Automation_Post_FB.Infrastructure.StorageLimit
                 result.StateAfterCancel = state.State;
                 result.StateAfterConfirmation = state.State;
                 result.FinalState = state.State;
-                if (state.State == GameState.StorageLimitDialog) return null;
+                if (state.State == dialogState) return null;
 
                 result.ModalClosed = true;
                 if (state.State == GameState.WorldMap)
                 {
                     result.ReturnedToWorldMap = true;
                     return Complete(result, StorageLimitDialogOutcome.CancelledForResourceSwitch,
-                        "Storage warning was cancelled and WorldMap was verified.", null, watch);
+                        "Resource-switch warning was cancelled and WorldMap was verified.", null, watch);
                 }
                 if (state.State == GameState.ResourceSearchPanel)
                 {
                     result.ReturnedToSearchPanel = true;
                     return Complete(result, StorageLimitDialogOutcome.CancelledForResourceSwitch,
-                        "Storage warning was cancelled and ResourceSearchPanel is ready.", null, watch);
+                        "Resource-switch warning was cancelled and ResourceSearchPanel is ready.", null, watch);
                 }
                 if (state.State != GameState.TeamSelection) continue;
 
@@ -143,14 +161,16 @@ namespace ADB_Tool_Automation_Post_FB.Infrastructure.StorageLimit
                 result.BackSent = true;
                 result.BackCount++;
                 result.RecoveryTransitions++;
-                logger.Info($"[Storage Limit] DeviceName='{deviceName}', TeamSelectionVerified=true, BackSent=true, BackCount={result.BackCount}");
-                return await VerifyAfterBackAsync(deviceName, result, cancellationToken, watch);
+                logger.Info($"[{logName}] DeviceName='{deviceName}', TeamSelectionVerified=true, BackSent=true, BackCount={result.BackCount}");
+                return await VerifyAfterBackAsync(deviceName, result, dialogState,
+                    cancellationToken, watch);
             }
             return null;
         }
 
         private async Task<StorageLimitDialogResult> VerifyAfterBackAsync(string deviceName,
-            StorageLimitDialogResult result, CancellationToken cancellationToken, Stopwatch watch)
+            StorageLimitDialogResult result, GameState dialogState,
+            CancellationToken cancellationToken, Stopwatch watch)
         {
             DateTimeOffset deadline = DateTimeOffset.UtcNow.AddSeconds(options.TransitionTimeoutSeconds);
             int unknownFrames = 0;
@@ -171,15 +191,15 @@ namespace ADB_Tool_Automation_Post_FB.Infrastructure.StorageLimit
                 {
                     result.ReturnedToWorldMap = true;
                     return Complete(result, StorageLimitDialogOutcome.CancelledForResourceSwitch,
-                        "Storage warning was cancelled; TeamSelection closed and WorldMap was verified.", null, watch);
+                        "Resource-switch warning was cancelled; TeamSelection closed and WorldMap was verified.", null, watch);
                 }
                 if (state.State == GameState.ResourceSearchPanel)
                 {
                     result.ReturnedToSearchPanel = true;
                     return Complete(result, StorageLimitDialogOutcome.CancelledForResourceSwitch,
-                        "Storage warning was cancelled; ResourceSearchPanel is ready.", null, watch);
+                        "Resource-switch warning was cancelled; ResourceSearchPanel is ready.", null, watch);
                 }
-                if (state.State == GameState.StorageLimitDialog) break;
+                if (state.State == dialogState) break;
                 // Do not send another Back for Unknown or any unverified transition.
             }
             return Complete(result, StorageLimitDialogOutcome.RecoveryFailed,

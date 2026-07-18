@@ -18,6 +18,7 @@ namespace ADB_Tool_Automation_Post_FB.Infrastructure.GameDetection
     {
         private static readonly TemplateId[] DetectionTemplates =
         {
+            TemplateId.ResourceExpiryDialogAnchor,
             TemplateId.StorageLimitDialogAnchor,
             TemplateId.StorageLimitCancelButton,
             TemplateId.TeamSelectionPanelAnchor,
@@ -177,6 +178,7 @@ namespace ADB_Tool_Automation_Post_FB.Infrastructure.GameDetection
             }
 
             GameDetectionEvidence panelAnchor = FindEvidence(evidence, TemplateId.ResourceSearchPanelAnchor);
+            GameDetectionEvidence resourceExpiryDialog = FindEvidence(evidence, TemplateId.ResourceExpiryDialogAnchor);
             GameDetectionEvidence storageDialog = FindEvidence(evidence, TemplateId.StorageLimitDialogAnchor);
             GameDetectionEvidence storageCancel = FindEvidence(evidence, TemplateId.StorageLimitCancelButton);
             GameDetectionEvidence teamPanel = FindEvidence(evidence, TemplateId.TeamSelectionPanelAnchor);
@@ -199,7 +201,10 @@ namespace ADB_Tool_Automation_Post_FB.Infrastructure.GameDetection
             bool popupConfirmed = popupSignals >= 2 && (popupAnchor.Found || popupIron.Found);
             bool teamSelectionConfirmed = teamPanel.Found && (teamAdjust.Found || teamAction.Found);
             bool storageLimitConfirmed = storageDialog.Found && storageCancel.Found;
-            GameState state = storageLimitConfirmed
+            bool resourceExpiryConfirmed = resourceExpiryDialog.Found && storageCancel.Found;
+            GameState state = resourceExpiryConfirmed
+                ? GameState.ResourceExpiryDialog
+                : storageLimitConfirmed
                 ? GameState.StorageLimitDialog
                 : teamSelectionConfirmed
                 ? GameState.TeamSelection
@@ -209,7 +214,9 @@ namespace ADB_Tool_Automation_Post_FB.Infrastructure.GameDetection
                         : worldAnchor.Found ? GameState.WorldMap : GameState.Unknown;
 
             teamPanel.Message += teamSelectionConfirmed
-                ? storageLimitConfirmed
+                ? resourceExpiryConfirmed
+                    ? " ResourceExpiryDialog has priority over TeamSelection."
+                    : storageLimitConfirmed
                     ? " StorageLimitDialog has priority over TeamSelection."
                     : " Rule TeamSelection satisfied with a team action control."
                 : " Rule TeamSelection requires the panel anchor and an Adjust Formation or Team Action button.";
@@ -218,7 +225,12 @@ namespace ADB_Tool_Automation_Post_FB.Infrastructure.GameDetection
                 : " Rule StorageLimitDialog requires dialog and Cancel button anchors.";
             storageCancel.Message += storageLimitConfirmed
                 ? " StorageLimitDialog has highest state priority."
-                : " Cancel button alone does not identify StorageLimitDialog.";
+                : resourceExpiryConfirmed
+                    ? " ResourceExpiryDialog has highest state priority."
+                    : " Cancel button alone does not identify a resource-switch dialog.";
+            resourceExpiryDialog.Message += resourceExpiryConfirmed
+                ? " Rule ResourceExpiryDialog satisfied with a fresh Cancel button signal."
+                : " Rule ResourceExpiryDialog requires its stable text anchor and Cancel button.";
             teamAdjust.Message += teamSelectionConfirmed && teamAdjust.Found
                 ? " Adjust Formation contributed TeamSelection evidence."
                 : " Adjust Formation alone does not confirm TeamSelection.";
@@ -369,6 +381,7 @@ namespace ADB_Tool_Automation_Post_FB.Infrastructure.GameDetection
 
         private static bool IsStorageLimitTemplate(TemplateId id) =>
             id == TemplateId.StorageLimitDialogAnchor
+            || id == TemplateId.ResourceExpiryDialogAnchor
             || id == TemplateId.StorageLimitCancelButton;
 
         private static bool IsTeamSelectionTemplate(TemplateId id) =>

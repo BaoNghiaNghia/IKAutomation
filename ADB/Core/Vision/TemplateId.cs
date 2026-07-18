@@ -41,6 +41,7 @@ namespace ADB_Tool_Automation_Post_FB.Core.Vision
         StorageLimitDialogAnchor,
         StorageLimitConfirmButton,
         StorageLimitCancelButton,
+        ResourceExpiryDialogAnchor,
         TeamSelectionPanelAnchor,
         TeamAdjustFormationButton,
         TeamActionButtonEnabled,

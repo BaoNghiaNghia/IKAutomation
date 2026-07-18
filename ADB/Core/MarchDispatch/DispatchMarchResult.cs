@@ -26,6 +26,8 @@ namespace ADB_Tool_Automation_Post_FB.Core.MarchDispatch
         public bool MarchTimerVerified { get; set; }
         public bool MarchStartedVerified { get; set; }
         public bool StorageLimitDialogDetected { get; set; }
+        public bool ResourceExpiryDialogDetected { get; set; }
+        public bool ResourceExpiryCancelled { get; set; }
         public bool StorageLimitConfirmed { get; set; }
         public bool StorageLimitCancelled { get; set; }
         public bool ResourceSwitchRequired { get; set; }

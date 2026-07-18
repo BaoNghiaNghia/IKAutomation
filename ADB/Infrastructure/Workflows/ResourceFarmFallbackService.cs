@@ -188,22 +188,35 @@ namespace ADB_Tool_Automation_Post_FB.Infrastructure.Workflows
                     attempt.DispatchResult = dispatched; result.FinalState = dispatched.FinalState;
                     if (dispatched.Outcome == DispatchMarchOutcome.Cancelled)
                         throw new OperationCanceledException(cancellationToken);
-                    if (dispatched.Outcome == DispatchMarchOutcome.StorageLimitResourceSwitchRequired)
+                    if (dispatched.Outcome == DispatchMarchOutcome.StorageLimitResourceSwitchRequired
+                        || dispatched.Outcome == DispatchMarchOutcome.ResourceExpiryResourceSwitchRequired)
                     {
-                        attempt.StorageLimitDetected = dispatched.StorageLimitDialogDetected;
-                        attempt.StorageLimitConfirmed = dispatched.StorageLimitCancelled;
-                        attempt.MarkedStorageFull = dispatched.StorageLimitCancelled;
+                        bool resourceExpiry = dispatched.Outcome
+                            == DispatchMarchOutcome.ResourceExpiryResourceSwitchRequired;
+                        attempt.ResourceExpiryDetected = dispatched.ResourceExpiryDialogDetected;
+                        attempt.StorageLimitDetected = !resourceExpiry && dispatched.StorageLimitDialogDetected;
+                        attempt.StorageLimitConfirmed = !resourceExpiry && dispatched.StorageLimitCancelled;
+                        attempt.MarkedStorageFull = !resourceExpiry && dispatched.StorageLimitCancelled;
                         attempt.RecoverySucceeded = dispatched.StorageLimitResult != null
                             && (dispatched.StorageLimitResult.ReturnedToWorldMap
                             || dispatched.StorageLimitResult.ReturnedToSearchPanel);
                         result.RecoveryTransitions += dispatched.StorageLimitResult?.RecoveryTransitions ?? 0;
                         attempt.Message = dispatched.Message; attempt.ErrorMessage = dispatched.ErrorMessage;
                         attempt.Duration = attemptWatch.Elapsed;
-                        if (!attempt.MarkedStorageFull || !attempt.RecoverySucceeded)
+                        if ((!resourceExpiry && !attempt.MarkedStorageFull)
+                            || (resourceExpiry && !dispatched.ResourceExpiryCancelled)
+                            || !attempt.RecoverySucceeded)
                             return Complete(result, ResourceFarmFallbackOutcome.RecoveryFailed, watch,
                                 dispatched.Message, dispatched.ErrorMessage);
+                        if (resourceExpiry)
+                        {
+                            Log(runId, deviceName, resource, level.LocatedLevel,
+                                "ResourceExpiry", dispatched.Outcome.ToString());
+                            continue;
+                        }
                         storageFull.Add(resource);
-                        Log(runId, deviceName, resource, level.LocatedLevel, "StorageFull", dispatched.Outcome.ToString());
+                        Log(runId, deviceName, resource, level.LocatedLevel,
+                            "StorageFull", dispatched.Outcome.ToString());
                         if (options.SwitchOnStorageLimit) continue;
                         return Complete(result, ResourceFarmFallbackOutcome.DispatchFailed, watch,
                             dispatched.Message, dispatched.ErrorMessage);

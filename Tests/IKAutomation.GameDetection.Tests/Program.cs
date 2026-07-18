@@ -29,6 +29,7 @@ namespace IKAutomation.GameDetection.Tests
             Run("TeamSelection has highest priority", TeamSelectionHasPriority);
             Run("StorageLimitDialog has priority over TeamSelection", StorageLimitHasPriorityOverTeam);
             Run("StorageLimitDialog has priority over WorldMap", StorageLimitHasPriorityOverWorld);
+            Run("ResourceExpiryDialog has priority over TeamSelection", ResourceExpiryHasPriorityOverTeam);
             Run("ResourcePopup has priority over WorldMap", PopupHasPriorityOverWorldMap);
             Run("ResourceSearchPanel has priority over ResourcePopup", PanelHasPriorityOverPopup);
             Run("Two popup signals detect ResourcePopup", TwoPopupSignalsDetectPopup);
@@ -132,6 +133,15 @@ namespace IKAutomation.GameDetection.Tests
                 TemplateId.WorldMapAnchor);
             Equal(GameState.StorageLimitDialog, result.State,
                 "StorageLimitDialog must have priority over WorldMap.");
+        }
+
+        private static void ResourceExpiryHasPriorityOverTeam()
+        {
+            GameDetectionResult result = DetectWithMatches(
+                TemplateId.ResourceExpiryDialogAnchor, TemplateId.StorageLimitCancelButton,
+                TemplateId.TeamSelectionPanelAnchor, TemplateId.TeamActionButtonEnabled);
+            Equal(GameState.ResourceExpiryDialog, result.State,
+                "ResourceExpiryDialog must have priority over TeamSelection.");
         }
 
         private static void LevelMinusPanelFallback()
@@ -301,7 +311,7 @@ namespace IKAutomation.GameDetection.Tests
         private static void EvidenceContainsThreeTemplates()
         {
             GameDetectionResult result = DetectWithMatches();
-            Equal(15, result.Evidence.Count, "Detector must check exactly fifteen templates.");
+            Equal(16, result.Evidence.Count, "Detector must check exactly sixteen templates.");
             foreach (TemplateId id in RequiredIds())
                 Assert(result.Evidence.Any(item => item.TemplateId == id), "Missing evidence for " + id);
         }
@@ -391,7 +401,7 @@ namespace IKAutomation.GameDetection.Tests
         private static GameDetectionOptions Options(bool saveUnknown)
             => new GameDetectionOptions(1280, 720, true, saveUnknown, "Diagnostics/UnknownStates");
         private static TemplateId[] RequiredIds() => new[] { TemplateId.ResourceSearchPanelAnchor,
-            TemplateId.StorageLimitDialogAnchor, TemplateId.StorageLimitCancelButton,
+            TemplateId.ResourceExpiryDialogAnchor, TemplateId.StorageLimitDialogAnchor, TemplateId.StorageLimitCancelButton,
             TemplateId.TeamSelectionPanelAnchor, TemplateId.TeamAdjustFormationButton,
             TemplateId.TeamActionButtonEnabled,
             TemplateId.SearchButtonEnabled, TemplateId.LevelMinusButton,

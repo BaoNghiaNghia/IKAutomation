@@ -507,7 +507,7 @@ namespace ADB_Tool_Automation_Post_FB.UI
                 + $"Team region changed: {result.TeamRegionChanged}{Environment.NewLine}Team region difference: {result.TeamRegionDifference?.ToString("F4") ?? "n/a"}{Environment.NewLine}"
                 + $"Busy status: {result.BusyStatusVerified}{Environment.NewLine}March timer: {result.MarchTimerVerified}{Environment.NewLine}"
                 + $"March started: {result.MarchStartedVerified}{Environment.NewLine}Action taps: {result.ActionTapCount}{Environment.NewLine}"
-                + $"StorageLimitDialog detected: {result.StorageLimitDialogDetected}{Environment.NewLine}Storage limit policy: {result.StorageLimitResult?.Policy.ToString() ?? string.Empty}{Environment.NewLine}Storage limit cancelled: {result.StorageLimitCancelled}{Environment.NewLine}"
+                + $"StorageLimitDialog detected: {result.StorageLimitDialogDetected}{Environment.NewLine}ResourceExpiryDialog detected: {result.ResourceExpiryDialogDetected}{Environment.NewLine}Resource expiry cancelled: {result.ResourceExpiryCancelled}{Environment.NewLine}Storage limit policy: {result.StorageLimitResult?.Policy.ToString() ?? string.Empty}{Environment.NewLine}Storage limit cancelled: {result.StorageLimitCancelled}{Environment.NewLine}"
                 + $"Resource switch required: {result.ResourceSwitchRequired}{Environment.NewLine}Storage full resource: {result.StorageFullResource?.ToString() ?? string.Empty}{Environment.NewLine}"
                 + $"State after cancel: {result.StorageLimitResult?.StateAfterCancel.ToString() ?? string.Empty}{Environment.NewLine}Returned to TeamSelection: {result.StorageLimitResult?.ReturnedToTeamSelection ?? false}{Environment.NewLine}Back sent: {result.StorageLimitResult?.BackSent ?? false}{Environment.NewLine}Back count: {result.StorageLimitResult?.BackCount ?? 0}{Environment.NewLine}Returned to WorldMap: {result.StorageLimitResult?.ReturnedToWorldMap ?? false}{Environment.NewLine}"
                 + $"Observed frames: {result.ObservedFrameCount}{Environment.NewLine}Consecutive success: {result.ConsecutiveSuccessFrames}{Environment.NewLine}"
@@ -523,7 +523,7 @@ namespace ADB_Tool_Automation_Post_FB.UI
                 : string.Join(Environment.NewLine, resourcePlan.Attempts.Select(item =>
                     $"- resource={item.ResourceType}, levels={string.Join(",", item.AttemptedLevels ?? new int[0])}, "
                     + $"locatedLevel={item.LocatedLevel?.ToString() ?? string.Empty}, search={item.LevelFallbackResult?.Outcome.ToString() ?? string.Empty}, "
-                    + $"storageFull={item.MarkedStorageFull}, storageConfirmed={item.StorageLimitConfirmed}, recovery={item.RecoverySucceeded}, "
+                    + $"storageFull={item.MarkedStorageFull}, storageConfirmed={item.StorageLimitConfirmed}, resourceExpiry={item.ResourceExpiryDetected}, recovery={item.RecoverySucceeded}, "
                     + $"popup={item.PopupResult?.Outcome.ToString() ?? string.Empty}, selectedTeam={item.SelectTeamResult?.SelectedTeam?.ToString() ?? string.Empty}, "
                     + $"dispatch={item.DispatchResult?.Outcome.ToString() ?? string.Empty}, duration={item.Duration.TotalMilliseconds:F0} ms, "
                     + $"error={item.ErrorMessage ?? string.Empty}"));

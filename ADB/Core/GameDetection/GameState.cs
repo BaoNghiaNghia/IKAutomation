@@ -8,6 +8,7 @@ namespace ADB_Tool_Automation_Post_FB.Core.GameDetection
         ResourceSearchPanel,
         ResourcePopup,
         TeamSelection,
-        StorageLimitDialog
+        StorageLimitDialog,
+        ResourceExpiryDialog
     }
 }
