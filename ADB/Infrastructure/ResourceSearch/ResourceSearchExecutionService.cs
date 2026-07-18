@@ -207,6 +207,12 @@ namespace ADB_Tool_Automation_Post_FB.Infrastructure.ResourceSearch
                     break;
                 }
 
+                ObservationDecision finalPopupDecision = await VerifyPopupAsync(
+                    deviceName, request.Configuration.ResourceType, result, cancellationToken);
+                if (finalPopupDecision.HasOutcome)
+                    return await CompleteAsync(deviceName, result, context, finalPopupDecision.Outcome,
+                        finalPopupDecision.Message, finalPopupDecision.ErrorMessage, watch, cancellationToken);
+
                 string timeoutMessage = result.PopupVerificationResult != null
                     && result.PopupVerificationResult.Outcome == ResourcePopupOutcome.ResourcePopupDetectedButNotReady
                     ? "Resource popup was detected but did not become ready before timeout."
@@ -377,6 +383,40 @@ namespace ADB_Tool_Automation_Post_FB.Infrastructure.ResourceSearch
             context.PreviousPanelConfirmed = panelConfirmed;
             context.LastPanelConfirmed = panelConfirmed;
             context.PreviousFrame = frame;
+            return ObservationDecision.Pending();
+        }
+
+        private async Task<ObservationDecision> VerifyPopupAsync(string deviceName,
+            ResourceType expectedResource, ResourceSearchExecutionResult result,
+            CancellationToken cancellationToken)
+        {
+            if (result.NotFoundObserved || popupVerificationService == null
+                || !result.PanelClosed || result.FinalState != GameState.WorldMap
+                || !result.CameraMovementObserved)
+                return ObservationDecision.Pending();
+
+            cancellationToken.ThrowIfCancellationRequested();
+            ResourcePopupVerificationResult popup;
+            if (popupVerificationService is IResourceAwarePopupVerificationService resourceAware)
+                popup = await resourceAware.VerifyAsync(deviceName, expectedResource, cancellationToken);
+            else
+                popup = await popupVerificationService.VerifyAsync(deviceName, cancellationToken);
+            cancellationToken.ThrowIfCancellationRequested();
+            result.PopupVerificationResult = popup;
+
+            if (popup.Outcome == ResourcePopupOutcome.ResourcePopupReady)
+            {
+                result.PanelClosed = true;
+                result.FinalState = GameState.ResourcePopup;
+                return ObservationDecision.Decided(ResourceSearchOutcome.ResourceLocated,
+                    $"{expectedResource} ResourcePopup and enabled Gather button were verified after search observation; popup evidence superseded camera stability.", null);
+            }
+            if (popup.Outcome == ResourcePopupOutcome.Failed)
+                return ObservationDecision.Decided(ResourceSearchOutcome.Failed,
+                    "ResourcePopup verification failed.", popup.ErrorMessage);
+            if (popup.Outcome == ResourcePopupOutcome.Cancelled)
+                throw new OperationCanceledException(cancellationToken);
+
             return ObservationDecision.Pending();
         }
 

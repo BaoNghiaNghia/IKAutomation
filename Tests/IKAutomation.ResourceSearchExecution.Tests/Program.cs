@@ -93,6 +93,7 @@ namespace IKAutomation.ResourceSearchExecution.Tests
             Run("Options reject invalid movement thresholds", InvalidOptions);
             Run("ResourcePopupReady ends search early", PopupReadyEndsEarly);
             Run("ResourcePopupReady returns popup final state", PopupReadyFinalState);
+            Run("ResourcePopupReady supersedes camera stability at observation timeout", PopupReadyAtTimeout);
             Run("ResourceNotFound has priority over ResourcePopup", NotFoundBeforePopup);
             Run("Popup integration sends no Gather input", PopupSendsNoGatherInput);
             Console.WriteLine($"Resource search execution tests: {passed} passed, {failed} failed.");
@@ -169,6 +170,7 @@ namespace IKAutomation.ResourceSearchExecution.Tests
         private static void InvalidOptions() { Throws<ArgumentOutOfRangeException>(()=>Options(movement:.01,stable:.02)); }
         private static void PopupReadyEndsEarly() { Fixture f=PopupFixture(); var r=Execute(f); Is(r.Outcome==ResourceSearchOutcome.ResourceLocated&&r.Success,"outcome"); Eq(1,r.ObservedFrameCount,"frames"); }
         private static void PopupReadyFinalState() { var r=Execute(PopupFixture()); Is(r.FinalState==GameState.ResourcePopup&&r.PanelClosed,"popup final"); }
+        private static void PopupReadyAtTimeout() { Fixture f=Setup(requiredStable:100,windowMs:5); f.Detector.SetStates(Panel(),World(),World(),World()); f.Stability.Differences.Enqueue(.1); f.Stability.Differences.Enqueue(.001); f.Stability.Differences.Enqueue(.001); f.PopupVerifier.Result=ReadyPopup(); var r=Execute(f); Is(r.Outcome==ResourceSearchOutcome.ResourceLocated&&r.Success,"outcome"); Is(r.FinalState==GameState.ResourcePopup,"final state"); Eq(1,f.PopupVerifier.Calls,"popup verification"); Eq(1,f.Client.TapCalls,"Search tap only"); }
         private static void NotFoundBeforePopup() { Fixture f=PopupFixture(); f.Matcher.Primary=true; f.Matcher.Action=true; f.Matcher.ToastFrames.Add(2); var r=Execute(f); Is(r.Outcome==ResourceSearchOutcome.ResourceNotFound,"priority"); Eq(0,f.PopupVerifier.Calls,"popup calls"); }
         private static void PopupSendsNoGatherInput() { Fixture f=PopupFixture(); Execute(f); Eq(1,f.Client.TapCalls,"Search tap only"); Eq(0,f.Client.ProhibitedCalls,"prohibited"); }
 
