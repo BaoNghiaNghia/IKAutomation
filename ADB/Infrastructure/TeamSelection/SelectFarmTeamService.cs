@@ -130,6 +130,7 @@ namespace ADB_Tool_Automation_Post_FB.Infrastructure.TeamSelection
 
                 DateTimeOffset selectionDeadline = DateTimeOffset.UtcNow.AddSeconds(
                     options.SelectionTimeoutSeconds);
+                bool continueAfterConfirmedUnavailable = false;
                 foreach (TeamNumber team in request.Priority)
                 {
                     cancellationToken.ThrowIfCancellationRequested();
@@ -181,11 +182,13 @@ namespace ADB_Tool_Automation_Post_FB.Infrastructure.TeamSelection
                     {
                         bool selectedButUnavailable = false;
                         cancellationToken.ThrowIfCancellationRequested();
-                        if (DateTimeOffset.UtcNow >= selectionDeadline)
+                        if (DateTimeOffset.UtcNow >= selectionDeadline
+                            && !continueAfterConfirmedUnavailable)
                             return await CompleteAsync(deviceName, result,
                                 SelectFarmTeamOutcome.SelectionTimeout,
                                 "Farm team selection timed out before another safe attempt.",
                                 null, lastFrame, watch, cancellationToken);
+                        continueAfterConfirmedUnavailable = false;
 
                         lastFrame = await client.CaptureScreenshotPngAsync(deviceName, cancellationToken);
                         GameDetectionResult state = detector.Detect(lastFrame);
@@ -262,7 +265,11 @@ namespace ADB_Tool_Automation_Post_FB.Infrastructure.TeamSelection
                             }
                         }
 
-                        if (selectedButUnavailable) break;
+                        if (selectedButUnavailable)
+                        {
+                            continueAfterConfirmedUnavailable = true;
+                            break;
+                        }
                         attempt.Message = "Tap was sent but selected border was not verified in the target ROI.";
                         if (attemptNumber < options.MaxSelectionAttemptsPerTeam
                             && DateTimeOffset.UtcNow < selectionDeadline)

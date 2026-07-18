@@ -35,6 +35,7 @@ namespace IKAutomation.FarmTeamSelection.Tests
             Run("Multiple selected borders are ambiguous", Ambiguous);
             Run("Disabled Team4 is skipped", DisabledTeam4);
             Run("Selected Team4 without farm action proceeds to Team3", BusyTeam4ProceedsToTeam3);
+            Run("Busy Team4 and Team3 can proceed to Team2 after deadline", BusyTeamsProceedAfterDeadline);
             Run("Missing disabled template uses verification", OptionalDisabledMissing);
             Run("Failed Team4 proceeds to Team3", Team4ThenTeam3);
             Run("Team3 success stops before Team2", Team3Stops);
@@ -117,6 +118,19 @@ namespace IKAutomation.FarmTeamSelection.Tests
             SelectFarmTeamResult r = Execute(f);
             Equal(TeamNumber.Team3, r.SelectedTeam.Value);
             Sequence(new[] { TeamNumber.Team4, TeamNumber.Team3 }, r.AttemptedTeams.Take(2));
+        }
+
+        private static void BusyTeamsProceedAfterDeadline()
+        {
+            Fixture f = Setup(maxAttempts: 1); f.Client.CaptureDelayMs = 600;
+            f.Matcher.Badges.UnionWith(new[] { TeamNumber.Team4, TeamNumber.Team3, TeamNumber.Team2 });
+            foreach (TeamNumber team in new[] { TeamNumber.Team4, TeamNumber.Team3, TeamNumber.Team2 })
+                f.Matcher.SelectOnTap[team] = team;
+            f.Detector.ActionAvailable = () => f.Matcher.Selected.Contains(TeamNumber.Team2);
+            SelectFarmTeamResult r = Execute(f);
+            Equal(SelectFarmTeamOutcome.TeamSelected, r.Outcome);
+            Equal(TeamNumber.Team2, r.SelectedTeam.Value);
+            Sequence(new[] { TeamNumber.Team4, TeamNumber.Team3, TeamNumber.Team2 }, r.AttemptedTeams);
         }
 
         private static void OptionalDisabledMissing()
