@@ -60,7 +60,8 @@
                          Height="56" AcceptsReturn="True" TextWrapping="Wrap"/>
             </Grid>
 
-            <GroupBox Header="Tài nguyên One-Shot Farm" Margin="0,12,0,8">
+            <GroupBox x:Name="OneShotFarmResourcesGroupBox"
+                      Header="Tài nguyên One-Shot Farm" Margin="0,12,0,8">
                 <WrapPanel Margin="10,6">
                     <CheckBox x:Name="IronResourceCheckBox" Content="Sắt" Margin="0,0,18,0"/>
                     <CheckBox x:Name="StoneResourceCheckBox" Content="Mỏ Đá" Margin="0,0,18,0"/>
@@ -95,6 +96,34 @@
                         IsEnabled="False"/>
                 <Button Content="Back Test" Click="BackTest_Click" Padding="14,7" Margin="0,0,8,8"/>
             </WrapPanel>
+
+            <GroupBox Header="One-Shot Farm Progress" Margin="0,4,0,8">
+                <Grid Margin="10">
+                    <Grid.ColumnDefinitions>
+                        <ColumnDefinition Width="175"/>
+                        <ColumnDefinition Width="*"/>
+                    </Grid.ColumnDefinitions>
+                    <Grid.RowDefinitions>
+                        <RowDefinition Height="Auto"/><RowDefinition Height="Auto"/>
+                        <RowDefinition Height="Auto"/><RowDefinition Height="Auto"/>
+                        <RowDefinition Height="Auto"/><RowDefinition Height="Auto"/>
+                        <RowDefinition Height="Auto"/><RowDefinition Height="Auto"/>
+                        <RowDefinition Height="Auto"/><RowDefinition Height="Auto"/>
+                        <RowDefinition Height="Auto"/>
+                    </Grid.RowDefinitions>
+                    <TextBlock Grid.Row="0" Text="Trạng thái"/><TextBlock x:Name="ProgressStageTextBlock" Grid.Row="0" Grid.Column="1" Text="Idle"/>
+                    <TextBlock Grid.Row="1" Text="Message"/><TextBlock x:Name="ProgressMessageTextBlock" Grid.Row="1" Grid.Column="1" Text="-" TextWrapping="Wrap"/>
+                    <TextBlock Grid.Row="2" Text="Số lần kiểm tra"/><TextBlock x:Name="ProgressChecksTextBlock" Grid.Row="2" Grid.Column="1" Text="0"/>
+                    <TextBlock Grid.Row="3" Text="Allowed teams"/><TextBlock x:Name="ProgressAllowedTeamsTextBlock" Grid.Row="3" Grid.Column="1" Text="-"/>
+                    <TextBlock Grid.Row="4" Text="Ready teams"/><TextBlock x:Name="ProgressReadyTeamsTextBlock" Grid.Row="4" Grid.Column="1" Text="-"/>
+                    <TextBlock Grid.Row="5" Text="Eligible teams"/><TextBlock x:Name="ProgressEligibleTeamsTextBlock" Grid.Row="5" Grid.Column="1" Text="-"/>
+                    <TextBlock Grid.Row="6" Text="Lần kiểm tra tiếp theo"/><TextBlock x:Name="ProgressNextCheckTextBlock" Grid.Row="6" Grid.Column="1" Text="-"/>
+                    <TextBlock Grid.Row="7" Text="Countdown"/><TextBlock x:Name="ProgressCountdownTextBlock" Grid.Row="7" Grid.Column="1" Text="00:00"/>
+                    <TextBlock Grid.Row="8" Text="Thời gian chờ còn lại"/><TextBlock x:Name="ProgressWaitRemainingTextBlock" Grid.Row="8" Grid.Column="1" Text="00:00:00"/>
+                    <TextBlock Grid.Row="9" Text="Bước hiện tại"/><TextBlock x:Name="ProgressCurrentStepTextBlock" Grid.Row="9" Grid.Column="1" Text="-"/>
+                    <TextBlock Grid.Row="10" Text="Tài nguyên / cấp / đội"/><TextBlock x:Name="ProgressCurrentContextTextBlock" Grid.Row="10" Grid.Column="1" Text="-" TextWrapping="Wrap"/>
+                </Grid>
+            </GroupBox>
 
             <GroupBox Header="Tap Test (only runs when clicked)" Margin="0,4,0,8">
                 <Grid Margin="10">

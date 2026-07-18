@@ -170,6 +170,8 @@
     <Compile Include="Core\Workflows\IRandomProvider.cs" />
     <Compile Include="Core\Workflows\MissingRuntimeTemplate.cs" />
     <Compile Include="Core\Workflows\OneShotFarmOutcome.cs" />
+    <Compile Include="Core\Workflows\OneShotFarmProgress.cs" />
+    <Compile Include="Core\Workflows\OneShotFarmProgressStage.cs" />
     <Compile Include="Core\Workflows\OneShotFarmRequest.cs" />
     <Compile Include="Core\Workflows\OneShotFarmResourceSelection.cs" />
     <Compile Include="Core\Workflows\OneShotFarmResult.cs" />

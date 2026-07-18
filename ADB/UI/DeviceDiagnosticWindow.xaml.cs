@@ -14,6 +14,7 @@ using System.Threading;
 using System.Threading.Tasks;
 using System.Windows;
 using System.Windows.Controls;
+using System.Windows.Threading;
 
 namespace ADB_Tool_Automation_Post_FB.UI
 {
@@ -34,7 +35,12 @@ namespace ADB_Tool_Automation_Post_FB.UI
         private readonly OneShotFarmRequest defaultOneShotFarmRequest;
         private readonly OneShotFarmResourceSelection resourceSelection = new OneShotFarmResourceSelection();
         private readonly CancellationTokenSource lifetimeCancellation = new CancellationTokenSource();
+        private readonly DispatcherTimer oneShotFarmProgressTimer;
         private CancellationTokenSource oneShotFarmCancellation;
+        private bool oneShotFarmCancellationRequested;
+        private long oneShotFarmRunGeneration;
+        private DateTimeOffset? oneShotFarmNextCheckAt;
+        private DateTimeOffset? oneShotFarmWaitDeadline;
 
         public DeviceDiagnosticWindow(
             IDeviceDiagnosticService diagnosticService,
@@ -79,6 +85,8 @@ namespace ADB_Tool_Automation_Post_FB.UI
                 ?? throw new ArgumentNullException(nameof(defaultOneShotFarmRequest));
 
             InitializeComponent();
+            oneShotFarmProgressTimer = new DispatcherTimer { Interval = TimeSpan.FromSeconds(1) };
+            oneShotFarmProgressTimer.Tick += OneShotFarmProgressTimer_Tick;
             ApplyResourceSelection();
             PackageNameTextBox.Text = string.IsNullOrWhiteSpace(diagnosticService.Configuration.PackageName)
                 ? "(not configured)"
@@ -87,6 +95,7 @@ namespace ADB_Tool_Automation_Post_FB.UI
             Closed += (sender, args) =>
             {
                 oneShotFarmCancellation?.Cancel();
+                oneShotFarmProgressTimer.Stop();
                 lifetimeCancellation.Cancel();
             };
         }
@@ -247,13 +256,18 @@ namespace ADB_Tool_Automation_Post_FB.UI
             var runCancellation = CancellationTokenSource.CreateLinkedTokenSource(
                 lifetimeCancellation.Token);
             oneShotFarmCancellation = runCancellation;
+            oneShotFarmCancellationRequested = false;
+            long runGeneration = ++oneShotFarmRunGeneration;
+            var progress = new Progress<OneShotFarmProgress>(value =>
+                ApplyOneShotFarmProgress(runGeneration, runCancellation, value));
             RunOneShotFarmButton.IsEnabled = false;
             StopOneShotFarmButton.IsEnabled = true;
+            OneShotFarmResourcesGroupBox.IsEnabled = false;
             StatusTextBlock.Text = "Waiting for an allowed ready team or running One-Shot Farm...";
             try
             {
                 OneShotFarmResult result = await oneShotFarmWorkflow.RunAsync(
-                    GetSelectedDeviceName(), request, runCancellation.Token);
+                    GetSelectedDeviceName(), request, progress, runCancellation.Token);
                 StatusTextBlock.Text = FormatOneShotFarmResult(result);
             }
             catch (OperationCanceledException)
@@ -266,21 +280,95 @@ namespace ADB_Tool_Automation_Post_FB.UI
             }
             finally
             {
+                StopOneShotFarmProgressTimer();
                 if (ReferenceEquals(oneShotFarmCancellation, runCancellation))
                     oneShotFarmCancellation = null;
                 runCancellation.Dispose();
                 RunOneShotFarmButton.IsEnabled = true;
                 StopOneShotFarmButton.IsEnabled = false;
+                OneShotFarmResourcesGroupBox.IsEnabled = true;
             }
         }
 
         private void StopOneShotFarm_Click(object sender, RoutedEventArgs e)
         {
             CancellationTokenSource currentRun = oneShotFarmCancellation;
-            if (currentRun == null) return;
+            if (currentRun == null || oneShotFarmCancellationRequested) return;
+            oneShotFarmCancellationRequested = true;
             StopOneShotFarmButton.IsEnabled = false;
-            StatusTextBlock.Text = "Stopping One-Shot Farm...";
+            ProgressStageTextBlock.Text = OneShotFarmProgressStage.Stopping.ToString();
+            ProgressMessageTextBlock.Text = "Stopping One-Shot Farm...";
+            StopOneShotFarmProgressTimer();
             currentRun.Cancel();
+        }
+
+        private void ApplyOneShotFarmProgress(long runGeneration,
+            CancellationTokenSource runCancellation, OneShotFarmProgress progress)
+        {
+            if (progress == null || !OneShotFarmProgressUtilities.IsCurrentRun(
+                runGeneration, oneShotFarmRunGeneration, runCancellation,
+                oneShotFarmCancellation)) return;
+            try
+            {
+                ProgressStageTextBlock.Text = progress.Stage.ToString();
+                ProgressMessageTextBlock.Text = progress.Message ?? "-";
+                ProgressChecksTextBlock.Text = progress.TeamAvailabilityChecks.ToString(CultureInfo.InvariantCulture);
+                ProgressAllowedTeamsTextBlock.Text = FormatTeams(progress.AllowedTeams);
+                ProgressReadyTeamsTextBlock.Text = FormatTeams(progress.ReadyTeams);
+                ProgressEligibleTeamsTextBlock.Text = FormatTeams(progress.EligibleReadyTeams);
+                ProgressCurrentStepTextBlock.Text = progress.CurrentStep?.ToString() ?? "-";
+                ProgressCurrentContextTextBlock.Text = $"{progress.CurrentResource?.ToString() ?? "-"} / "
+                    + $"{progress.CurrentLevel?.ToString(CultureInfo.InvariantCulture) ?? "-"} / "
+                    + $"{progress.CurrentTeam?.ToString() ?? "-"}";
+                oneShotFarmNextCheckAt = progress.NextCheckAt;
+                oneShotFarmWaitDeadline = progress.WaitDeadline;
+                ProgressNextCheckTextBlock.Text = progress.NextCheckAt.HasValue
+                    ? progress.NextCheckAt.Value.ToLocalTime().ToString(
+                        "HH:mm:ss", CultureInfo.InvariantCulture)
+                    : "-";
+
+                if (progress.Stage == OneShotFarmProgressStage.WaitingForReadyTeam)
+                {
+                    UpdateOneShotFarmCountdown();
+                    oneShotFarmProgressTimer.Start();
+                }
+                else if (progress.Stage == OneShotFarmProgressStage.ReadyTeamFound
+                    || progress.Stage == OneShotFarmProgressStage.Completed
+                    || progress.Stage == OneShotFarmProgressStage.Failed
+                    || progress.Stage == OneShotFarmProgressStage.Cancelled)
+                {
+                    StopOneShotFarmProgressTimer();
+                }
+            }
+            catch (Exception)
+            {
+                // The dispatcher can be shutting down; progress must not fail gameplay.
+            }
+        }
+
+        private static string FormatTeams(IReadOnlyList<TeamNumber> teams) =>
+            teams == null || teams.Count == 0 ? "-" : string.Join(", ", teams);
+
+        private void OneShotFarmProgressTimer_Tick(object sender, EventArgs e) =>
+            UpdateOneShotFarmCountdown();
+
+        private void UpdateOneShotFarmCountdown()
+        {
+            DateTimeOffset now = DateTimeOffset.Now;
+            TimeSpan next = OneShotFarmProgressUtilities.Remaining(now, oneShotFarmNextCheckAt);
+            TimeSpan wait = OneShotFarmProgressUtilities.Remaining(now, oneShotFarmWaitDeadline);
+            ProgressCountdownTextBlock.Text = next.ToString(@"mm\:ss", CultureInfo.InvariantCulture);
+            ProgressWaitRemainingTextBlock.Text = wait.ToString(@"hh\:mm\:ss", CultureInfo.InvariantCulture);
+        }
+
+        private void StopOneShotFarmProgressTimer()
+        {
+            oneShotFarmProgressTimer.Stop();
+            oneShotFarmNextCheckAt = null;
+            oneShotFarmWaitDeadline = null;
+            ProgressNextCheckTextBlock.Text = "-";
+            ProgressCountdownTextBlock.Text = "00:00";
+            ProgressWaitRemainingTextBlock.Text = "00:00:00";
         }
 
         private void ApplyResourceSelection()

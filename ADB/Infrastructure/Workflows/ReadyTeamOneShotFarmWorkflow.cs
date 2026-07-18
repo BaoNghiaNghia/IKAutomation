@@ -29,14 +29,21 @@ namespace ADB_Tool_Automation_Post_FB.Infrastructure.Workflows
             this.logger = logger ?? throw new ArgumentNullException(nameof(logger));
         }
 
+        public Task<OneShotFarmResult> RunAsync(string deviceName,
+            OneShotFarmRequest request, CancellationToken cancellationToken) =>
+            RunAsync(deviceName, request, null, cancellationToken);
+
         public async Task<OneShotFarmResult> RunAsync(string deviceName,
-            OneShotFarmRequest request, CancellationToken cancellationToken)
+            OneShotFarmRequest request, IProgress<OneShotFarmProgress> progress,
+            CancellationToken cancellationToken)
         {
             if (string.IsNullOrWhiteSpace(deviceName) || request == null
                 || request.AllowedTeams == null || request.AllowedTeams.Count == 0)
-                return await inner.RunAsync(deviceName, request, cancellationToken);
+                return await inner.RunAsync(deviceName, request, progress, cancellationToken);
 
             var watch = Stopwatch.StartNew();
+            DateTimeOffset waitStartedAt = DateTimeOffset.UtcNow;
+            DateTimeOffset waitDeadline = waitStartedAt.AddMilliseconds(options.MaxWaitMs);
             int checks = 0;
             IReadOnlyList<TeamNumber> eligibleReadyTeams = new TeamNumber[0];
             try
@@ -46,17 +53,30 @@ namespace ADB_Tool_Automation_Post_FB.Infrastructure.Workflows
                     cancellationToken.ThrowIfCancellationRequested();
                     if (checks > 0 && watch.ElapsedMilliseconds >= options.MaxWaitMs)
                     {
+                        Report(progress, Terminal(OneShotFarmProgressStage.Failed,
+                            request, checks, "Maximum ready-team wait time elapsed."));
                         return Empty(deviceName, request,
                             OneShotFarmOutcome.TeamAvailabilityWaitTimeout,
                             $"No allowed team became ready within {options.MaxWaitMs} ms.",
                             null, checks, watch.Elapsed);
                     }
 
+                    Report(progress, new OneShotFarmProgress
+                    {
+                        Stage = OneShotFarmProgressStage.CheckingTeamAvailability,
+                        ReportedAt = DateTimeOffset.UtcNow,
+                        TeamAvailabilityChecks = checks + 1,
+                        AllowedTeams = request.AllowedTeams,
+                        WaitDeadline = waitDeadline,
+                        Message = $"Checking allowed teams (attempt {checks + 1})."
+                    });
                     WorldMapTeamAvailabilityResult check = await availability.CheckAsync(
                         deviceName, cancellationToken);
                     checks++;
                     if (!check.Success)
                     {
+                        Report(progress, Terminal(OneShotFarmProgressStage.Failed,
+                            request, checks, check.Message));
                         return Empty(deviceName, request,
                             OneShotFarmOutcome.TeamAvailabilityCheckFailed,
                             check.Message, check.ErrorMessage, checks, watch.Elapsed);
@@ -65,27 +85,56 @@ namespace ADB_Tool_Automation_Post_FB.Infrastructure.Workflows
                         .Where(team => request.AllowedTeams.Contains(team))
                         .Distinct()
                         .ToArray();
-                    if (eligibleReadyTeams.Count > 0) break;
+                    if (eligibleReadyTeams.Count > 0)
+                    {
+                        Report(progress, new OneShotFarmProgress
+                        {
+                            Stage = OneShotFarmProgressStage.ReadyTeamFound,
+                            ReportedAt = DateTimeOffset.UtcNow,
+                            TeamAvailabilityChecks = checks,
+                            AllowedTeams = request.AllowedTeams,
+                            ReadyTeams = check.ReadyTeams ?? new TeamNumber[0],
+                            EligibleReadyTeams = eligibleReadyTeams,
+                            WaitDeadline = waitDeadline,
+                            Message = $"Ready allowed team(s): {string.Join(", ", eligibleReadyTeams)}."
+                        });
+                        break;
+                    }
 
                     long remainingMs = options.MaxWaitMs - watch.ElapsedMilliseconds;
                     if (remainingMs <= 0)
                     {
+                        Report(progress, Terminal(OneShotFarmProgressStage.Failed,
+                            request, checks, "Maximum ready-team wait time elapsed."));
                         return Empty(deviceName, request,
                             OneShotFarmOutcome.TeamAvailabilityWaitTimeout,
                             $"No allowed team became ready within {options.MaxWaitMs} ms.",
                             null, checks, watch.Elapsed);
                     }
 
+                    int delayMs = (int)Math.Min(options.CheckIntervalMs, remainingMs);
+                    DateTimeOffset nextCheckAt = DateTimeOffset.UtcNow.AddMilliseconds(delayMs);
+                    Report(progress, new OneShotFarmProgress
+                    {
+                        Stage = OneShotFarmProgressStage.WaitingForReadyTeam,
+                        ReportedAt = DateTimeOffset.UtcNow,
+                        TeamAvailabilityChecks = checks,
+                        AllowedTeams = request.AllowedTeams,
+                        ReadyTeams = check.ReadyTeams ?? new TeamNumber[0],
+                        EligibleReadyTeams = new TeamNumber[0],
+                        NextCheckAt = nextCheckAt,
+                        WaitDeadline = waitDeadline,
+                        Message = "No allowed team is ready; waiting before the next check."
+                    });
                     logger.Info($"[Ready Team Gate] DeviceName='{deviceName}', Check={checks}, "
                         + $"ReadyTeams='{string.Join(",", check.ReadyTeams ?? new TeamNumber[0])}', "
                         + $"AllowedTeams='{string.Join(",", request.AllowedTeams)}', EligibleReady=false, "
-                        + $"NextCheckInMs={Math.Min(options.CheckIntervalMs, remainingMs)}, Cancellation=false");
-                    await Task.Delay((int)Math.Min(options.CheckIntervalMs, remainingMs),
-                        cancellationToken);
+                        + $"NextCheckInMs={delayMs}, Cancellation=false");
+                    await Task.Delay(delayMs, cancellationToken);
                 }
 
                 OneShotFarmResult result = await inner.RunAsync(
-                    deviceName, request, cancellationToken);
+                    deviceName, request, progress, cancellationToken);
                 result.TeamAvailabilityChecks = checks;
                 result.ReadyTeamObserved = true;
                 result.ReadyTeams = eligibleReadyTeams;
@@ -94,9 +143,34 @@ namespace ADB_Tool_Automation_Post_FB.Infrastructure.Workflows
             }
             catch (OperationCanceledException)
             {
+                Report(progress, Terminal(OneShotFarmProgressStage.Cancelled,
+                    request, checks, "One-shot farm was cancelled."));
                 return Empty(deviceName, request, OneShotFarmOutcome.Cancelled,
                     "One-shot farm readiness waiting was cancelled.", null,
                     checks, watch.Elapsed);
+            }
+        }
+
+        private OneShotFarmProgress Terminal(OneShotFarmProgressStage stage,
+            OneShotFarmRequest request, int checks, string message) =>
+            new OneShotFarmProgress
+            {
+                Stage = stage,
+                ReportedAt = DateTimeOffset.UtcNow,
+                TeamAvailabilityChecks = checks,
+                AllowedTeams = request?.AllowedTeams ?? new TeamNumber[0],
+                Message = message
+            };
+
+        private void Report(IProgress<OneShotFarmProgress> progress,
+            OneShotFarmProgress value)
+        {
+            if (progress == null) return;
+            try { progress.Report(value); }
+            catch (Exception exception)
+            {
+                logger.Error("[Ready Team Gate] Progress callback failed; workflow continues.",
+                    exception);
             }
         }
 

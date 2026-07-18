@@ -93,33 +93,62 @@ namespace ADB_Tool_Automation_Post_FB.Infrastructure.Workflows
             this.randomProvider = randomProvider;
         }
 
+        public Task<OneShotFarmResult> RunAsync(string deviceName, OneShotFarmRequest request,
+            CancellationToken cancellationToken) =>
+            RunAsync(deviceName, request, null, cancellationToken);
+
         public async Task<OneShotFarmResult> RunAsync(string deviceName, OneShotFarmRequest request,
-            CancellationToken cancellationToken)
+            IProgress<OneShotFarmProgress> progress, CancellationToken cancellationToken)
         {
             string validation = Validate(deviceName, request);
-            if (validation != null) return Empty(deviceName, request, validation);
+            if (validation != null)
+            {
+                ReportTerminal(progress, OneShotFarmProgressStage.Failed, request, validation);
+                return Empty(deviceName, request, validation);
+            }
             OneShotFarmResult preflightFailure = PrepareResourcePriority(deviceName, request);
-            if (preflightFailure != null) return preflightFailure;
+            if (preflightFailure != null)
+            {
+                ReportTerminal(progress, OneShotFarmProgressStage.Failed, request,
+                    preflightFailure.Message);
+                return preflightFailure;
+            }
             try
             {
                 cancellationToken.ThrowIfCancellationRequested();
-                return await operationLock.RunAsync(deviceName.Trim(),
-                    token => RunCoreAsync(deviceName.Trim(), request, token), cancellationToken);
+                Report(progress, OneShotFarmProgressStage.PreparingFarm,
+                    OneShotFarmStep.Preflight, request, null,
+                    "Preparing the one-shot farm workflow.");
+                OneShotFarmResult result = await operationLock.RunAsync(deviceName.Trim(),
+                    token => RunCoreAsync(deviceName.Trim(), request, progress, token), cancellationToken);
+                ReportTerminal(progress,
+                    result.Outcome == OneShotFarmOutcome.Cancelled
+                        ? OneShotFarmProgressStage.Cancelled
+                        : result.Success ? OneShotFarmProgressStage.Completed
+                        : OneShotFarmProgressStage.Failed,
+                    request, result.Message, result.LastCompletedStep,
+                    result.LocatedResource, result.LocatedLevel,
+                    result.DispatchedTeam ?? result.SelectedTeam);
+                return result;
             }
             catch (OperationCanceledException)
             {
+                ReportTerminal(progress, OneShotFarmProgressStage.Cancelled, request,
+                    "One-shot farm was cancelled while waiting for the workflow lease.");
                 return Empty(deviceName, request, "One-shot farm was cancelled while waiting for the workflow lease.", OneShotFarmOutcome.Cancelled);
             }
         }
 
         private async Task<OneShotFarmResult> RunCoreAsync(string deviceName,
-            OneShotFarmRequest request, CancellationToken token)
+            OneShotFarmRequest request, IProgress<OneShotFarmProgress> progress,
+            CancellationToken token)
         {
-            return await RunCoreAsync(deviceName, request, token, false);
+            return await RunCoreAsync(deviceName, request, progress, token, false);
         }
 
         private async Task<OneShotFarmResult> RunCoreAsync(string deviceName,
-            OneShotFarmRequest request, CancellationToken token, bool searchPanelAlreadyReady)
+            OneShotFarmRequest request, IProgress<OneShotFarmProgress> progress,
+            CancellationToken token, bool searchPanelAlreadyReady)
         {
             var watch = Stopwatch.StartNew(); var steps = new List<OneShotFarmStepResult>();
             OneShotFarmResult result = NewResult(deviceName, request, steps);
@@ -127,6 +156,8 @@ namespace ADB_Tool_Automation_Post_FB.Infrastructure.Workflows
             try
             {
                 token.ThrowIfCancellationRequested();
+                Report(progress, OneShotFarmProgressStage.RunningFarmStep,
+                    OneShotFarmStep.Preflight, request, null, "Checking the initial game state.");
                 DateTimeOffset started = Start(runId, deviceName, OneShotFarmStep.Preflight);
                 GameDetectionResult initial = await detector.DetectAsync(deviceName, token);
                 result.InitialState = initial.State; result.FinalState = initial.State;
@@ -145,6 +176,8 @@ namespace ADB_Tool_Automation_Post_FB.Infrastructure.Workflows
 
                 if (!searchPanelAlreadyReady)
                 {
+                Report(progress, OneShotFarmProgressStage.RunningFarmStep,
+                    OneShotFarmStep.EnsureWorldMap, request, null, "Ensuring World Map.");
                 token.ThrowIfCancellationRequested(); started = Start(runId, deviceName, OneShotFarmStep.EnsureWorldMap);
                 NavigationResult ensure = await navigation.EnsureWorldMapAsync(deviceName, token);
                 result.NavigationResult = ensure; result.FinalState = ensure.FinalState;
@@ -167,8 +200,10 @@ namespace ADB_Tool_Automation_Post_FB.Infrastructure.Workflows
 
                 if (resourceFarmFallback != null)
                     return await RunResourcePlanAsync(deviceName, request, token, result,
-                        steps, watch, runId, world.State);
+                        steps, watch, runId, world.State, progress);
 
+                Report(progress, OneShotFarmProgressStage.RunningFarmStep,
+                    OneShotFarmStep.OpenSearchPanel, request, null, "Opening resource search panel.");
                 token.ThrowIfCancellationRequested(); started = Start(runId, deviceName, OneShotFarmStep.OpenSearchPanel);
                 NavigationResult panel = await navigation.OpenResourceSearchPanelAsync(deviceName, token);
                 result.NavigationResult = panel; result.FinalState = panel.FinalState;
@@ -198,7 +233,7 @@ namespace ADB_Tool_Automation_Post_FB.Infrastructure.Workflows
 
                     if (resourceFarmFallback != null)
                         return await RunResourcePlanAsync(deviceName, request, token, result,
-                            steps, watch, runId, initial.State);
+                            steps, watch, runId, initial.State, progress);
                 }
 
                 var fallbackPolicy = new ResourceLevelFallbackPolicy
@@ -209,6 +244,9 @@ namespace ADB_Tool_Automation_Post_FB.Infrastructure.Workflows
                     WaitForToastClearBetweenAttempts = true,
                     RunId = runId.ToString()
                 };
+                Report(progress, OneShotFarmProgressStage.RunningFarmStep,
+                    OneShotFarmStep.SearchWithLevelFallback, request, null,
+                    "Searching the configured resource levels.");
                 token.ThrowIfCancellationRequested(); started = Start(runId, deviceName, OneShotFarmStep.SearchWithLevelFallback);
                 ResourceLevelFallbackResult fallbackResult = await fallback.SearchAsync(deviceName,
                     request.ResourceType, fallbackPolicy, request.UnoccupiedOnly, token);
@@ -240,6 +278,8 @@ namespace ADB_Tool_Automation_Post_FB.Infrastructure.Workflows
                 AddSuccess(result, steps, OneShotFarmStep.SearchWithLevelFallback, started,
                     fallbackResult.Message, fallbackResult);
 
+                Report(progress, OneShotFarmProgressStage.RunningFarmStep,
+                    OneShotFarmStep.VerifyResourcePopup, request, null, "Verifying resource popup.");
                 token.ThrowIfCancellationRequested(); started = Start(runId, deviceName, OneShotFarmStep.VerifyResourcePopup);
                 ResourcePopupVerificationResult verifiedPopup;
                 IResourceAwarePopupVerificationService resourceAwarePopup = popup as IResourceAwarePopupVerificationService;
@@ -269,6 +309,8 @@ namespace ADB_Tool_Automation_Post_FB.Infrastructure.Workflows
                 }
                 AddSuccess(result, steps, OneShotFarmStep.VerifyResourcePopup, started, verifiedPopup.Message, verifiedPopup);
 
+                Report(progress, OneShotFarmProgressStage.RunningFarmStep,
+                    OneShotFarmStep.OpenTeamSelection, request, null, "Opening team selection.");
                 token.ThrowIfCancellationRequested(); started = Start(runId, deviceName, OneShotFarmStep.OpenTeamSelection);
                 OpenTeamSelectionResult opened = openTeam is IResourceAwareOpenTeamSelectionService resourceAwareOpen
                     ? await resourceAwareOpen.OpenAsync(deviceName, request.ResourceType, token)
@@ -284,6 +326,8 @@ namespace ADB_Tool_Automation_Post_FB.Infrastructure.Workflows
                 }
                 AddSuccess(result, steps, OneShotFarmStep.OpenTeamSelection, started, opened.Message, opened);
 
+                Report(progress, OneShotFarmProgressStage.RunningFarmStep,
+                    OneShotFarmStep.SelectTeam, request, null, "Selecting an eligible farm team.");
                 token.ThrowIfCancellationRequested(); started = Start(runId, deviceName, OneShotFarmStep.SelectTeam);
                 SelectFarmTeamResult selected = await selectTeam.SelectAsync(deviceName, new TeamSelectionRequest
                 { AllowedTeams = request.AllowedTeams, Priority = request.TeamPriority, AllowTeam1 = request.AllowTeam1 }, token);
@@ -302,6 +346,9 @@ namespace ADB_Tool_Automation_Post_FB.Infrastructure.Workflows
                         selected.ErrorMessage, OneShotFarmStep.SelectTeam, watch, runId, token);
                 }
                 result.SelectedTeam = selected.SelectedTeam;
+                Report(progress, OneShotFarmProgressStage.RunningFarmStep,
+                    OneShotFarmStep.DispatchTeam, request, selected.SelectedTeam,
+                    $"Dispatching {selected.SelectedTeam.Value}.");
                 AddSuccess(result, steps, OneShotFarmStep.SelectTeam, started, selected.Message, selected);
 
                 token.ThrowIfCancellationRequested(); started = Start(runId, deviceName, OneShotFarmStep.DispatchTeam);
@@ -344,7 +391,8 @@ namespace ADB_Tool_Automation_Post_FB.Infrastructure.Workflows
                     var stoneRequest = CloneForResource(request, ResourceType.Stone);
                     bool panelReady = dispatched.StorageLimitResult != null
                         && dispatched.StorageLimitResult.ReturnedToSearchPanel;
-                    OneShotFarmResult stone = await RunCoreAsync(deviceName, stoneRequest, token, panelReady);
+                    OneShotFarmResult stone = await RunCoreAsync(deviceName, stoneRequest,
+                        progress, token, panelReady);
                     MergeResourceSwitchResult(result, stone);
                     result.Duration = watch.Elapsed;
                     result.ResourceFallbackResult = BuildFallback(result);
@@ -525,6 +573,55 @@ namespace ADB_Tool_Automation_Post_FB.Infrastructure.Workflows
         private void AddSuccess(OneShotFarmResult result, List<OneShotFarmStepResult> steps, OneShotFarmStep step, DateTimeOffset started, string message, object detail) { Add(steps, step, true, started, message, null, detail); result.LastCompletedStep = step; }
         private static void Add(List<OneShotFarmStepResult> steps, OneShotFarmStep step, bool success, DateTimeOffset started, string message, string error, object detail) { DateTimeOffset end = DateTimeOffset.UtcNow; steps.Add(new OneShotFarmStepResult { Step = step, Success = success, StartedAt = started, CompletedAt = end, Duration = end - started, Message = message, ErrorMessage = error, Detail = detail }); }
         private void LogEnd(Guid id, string device, OneShotFarmResult result) => logger.Info($"[OneShotFarm] RunId='{id}', DeviceName='{device}', LastCompletedStep='{result.LastCompletedStep}', AttemptedLevels='{string.Join(",", result.AttemptedLevels ?? new int[0])}', LocatedLevel='{result.LocatedLevel}', FallbackOutcome='{result.FallbackResult?.Outcome.ToString() ?? string.Empty}', SelectedTeam='{result.SelectedTeam}', Outcome='{result.Outcome}', DurationMs={result.Duration.TotalMilliseconds:F0}, Cancellation={result.Outcome == OneShotFarmOutcome.Cancelled}, Error='{result.ErrorMessage ?? string.Empty}'");
+        private void Report(IProgress<OneShotFarmProgress> progress,
+            OneShotFarmProgressStage stage, OneShotFarmStep step,
+            OneShotFarmRequest request, TeamNumber? team, string message)
+        {
+            if (progress == null) return;
+            try
+            {
+                progress.Report(new OneShotFarmProgress
+                {
+                    Stage = stage,
+                    ReportedAt = DateTimeOffset.UtcNow,
+                    AllowedTeams = request?.AllowedTeams ?? new TeamNumber[0],
+                    CurrentStep = step,
+                    CurrentResource = request == null ? (ResourceType?)null : request.ResourceType,
+                    CurrentLevel = request == null ? (int?)null : request.TargetLevel,
+                    CurrentTeam = team,
+                    Message = message
+                });
+            }
+            catch (Exception exception)
+            {
+                logger.Error("[OneShotFarm] Progress callback failed; workflow continues.", exception);
+            }
+        }
+        private void ReportTerminal(IProgress<OneShotFarmProgress> progress,
+            OneShotFarmProgressStage stage, OneShotFarmRequest request, string message,
+            OneShotFarmStep? step = null, ResourceType? resource = null,
+            int? level = null, TeamNumber? team = null)
+        {
+            if (progress == null) return;
+            try
+            {
+                progress.Report(new OneShotFarmProgress
+                {
+                    Stage = stage,
+                    ReportedAt = DateTimeOffset.UtcNow,
+                    AllowedTeams = request?.AllowedTeams ?? new TeamNumber[0],
+                    CurrentStep = step,
+                    CurrentResource = resource ?? (request == null ? (ResourceType?)null : request.ResourceType),
+                    CurrentLevel = level ?? (request == null ? (int?)null : request.TargetLevel),
+                    CurrentTeam = team,
+                    Message = message
+                });
+            }
+            catch (Exception exception)
+            {
+                logger.Error("[OneShotFarm] Terminal progress callback failed; workflow continues.", exception);
+            }
+        }
         private static OneShotFarmResult NewResult(string device, OneShotFarmRequest request, IReadOnlyList<OneShotFarmStepResult> steps) => new OneShotFarmResult { DeviceName = device, RequestedResource = request.ResourceType, RequestedLevel = request.TargetLevel, RequestedUnoccupiedOnly = request.UnoccupiedOnly, AttemptedLevels = new int[0], AttemptedResources = new[] { request.ResourceType }, SelectedResources = request.SelectedResources ?? request.ResourcePriority, ShuffledResourcePriority = request.ResourcePriority, MissingRuntimeTemplates = new MissingRuntimeTemplate[0], StorageFullResources = new ResourceType[0], InitialState = GameState.Unknown, FinalState = GameState.Unknown, LastCompletedStep = OneShotFarmStep.Preflight, Steps = steps };
         private static OneShotFarmResult Empty(string device, OneShotFarmRequest request, string error, OneShotFarmOutcome outcome = OneShotFarmOutcome.PreconditionFailed) => new OneShotFarmResult { Outcome = outcome, Success = false, DeviceName = device, RequestedResource = request == null ? ResourceType.Iron : request.ResourceType, RequestedLevel = request == null ? 7 : request.TargetLevel, RequestedUnoccupiedOnly = request == null || request.UnoccupiedOnly, AttemptedLevels = new int[0], AttemptedResources = request == null ? new ResourceType[0] : new[] { request.ResourceType }, SelectedResources = request?.SelectedResources ?? request?.ResourcePriority ?? new ResourceType[0], ShuffledResourcePriority = request?.ResourcePriority ?? new ResourceType[0], StorageFullResources = new ResourceType[0], InitialState = GameState.Unknown, FinalState = GameState.Unknown, LastCompletedStep = OneShotFarmStep.Preflight, Message = error, ErrorMessage = error, Steps = new OneShotFarmStepResult[0] };
 
@@ -571,10 +668,14 @@ namespace ADB_Tool_Automation_Post_FB.Infrastructure.Workflows
 
         private async Task<OneShotFarmResult> RunResourcePlanAsync(string deviceName,
             OneShotFarmRequest request, CancellationToken token, OneShotFarmResult result,
-            List<OneShotFarmStepResult> steps, Stopwatch watch, Guid runId, GameState initialState)
+            List<OneShotFarmStepResult> steps, Stopwatch watch, Guid runId,
+            GameState initialState, IProgress<OneShotFarmProgress> progress)
         {
             token.ThrowIfCancellationRequested();
             request.RunId = runId.ToString();
+            Report(progress, OneShotFarmProgressStage.RunningFarmStep,
+                OneShotFarmStep.ResourceFarmFallback, request, null,
+                "Running the resource and level fallback plan.");
             DateTimeOffset started = Start(runId, deviceName, OneShotFarmStep.ResourceFarmFallback);
             ResourceFarmFallbackResult fallbackResult = await resourceFarmFallback.RunAsync(
                 deviceName, request, initialState, token);
