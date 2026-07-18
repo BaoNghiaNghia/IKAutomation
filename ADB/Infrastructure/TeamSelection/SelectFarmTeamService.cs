@@ -225,9 +225,12 @@ namespace ADB_Tool_Automation_Post_FB.Infrastructure.TeamSelection
 
                         DateTimeOffset observationDeadline = DateTimeOffset.UtcNow.AddMilliseconds(
                             Math.Max(options.TapRetryDelayMs, options.PollIntervalMs * 2));
-                        while (DateTimeOffset.UtcNow < observationDeadline
-                            && DateTimeOffset.UtcNow < selectionDeadline)
+                        bool firstPostTapObservation = true;
+                        while (firstPostTapObservation
+                            || (DateTimeOffset.UtcNow < observationDeadline
+                                && DateTimeOffset.UtcNow < selectionDeadline))
                         {
+                            firstPostTapObservation = false;
                             await Task.Delay(options.PollIntervalMs, cancellationToken);
                             lastFrame = await client.CaptureScreenshotPngAsync(deviceName, cancellationToken);
                             GameDetectionResult observedState = detector.Detect(lastFrame);

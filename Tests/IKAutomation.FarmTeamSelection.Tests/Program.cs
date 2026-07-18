@@ -42,6 +42,7 @@ namespace IKAutomation.FarmTeamSelection.Tests
             Run("Retry count is bounded", RetryBounded);
             Run("Retry uses fresh bounds", RetryFreshBounds);
             Run("Preflight does not consume selection timeout", PreflightDoesNotConsumeSelectionTimeout);
+            Run("Tap near deadline still gets one verification frame", TapNearDeadlineIsVerified);
             Run("Polling cancellation is returned", PollCancellation);
             Run("Retry cancellation is returned", RetryCancellation);
             Run("Lock-wait cancellation is returned", LockWaitCancellation);
@@ -141,6 +142,14 @@ namespace IKAutomation.FarmTeamSelection.Tests
             Fixture f = Successful(TeamNumber.Team4); f.Detector.DelayMs = 1100;
             SelectFarmTeamResult r = Execute(f, Only(TeamNumber.Team4));
             Equal(SelectFarmTeamOutcome.TeamSelected, r.Outcome);
+        }
+
+        private static void TapNearDeadlineIsVerified()
+        {
+            Fixture f = Successful(TeamNumber.Team3); f.Client.CaptureDelayMs = 600;
+            SelectFarmTeamResult r = Execute(f, Only(TeamNumber.Team3));
+            Equal(SelectFarmTeamOutcome.TeamSelected, r.Outcome);
+            Equal(TeamNumber.Team3, r.SelectedTeam.Value); Equal(1, f.Client.Taps.Count);
         }
 
         private static void PollCancellation()
@@ -327,9 +336,9 @@ namespace IKAutomation.FarmTeamSelection.Tests
 
         private sealed class FakeClient : ILdPlayerClient
         {
-            private readonly FakeMatcher matcher; public readonly List<string> Taps = new List<string>(); public int ProhibitedInputs; public CancellationTokenSource CancelOnTap;
+            private readonly FakeMatcher matcher; public readonly List<string> Taps = new List<string>(); public int ProhibitedInputs, CaptureDelayMs; public CancellationTokenSource CancelOnTap;
             public FakeClient(FakeMatcher matcher) { this.matcher = matcher; }
-            public Task<byte[]> CaptureScreenshotPngAsync(string d, CancellationToken t) { t.ThrowIfCancellationRequested(); return Task.FromResult(new byte[] { 1 }); }
+            public async Task<byte[]> CaptureScreenshotPngAsync(string d, CancellationToken t) { t.ThrowIfCancellationRequested(); if (CaptureDelayMs > 0) await Task.Delay(CaptureDelayMs, t); return new byte[] { 1 }; }
             public Task TapAsync(string d, int x, int y, CancellationToken t) { t.ThrowIfCancellationRequested(); Taps.Add(x + "," + y); matcher.OnTap(x, y); CancelOnTap?.Cancel(); return Task.CompletedTask; }
             private Task Prohibited() { ProhibitedInputs++; return Task.CompletedTask; }
             public Task<IReadOnlyList<string>> GetDeviceNamesAsync(CancellationToken t) => Task.FromResult<IReadOnlyList<string>>(new[] { "LDPlayer" });
