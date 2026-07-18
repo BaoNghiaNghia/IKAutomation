@@ -529,7 +529,7 @@ namespace ADB_Tool_Automation_Post_FB.Infrastructure.Workflows
                 return "ResourcePriority contains an unsupported resource.";
             if (request.ResourceLevelPriority == null || request.ResourceLevelPriority.Count == 0) return "ResourceLevelPriority cannot be empty.";
             if (request.ResourceLevelPriority.Distinct().Count() != request.ResourceLevelPriority.Count) return "ResourceLevelPriority cannot contain duplicates.";
-            if (request.ResourceLevelPriority.Any(level => level != 5 && level != 6 && level != 7)) return "ResourceLevelPriority supports only levels 5, 6, and 7.";
+            if (request.ResourceLevelPriority.Any(level => level < 1 || level > 7)) return "ResourceLevelPriority supports only levels 1 through 7.";
             if (request.AttemptsPerResourceLevel < 1 || request.AttemptsPerResourceLevel > 3) return "AttemptsPerResourceLevel must be between 1 and 3.";
             if (request.AllowedTeams == null || request.AllowedTeams.Count == 0) return "AllowedTeams cannot be empty.";
             if (request.TeamPriority == null || request.TeamPriority.Count == 0) return "TeamPriority cannot be empty.";
@@ -636,7 +636,8 @@ namespace ADB_Tool_Automation_Post_FB.Infrastructure.Workflows
                 AttemptsPerResourceLevel = source.AttemptsPerResourceLevel,
                 UnoccupiedOnly = source.UnoccupiedOnly, AllowedTeams = source.AllowedTeams,
                 TeamPriority = source.TeamPriority, AllowTeam1 = source.AllowTeam1,
-                RequireMarchVerification = source.RequireMarchVerification
+                RequireMarchVerification = source.RequireMarchVerification,
+                ReadyTeamOptions = source.ReadyTeamOptions
             };
 
         private static void MergeResourceSwitchResult(OneShotFarmResult target, OneShotFarmResult next)

@@ -62,12 +62,40 @@
 
             <GroupBox x:Name="OneShotFarmResourcesGroupBox"
                       Header="Tài nguyên One-Shot Farm" Margin="0,12,0,8">
-                <WrapPanel Margin="10,6">
-                    <CheckBox x:Name="IronResourceCheckBox" Content="Sắt" Margin="0,0,18,0"/>
-                    <CheckBox x:Name="StoneResourceCheckBox" Content="Mỏ Đá" Margin="0,0,18,0"/>
-                    <CheckBox x:Name="WoodResourceCheckBox" Content="Rừng" Margin="0,0,18,0"/>
-                    <CheckBox x:Name="FoodResourceCheckBox" Content="Đất nông nghiệp"/>
-                </WrapPanel>
+                <StackPanel Margin="10,6">
+                    <WrapPanel Margin="0,0,0,8">
+                        <CheckBox x:Name="IronResourceCheckBox" Content="Sắt" Margin="0,0,18,0"/>
+                        <CheckBox x:Name="StoneResourceCheckBox" Content="Mỏ Đá" Margin="0,0,18,0"/>
+                        <CheckBox x:Name="WoodResourceCheckBox" Content="Rừng" Margin="0,0,18,0"/>
+                        <CheckBox x:Name="FoodResourceCheckBox" Content="Đất nông nghiệp"/>
+                    </WrapPanel>
+                    <Grid>
+                        <Grid.ColumnDefinitions>
+                            <ColumnDefinition Width="180"/><ColumnDefinition Width="*"/>
+                        </Grid.ColumnDefinitions>
+                        <Grid.RowDefinitions>
+                            <RowDefinition Height="Auto"/><RowDefinition Height="Auto"/>
+                            <RowDefinition Height="Auto"/><RowDefinition Height="Auto"/>
+                            <RowDefinition Height="Auto"/>
+                        </Grid.RowDefinitions>
+                        <TextBlock Grid.Row="0" Text="Level priority" VerticalAlignment="Center"/>
+                        <TextBox x:Name="LevelPriorityTextBox" Grid.Row="0" Grid.Column="1" Text="7,6,5" Margin="0,2"/>
+                        <TextBlock Grid.Row="1" Text="Team priority" VerticalAlignment="Center"/>
+                        <TextBox x:Name="TeamPriorityTextBox" Grid.Row="1" Grid.Column="1" Text="4,3,2" Margin="0,2"/>
+                        <TextBlock Grid.Row="2" Text="Kiểm tra đội mỗi (phút)" VerticalAlignment="Center"/>
+                        <TextBox x:Name="ReadyCheckIntervalTextBox" Grid.Row="2" Grid.Column="1" Text="15" Margin="0,2"/>
+                        <TextBlock Grid.Row="3" Text="Dừng chờ sau (giờ)" VerticalAlignment="Center"/>
+                        <TextBox x:Name="ReadyMaxWaitTextBox" Grid.Row="3" Grid.Column="1" Text="12" Margin="0,2"/>
+                        <WrapPanel Grid.Row="4" Grid.ColumnSpan="2" Margin="0,6,0,0">
+                            <CheckBox x:Name="AllowTeam1CheckBox" Content="Cho phép Team1" Margin="0,0,18,0"/>
+                            <CheckBox x:Name="UnoccupiedOnlyCheckBox" Content="Chỉ mục tiêu chưa có người khai thác"/>
+                        </WrapPanel>
+                    </Grid>
+                    <WrapPanel Margin="0,8,0,0">
+                        <Button Content="Save Settings" Click="SaveFarmSettings_Click" Padding="12,5" Margin="0,0,8,0"/>
+                        <Button Content="Restore Defaults" Click="RestoreFarmDefaults_Click" Padding="12,5"/>
+                    </WrapPanel>
+                </StackPanel>
             </GroupBox>
 
             <WrapPanel Margin="0,0,0,8">

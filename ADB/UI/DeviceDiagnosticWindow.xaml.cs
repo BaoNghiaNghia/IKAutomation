@@ -33,7 +33,8 @@ namespace ADB_Tool_Automation_Post_FB.UI
         private readonly DispatchMarchRequest defaultDispatchRequest;
         private readonly IOneShotFarmWorkflow oneShotFarmWorkflow;
         private readonly OneShotFarmRequest defaultOneShotFarmRequest;
-        private readonly OneShotFarmResourceSelection resourceSelection = new OneShotFarmResourceSelection();
+        private readonly IFarmUiPreferencesStore farmPreferencesStore;
+        private readonly FarmUiPreferences defaultFarmPreferences;
         private readonly CancellationTokenSource lifetimeCancellation = new CancellationTokenSource();
         private readonly DispatcherTimer oneShotFarmProgressTimer;
         private CancellationTokenSource oneShotFarmCancellation;
@@ -55,7 +56,9 @@ namespace ADB_Tool_Automation_Post_FB.UI
             IDispatchSelectedTeamService dispatchSelectedTeamService,
             DispatchMarchRequest defaultDispatchRequest,
             IOneShotFarmWorkflow oneShotFarmWorkflow,
-            OneShotFarmRequest defaultOneShotFarmRequest)
+            OneShotFarmRequest defaultOneShotFarmRequest,
+            ReadyTeamGateOptions defaultReadyTeamGateOptions,
+            IFarmUiPreferencesStore farmPreferencesStore)
         {
             this.diagnosticService = diagnosticService
                 ?? throw new ArgumentNullException(nameof(diagnosticService));
@@ -83,21 +86,47 @@ namespace ADB_Tool_Automation_Post_FB.UI
                 ?? throw new ArgumentNullException(nameof(oneShotFarmWorkflow));
             this.defaultOneShotFarmRequest = defaultOneShotFarmRequest
                 ?? throw new ArgumentNullException(nameof(defaultOneShotFarmRequest));
+            this.farmPreferencesStore = farmPreferencesStore
+                ?? throw new ArgumentNullException(nameof(farmPreferencesStore));
+            defaultFarmPreferences = FarmUiPreferencesMapper.FromDefaults(
+                defaultOneShotFarmRequest, defaultReadyTeamGateOptions
+                    ?? throw new ArgumentNullException(nameof(defaultReadyTeamGateOptions)));
 
             InitializeComponent();
             oneShotFarmProgressTimer = new DispatcherTimer { Interval = TimeSpan.FromSeconds(1) };
             oneShotFarmProgressTimer.Tick += OneShotFarmProgressTimer_Tick;
-            ApplyResourceSelection();
+            ApplyFarmPreferences(defaultFarmPreferences);
             PackageNameTextBox.Text = string.IsNullOrWhiteSpace(diagnosticService.Configuration.PackageName)
                 ? "(not configured)"
                 : diagnosticService.Configuration.PackageName;
-            Loaded += async (sender, args) => await RefreshDeviceListAsync();
+            Loaded += async (sender, args) => await LoadFarmPreferencesAndRefreshAsync();
             Closed += (sender, args) =>
             {
                 oneShotFarmCancellation?.Cancel();
                 oneShotFarmProgressTimer.Stop();
                 lifetimeCancellation.Cancel();
             };
+        }
+
+        private async Task LoadFarmPreferencesAndRefreshAsync()
+        {
+            string warning = null;
+            try
+            {
+                FarmUiPreferencesLoadResult load = await farmPreferencesStore.LoadAsync(
+                    defaultFarmPreferences, lifetimeCancellation.Token);
+                ApplyFarmPreferences(load.Preferences ?? defaultFarmPreferences);
+                if (load.RecoveredInvalidFile || !string.IsNullOrWhiteSpace(load.ErrorMessage))
+                    warning = "Cấu hình farm bị lỗi; đã khôi phục mặc định.";
+            }
+            catch (OperationCanceledException) { return; }
+            catch (Exception exception)
+            {
+                ApplyFarmPreferences(defaultFarmPreferences);
+                warning = "Không thể tải cấu hình farm; đang dùng mặc định. " + exception.Message;
+            }
+            await RefreshDeviceListAsync();
+            if (!string.IsNullOrWhiteSpace(warning)) StatusTextBlock.Text = warning;
         }
 
         private async void RefreshDevices_Click(object sender, RoutedEventArgs e)
@@ -245,14 +274,31 @@ namespace ADB_Tool_Automation_Post_FB.UI
         private async void RunOneShotFarm_Click(object sender, RoutedEventArgs e)
         {
             if (oneShotFarmCancellation != null) return;
-            ReadResourceSelection();
-            if (resourceSelection.GetSelectedResources().Count < 2)
+            if (!TryReadFarmPreferences(out FarmUiPreferences preferences, out string validationError))
             {
-                StatusTextBlock.Text = "Vui lòng chọn ít nhất 2 loại tài nguyên.";
+                StatusTextBlock.Text = validationError;
                 return;
             }
 
-            OneShotFarmRequest request = resourceSelection.CreateRequest(defaultOneShotFarmRequest);
+            FarmUiPreferencesSaveResult saveResult;
+            try
+            {
+                saveResult = await farmPreferencesStore.SaveAsync(
+                    preferences, lifetimeCancellation.Token);
+            }
+            catch (OperationCanceledException) { return; }
+            catch (Exception exception)
+            {
+                saveResult = new FarmUiPreferencesSaveResult
+                {
+                    Success = false,
+                    Message = "Không thể lưu cấu hình farm; vẫn dùng cấu hình hiện tại. "
+                        + exception.Message
+                };
+            }
+            OneShotFarmRequest request = FarmUiPreferencesMapper.CreateRequest(
+                preferences, defaultOneShotFarmRequest);
+            string saveWarning = saveResult.Success ? null : saveResult.Message;
             var runCancellation = CancellationTokenSource.CreateLinkedTokenSource(
                 lifetimeCancellation.Token);
             oneShotFarmCancellation = runCancellation;
@@ -268,7 +314,9 @@ namespace ADB_Tool_Automation_Post_FB.UI
             {
                 OneShotFarmResult result = await oneShotFarmWorkflow.RunAsync(
                     GetSelectedDeviceName(), request, progress, runCancellation.Token);
-                StatusTextBlock.Text = FormatOneShotFarmResult(result);
+                StatusTextBlock.Text = FormatOneShotFarmResult(result)
+                    + (string.IsNullOrWhiteSpace(saveWarning) ? string.Empty
+                        : Environment.NewLine + "Warning: " + saveWarning);
             }
             catch (OperationCanceledException)
             {
@@ -287,6 +335,41 @@ namespace ADB_Tool_Automation_Post_FB.UI
                 RunOneShotFarmButton.IsEnabled = true;
                 StopOneShotFarmButton.IsEnabled = false;
                 OneShotFarmResourcesGroupBox.IsEnabled = true;
+            }
+        }
+
+        private async void SaveFarmSettings_Click(object sender, RoutedEventArgs e)
+        {
+            if (!TryReadFarmPreferences(out FarmUiPreferences preferences, out string error))
+            {
+                StatusTextBlock.Text = error;
+                return;
+            }
+            try
+            {
+                FarmUiPreferencesSaveResult result = await farmPreferencesStore.SaveAsync(
+                    preferences, lifetimeCancellation.Token);
+                StatusTextBlock.Text = result.Success ? "Đã lưu cấu hình farm." : result.Message;
+            }
+            catch (OperationCanceledException) { }
+            catch (Exception exception)
+            {
+                StatusTextBlock.Text = "Không thể lưu cấu hình farm: " + exception.Message;
+            }
+        }
+
+        private async void RestoreFarmDefaults_Click(object sender, RoutedEventArgs e)
+        {
+            try
+            {
+                await farmPreferencesStore.ResetAsync(lifetimeCancellation.Token);
+                ApplyFarmPreferences(defaultFarmPreferences);
+                StatusTextBlock.Text = "Đã khôi phục cấu hình mặc định.";
+            }
+            catch (OperationCanceledException) { }
+            catch (Exception exception)
+            {
+                StatusTextBlock.Text = "Không thể khôi phục cấu hình mặc định: " + exception.Message;
             }
         }
 
@@ -371,20 +454,70 @@ namespace ADB_Tool_Automation_Post_FB.UI
             ProgressWaitRemainingTextBlock.Text = "00:00:00";
         }
 
-        private void ApplyResourceSelection()
+        private void ApplyFarmPreferences(FarmUiPreferences preferences)
         {
-            IronResourceCheckBox.IsChecked = resourceSelection.Iron;
-            StoneResourceCheckBox.IsChecked = resourceSelection.Stone;
-            WoodResourceCheckBox.IsChecked = resourceSelection.Wood;
-            FoodResourceCheckBox.IsChecked = resourceSelection.Food;
+            IronResourceCheckBox.IsChecked = preferences.Iron;
+            StoneResourceCheckBox.IsChecked = preferences.Stone;
+            WoodResourceCheckBox.IsChecked = preferences.Wood;
+            FoodResourceCheckBox.IsChecked = preferences.Food;
+            LevelPriorityTextBox.Text = string.Join(",", preferences.LevelPriority ?? new int[0]);
+            TeamPriorityTextBox.Text = string.Join(",", (preferences.TeamPriority
+                ?? new TeamNumber[0]).Select(team => (int)team));
+            AllowTeam1CheckBox.IsChecked = preferences.AllowTeam1;
+            ReadyCheckIntervalTextBox.Text = preferences.ReadyCheckIntervalMinutes
+                .ToString(CultureInfo.InvariantCulture);
+            ReadyMaxWaitTextBox.Text = preferences.ReadyMaxWaitHours
+                .ToString(CultureInfo.InvariantCulture);
+            UnoccupiedOnlyCheckBox.IsChecked = preferences.UnoccupiedOnly;
         }
 
-        private void ReadResourceSelection()
+        private bool TryReadFarmPreferences(out FarmUiPreferences preferences,
+            out string error)
         {
-            resourceSelection.Iron = IronResourceCheckBox.IsChecked == true;
-            resourceSelection.Stone = StoneResourceCheckBox.IsChecked == true;
-            resourceSelection.Wood = WoodResourceCheckBox.IsChecked == true;
-            resourceSelection.Food = FoodResourceCheckBox.IsChecked == true;
+            preferences = null;
+            error = null;
+            if (!TryParseIntegerList(LevelPriorityTextBox.Text, out int[] levels)
+                || !TryParseIntegerList(TeamPriorityTextBox.Text, out int[] teamValues)
+                || !int.TryParse(ReadyCheckIntervalTextBox.Text, NumberStyles.Integer,
+                    CultureInfo.InvariantCulture, out int intervalMinutes)
+                || !int.TryParse(ReadyMaxWaitTextBox.Text, NumberStyles.Integer,
+                    CultureInfo.InvariantCulture, out int maxWaitHours))
+            {
+                error = "Level, team và thời gian chờ phải là số nguyên hợp lệ.";
+                return false;
+            }
+            preferences = new FarmUiPreferences
+            {
+                Iron = IronResourceCheckBox.IsChecked == true,
+                Stone = StoneResourceCheckBox.IsChecked == true,
+                Wood = WoodResourceCheckBox.IsChecked == true,
+                Food = FoodResourceCheckBox.IsChecked == true,
+                LevelPriority = levels,
+                TeamPriority = teamValues.Select(value => (TeamNumber)value).ToArray(),
+                AllowTeam1 = AllowTeam1CheckBox.IsChecked == true,
+                ReadyCheckIntervalMinutes = intervalMinutes,
+                ReadyMaxWaitHours = maxWaitHours,
+                UnoccupiedOnly = UnoccupiedOnlyCheckBox.IsChecked == true
+            };
+            FarmUiPreferencesValidationResult validation = FarmUiPreferencesMapper.Validate(preferences);
+            error = validation.IsValid ? null : validation.Message;
+            return validation.IsValid;
+        }
+
+        private static bool TryParseIntegerList(string text, out int[] values)
+        {
+            values = new int[0];
+            if (string.IsNullOrWhiteSpace(text)) return false;
+            string[] parts = text.Split(',');
+            var parsed = new List<int>();
+            foreach (string part in parts)
+            {
+                if (!int.TryParse(part.Trim(), NumberStyles.Integer,
+                    CultureInfo.InvariantCulture, out int value)) return false;
+                parsed.Add(value);
+            }
+            values = parsed.ToArray();
+            return values.Length > 0;
         }
 
 

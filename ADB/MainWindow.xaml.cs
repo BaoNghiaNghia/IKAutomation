@@ -216,7 +216,11 @@ namespace ADB_Tool_Automation_Post_FB
                 DispatchSelectedTeamServiceFactory.CreateFromAppConfig(),
                 AppConfigDispatchSelectedTeamOptionsProvider.LoadRequest(),
                 OneShotFarmWorkflowFactory.CreateFromAppConfig(),
-                AppConfigOneShotFarmWorkflowOptionsProvider.LoadRequest())
+                AppConfigOneShotFarmWorkflowOptionsProvider.LoadRequest(),
+                AppConfigReadyTeamGateOptionsProvider.Load(),
+                new LocalAppDataFarmUiPreferencesStore(
+                    new LocalAppDataFarmUiPreferencesPathProvider(),
+                    new ApplicationDiagnosticLogger()))
             {
                 Owner = this
             };

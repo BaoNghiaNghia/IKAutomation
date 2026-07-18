@@ -17,6 +17,7 @@
     <Compile Include="..\..\ADB\Infrastructure\Workflows\OneShotFarmWorkflow.cs" Link="Production\OneShotFarmWorkflow.cs" />
     <Compile Include="..\..\ADB\Infrastructure\Workflows\ResourceFarmFallbackService.cs" Link="Production\ResourceFarmFallbackService.cs" />
     <Compile Include="..\..\ADB\Infrastructure\Workflows\ReadyTeamOneShotFarmWorkflow.cs" Link="Production\ReadyTeamOneShotFarmWorkflow.cs" />
+    <Compile Include="..\..\ADB\Infrastructure\Workflows\LocalAppDataFarmUiPreferencesStore.cs" Link="Production\LocalAppDataFarmUiPreferencesStore.cs" />
     <Compile Include="..\..\ADB\Infrastructure\TeamSelection\WorldMapTeamAvailabilityService.cs" Link="Production\WorldMapTeamAvailabilityService.cs" />
   </ItemGroup>
 </Project>

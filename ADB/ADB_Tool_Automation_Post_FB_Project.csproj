@@ -166,6 +166,7 @@
     <Compile Include="Core\Vision\TemplateDefinition.cs" />
     <Compile Include="Core\Vision\TemplateId.cs" />
     <Compile Include="Core\Workflows\IOneShotFarmDiagnosticService.cs" />
+    <Compile Include="Core\Workflows\FarmUiPreferences.cs" />
     <Compile Include="Core\Workflows\IOneShotFarmWorkflow.cs" />
     <Compile Include="Core\Workflows\IRandomProvider.cs" />
     <Compile Include="Core\Workflows\MissingRuntimeTemplate.cs" />
@@ -179,6 +180,7 @@
     <Compile Include="Core\Workflows\OneShotFarmStepResult.cs" />
     <Compile Include="Core\Workflows\OneShotFarmWorkflowOptions.cs" />
     <Compile Include="Core\Workflows\ReadyTeamGateOptions.cs" />
+    <Compile Include="Core\Workflows\ReadyTeamGateRunOptions.cs" />
     <Compile Include="Core\Workflows\ResourceFarmFallbackResult.cs" />
     <Compile Include="Core\Workflows\ResourceFarmFallbackOptions.cs" />
     <Compile Include="Core\Workflows\ResourceFarmFallbackOutcome.cs" />
@@ -250,6 +252,7 @@
     <Compile Include="Infrastructure\Vision\TemplateRegistry.cs" />
     <Compile Include="Infrastructure\Workflows\AppConfigOneShotFarmWorkflowOptionsProvider.cs" />
     <Compile Include="Infrastructure\Workflows\AppConfigReadyTeamGateOptionsProvider.cs" />
+    <Compile Include="Infrastructure\Workflows\LocalAppDataFarmUiPreferencesStore.cs" />
     <Compile Include="Infrastructure\Workflows\AppConfigResourceFarmFallbackOptionsProvider.cs" />
     <Compile Include="Infrastructure\Workflows\OneShotFarmDiagnosticService.cs" />
     <Compile Include="Infrastructure\Workflows\OneShotFarmWorkflow.cs" />

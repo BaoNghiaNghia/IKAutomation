@@ -42,8 +42,11 @@ namespace ADB_Tool_Automation_Post_FB.Infrastructure.Workflows
                 return await inner.RunAsync(deviceName, request, progress, cancellationToken);
 
             var watch = Stopwatch.StartNew();
+            ReadyTeamGateRunOptions runOptions = request.ReadyTeamOptions;
+            int checkIntervalMs = runOptions?.CheckIntervalMs ?? options.CheckIntervalMs;
+            int maxWaitMs = runOptions?.MaxWaitMs ?? options.MaxWaitMs;
             DateTimeOffset waitStartedAt = DateTimeOffset.UtcNow;
-            DateTimeOffset waitDeadline = waitStartedAt.AddMilliseconds(options.MaxWaitMs);
+            DateTimeOffset waitDeadline = waitStartedAt.AddMilliseconds(maxWaitMs);
             int checks = 0;
             IReadOnlyList<TeamNumber> eligibleReadyTeams = new TeamNumber[0];
             try
@@ -51,13 +54,13 @@ namespace ADB_Tool_Automation_Post_FB.Infrastructure.Workflows
                 while (true)
                 {
                     cancellationToken.ThrowIfCancellationRequested();
-                    if (checks > 0 && watch.ElapsedMilliseconds >= options.MaxWaitMs)
+                    if (checks > 0 && watch.ElapsedMilliseconds >= maxWaitMs)
                     {
                         Report(progress, Terminal(OneShotFarmProgressStage.Failed,
                             request, checks, "Maximum ready-team wait time elapsed."));
                         return Empty(deviceName, request,
                             OneShotFarmOutcome.TeamAvailabilityWaitTimeout,
-                            $"No allowed team became ready within {options.MaxWaitMs} ms.",
+                            $"No allowed team became ready within {maxWaitMs} ms.",
                             null, checks, watch.Elapsed);
                     }
 
@@ -101,18 +104,18 @@ namespace ADB_Tool_Automation_Post_FB.Infrastructure.Workflows
                         break;
                     }
 
-                    long remainingMs = options.MaxWaitMs - watch.ElapsedMilliseconds;
+                    long remainingMs = maxWaitMs - watch.ElapsedMilliseconds;
                     if (remainingMs <= 0)
                     {
                         Report(progress, Terminal(OneShotFarmProgressStage.Failed,
                             request, checks, "Maximum ready-team wait time elapsed."));
                         return Empty(deviceName, request,
                             OneShotFarmOutcome.TeamAvailabilityWaitTimeout,
-                            $"No allowed team became ready within {options.MaxWaitMs} ms.",
+                            $"No allowed team became ready within {maxWaitMs} ms.",
                             null, checks, watch.Elapsed);
                     }
 
-                    int delayMs = (int)Math.Min(options.CheckIntervalMs, remainingMs);
+                    int delayMs = (int)Math.Min(checkIntervalMs, remainingMs);
                     DateTimeOffset nextCheckAt = DateTimeOffset.UtcNow.AddMilliseconds(delayMs);
                     Report(progress, new OneShotFarmProgress
                     {
