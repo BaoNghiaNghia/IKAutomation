@@ -17,6 +17,7 @@
     <Compile Include="..\..\ADB\Core\Vision\*.cs" Link="Production\Vision\%(Filename)%(Extension)" />
     <Compile Include="..\..\ADB\Infrastructure\Diagnostics\ScreenshotPathPolicy.cs" Link="Production\ScreenshotPathPolicy.cs" />
     <Compile Include="..\..\ADB\Infrastructure\ResourcePopup\ResourcePopupDiagnosticStore.cs" Link="Production\ResourcePopupDiagnosticStore.cs" />
+    <Compile Include="..\..\ADB\Infrastructure\ResourcePopup\ResourcePopupTitleTemplateCropper.cs" Link="Production\ResourcePopupTitleTemplateCropper.cs" />
     <Compile Include="..\..\ADB\Infrastructure\ResourcePopup\ResourcePopupVerificationService.cs" Link="Production\ResourcePopupVerificationService.cs" />
     <Compile Include="..\..\ADB\Infrastructure\ResourceSearch\ResourceTemplateProfileProvider.cs" Link="Production\ResourceTemplateProfileProvider.cs" />
   </ItemGroup>

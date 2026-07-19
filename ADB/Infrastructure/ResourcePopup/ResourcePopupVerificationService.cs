@@ -8,9 +8,6 @@ using ADB_Tool_Automation_Post_FB.Infrastructure.ResourceSearch;
 using System;
 using System.Collections.Generic;
 using System.Diagnostics;
-using System.Drawing;
-using System.Drawing.Imaging;
-using System.IO;
 using System.Threading;
 using System.Threading.Tasks;
 
@@ -179,7 +176,7 @@ namespace ADB_Tool_Automation_Post_FB.Infrastructure.ResourcePopup
                 screenshot, id, options.HeaderRegion, "HeaderRegion");
             if (direct.Found) return direct;
 
-            byte[] stableTitle = TryCreateStablePopupTitleTemplate(
+            byte[] stableTitle = ResourcePopupTitleTemplateCropper.TryCreateStableTitle(
                 registry.LoadBytes(id));
             if (stableTitle == null) return direct;
 
@@ -197,38 +194,6 @@ namespace ADB_Tool_Automation_Post_FB.Infrastructure.ResourcePopup
                     ? $"Template '{id}' matched by its stable title-only region inside HeaderRegion."
                     : $"Template '{id}' did not match directly or by its stable title-only region inside HeaderRegion."
             };
-        }
-
-        private static byte[] TryCreateStablePopupTitleTemplate(byte[] templateBytes)
-        {
-            try
-            {
-                using (var input = new MemoryStream(templateBytes, writable: false))
-                using (var source = new Bitmap(input))
-                {
-                    // Popup title templates share the same 1280x720 layout: the
-                    // resource icon occupies the first ~125 px while the title text
-                    // starts immediately after it.  Keep only that stable text band
-                    // so level-specific node artwork cannot invalidate the match.
-                    int left = Math.Min(125, source.Width - 1);
-                    int height = Math.Min(45, source.Height);
-                    int width = source.Width - left;
-                    if (width <= 0 || height <= 0) return null;
-
-                    using (Bitmap stable = source.Clone(
-                        new Rectangle(left, 0, width, height),
-                        PixelFormat.Format32bppArgb))
-                    using (var output = new MemoryStream())
-                    {
-                        stable.Save(output, ImageFormat.Png);
-                        return output.ToArray();
-                    }
-                }
-            }
-            catch (ArgumentException)
-            {
-                return null;
-            }
         }
 
         private string ValidateTemplates(ResourceType resourceType)

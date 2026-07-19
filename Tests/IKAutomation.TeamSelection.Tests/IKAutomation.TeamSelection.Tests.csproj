@@ -5,6 +5,7 @@
     <AssemblyName>IKAutomation.TeamSelection.Tests</AssemblyName>
   </PropertyGroup>
   <ItemGroup>
+    <Reference Include="System.Drawing" />
     <Compile Include="..\..\ADB\Core\Abstractions\ILdPlayerClient.cs" Link="Production\ILdPlayerClient.cs" />
     <Compile Include="..\..\ADB\Core\Concurrency\IDeviceOperationLock.cs" Link="Production\IDeviceOperationLock.cs" />
     <Compile Include="..\..\ADB\Core\Diagnostics\IDiagnosticLogger.cs" Link="Production\IDiagnosticLogger.cs" />
@@ -15,6 +16,7 @@
     <Compile Include="..\..\ADB\Core\TeamSelection\*.cs" Link="Production\TeamSelection\%(Filename)%(Extension)" />
     <Compile Include="..\..\ADB\Core\Vision\*.cs" Link="Production\Vision\%(Filename)%(Extension)" />
     <Compile Include="..\..\ADB\Infrastructure\Concurrency\DeviceOperationLock.cs" Link="Production\DeviceOperationLock.cs" />
+    <Compile Include="..\..\ADB\Infrastructure\ResourcePopup\ResourcePopupTitleTemplateCropper.cs" Link="Production\ResourcePopupTitleTemplateCropper.cs" />
     <Compile Include="..\..\ADB\Infrastructure\TeamSelection\OpenTeamSelectionService.cs" Link="Production\OpenTeamSelectionService.cs" />
   </ItemGroup>
 </Project>

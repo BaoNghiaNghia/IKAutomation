@@ -216,6 +216,7 @@
     <Compile Include="Infrastructure\Navigation\WorldMapNavigationServiceFactory.cs" />
     <Compile Include="Infrastructure\ResourcePopup\AppConfigResourcePopupVerificationOptionsProvider.cs" />
     <Compile Include="Infrastructure\ResourcePopup\ResourcePopupDiagnosticStore.cs" />
+    <Compile Include="Infrastructure\ResourcePopup\ResourcePopupTitleTemplateCropper.cs" />
     <Compile Include="Infrastructure\ResourcePopup\ResourcePopupVerificationService.cs" />
     <Compile Include="Infrastructure\ResourcePopup\ResourcePopupVerificationServiceFactory.cs" />
     <Compile Include="Infrastructure\ResourceSearch\AppConfigResourceSearchConfigurationOptionsProvider.cs" />

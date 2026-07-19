@@ -10,6 +10,8 @@ using ADB_Tool_Automation_Post_FB.Infrastructure.Concurrency;
 using ADB_Tool_Automation_Post_FB.Infrastructure.TeamSelection;
 using System;
 using System.Collections.Generic;
+using System.Drawing;
+using System.Drawing.Imaging;
 using System.IO;
 using System.Threading;
 using System.Threading.Tasks;
@@ -27,6 +29,7 @@ namespace IKAutomation.TeamSelection.Tests
             Run("Unverified TeamSelection does not tap", UnverifiedAlreadyOpen);
             Run("Non popup state does not tap", NonPopup);
             Run("Food popup can supersede generic WorldMap state", FoodPopupFromWorldMap);
+            Run("Stone stable title is rematched before Gather tap", StoneStableTitleFreshRematch);
             Run("Popup not ready does not tap", PopupNotReady);
             Run("Missing fresh Gather bounds does not tap", MissingGatherBounds);
             Run("Fresh Gather center is tapped", FreshGatherCenter);
@@ -86,6 +89,26 @@ namespace IKAutomation.TeamSelection.Tests
             OpenTeamSelectionResult r = Execute(f, ResourceType.Food);
             Equal(OpenTeamSelectionOutcome.TeamSelectionOpened, r.Outcome);
             Equal(ResourceType.Food, f.Popup.LastResource); Equal(1, f.Client.Taps);
+        }
+
+        private static void StoneStableTitleFreshRematch()
+        {
+            Fixture f = Setup();
+            f.Popup.Result = Popup(true, ResourceType.Stone);
+            f.Registry.UseImagePopupTitleTemplate = true;
+            f.Matcher.StablePopupTitleOnly = true;
+            f.Client.Frames.Enqueue(Frame(1));
+            f.Detector.Offline[1] = GameState.ResourcePopup;
+            f.Matcher.Add(1, TemplateId.GatherButtonEnabled, 700, 520, 80, 40);
+            PrepareTeamFrame(f, 2, TemplateId.TeamSelectionPanelAnchor,
+                TemplateId.TeamAdjustFormationButton, TemplateId.TeamActionButtonEnabled);
+
+            OpenTeamSelectionResult result = Execute(f, ResourceType.Stone);
+
+            Equal(OpenTeamSelectionOutcome.TeamSelectionOpened, result.Outcome);
+            Equal(1, f.Client.Taps);
+            Equal(740, f.Client.LastX);
+            Equal(540, f.Client.LastY);
         }
 
         private static void PopupNotReady()
@@ -284,18 +307,45 @@ namespace IKAutomation.TeamSelection.Tests
 
         private sealed class FakeRegistry : ITemplateRegistry
         {
-            public TemplateId? Missing; public TemplateDefinition GetDefinition(TemplateId id) => new TemplateDefinition(id, id + ".png", .8);
+            public TemplateId? Missing; public bool UseImagePopupTitleTemplate; public TemplateDefinition GetDefinition(TemplateId id) => new TemplateDefinition(id, id + ".png", .8);
             public string GetPath(TemplateId id) => Path.Combine("Data", id + ".png"); public bool Exists(TemplateId id) => Missing != id;
-            public byte[] LoadBytes(TemplateId id) => new[] { (byte)id };
+            public byte[] LoadBytes(TemplateId id) => UseImagePopupTitleTemplate && IsPopupTitle(id)
+                ? CreateTitleTemplate() : new[] { (byte)id };
+            private static bool IsPopupTitle(TemplateId id) => id == TemplateId.ResourcePopupIronTitle
+                || id == TemplateId.ResourcePopupStoneTitle || id == TemplateId.ResourcePopupWoodTitle
+                || id == TemplateId.ResourcePopupFoodTitle;
+            private static byte[] CreateTitleTemplate()
+            {
+                using (var bitmap = new Bitmap(184, 81))
+                using (var graphics = Graphics.FromImage(bitmap))
+                using (var stream = new MemoryStream())
+                {
+                    graphics.Clear(Color.LightBlue);
+                    graphics.DrawString("Mỏ Đá", SystemFonts.DefaultFont, Brushes.DarkBlue, 110, 8);
+                    bitmap.Save(stream, ImageFormat.Png);
+                    return stream.ToArray();
+                }
+            }
         }
 
         private sealed class FakeMatcher : IImageMatcher
         {
             private readonly Dictionary<string, ImageMatchResult> matches = new Dictionary<string, ImageMatchResult>();
             public readonly Dictionary<TemplateId, ImageRegion?> Regions = new Dictionary<TemplateId, ImageRegion?>();
+            public bool StablePopupTitleOnly;
             public void Add(byte marker, TemplateId id, int x, int y, int w, int h) => matches[marker + ":" + id] = ImageMatchResult.FoundAt(x, y, w, h);
             public ImageMatchResult Find(byte[] screenshot, byte[] template, ImageRegion? region = null)
-            { TemplateId id = (TemplateId)template[0]; Regions[id] = region; return matches.TryGetValue(screenshot[0] + ":" + id, out ImageMatchResult value) ? value : ImageMatchResult.NotFound(); }
+            {
+                if (template.Length > 1 && template[0] == 137)
+                {
+                    using (var stream = new MemoryStream(template))
+                    using (var bitmap = new Bitmap(stream))
+                        return StablePopupTitleOnly && bitmap.Width < 100
+                            ? ImageMatchResult.FoundAt(760, 260, bitmap.Width, bitmap.Height)
+                            : ImageMatchResult.NotFound();
+                }
+                TemplateId id = (TemplateId)template[0]; Regions[id] = region; return matches.TryGetValue(screenshot[0] + ":" + id, out ImageMatchResult value) ? value : ImageMatchResult.NotFound();
+            }
         }
 
         private sealed class FakeStore : IOpenTeamSelectionDiagnosticStore

@@ -6,6 +6,7 @@ using ADB_Tool_Automation_Post_FB.Core.ResourcePopup;
 using ADB_Tool_Automation_Post_FB.Core.ResourceSearch;
 using ADB_Tool_Automation_Post_FB.Core.TeamSelection;
 using ADB_Tool_Automation_Post_FB.Core.Vision;
+using ADB_Tool_Automation_Post_FB.Infrastructure.ResourcePopup;
 using System;
 using System.Collections.Generic;
 using System.Diagnostics;
@@ -291,8 +292,8 @@ namespace ADB_Tool_Automation_Post_FB.Infrastructure.TeamSelection
         private PopupMatch MatchPopup(byte[] frame, ResourceType expectedResource)
         {
             GameDetectionEvidence anchor = Match(frame, TemplateId.ResourcePopupInfoAnchor, options.ResourcePopupRegion);
-            GameDetectionEvidence resource = Match(frame,
-                ResourceTemplateMap.PopupTitle(expectedResource), options.ResourcePopupRegion);
+            GameDetectionEvidence resource = MatchPopupTitle(frame,
+                ResourceTemplateMap.PopupTitle(expectedResource));
             GameDetectionEvidence gather = Match(frame, TemplateId.GatherButtonEnabled, options.ResourcePopupRegion);
             return new PopupMatch(anchor, resource, gather, resource.Found && gather.Found);
         }
@@ -308,6 +309,30 @@ namespace ADB_Tool_Automation_Post_FB.Infrastructure.TeamSelection
                 Message = match != null && match.Found
                     ? $"Template '{id}' matched inside configured ROI."
                     : $"Template '{id}' did not match inside configured ROI."
+            };
+        }
+
+        private GameDetectionEvidence MatchPopupTitle(byte[] frame, TemplateId id)
+        {
+            GameDetectionEvidence direct = Match(frame, id, options.ResourcePopupRegion);
+            if (direct.Found) return direct;
+
+            byte[] stableTitle = ResourcePopupTitleTemplateCropper.TryCreateStableTitle(
+                registry.LoadBytes(id));
+            if (stableTitle == null) return direct;
+
+            ImageMatchResult match = matcher.Find(frame, stableTitle, options.ResourcePopupRegion);
+            return new GameDetectionEvidence
+            {
+                TemplateId = id,
+                TemplateExists = true,
+                Found = match != null && match.Found,
+                MatchResult = match,
+                Confidence = match?.Confidence,
+                SearchRegion = options.ResourcePopupRegion,
+                Message = match != null && match.Found
+                    ? $"Template '{id}' matched by its stable title-only region inside configured ROI."
+                    : $"Template '{id}' did not match directly or by its stable title-only region inside configured ROI."
             };
         }
 
