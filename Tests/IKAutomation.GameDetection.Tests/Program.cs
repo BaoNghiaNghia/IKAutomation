@@ -56,6 +56,7 @@ namespace IKAutomation.GameDetection.Tests
             Run("Detector never sends input", DetectorNeverSendsInput);
             Run("Missing template produces configuration evidence", MissingTemplateProducesEvidence);
             Run("Runtime registry excludes fixture", RuntimeRegistryExcludesFixture);
+            Run("City map template is the large scroll icon", CityMapTemplateIsScrollIcon);
             Run("Real fixture detects ResourceSearchPanel", RealFixtureDetectsPanel);
             Console.WriteLine($"Game detection tests: {passed} passed, {failed} failed.");
             return failed == 0 ? 0 : 1;
@@ -405,6 +406,16 @@ namespace IKAutomation.GameDetection.Tests
             Equal("Search/search_button_enabled.png", registry.GetDefinition(TemplateId.SearchButtonEnabled).RelativePath, "Button template path mismatch.");
             foreach (TemplateId id in RequiredIds())
                 Assert(registry.GetDefinition(id).RelativePath.IndexOf("resource_search_screen", StringComparison.OrdinalIgnoreCase) < 0, "Fixture used as runtime template.");
+        }
+
+        private static void CityMapTemplateIsScrollIcon()
+        {
+            var registry = new TemplateRegistry(DataRoot());
+            using (var template = new Bitmap(registry.GetPath(TemplateId.CityToWorldMapButton)))
+            {
+                Assert(template.Width >= 100 && template.Height >= 100,
+                    "City map template must be the large lower-left scroll icon, not a small toolbar button.");
+            }
         }
 
         private static void RealFixtureDetectsPanel()
