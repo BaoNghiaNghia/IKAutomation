@@ -167,22 +167,33 @@ namespace ADB_Tool_Automation_Post_FB.Infrastructure.LDPlayer
                 {
                     cancellationToken.ThrowIfCancellationRequested();
                     string screenshotFileName = $"ikautomation_{Guid.NewGuid():N}.png";
-                    using (Bitmap screenshot = Auto_LDPlayer.LDPlayer.ScreenShoot(
-                        LDType.Name,
-                        normalizedDeviceName,
-                        true,
-                        screenshotFileName))
+                    string generatedFilePrefix = Path.GetFileNameWithoutExtension(
+                        screenshotFileName);
+                    try
                     {
-                        if (screenshot != null)
+                        using (Bitmap screenshot = Auto_LDPlayer.LDPlayer.ScreenShoot(
+                            LDType.Name,
+                            normalizedDeviceName,
+                            true,
+                            screenshotFileName))
                         {
-                            cancellationToken.ThrowIfCancellationRequested();
-
-                            using (var stream = new MemoryStream())
-                            {
-                                screenshot.Save(stream, ImageFormat.Png);
-                                return stream.ToArray();
-                            }
+                            if (screenshot != null)
+                                return EncodePng(screenshot, cancellationToken);
                         }
+
+                        // Auto_LDPlayer 1.1.0 can pull a valid PNG but return null when
+                        // an LDPlayer instance name contains spaces (for example "May 1").
+                        // Its unquoted local path is truncated to a file such as
+                        // "ikautomation_<id>Name_May". Recover only the uniquely prefixed
+                        // artifact produced by this capture call, then remove it.
+                        byte[] recovered = TryRecoverGeneratedScreenshot(
+                            generatedFilePrefix, cancellationToken);
+                        if (recovered != null)
+                            return recovered;
+                    }
+                    finally
+                    {
+                        DeleteGeneratedScreenshotArtifacts(generatedFilePrefix);
                     }
 
                     if (attempt < ScreenshotCaptureAttempts)
@@ -208,6 +219,61 @@ namespace ADB_Tool_Automation_Post_FB.Infrastructure.LDPlayer
             {
                 screenshotLock.Release();
             }
+        }
+
+        private static byte[] EncodePng(Bitmap screenshot,
+            CancellationToken cancellationToken)
+        {
+            cancellationToken.ThrowIfCancellationRequested();
+            using (var stream = new MemoryStream())
+            {
+                screenshot.Save(stream, ImageFormat.Png);
+                return stream.ToArray();
+            }
+        }
+
+        private static byte[] TryRecoverGeneratedScreenshot(string filePrefix,
+            CancellationToken cancellationToken)
+        {
+            cancellationToken.ThrowIfCancellationRequested();
+            string currentDirectory = Environment.CurrentDirectory;
+            string[] matches;
+            try
+            {
+                matches = Directory.GetFiles(currentDirectory, filePrefix + "*");
+            }
+            catch (IOException) { return null; }
+            catch (UnauthorizedAccessException) { return null; }
+
+            foreach (string path in matches.OrderByDescending(File.GetLastWriteTimeUtc))
+            {
+                cancellationToken.ThrowIfCancellationRequested();
+                try
+                {
+                    using (var screenshot = new Bitmap(path))
+                        return EncodePng(screenshot, cancellationToken);
+                }
+                catch (ArgumentException) { }
+                catch (IOException) { }
+                catch (UnauthorizedAccessException) { }
+            }
+            return null;
+        }
+
+        private static void DeleteGeneratedScreenshotArtifacts(string filePrefix)
+        {
+            try
+            {
+                foreach (string path in Directory.GetFiles(
+                    Environment.CurrentDirectory, filePrefix + "*"))
+                {
+                    try { File.Delete(path); }
+                    catch (IOException) { }
+                    catch (UnauthorizedAccessException) { }
+                }
+            }
+            catch (IOException) { }
+            catch (UnauthorizedAccessException) { }
         }
 
         public Task TapAsync(string deviceName, int x, int y, CancellationToken cancellationToken)

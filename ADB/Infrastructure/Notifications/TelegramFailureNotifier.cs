@@ -56,7 +56,16 @@ namespace ADB_Tool_Automation_Post_FB.Infrastructure.Notifications
                 using (HttpResponseMessage response = await httpClient.PostAsync(
                     endpoint, content, cancellationToken))
                 {
-                    response.EnsureSuccessStatusCode();
+                    if (!response.IsSuccessStatusCode)
+                    {
+                        string status = ((int)response.StatusCode) + " "
+                            + response.ReasonPhrase;
+                        logger.Info("[Telegram Notification] Sent=False, HttpStatus="
+                            + (int)response.StatusCode);
+                        return Result(true, false,
+                            "Telegram delivery failed (HTTP " + status
+                            + "). Check the bot token, chat ID, and that /start was sent to the bot.");
+                    }
                 }
                 logger.Info($"[Telegram Notification] DeviceName='{notification.DeviceName}', Outcome='{notification.Outcome}', Sent=True");
                 return Result(true, true, "Telegram failure notification sent.");

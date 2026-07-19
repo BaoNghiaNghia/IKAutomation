@@ -25,6 +25,7 @@ namespace IKAutomation.TelegramNotifications.Tests
             Run("Cancelled token sends no request", Cancellation);
             Run("Missing configuration reports actionable status", MissingConfigurationStatus);
             Run("Successful delivery reports sent status", SuccessfulDeliveryStatus);
+            Run("HTTP failure reports status without token", HttpFailureReportsStatus);
             Console.WriteLine($"Telegram notification tests: {passed} passed, {failed} failed.");
             return failed == 0 ? 0 : 1;
         }
@@ -111,6 +112,19 @@ namespace IKAutomation.TelegramNotifications.Tests
                 && result.Message.Contains("sent"), "Success status was not reported.");
         }
 
+        private static void HttpFailureReportsStatus()
+        {
+            var handler = new FakeHandler { StatusCode = HttpStatusCode.Unauthorized };
+            var notifier = new TelegramFailureNotifier(new HttpClient(handler),
+                "secret-test-token", "12345", new FakeLogger());
+            AutomationNotificationDeliveryResult result = notifier.NotifyAsync(
+                Notification(), Token).GetAwaiter().GetResult();
+            Assert(result.Attempted && !result.Success
+                && result.Message.Contains("HTTP 401")
+                && !result.Message.Contains("secret-test-token"),
+                "HTTP status was not reported safely: " + result.Message);
+        }
+
         private static AutomationFailureNotification Notification() =>
             new AutomationFailureNotification
             {
@@ -132,6 +146,7 @@ namespace IKAutomation.TelegramNotifications.Tests
             public int Requests;
             public string Body = string.Empty;
             public bool ThrowOnSend;
+            public HttpStatusCode StatusCode = HttpStatusCode.OK;
             protected override async Task<HttpResponseMessage> SendAsync(
                 HttpRequestMessage request, CancellationToken cancellationToken)
             {
@@ -141,7 +156,7 @@ namespace IKAutomation.TelegramNotifications.Tests
                     throw new HttpRequestException(
                         "Request failed for https://api.telegram.org/botsecret-test-token/sendMessage");
                 Body = await request.Content.ReadAsStringAsync();
-                return new HttpResponseMessage(HttpStatusCode.OK);
+                return new HttpResponseMessage(StatusCode);
             }
         }
 
