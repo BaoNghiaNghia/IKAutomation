@@ -38,6 +38,7 @@ namespace IKAutomation.GameDetection.Tests
             Run("WorldMap from WorldMapAnchor only", WorldMapFromAnchor);
             Run("WorldMap uses stable anchor fallback", WorldMapStableAnchorFallback);
             Run("City from lower-left map button", CityFromMapButton);
+            Run("City uses stable map-button center fallback", CityStableMapButtonFallback);
             Run("City map button uses lower-left ROI", CityMapButtonUsesLowerLeftRoi);
             Run("ContinentMap from ContinentMapTitle", ContinentMapFromTitle);
             Run("Unknown when no template matches", UnknownWhenNoMatches);
@@ -261,6 +262,21 @@ namespace IKAutomation.GameDetection.Tests
                 "City rule failed.");
         }
 
+        private static void CityStableMapButtonFallback()
+        {
+            var matcher = new FakeImageMatcher { CityStableOnly = true };
+            matcher.Matches.Add(TemplateId.CityToWorldMapButton);
+            GameDetectionResult result = CreateDetector(
+                new FakeLdPlayerClient(), matcher: matcher)
+                .DetectAsync("IK-1", TestToken).GetAwaiter().GetResult();
+            Equal(GameState.City, result.State, "Stable City map-button fallback failed.");
+            GameDetectionEvidence evidence = result.Evidence.First(
+                item => item.TemplateId == TemplateId.CityToWorldMapButton);
+            Assert(evidence.Found && evidence.Message.IndexOf("stable icon center",
+                StringComparison.OrdinalIgnoreCase) >= 0,
+                "Stable City map-button evidence was not reported.");
+        }
+
         private static void CityMapButtonUsesLowerLeftRoi()
         {
             var matcher = new FakeImageMatcher();
@@ -457,15 +473,20 @@ namespace IKAutomation.GameDetection.Tests
         {
             public HashSet<TemplateId> Matches { get; } = new HashSet<TemplateId>();
             public bool WorldMapStableOnly { get; set; }
+            public bool CityStableOnly { get; set; }
             public Dictionary<TemplateId, ImageRegion?> Regions { get; } = new Dictionary<TemplateId, ImageRegion?>();
+            private readonly Dictionary<TemplateId, int> callsByTemplate = new Dictionary<TemplateId, int>();
             public int FindCalls { get; private set; }
             public ImageMatchResult Find(byte[] screenshot, byte[] template, ImageRegion? region = null)
             {
                 FindCalls++;
                 TemplateId id = (TemplateId)template[0];
+                callsByTemplate[id] = callsByTemplate.TryGetValue(id, out int calls) ? calls + 1 : 1;
                 Regions[id] = region;
                 bool found = Matches.Contains(id)
-                    && (id != TemplateId.WorldMapAnchor || !WorldMapStableOnly || region.HasValue);
+                    && (id != TemplateId.WorldMapAnchor || !WorldMapStableOnly || region.HasValue)
+                    && (id != TemplateId.CityToWorldMapButton || !CityStableOnly
+                        || callsByTemplate[id] > 1);
                 return found ? ImageMatchResult.FoundAt(10, 20, 30, 40) : ImageMatchResult.NotFound();
             }
         }

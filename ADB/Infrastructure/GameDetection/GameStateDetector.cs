@@ -348,14 +348,22 @@ namespace ADB_Tool_Automation_Post_FB.Infrastructure.GameDetection
                         : (ImageRegion?)null;
                 ImageMatchResult match = imageMatcher.Find(screenshotPng, template, searchRegion);
                 bool usedStableWorldMapAnchor = false;
+                bool usedStableCityMapButton = false;
                 if (templateId == TemplateId.WorldMapAnchor && (match == null || !match.Found))
                 {
-                    byte[] stableTemplate = TryCreateStableWorldMapTemplate(template) ?? template;
+                    byte[] stableTemplate = TryCreateStableCenterTemplate(template) ?? template;
                     var lowerLeftRegion = new ImageRegion(
                         0, screenshotHeight / 2,
                         screenshotWidth / 2, screenshotHeight - screenshotHeight / 2);
                     match = imageMatcher.Find(screenshotPng, stableTemplate, lowerLeftRegion);
                     usedStableWorldMapAnchor = match != null && match.Found;
+                }
+                if (templateId == TemplateId.CityToWorldMapButton
+                    && (match == null || !match.Found))
+                {
+                    byte[] stableTemplate = TryCreateStableCenterTemplate(template) ?? template;
+                    match = imageMatcher.Find(screenshotPng, stableTemplate, searchRegion);
+                    usedStableCityMapButton = match != null && match.Found;
                 }
                 return new GameDetectionEvidence
                 {
@@ -368,6 +376,8 @@ namespace ADB_Tool_Automation_Post_FB.Infrastructure.GameDetection
                     Message = match != null && match.Found
                         ? usedStableWorldMapAnchor
                             ? "Template 'WorldMapAnchor' matched by its stable icon center in the lower-left region."
+                            : usedStableCityMapButton
+                                ? "Template 'CityToWorldMapButton' matched by its stable icon center in the lower-left region."
                             : searchRegion.HasValue
                                 ? $"Template '{templateId}' matched inside its configured ROI."
                                 : $"Template '{templateId}' matched."
@@ -407,7 +417,7 @@ namespace ADB_Tool_Automation_Post_FB.Infrastructure.GameDetection
             || id == TemplateId.ResourceTabSelected
             || id == TemplateId.ResourceTabUnselected;
 
-        private static byte[] TryCreateStableWorldMapTemplate(byte[] templateBytes)
+        private static byte[] TryCreateStableCenterTemplate(byte[] templateBytes)
         {
             try
             {
