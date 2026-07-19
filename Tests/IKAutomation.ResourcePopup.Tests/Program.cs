@@ -44,6 +44,7 @@ namespace IKAutomation.ResourcePopup.Tests
             Run("Wood popup uses Wood title", WoodPopupReady);
             Run("Food popup uses Food title", FoodPopupReady);
             Run("Different resource title returns controlled mismatch", PopupMismatch);
+            Run("Stable title-only crop verifies popup when level icon changes", StableTitleFallback);
             Run("Iron levels 5 6 and 7 use the same title template", IronLevelsUseSameTitle);
             Run("Missing Iron title message names template and region", MissingIronTitleMessage);
             Run("Service contains no default cancellation token", NoCancellationNone);
@@ -135,6 +136,19 @@ namespace IKAutomation.ResourcePopup.Tests
                 .VerifyAsync("LDPlayer", ResourceType.Wood, Token).GetAwaiter().GetResult();
             Equal(ResourcePopupOutcome.ResourcePopupMismatch, result.Outcome);
             Assert(!result.Success && result.MismatchedResource == ResourceType.Iron, result.Message);
+            Equal(0, f.Client.InputCalls);
+        }
+        private static void StableTitleFallback()
+        {
+            Fixture f = Setup(TemplateId.GatherButtonEnabled);
+            f.Registry.UseImageIronTitleTemplate = true;
+            f.Matcher.StableIronTitleOnly = true;
+
+            ResourcePopupVerificationResult result = Run(f);
+
+            Equal(ResourcePopupOutcome.ResourcePopupReady, result.Outcome);
+            Assert(result.ExpectedResourceVerified && result.PopupAnchorVerified,
+                result.Message);
             Equal(0, f.Client.InputCalls);
         }
         private static void IronLevelsUseSameTitle()

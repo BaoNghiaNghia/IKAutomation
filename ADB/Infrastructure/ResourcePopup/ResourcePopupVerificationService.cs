@@ -8,6 +8,9 @@ using ADB_Tool_Automation_Post_FB.Infrastructure.ResourceSearch;
 using System;
 using System.Collections.Generic;
 using System.Diagnostics;
+using System.Drawing;
+using System.Drawing.Imaging;
+using System.IO;
 using System.Threading;
 using System.Threading.Tasks;
 
@@ -96,8 +99,8 @@ namespace ADB_Tool_Automation_Post_FB.Infrastructure.ResourcePopup
                     GameDetectionEvidence anchor = Match(lastFrame,
                         TemplateId.ResourcePopupInfoAnchor, options.HeaderRegion, "HeaderRegion");
                     ResourceTemplateProfile expectedProfile = profileProvider.Get(resourceType);
-                    GameDetectionEvidence expectedTitle = Match(lastFrame,
-                        expectedProfile.PopupTitleTemplate, options.HeaderRegion, "HeaderRegion");
+                    GameDetectionEvidence expectedTitle = MatchPopupTitle(lastFrame,
+                        expectedProfile.PopupTitleTemplate);
                     ResourceType? mismatch = FindMismatchedResource(lastFrame, resourceType);
                     GameDetectionEvidence gather = Match(lastFrame,
                         TemplateId.GatherButtonEnabled, options.ActionRegion, "ActionRegion");
@@ -168,6 +171,64 @@ namespace ADB_Tool_Automation_Post_FB.Infrastructure.ResourcePopup
                     ? $"Template '{id}' matched inside {regionName}."
                     : $"Template '{id}' did not match inside {regionName}."
             };
+        }
+
+        private GameDetectionEvidence MatchPopupTitle(byte[] screenshot, TemplateId id)
+        {
+            GameDetectionEvidence direct = Match(
+                screenshot, id, options.HeaderRegion, "HeaderRegion");
+            if (direct.Found) return direct;
+
+            byte[] stableTitle = TryCreateStablePopupTitleTemplate(
+                registry.LoadBytes(id));
+            if (stableTitle == null) return direct;
+
+            ImageMatchResult match = matcher.Find(
+                screenshot, stableTitle, options.HeaderRegion);
+            return new GameDetectionEvidence
+            {
+                TemplateId = id,
+                TemplateExists = true,
+                Found = match != null && match.Found,
+                MatchResult = match,
+                Confidence = match?.Confidence,
+                SearchRegion = options.HeaderRegion,
+                Message = match != null && match.Found
+                    ? $"Template '{id}' matched by its stable title-only region inside HeaderRegion."
+                    : $"Template '{id}' did not match directly or by its stable title-only region inside HeaderRegion."
+            };
+        }
+
+        private static byte[] TryCreateStablePopupTitleTemplate(byte[] templateBytes)
+        {
+            try
+            {
+                using (var input = new MemoryStream(templateBytes, writable: false))
+                using (var source = new Bitmap(input))
+                {
+                    // Popup title templates share the same 1280x720 layout: the
+                    // resource icon occupies the first ~125 px while the title text
+                    // starts immediately after it.  Keep only that stable text band
+                    // so level-specific node artwork cannot invalidate the match.
+                    int left = Math.Min(125, source.Width - 1);
+                    int height = Math.Min(45, source.Height);
+                    int width = source.Width - left;
+                    if (width <= 0 || height <= 0) return null;
+
+                    using (Bitmap stable = source.Clone(
+                        new Rectangle(left, 0, width, height),
+                        PixelFormat.Format32bppArgb))
+                    using (var output = new MemoryStream())
+                    {
+                        stable.Save(output, ImageFormat.Png);
+                        return output.ToArray();
+                    }
+                }
+            }
+            catch (ArgumentException)
+            {
+                return null;
+            }
         }
 
         private string ValidateTemplates(ResourceType resourceType)
@@ -243,8 +304,8 @@ namespace ADB_Tool_Automation_Post_FB.Infrastructure.ResourcePopup
                 if (candidate == expected) continue;
                 ResourceTemplateProfile profile = profileProvider.Get(candidate);
                 if (registry.Exists(profile.PopupTitleTemplate)
-                    && Match(screenshot, profile.PopupTitleTemplate,
-                        options.HeaderRegion, "HeaderRegion").Found) return candidate;
+                    && MatchPopupTitle(screenshot,
+                        profile.PopupTitleTemplate).Found) return candidate;
             }
             return null;
         }
