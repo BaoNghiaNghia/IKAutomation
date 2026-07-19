@@ -6,6 +6,7 @@ using ADB_Tool_Automation_Post_FB.Infrastructure.GameDetection;
 using ADB_Tool_Automation_Post_FB.Infrastructure.LDPlayer;
 using ADB_Tool_Automation_Post_FB.Infrastructure.MarchDispatch;
 using ADB_Tool_Automation_Post_FB.Infrastructure.Navigation;
+using ADB_Tool_Automation_Post_FB.Infrastructure.Notifications;
 using ADB_Tool_Automation_Post_FB.Infrastructure.ResourceSearch;
 using ADB_Tool_Automation_Post_FB.Infrastructure.ResourcePopup;
 using ADB_Tool_Automation_Post_FB.Infrastructure.TeamSelection;
@@ -220,7 +221,8 @@ namespace ADB_Tool_Automation_Post_FB
                 AppConfigReadyTeamGateOptionsProvider.Load(),
                 new LocalAppDataFarmUiPreferencesStore(
                     new LocalAppDataFarmUiPreferencesPathProvider(),
-                    new ApplicationDiagnosticLogger()))
+                    new ApplicationDiagnosticLogger()),
+                TelegramFailureNotifierFactory.CreateFromEnvironment())
             {
                 Owner = this
             };

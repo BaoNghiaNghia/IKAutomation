@@ -45,6 +45,7 @@
     <Reference Include="System.Configuration" />
     <Reference Include="System.Data" />
     <Reference Include="System.Drawing" />
+    <Reference Include="System.Net.Http" />
     <Reference Include="System.Runtime.Serialization" />
     <Reference Include="System.Xml" />
     <Reference Include="Microsoft.CSharp" />
@@ -93,6 +94,8 @@
     <Compile Include="Core\Navigation\NavigationResult.cs" />
     <Compile Include="Core\Navigation\NavigationTransition.cs" />
     <Compile Include="Core\Navigation\WorldMapNavigationOptions.cs" />
+    <Compile Include="Core\Notifications\AutomationFailureNotification.cs" />
+    <Compile Include="Core\Notifications\IAutomationFailureNotifier.cs" />
     <Compile Include="Core\ResourcePopup\IResourcePopupDiagnosticStore.cs" />
     <Compile Include="Core\ResourcePopup\IResourcePopupVerificationService.cs" />
     <Compile Include="Core\ResourcePopup\ResourcePopupOutcome.cs" />
@@ -214,6 +217,8 @@
     <Compile Include="Infrastructure\Navigation\AppConfigWorldMapNavigationOptionsProvider.cs" />
     <Compile Include="Infrastructure\Navigation\WorldMapNavigationService.cs" />
     <Compile Include="Infrastructure\Navigation\WorldMapNavigationServiceFactory.cs" />
+    <Compile Include="Infrastructure\Notifications\TelegramFailureNotifier.cs" />
+    <Compile Include="Infrastructure\Notifications\TelegramFailureNotifierFactory.cs" />
     <Compile Include="Infrastructure\ResourcePopup\AppConfigResourcePopupVerificationOptionsProvider.cs" />
     <Compile Include="Infrastructure\ResourcePopup\ResourcePopupDiagnosticStore.cs" />
     <Compile Include="Infrastructure\ResourcePopup\ResourcePopupTitleTemplateCropper.cs" />

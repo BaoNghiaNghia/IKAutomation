@@ -29,6 +29,8 @@ Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "IKAutomation.OneShotFarm.Te
 EndProject
 Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "IKAutomation.ResourceLevelFallback.Tests", "Tests\IKAutomation.ResourceLevelFallback.Tests\IKAutomation.ResourceLevelFallback.Tests.csproj", "{E1A47E8F-AB02-4F4B-96A5-B7CD7A578E3A}"
 EndProject
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "IKAutomation.TelegramNotifications.Tests", "Tests\IKAutomation.TelegramNotifications.Tests\IKAutomation.TelegramNotifications.Tests.csproj", "{A8B72B79-5F55-4A2B-9F40-2F24A63D86C1}"
+EndProject
 Project("{2150E333-8FDC-42A3-9474-1A3956D46DE8}") = "Solution Items", "Solution Items", "{02EA681E-C7D8-13C7-8484-4AC65E1B71E8}"
 	ProjectSection(SolutionItems) = preProject
 		.editorconfig = .editorconfig
@@ -92,6 +94,10 @@ Global
 		{E1A47E8F-AB02-4F4B-96A5-B7CD7A578E3A}.Debug|Any CPU.Build.0 = Debug|Any CPU
 		{E1A47E8F-AB02-4F4B-96A5-B7CD7A578E3A}.Release|Any CPU.ActiveCfg = Release|Any CPU
 		{E1A47E8F-AB02-4F4B-96A5-B7CD7A578E3A}.Release|Any CPU.Build.0 = Release|Any CPU
+		{A8B72B79-5F55-4A2B-9F40-2F24A63D86C1}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{A8B72B79-5F55-4A2B-9F40-2F24A63D86C1}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{A8B72B79-5F55-4A2B-9F40-2F24A63D86C1}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{A8B72B79-5F55-4A2B-9F40-2F24A63D86C1}.Release|Any CPU.Build.0 = Release|Any CPU
 	EndGlobalSection
 	GlobalSection(SolutionProperties) = preSolution
 		HideSolutionNode = FALSE

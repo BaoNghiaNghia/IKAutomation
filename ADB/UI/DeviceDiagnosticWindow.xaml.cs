@@ -2,6 +2,7 @@ using ADB_Tool_Automation_Post_FB.Core.Diagnostics;
 using ADB_Tool_Automation_Post_FB.Core.GameDetection;
 using ADB_Tool_Automation_Post_FB.Core.MarchDispatch;
 using ADB_Tool_Automation_Post_FB.Core.Navigation;
+using ADB_Tool_Automation_Post_FB.Core.Notifications;
 using ADB_Tool_Automation_Post_FB.Core.ResourceSearch;
 using ADB_Tool_Automation_Post_FB.Core.ResourcePopup;
 using ADB_Tool_Automation_Post_FB.Core.TeamSelection;
@@ -34,6 +35,7 @@ namespace ADB_Tool_Automation_Post_FB.UI
         private readonly IOneShotFarmWorkflow oneShotFarmWorkflow;
         private readonly OneShotFarmRequest defaultOneShotFarmRequest;
         private readonly IFarmUiPreferencesStore farmPreferencesStore;
+        private readonly IAutomationFailureNotifier failureNotifier;
         private readonly FarmUiPreferences defaultFarmPreferences;
         private readonly CancellationTokenSource lifetimeCancellation = new CancellationTokenSource();
         private readonly DispatcherTimer oneShotFarmProgressTimer;
@@ -58,7 +60,8 @@ namespace ADB_Tool_Automation_Post_FB.UI
             IOneShotFarmWorkflow oneShotFarmWorkflow,
             OneShotFarmRequest defaultOneShotFarmRequest,
             ReadyTeamGateOptions defaultReadyTeamGateOptions,
-            IFarmUiPreferencesStore farmPreferencesStore)
+            IFarmUiPreferencesStore farmPreferencesStore,
+            IAutomationFailureNotifier failureNotifier)
         {
             this.diagnosticService = diagnosticService
                 ?? throw new ArgumentNullException(nameof(diagnosticService));
@@ -88,6 +91,8 @@ namespace ADB_Tool_Automation_Post_FB.UI
                 ?? throw new ArgumentNullException(nameof(defaultOneShotFarmRequest));
             this.farmPreferencesStore = farmPreferencesStore
                 ?? throw new ArgumentNullException(nameof(farmPreferencesStore));
+            this.failureNotifier = failureNotifier
+                ?? throw new ArgumentNullException(nameof(failureNotifier));
             defaultFarmPreferences = FarmUiPreferencesMapper.FromDefaults(
                 defaultOneShotFarmRequest, defaultReadyTeamGateOptions
                     ?? throw new ArgumentNullException(nameof(defaultReadyTeamGateOptions)));
@@ -317,6 +322,8 @@ namespace ADB_Tool_Automation_Post_FB.UI
                 StatusTextBlock.Text = FormatOneShotFarmResult(result)
                     + (string.IsNullOrWhiteSpace(saveWarning) ? string.Empty
                         : Environment.NewLine + "Warning: " + saveWarning);
+                if (ShouldNotifyFailure(result))
+                    await NotifyFailureSafelyAsync(GetSelectedDeviceName(), result);
             }
             catch (OperationCanceledException)
             {
@@ -325,6 +332,7 @@ namespace ADB_Tool_Automation_Post_FB.UI
             catch (Exception exception)
             {
                 StatusTextBlock.Text = $"Error: {exception.Message}";
+                await NotifyExceptionSafelyAsync(GetSelectedDeviceName(), exception);
             }
             finally
             {
@@ -789,6 +797,76 @@ namespace ADB_Tool_Automation_Post_FB.UI
                 + $"Duration: {result.Duration.TotalMilliseconds:F0} ms{Environment.NewLine}Diagnostic: {result.DiagnosticScreenshotPath ?? string.Empty}{Environment.NewLine}"
                 + $"Message: {result.Message}{Environment.NewLine}Error: {result.ErrorMessage ?? string.Empty}{Environment.NewLine}Steps:{Environment.NewLine}{steps}";
         }
+
+        private static bool ShouldNotifyFailure(OneShotFarmResult result)
+        {
+            if (result == null || result.Success) return false;
+            switch (result.Outcome)
+            {
+                case OneShotFarmOutcome.ResourceNotFound:
+                case OneShotFarmOutcome.ResourceLevelsExhausted:
+                case OneShotFarmOutcome.NoEligibleTeam:
+                case OneShotFarmOutcome.AllCandidateStoragesFull:
+                case OneShotFarmOutcome.ResourcePlanExhausted:
+                case OneShotFarmOutcome.TeamAvailabilityWaitTimeout:
+                case OneShotFarmOutcome.Cancelled:
+                    return false;
+                default:
+                    return true;
+            }
+        }
+
+        private async Task NotifyFailureSafelyAsync(string deviceName,
+            OneShotFarmResult result)
+        {
+            try
+            {
+                await failureNotifier.NotifyAsync(CreateFailureNotification(
+                    deviceName, result), lifetimeCancellation.Token);
+            }
+            catch (OperationCanceledException)
+            {
+                // Closing the window may cancel delivery, but the workflow result remains valid.
+            }
+            catch (Exception)
+            {
+                // A notifier implementation must never replace the gameplay outcome.
+            }
+        }
+
+        private async Task NotifyExceptionSafelyAsync(string deviceName,
+            Exception exception)
+        {
+            try
+            {
+                await failureNotifier.NotifyAsync(new AutomationFailureNotification
+                {
+                    DeviceName = deviceName,
+                    Outcome = "UnhandledException",
+                    Step = "RunOneShotFarm",
+                    Message = exception.Message,
+                    Error = exception.GetType().Name
+                }, lifetimeCancellation.Token);
+            }
+            catch (OperationCanceledException) { }
+            catch (Exception) { }
+        }
+
+        private static AutomationFailureNotification CreateFailureNotification(
+            string deviceName, OneShotFarmResult result) => new AutomationFailureNotification
+        {
+            DeviceName = deviceName,
+            Outcome = result.Outcome.ToString(),
+            Step = result.LastCompletedStep.ToString(),
+            Resource = (result.CurrentResource ?? result.LocatedResource
+                ?? result.RequestedResource).ToString(),
+            Level = (result.LocatedLevel ?? result.RequestedLevel).ToString(
+                CultureInfo.InvariantCulture),
+            Team = (result.SelectedTeam ?? result.DispatchedTeam)?.ToString(),
+            Message = result.Message,
+            Error = result.ErrorMessage,
+            DiagnosticPath = result.DiagnosticScreenshotPath
+        };
 
 
     }
