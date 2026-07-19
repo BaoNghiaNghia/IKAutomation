@@ -125,6 +125,22 @@ namespace ADB_Tool_Automation_Post_FB.Infrastructure.ResourceSearch
                         {
                             attempt.Duration = attemptWatch.Elapsed; attempt.Message = configured.Message;
                             attempt.ErrorMessage = configured.ErrorMessage;
+                            NotFoundToastObservation notFound = await ObserveNotFoundToastAsync(
+                                deviceName, token);
+                            if (notFound.Verified)
+                            {
+                                attempt.SearchOutcome = ResourceSearchOutcome.ResourceNotFound;
+                                attempt.MatchedNotFoundVariant = notFound.Variant;
+                                attempt.Message = $"ResourceNotFound toast variant '{notFound.Variant}' "
+                                    + "was verified while configuring the next level.";
+                                attempt.ErrorMessage = null;
+                                LogAttempt(deviceName, runId, attempt);
+                                return await CompleteAsync(deviceName, runId, result,
+                                    ResourceLevelFallbackOutcome.ResourceLevelsExhausted,
+                                    attempt.Message + " Switching to the next resource.", null,
+                                    watch, "resource-not-found-during-configuration", token,
+                                    options.SaveExhaustedScreenshot);
+                            }
                             return await CompleteAsync(deviceName, runId, result, ResourceLevelFallbackOutcome.ConfigurationFailed,
                                 configured.Message, configured.ErrorMessage, watch,
                                 $"level-{level}_configurationfailed", token, true);
@@ -175,6 +191,40 @@ namespace ADB_Tool_Automation_Post_FB.Infrastructure.ResourceSearch
             }
         }
 
+        private async Task<NotFoundToastObservation> ObserveNotFoundToastAsync(
+            string deviceName, CancellationToken token)
+        {
+            token.ThrowIfCancellationRequested();
+            byte[] screenshot = await client.CaptureScreenshotPngAsync(deviceName, token);
+            bool panel = MatchRequired(screenshot, TemplateId.SearchButtonEnabled, null)
+                && (MatchRequired(screenshot, TemplateId.ResourceSearchPanelAnchor, null)
+                    || MatchRequired(screenshot, TemplateId.LevelMinusButton, null)
+                    || MatchRequired(screenshot, TemplateId.ResourceTabSelected, null)
+                    || MatchRequired(screenshot, TemplateId.ResourceTabUnselected, null));
+            if (!panel) return NotFoundToastObservation.NotVerified;
+
+            ImageMatchResult legacyStart = MatchOptionalResult(screenshot,
+                TemplateId.ResourceNotFoundToastAnchor, options.ToastRegion);
+            ImageMatchResult legacyEnd = MatchOptionalResult(screenshot,
+                TemplateId.ResourceNotFoundToastActionAnchor, options.ToastRegion);
+            if (IsToastPair(legacyStart, legacyEnd))
+                return new NotFoundToastObservation(true, "LegacyMoveArea");
+
+            ImageMatchResult shortAnchor = MatchOptionalResult(screenshot,
+                TemplateId.ResourceNotFoundToastShortAnchor, options.ToastRegion);
+            ImageMatchResult otherRegion = MatchOptionalResult(screenshot,
+                TemplateId.ResourceNotFoundToastOtherRegionAnchor, options.ToastRegion);
+            return IsToastPair(shortAnchor, otherRegion)
+                ? new NotFoundToastObservation(true, "SearchOtherRegion")
+                : NotFoundToastObservation.NotVerified;
+        }
+
+        private bool IsToastPair(ImageMatchResult first, ImageMatchResult second) =>
+            first != null && first.Found && first.Width > 0 && first.Height > 0
+            && second != null && second.Found && second.Width > 0 && second.Height > 0
+            && Math.Abs(first.CenterY - second.CenterY)
+                <= options.MaxToastAnchorVerticalDistancePx;
+
         private async Task<ToastClearResult> WaitForToastClearAsync(string deviceName, string runId, CancellationToken token)
         {
             var watch = Stopwatch.StartNew(); int observed = 0; int consecutive = 0;
@@ -222,14 +272,36 @@ namespace ADB_Tool_Automation_Post_FB.Infrastructure.ResourceSearch
 
         private bool MatchOptional(byte[] screenshot, TemplateId id, ImageRegion region)
         {
+            ImageMatchResult match = MatchOptionalResult(screenshot, id, region);
+            return match != null && match.Found;
+        }
+
+        private ImageMatchResult MatchOptionalResult(byte[] screenshot, TemplateId id,
+            ImageRegion region)
+        {
             try
             {
-                if (!registry.Exists(id)) return false;
-                ImageMatchResult match = matcher.Find(screenshot, registry.LoadBytes(id), region);
-                return match != null && match.Found;
+                if (!registry.Exists(id)) return ImageMatchResult.NotFound();
+                return matcher.Find(screenshot, registry.LoadBytes(id), region)
+                    ?? ImageMatchResult.NotFound();
             }
-            catch (System.IO.FileNotFoundException) { return false; }
-            catch (KeyNotFoundException) { return false; }
+            catch (System.IO.FileNotFoundException) { return ImageMatchResult.NotFound(); }
+            catch (KeyNotFoundException) { return ImageMatchResult.NotFound(); }
+        }
+
+        private sealed class NotFoundToastObservation
+        {
+            public static readonly NotFoundToastObservation NotVerified =
+                new NotFoundToastObservation(false, null);
+
+            public NotFoundToastObservation(bool verified, string variant)
+            {
+                Verified = verified;
+                Variant = variant;
+            }
+
+            public bool Verified { get; }
+            public string Variant { get; }
         }
 
         private async Task<ResourceLevelFallbackResult> CompleteAsync(string deviceName, string runId,

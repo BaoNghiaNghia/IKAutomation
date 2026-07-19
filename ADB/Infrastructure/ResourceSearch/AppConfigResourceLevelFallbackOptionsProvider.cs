@@ -26,7 +26,8 @@ namespace ADB_Tool_Automation_Post_FB.Infrastructure.ResourceSearch
                     ReadInt("ResourceSearchExecution.ToastRegion.X", 150),
                     ReadInt("ResourceSearchExecution.ToastRegion.Y", 120),
                     ReadInt("ResourceSearchExecution.ToastRegion.Width", 980),
-                    ReadInt("ResourceSearchExecution.ToastRegion.Height", 400)));
+                    ReadInt("ResourceSearchExecution.ToastRegion.Height", 400)),
+                ReadInt("ResourceSearchExecution.MaxToastAnchorVerticalDistancePx", 140));
         }
 
         private static IReadOnlyList<int> ReadLevels(string key, IReadOnlyList<int> fallback)

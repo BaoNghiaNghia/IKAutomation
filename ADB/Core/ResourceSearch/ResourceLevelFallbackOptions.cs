@@ -12,7 +12,8 @@ namespace ADB_Tool_Automation_Post_FB.Core.ResourceSearch
             int requiredConsecutiveToastClearFrames, int toastClearPollIntervalMs,
             int toastClearTimeoutSeconds, bool stopOnFirstLocated,
             bool waitForToastClearBetweenAttempts, bool saveExhaustedScreenshot,
-            string screenshotDirectory, ImageRegion toastRegion)
+            string screenshotDirectory, ImageRegion toastRegion,
+            int maxToastAnchorVerticalDistancePx = 140)
         {
             if (levels == null || levels.Count == 0) throw new ArgumentException("Levels cannot be empty.", nameof(levels));
             if (levels.Distinct().Count() != levels.Count) throw new ArgumentException("Levels cannot contain duplicates.", nameof(levels));
@@ -25,6 +26,8 @@ namespace ADB_Tool_Automation_Post_FB.Core.ResourceSearch
             if (Path.IsPathRooted(screenshotDirectory) || screenshotDirectory.Split('/', '\\').Any(part => part == ".."))
                 throw new ArgumentException("ScreenshotDirectory must be a safe relative path.", nameof(screenshotDirectory));
             if (toastRegion.Width <= 0 || toastRegion.Height <= 0) throw new ArgumentOutOfRangeException(nameof(toastRegion));
+            if (maxToastAnchorVerticalDistancePx <= 0)
+                throw new ArgumentOutOfRangeException(nameof(maxToastAnchorVerticalDistancePx));
 
             Levels = levels.ToArray(); AttemptsPerLevel = attemptsPerLevel;
             RequiredConsecutiveToastClearFrames = requiredConsecutiveToastClearFrames;
@@ -35,6 +38,7 @@ namespace ADB_Tool_Automation_Post_FB.Core.ResourceSearch
             SaveExhaustedScreenshot = saveExhaustedScreenshot;
             ScreenshotDirectory = screenshotDirectory;
             ToastRegion = toastRegion;
+            MaxToastAnchorVerticalDistancePx = maxToastAnchorVerticalDistancePx;
         }
 
         public IReadOnlyList<int> Levels { get; }
@@ -47,5 +51,6 @@ namespace ADB_Tool_Automation_Post_FB.Core.ResourceSearch
         public bool SaveExhaustedScreenshot { get; }
         public string ScreenshotDirectory { get; }
         public ImageRegion ToastRegion { get; }
+        public int MaxToastAnchorVerticalDistancePx { get; }
     }
 }
