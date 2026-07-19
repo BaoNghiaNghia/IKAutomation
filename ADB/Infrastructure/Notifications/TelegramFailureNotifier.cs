@@ -31,11 +31,19 @@ namespace ADB_Tool_Automation_Post_FB.Infrastructure.Notifications
         public bool IsConfigured => !string.IsNullOrWhiteSpace(botToken)
             && !string.IsNullOrWhiteSpace(chatId);
 
-        public async Task NotifyAsync(AutomationFailureNotification notification,
+        public async Task<AutomationNotificationDeliveryResult> NotifyAsync(
+            AutomationFailureNotification notification,
             CancellationToken cancellationToken)
         {
             cancellationToken.ThrowIfCancellationRequested();
-            if (!IsConfigured || notification == null) return;
+            if (notification == null)
+                return Result(false, false, "Telegram notification was skipped because the failure payload was empty.");
+            if (!IsConfigured)
+            {
+                logger.Info("[Telegram Notification] Sent=False, Reason=NotConfigured");
+                return Result(false, false,
+                    $"Telegram is not configured. Set {BotTokenEnvironmentVariable} and {ChatIdEnvironmentVariable}, then restart IKAutomation.");
+            }
             try
             {
                 string endpoint = "https://api.telegram.org/bot" + botToken + "/sendMessage";
@@ -51,6 +59,7 @@ namespace ADB_Tool_Automation_Post_FB.Infrastructure.Notifications
                     response.EnsureSuccessStatusCode();
                 }
                 logger.Info($"[Telegram Notification] DeviceName='{notification.DeviceName}', Outcome='{notification.Outcome}', Sent=True");
+                return Result(true, true, "Telegram failure notification sent.");
             }
             catch (OperationCanceledException) { throw; }
             catch (Exception exception)
@@ -60,8 +69,19 @@ namespace ADB_Tool_Automation_Post_FB.Infrastructure.Notifications
                 logger.Error("[Telegram Notification] Delivery failed. Bot token was not logged.",
                     new InvalidOperationException(
                         "Telegram transport failure: " + exception.GetType().Name));
+                return Result(true, false,
+                    "Telegram delivery failed (" + exception.GetType().Name
+                    + "). Check the bot token, chat ID, internet connection, and that /start was sent to the bot.");
             }
         }
+
+        private static AutomationNotificationDeliveryResult Result(bool attempted,
+            bool success, string message) => new AutomationNotificationDeliveryResult
+            {
+                Attempted = attempted,
+                Success = success,
+                Message = message
+            };
 
         public static string Format(AutomationFailureNotification notification)
         {

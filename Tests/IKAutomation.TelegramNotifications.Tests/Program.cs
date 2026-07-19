@@ -23,6 +23,8 @@ namespace IKAutomation.TelegramNotifications.Tests
             Run("Long message is bounded", LongMessageBounded);
             Run("Transport error does not leak token", TransportErrorDoesNotLeakToken);
             Run("Cancelled token sends no request", Cancellation);
+            Run("Missing configuration reports actionable status", MissingConfigurationStatus);
+            Run("Successful delivery reports sent status", SuccessfulDeliveryStatus);
             Console.WriteLine($"Telegram notification tests: {passed} passed, {failed} failed.");
             return failed == 0 ? 0 : 1;
         }
@@ -32,9 +34,11 @@ namespace IKAutomation.TelegramNotifications.Tests
             var handler = new FakeHandler();
             var notifier = new TelegramFailureNotifier(new HttpClient(handler), null, null,
                 new FakeLogger());
-            notifier.NotifyAsync(Notification(), Token).GetAwaiter().GetResult();
+            AutomationNotificationDeliveryResult result = notifier.NotifyAsync(
+                Notification(), Token).GetAwaiter().GetResult();
             Equal(0, handler.Requests);
             Assert(!notifier.IsConfigured, "Notifier unexpectedly configured.");
+            Assert(!result.Attempted && !result.Success, "Missing configuration status was incorrect.");
         }
 
         private static void SendsSummary()
@@ -84,6 +88,27 @@ namespace IKAutomation.TelegramNotifications.Tests
                 catch (OperationCanceledException) { Equal(0, handler.Requests); return; }
             }
             throw new Exception("Expected cancellation.");
+        }
+
+        private static void MissingConfigurationStatus()
+        {
+            var notifier = new TelegramFailureNotifier(new HttpClient(new FakeHandler()),
+                null, null, new FakeLogger());
+            AutomationNotificationDeliveryResult result = notifier.NotifyAsync(
+                Notification(), Token).GetAwaiter().GetResult();
+            Assert(result.Message.Contains(TelegramFailureNotifier.BotTokenEnvironmentVariable)
+                && result.Message.Contains(TelegramFailureNotifier.ChatIdEnvironmentVariable),
+                "Configuration guidance was not actionable.");
+        }
+
+        private static void SuccessfulDeliveryStatus()
+        {
+            var notifier = new TelegramFailureNotifier(new HttpClient(new FakeHandler()),
+                "test-token", "12345", new FakeLogger());
+            AutomationNotificationDeliveryResult result = notifier.NotifyAsync(
+                Notification(), Token).GetAwaiter().GetResult();
+            Assert(result.Attempted && result.Success
+                && result.Message.Contains("sent"), "Success status was not reported.");
         }
 
         private static AutomationFailureNotification Notification() =>

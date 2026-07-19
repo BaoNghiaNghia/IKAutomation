@@ -6,7 +6,8 @@ namespace ADB_Tool_Automation_Post_FB.Core.Notifications
     public interface IAutomationFailureNotifier
     {
         bool IsConfigured { get; }
-        Task NotifyAsync(AutomationFailureNotification notification,
+        Task<AutomationNotificationDeliveryResult> NotifyAsync(
+            AutomationFailureNotification notification,
             CancellationToken cancellationToken);
     }
 }

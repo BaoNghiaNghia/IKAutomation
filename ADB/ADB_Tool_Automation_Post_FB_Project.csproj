@@ -95,6 +95,7 @@
     <Compile Include="Core\Navigation\NavigationTransition.cs" />
     <Compile Include="Core\Navigation\WorldMapNavigationOptions.cs" />
     <Compile Include="Core\Notifications\AutomationFailureNotification.cs" />
+    <Compile Include="Core\Notifications\AutomationNotificationDeliveryResult.cs" />
     <Compile Include="Core\Notifications\IAutomationFailureNotifier.cs" />
     <Compile Include="Core\ResourcePopup\IResourcePopupDiagnosticStore.cs" />
     <Compile Include="Core\ResourcePopup\IResourcePopupVerificationService.cs" />

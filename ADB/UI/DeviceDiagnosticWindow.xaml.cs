@@ -131,7 +131,12 @@ namespace ADB_Tool_Automation_Post_FB.UI
                 warning = "Không thể tải cấu hình farm; đang dùng mặc định. " + exception.Message;
             }
             await RefreshDeviceListAsync();
-            if (!string.IsNullOrWhiteSpace(warning)) StatusTextBlock.Text = warning;
+            string notificationStatus = failureNotifier.IsConfigured
+                ? "Telegram notifications: configured."
+                : "Telegram notifications: not configured. Set the bot token and chat ID environment variables, then restart Visual Studio and IKAutomation.";
+            StatusTextBlock.Text = string.IsNullOrWhiteSpace(warning)
+                ? notificationStatus
+                : warning + Environment.NewLine + notificationStatus;
         }
 
         private async void RefreshDevices_Click(object sender, RoutedEventArgs e)
@@ -323,7 +328,8 @@ namespace ADB_Tool_Automation_Post_FB.UI
                     + (string.IsNullOrWhiteSpace(saveWarning) ? string.Empty
                         : Environment.NewLine + "Warning: " + saveWarning);
                 if (ShouldNotifyFailure(result))
-                    await NotifyFailureSafelyAsync(GetSelectedDeviceName(), result);
+                    AppendNotificationStatus(await NotifyFailureSafelyAsync(
+                        GetSelectedDeviceName(), result));
             }
             catch (OperationCanceledException)
             {
@@ -332,7 +338,8 @@ namespace ADB_Tool_Automation_Post_FB.UI
             catch (Exception exception)
             {
                 StatusTextBlock.Text = $"Error: {exception.Message}";
-                await NotifyExceptionSafelyAsync(GetSelectedDeviceName(), exception);
+                AppendNotificationStatus(await NotifyExceptionSafelyAsync(
+                    GetSelectedDeviceName(), exception));
             }
             finally
             {
@@ -816,30 +823,37 @@ namespace ADB_Tool_Automation_Post_FB.UI
             }
         }
 
-        private async Task NotifyFailureSafelyAsync(string deviceName,
+        private async Task<AutomationNotificationDeliveryResult> NotifyFailureSafelyAsync(string deviceName,
             OneShotFarmResult result)
         {
             try
             {
-                await failureNotifier.NotifyAsync(CreateFailureNotification(
+                return await failureNotifier.NotifyAsync(CreateFailureNotification(
                     deviceName, result), lifetimeCancellation.Token);
             }
             catch (OperationCanceledException)
             {
                 // Closing the window may cancel delivery, but the workflow result remains valid.
+                return null;
             }
             catch (Exception)
             {
                 // A notifier implementation must never replace the gameplay outcome.
+                return new AutomationNotificationDeliveryResult
+                {
+                    Attempted = true,
+                    Success = false,
+                    Message = "Failure notification raised an unexpected error."
+                };
             }
         }
 
-        private async Task NotifyExceptionSafelyAsync(string deviceName,
+        private async Task<AutomationNotificationDeliveryResult> NotifyExceptionSafelyAsync(string deviceName,
             Exception exception)
         {
             try
             {
-                await failureNotifier.NotifyAsync(new AutomationFailureNotification
+                return await failureNotifier.NotifyAsync(new AutomationFailureNotification
                 {
                     DeviceName = deviceName,
                     Outcome = "UnhandledException",
@@ -848,8 +862,22 @@ namespace ADB_Tool_Automation_Post_FB.UI
                     Error = exception.GetType().Name
                 }, lifetimeCancellation.Token);
             }
-            catch (OperationCanceledException) { }
-            catch (Exception) { }
+            catch (OperationCanceledException) { return null; }
+            catch (Exception)
+            {
+                return new AutomationNotificationDeliveryResult
+                {
+                    Attempted = true,
+                    Success = false,
+                    Message = "Failure notification raised an unexpected error."
+                };
+            }
+        }
+
+        private void AppendNotificationStatus(AutomationNotificationDeliveryResult delivery)
+        {
+            if (delivery == null || string.IsNullOrWhiteSpace(delivery.Message)) return;
+            StatusTextBlock.Text += Environment.NewLine + "Notification: " + delivery.Message;
         }
 
         private static AutomationFailureNotification CreateFailureNotification(

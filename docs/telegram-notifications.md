@@ -31,6 +31,18 @@ storage full, ready-team wait timeout, and user cancellation) are not sent.
 6. Close and reopen IKAutomation. `setx` does not update applications that are
    already running.
 
+If IKAutomation is launched from Visual Studio, close and reopen Visual Studio
+after `setx`. Visual Studio otherwise starts the application with its old
+environment. On startup, the diagnostic window reports whether Telegram is
+configured.
+
+Verify the variables in a newly opened CMD without printing their values:
+
+```cmd
+if defined IKAUTOMATION_TELEGRAM_BOT_TOKEN (echo BOT_TOKEN=CONFIGURED) else (echo BOT_TOKEN=MISSING)
+if defined IKAUTOMATION_TELEGRAM_CHAT_ID (echo CHAT_ID=CONFIGURED) else (echo CHAT_ID=MISSING)
+```
+
 The token and chat ID are read only from environment variables. They are never
 stored in `App.config`, user preferences, diagnostic screenshots, or Git.
 
