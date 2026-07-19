@@ -17,6 +17,7 @@
     <TargetFrameworkProfile />
     <ApplicationIcon>logo_1.ico</ApplicationIcon>
     <AppConfig>App.config</AppConfig>
+    <RuntimeIdentifiers>win</RuntimeIdentifiers>
   </PropertyGroup>
   <PropertyGroup Condition=" '$(Configuration)|$(Platform)' == 'Debug|AnyCPU' ">
     <PlatformTarget>AnyCPU</PlatformTarget>
@@ -315,6 +316,21 @@
       <Version>4.1.1</Version>
     </PackageReference>
   </ItemGroup>
+  <ItemGroup Condition="'$(MSBuildRuntimeType)' == 'Core'">
+    <!-- dotnet MSBuild does not import ResolveNuGetPackageAssets for this legacy project format. -->
+    <Reference Include="Auto_LDPlayer">
+      <HintPath>$(NuGetPackageRoot)auto_ldplayer\1.1.0\lib\net471\Auto_LDPlayer.dll</HintPath>
+      <Private>True</Private>
+    </Reference>
+    <Reference Include="KAutoHelper">
+      <HintPath>$(NuGetPackageRoot)kautohelper_kteam\1.0.1.2\lib\net471\KAutoHelper.dll</HintPath>
+      <Private>True</Private>
+    </Reference>
+    <Reference Include="Tesseract">
+      <HintPath>$(NuGetPackageRoot)tesseract\4.1.1\lib\net45\Tesseract.dll</HintPath>
+      <Private>True</Private>
+    </Reference>
+  </ItemGroup>
   <ItemGroup>
     <Resource Include="logo_1.ico" />
   </ItemGroup>
@@ -331,4 +347,7 @@
   </ItemGroup>
   <ItemGroup />
   <Import Project="$(MSBuildToolsPath)\Microsoft.CSharp.targets" />
+  <!-- The .NET CLI does not automatically import WPF targets for non-SDK-style projects. -->
+  <Import Project="$(MSBuildSDKsPath)\Microsoft.NET.Sdk.WindowsDesktop\targets\Microsoft.WinFX.targets"
+          Condition="'$(MSBuildRuntimeType)' == 'Core'" />
 </Project>
