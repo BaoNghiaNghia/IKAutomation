@@ -396,8 +396,7 @@ namespace ADB_Tool_Automation_Post_FB.Infrastructure.ResourceSearch
             CancellationToken cancellationToken)
         {
             if (result.NotFoundObserved || popupVerificationService == null
-                || !result.PanelClosed || result.FinalState != GameState.WorldMap
-                || !result.CameraMovementObserved)
+                || !result.PanelClosed || result.FinalState != GameState.WorldMap)
                 return ObservationDecision.Pending();
 
             cancellationToken.ThrowIfCancellationRequested();
