@@ -42,7 +42,7 @@ internal static class Program
         Run("WorldMap with open panel is not success", WorldWithPanel);
         Run("Closed panel and WorldMap need team signal", NeedsTeamSignal);
         Run("Expected team ready is captured before Tap", ReadyBaseline);
-        Run("Existing timer before Tap sends no input", TimerBeforeTapStops);
+        Run("Stale timer pixels do not block a fresh enabled action", StaleTimerPixelsDoNotBlock);
         Run("Ready disappearance and timer progression verify directly", DirectTimerSuccess);
         Run("Ready remaining does not verify directly", ReadyStillPresentNotDirect);
         Run("Static timer does not verify directly", StaticTimerNotDirect);
@@ -125,7 +125,7 @@ internal static class Program
     private static void WorldWithPanel() { var h=NoSuccessHarness(); h.Matcher.WorldAfter=true; h.Matcher.PanelAfter=true; var r=Execute(h); Eq(DispatchMarchOutcome.TransitionTimeout,r.Outcome,"outcome"); }
     private static void NeedsTeamSignal() { var h=NoSuccessHarness(); h.Matcher.WorldAfter=true; h.Matcher.PanelAfter=false; h.Comparer.Ratio=0; var r=Execute(h); Eq(DispatchMarchOutcome.TransitionTimeout,r.Outcome,"outcome"); }
     private static void ReadyBaseline() { var h=new Harness(); Execute(h); Is(h.Matcher.Calls.Any(x=>x.id==TemplateId.WorldMapTeamReadyAnchor&&x.frame==2&&x.roi.Value.Y==520),"ready baseline"); }
-    private static void TimerBeforeTapStops() { var h=new Harness(); h.Timer.ContentBefore=true; var r=Execute(h); Eq(DispatchMarchOutcome.TeamAlreadyBusy,r.Outcome,"outcome"); Eq(0,r.ActionTapCount,"tap count"); }
+    private static void StaleTimerPixelsDoNotBlock() { var h=new Harness(); h.Timer.ContentBefore=true; var r=Execute(h); Eq(DispatchMarchOutcome.MarchStarted,r.Outcome,"outcome"); Eq(1,r.ActionTapCount,"tap count"); Is(r.ActionButtonVerified,"fresh action button"); }
     private static void DirectTimerSuccess() { var h=DirectHarness(); var r=Execute(h); Eq(DispatchMarchOutcome.MarchStarted,r.Outcome,"outcome"); Is(r.DirectMarchVerified&&r.ReadyAnchorDisappeared&&r.ExpectedTeamTimerVerified,"direct evidence"); Eq(MarchVerificationMode.ReadyDisappearedAndTimerProgression,r.VerificationMode,"mode"); Eq(1,r.ActionTapCount,"tap count"); }
     private static void ReadyStillPresentNotDirect() { var h=DirectHarness(); h.Matcher.ReadyAfter=true; var r=Execute(h); Is(!r.DirectMarchVerified,"direct result"); }
     private static void StaticTimerNotDirect() { var h=DirectHarness(); h.Timer.Progression=false; var r=Execute(h); Is(!r.DirectMarchVerified,"direct result"); }

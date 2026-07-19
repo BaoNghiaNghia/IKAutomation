@@ -123,6 +123,7 @@ internal static class Program
         Run("Missing readiness template sends no device action", AvailabilityMissingTemplate);
         Run("WorldMap readiness service has no default token bypass", AvailabilityHasNoNone);
         Run("One-Shot UI has per-run Stop cancellation", OneShotUiHasStop);
+        Run("One-Shot UI hides manual diagnostic controls", OneShotUiIsFocused);
         Console.WriteLine($"One-shot farm tests: {pass} passed, {fail} failed."); return fail == 0 ? 0 : 1;
     }
     static void Run(string n, Action a) { try { a(); pass++; Console.WriteLine("PASS: " + n); } catch (Exception e) { fail++; Console.WriteLine("FAIL: " + n + " - " + e); } }
@@ -281,6 +282,7 @@ internal static class Program
     static void AvailabilityMissingTemplate(){var f=new AvailabilityFixture();f.Registry.Missing.Add(TemplateId.WorldMapTeamReadyAnchor);var r=f.Service.CheckAsync("LDPlayer",default(CancellationToken)).GetAwaiter().GetResult();Is(!r.Success&&!r.AnyReadyTeam,"missing template accepted");Eq(0,f.Nav.EnsureCalls,"navigation");Eq(0,f.Client.Captures,"capture");}
     static void AvailabilityHasNoNone(){string source=File.ReadAllText(Path.Combine(Environment.CurrentDirectory,"ADB","Infrastructure","TeamSelection","WorldMapTeamAvailabilityService.cs"));Is(!source.Contains("CancellationToken"+".None"),"token bypass");}
     static void OneShotUiHasStop(){string root=Path.Combine(Environment.CurrentDirectory,"ADB","UI");string xaml=File.ReadAllText(Path.Combine(root,"DeviceDiagnosticWindow.xaml"));string code=File.ReadAllText(Path.Combine(root,"DeviceDiagnosticWindow.xaml.cs"));Is(xaml.Contains("StopOneShotFarmButton")&&xaml.Contains("StopOneShotFarm_Click"),"Stop button missing");Is(code.Contains("CreateLinkedTokenSource")&&code.Contains("oneShotFarmCancellation")&&code.Contains("currentRun.Cancel()"),"per-run cancellation missing");Is(!code.Substring(code.IndexOf("private async void RunOneShotFarm_Click"),code.IndexOf("private void ApplyFarmPreferences")-code.IndexOf("private async void RunOneShotFarm_Click")).Contains("RunOperationAsync"),"one-shot still disables the whole window");}
+    static void OneShotUiIsFocused(){string xaml=File.ReadAllText(Path.Combine(Environment.CurrentDirectory,"ADB","UI","DeviceDiagnosticWindow.xaml"));foreach(string hidden in new[]{"Tap Test","Swipe Test","Check Device","Launch Game","Capture Screenshot","Detect Current State","Ensure World Map","Open Search Panel","Configure Search","Search Iron","Verify Resource Popup","Open Team Selection","Select Farm Team","Dispatch Selected Team","Back Test"})Is(!xaml.Contains(hidden),"manual control remains: "+hidden);Is(xaml.Contains("Run One-Shot Farm")&&xaml.Contains("Content=\"Stop\""),"farm controls missing");}
     static OneShotFarmWorkflow PlanWorkflow(H h,FakePlan plan,FakeRegistry registry=null,FakeRandom random=null)=>new OneShotFarmWorkflow(h.Nav,new FakeFallback(h.Config,h.Search),h.Popup,h.Open,h.Select,h.Dispatch,h.Detector,h.Lock,new OneShotFarmWorkflowOptions(true,true,"Diagnostics/OneShotFarm"),h.Diag,new Log(),new ResourceFarmFallbackOptions(),plan,registry==null?null:new FakeProfiles(),registry,random);
 
     sealed class H

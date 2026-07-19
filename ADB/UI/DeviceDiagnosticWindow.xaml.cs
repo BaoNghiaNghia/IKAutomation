@@ -521,45 +521,6 @@ namespace ADB_Tool_Automation_Post_FB.UI
         }
 
 
-        private async void TapTest_Click(object sender, RoutedEventArgs e)
-        {
-            await RunOperationAsync(async cancellationToken =>
-            {
-                if (TapModeComboBox.SelectedIndex == 0)
-                {
-                    await diagnosticService.TapAsync(
-                        GetSelectedDeviceName(),
-                        ParseInteger(TapXTextBox.Text, "Tap X"),
-                        ParseInteger(TapYTextBox.Text, "Tap Y"),
-                        cancellationToken);
-                    return "Pixel tap command sent.";
-                }
-
-                await diagnosticService.TapByPercentAsync(
-                    GetSelectedDeviceName(),
-                    ParseDouble(TapXTextBox.Text, "Tap X percent"),
-                    ParseDouble(TapYTextBox.Text, "Tap Y percent"),
-                    cancellationToken);
-                return "Percent tap command sent.";
-            });
-        }
-
-        private async void SwipeTest_Click(object sender, RoutedEventArgs e)
-        {
-            await RunOperationAsync(async cancellationToken =>
-            {
-                await diagnosticService.SwipeByPercentAsync(
-                    GetSelectedDeviceName(),
-                    ParseDouble(SwipeStartXTextBox.Text, "Swipe start X"),
-                    ParseDouble(SwipeStartYTextBox.Text, "Swipe start Y"),
-                    ParseDouble(SwipeEndXTextBox.Text, "Swipe end X"),
-                    ParseDouble(SwipeEndYTextBox.Text, "Swipe end Y"),
-                    ParseInteger(SwipeDurationTextBox.Text, "Swipe duration"),
-                    cancellationToken);
-                return "Percent swipe command sent.";
-            });
-        }
-
         private async void BackTest_Click(object sender, RoutedEventArgs e)
         {
             await RunOperationAsync(async cancellationToken =>
@@ -830,18 +791,5 @@ namespace ADB_Tool_Automation_Post_FB.UI
         }
 
 
-        private static int ParseInteger(string value, string fieldName)
-        {
-            if (!int.TryParse(value, NumberStyles.Integer, CultureInfo.InvariantCulture, out int result))
-                throw new ArgumentException($"{fieldName} must be an integer.");
-            return result;
-        }
-
-        private static double ParseDouble(string value, string fieldName)
-        {
-            if (!double.TryParse(value, NumberStyles.Float, CultureInfo.InvariantCulture, out double result))
-                throw new ArgumentException($"{fieldName} must be a number using '.' as decimal separator.");
-            return result;
-        }
     }
 }

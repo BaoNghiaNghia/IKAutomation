@@ -161,12 +161,6 @@ namespace ADB_Tool_Automation_Post_FB.Infrastructure.MarchDispatch
                 result.ExpectedTeamReadyBeforeDispatch = options.EnableReadyDisappearanceVerification
                     && OptionalFound(beforeDispatch, TemplateId.WorldMapTeamReadyAnchor, timerRegion);
                 logger.Info($"[March Dispatch] DeviceName='{deviceName}', ExpectedTeam='{request.ExpectedTeam}', ReadyBeforeDispatch={result.ExpectedTeamReadyBeforeDispatch}, TimerContentBeforeDispatch={timerBefore.ContentDetected}, TimerForegroundRatio={timerBefore.ForegroundRatio:F4}, TimerRegion=({timerRegion.X},{timerRegion.Y},{timerRegion.Width},{timerRegion.Height})");
-                if (timerBefore.ContentDetected)
-                    return await CompleteAsync(deviceName, result, DispatchMarchOutcome.TeamAlreadyBusy,
-                        $"{request.ExpectedTeam} already has active timer content; no Tap was sent.",
-                        "Expected team was already busy before dispatch.", beforeDispatch,
-                        watch, cancellationToken);
-
                 result.ActionButtonVerified = true;
                 lastFrame = beforeDispatch;
                 await TapActionAsync(deviceName, result, action, cancellationToken, false);

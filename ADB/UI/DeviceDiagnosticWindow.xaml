@@ -99,30 +99,11 @@
             </GroupBox>
 
             <WrapPanel Margin="0,0,0,8">
-                <Button Content="Check Device" Click="CheckDevice_Click" Padding="14,7" Margin="0,0,8,8"/>
-                <Button Content="Launch Game" Click="LaunchGame_Click" Padding="14,7" Margin="0,0,8,8"/>
-                <Button Content="Capture Screenshot" Click="CaptureScreenshot_Click" Padding="14,7" Margin="0,0,8,8"/>
-                <Button Content="Detect Current State" Click="DetectCurrentState_Click" Padding="14,7" Margin="0,0,8,8"/>
-                <Button Content="Ensure World Map" Click="EnsureWorldMap_Click" Padding="14,7" Margin="0,0,8,8"/>
-                <Button Content="Open Search Panel" Click="OpenSearchPanel_Click" Padding="14,7" Margin="0,0,8,8"/>
-                <Button x:Name="ConfigureSearchButton" Content="Configure Search: Iron Lv7"
-                        Click="ConfigureSearch_Click" Padding="14,7" Margin="0,0,8,8"/>
-                <Button x:Name="ExecuteSearchButton" Content="Search Iron Lv7"
-                        Click="ExecuteSearch_Click" Padding="14,7" Margin="0,0,8,8"/>
-                <Button x:Name="VerifyResourcePopupButton" Content="Verify Resource Popup"
-                        Click="VerifyResourcePopup_Click" Padding="14,7" Margin="0,0,8,8"/>
-                <Button x:Name="OpenTeamSelectionButton" Content="Open Team Selection"
-                        Click="OpenTeamSelection_Click" Padding="14,7" Margin="0,0,8,8"/>
-                <Button x:Name="SelectFarmTeamButton" Content="Select Farm Team"
-                        Click="SelectFarmTeam_Click" Padding="14,7" Margin="0,0,8,8"/>
-                <Button x:Name="DispatchSelectedTeamButton" Content="Dispatch Selected Team"
-                        Click="DispatchSelectedTeam_Click" Padding="14,7" Margin="0,0,8,8"/>
                 <Button x:Name="RunOneShotFarmButton" Content="Run One-Shot Farm"
                         Click="RunOneShotFarm_Click" Padding="14,7" Margin="0,0,8,8"/>
                 <Button x:Name="StopOneShotFarmButton" Content="Stop"
                         Click="StopOneShotFarm_Click" Padding="14,7" Margin="0,0,8,8"
                         IsEnabled="False"/>
-                <Button Content="Back Test" Click="BackTest_Click" Padding="14,7" Margin="0,0,8,8"/>
             </WrapPanel>
 
             <GroupBox Header="One-Shot Farm Progress" Margin="0,4,0,8">
@@ -150,56 +131,6 @@
                     <TextBlock Grid.Row="8" Text="Thời gian chờ còn lại"/><TextBlock x:Name="ProgressWaitRemainingTextBlock" Grid.Row="8" Grid.Column="1" Text="00:00:00"/>
                     <TextBlock Grid.Row="9" Text="Bước hiện tại"/><TextBlock x:Name="ProgressCurrentStepTextBlock" Grid.Row="9" Grid.Column="1" Text="-"/>
                     <TextBlock Grid.Row="10" Text="Tài nguyên / cấp / đội"/><TextBlock x:Name="ProgressCurrentContextTextBlock" Grid.Row="10" Grid.Column="1" Text="-" TextWrapping="Wrap"/>
-                </Grid>
-            </GroupBox>
-
-            <GroupBox Header="Tap Test (only runs when clicked)" Margin="0,4,0,8">
-                <Grid Margin="10">
-                    <Grid.ColumnDefinitions>
-                        <ColumnDefinition Width="110"/>
-                        <ColumnDefinition Width="*"/>
-                        <ColumnDefinition Width="40"/>
-                        <ColumnDefinition Width="*"/>
-                        <ColumnDefinition Width="Auto"/>
-                    </Grid.ColumnDefinitions>
-                    <ComboBox x:Name="TapModeComboBox" Grid.Column="0" SelectedIndex="0" Margin="0,0,8,0">
-                        <ComboBoxItem Content="Pixel"/>
-                        <ComboBoxItem Content="Percent"/>
-                    </ComboBox>
-                    <TextBox x:Name="TapXTextBox" Grid.Column="1" ToolTip="X coordinate or percent"/>
-                    <TextBlock Grid.Column="2" Text="X / Y" HorizontalAlignment="Center" VerticalAlignment="Center"/>
-                    <TextBox x:Name="TapYTextBox" Grid.Column="3" ToolTip="Y coordinate or percent"/>
-                    <Button Grid.Column="4" Content="Tap Test" Click="TapTest_Click" Padding="12,5" Margin="8,0,0,0"/>
-                </Grid>
-            </GroupBox>
-
-            <GroupBox Header="Swipe Test by percent (only runs when clicked)" Margin="0,4,0,8">
-                <Grid Margin="10">
-                    <Grid.ColumnDefinitions>
-                        <ColumnDefinition Width="Auto"/>
-                        <ColumnDefinition Width="*"/>
-                        <ColumnDefinition Width="Auto"/>
-                        <ColumnDefinition Width="*"/>
-                    </Grid.ColumnDefinitions>
-                    <Grid.RowDefinitions>
-                        <RowDefinition Height="Auto"/>
-                        <RowDefinition Height="Auto"/>
-                        <RowDefinition Height="Auto"/>
-                    </Grid.RowDefinitions>
-                    <TextBlock Grid.Row="0" Grid.Column="0" Text="Start X / Y" Margin="0,5,8,5"/>
-                    <StackPanel Grid.Row="0" Grid.Column="1" Orientation="Horizontal">
-                        <TextBox x:Name="SwipeStartXTextBox" Width="70"/>
-                        <TextBox x:Name="SwipeStartYTextBox" Width="70" Margin="8,0,0,0"/>
-                    </StackPanel>
-                    <TextBlock Grid.Row="1" Grid.Column="0" Text="End X / Y" Margin="0,5,8,5"/>
-                    <StackPanel Grid.Row="1" Grid.Column="1" Orientation="Horizontal">
-                        <TextBox x:Name="SwipeEndXTextBox" Width="70"/>
-                        <TextBox x:Name="SwipeEndYTextBox" Width="70" Margin="8,0,0,0"/>
-                    </StackPanel>
-                    <TextBlock Grid.Row="0" Grid.Column="2" Text="Duration ms" Margin="20,5,8,5"/>
-                    <TextBox x:Name="SwipeDurationTextBox" Grid.Row="0" Grid.Column="3" Text="500"/>
-                    <Button Grid.Row="1" Grid.Column="3" Content="Swipe Test" Click="SwipeTest_Click"
-                            HorizontalAlignment="Right" Padding="12,5"/>
                 </Grid>
             </GroupBox>
 
