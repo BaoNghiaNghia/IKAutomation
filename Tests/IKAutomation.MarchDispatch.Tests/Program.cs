@@ -93,6 +93,8 @@ internal static class Program
         Run("Storage cancel returns SearchPanel without Back", StorageCancelReturnsPanel);
         Run("Storage cancel verifies TeamSelection then sends one Back", StorageCancelTeamThenBack);
         Run("Resource expiry cancel verifies TeamSelection then sends one Back", ResourceExpiryCancelTeamThenBack);
+        Run("Post-Back exit confirmation is cancelled before recovery continues", PostBackConfirmationCancelled);
+        Run("Delayed post-Back exit confirmation is cancelled once", DelayedPostBackConfirmationCancelled);
         Run("Storage transient Unknown sends no Back", StorageUnknownNoBack);
         Run("Missing storage Cancel sends no input", StorageMissingCancelNoInput);
         Console.WriteLine($"March dispatch tests: {passed} passed, {failed} failed.");
@@ -251,6 +253,37 @@ internal static class Program
         Eq(1, result.ActionTapCount, "Cancel tap count"); Eq(1, result.BackCount, "Back count");
         Eq(1, h.Client.BackCalls, "client Back count");
     }
+    private static void PostBackConfirmationCancelled()
+    {
+        var h = StorageHarness(GameState.TeamSelection);
+        h.Matcher.PostBackCancelFrame = 2;
+        h.Detector.AsyncStates.Enqueue(GameState.WorldMap);
+
+        StorageLimitDialogResult result = h.Execute();
+
+        Eq(StorageLimitDialogOutcome.CancelledForResourceSwitch, result.Outcome, "outcome");
+        Is(result.PostBackConfirmationCancelled, "post-Back confirmation flag");
+        Is(result.ReturnedToWorldMap, "WorldMap recovery");
+        Eq(1, result.BackCount, "Back count");
+        Eq(2, result.ActionTapCount, "cancel tap count");
+        Eq(2, h.Client.Taps.Count, "client tap count");
+        Eq((340,420), h.Client.Taps[1], "fresh post-Back Cancel center");
+    }
+    private static void DelayedPostBackConfirmationCancelled()
+    {
+        var h = StorageHarness(GameState.TeamSelection);
+        h.Matcher.PostBackCancelFrame = 3;
+        h.Detector.AsyncStates.Enqueue(GameState.Unknown);
+        h.Detector.AsyncStates.Enqueue(GameState.WorldMap);
+
+        StorageLimitDialogResult result = h.Execute();
+
+        Eq(StorageLimitDialogOutcome.CancelledForResourceSwitch, result.Outcome, "outcome");
+        Is(result.PostBackConfirmationCancelled, "delayed confirmation flag");
+        Eq(2, result.ActionTapCount, "bounded cancel taps");
+        Eq(1, result.BackCount, "Back must not repeat");
+        Eq(2, h.Client.Taps.Count, "Cancel must be tapped once");
+    }
     private static void StorageUnknownNoBack()
     {
         var h = StorageHarness(GameState.Unknown); h.Detector.AsyncStates.Enqueue(GameState.WorldMap);
@@ -313,6 +346,7 @@ internal static class Program
     private sealed class FakeMatcher:IImageMatcher
     {
         public Func<int,TemplateId,ImageRegion?,ImageMatchResult> Rule; public readonly List<(int frame,TemplateId id,ImageRegion? roi)> Calls=new List<(int,TemplateId,ImageRegion?)>(); public int ActionX=20; public TeamNumber SelectedTeam=TeamNumber.Team4; public bool PanelAfter=false,WorldAfter=true,SelectedAfter=false,ReadyBefore=true,ReadyAfter=false,DynamicRetryAction=false;
+        public int PostBackCancelFrame;
         public ImageMatchResult Find(byte[] f,byte[] t,ImageRegion? r){int frame=f[0];var id=(TemplateId)t[0];Calls.Add((frame,id,r));return Rule==null?Default(frame,id,r):Rule(frame,id,r);}
         public ImageMatchResult Default(int f,TemplateId id,ImageRegion? r)
         {
@@ -352,7 +386,9 @@ internal static class Program
         {
             Matcher.Rule = (f,id,roi) => id == dialogTemplate
                 ? Found(100,200,200,100)
-                : id == TemplateId.StorageLimitCancelButton ? Found(300,400,80,40)
+                : id == TemplateId.StorageLimitCancelButton
+                    && (f == 1 || f == Matcher.PostBackCancelFrame)
+                    ? Found(300,400,80,40)
                 : ImageMatchResult.NotFound();
             Service = new StorageLimitDialogService(Client, Detector, Registry, Matcher,
                 new StorageLimitDialogOptions { PollIntervalMs=50, TransitionTimeoutSeconds=1,

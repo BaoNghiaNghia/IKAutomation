@@ -174,9 +174,35 @@ namespace ADB_Tool_Automation_Post_FB.Infrastructure.StorageLimit
         {
             DateTimeOffset deadline = DateTimeOffset.UtcNow.AddSeconds(options.TransitionTimeoutSeconds);
             int unknownFrames = 0;
+            bool postBackCancelTapped = false;
             while (DateTimeOffset.UtcNow < deadline)
             {
                 await Task.Delay(options.PollIntervalMs, cancellationToken);
+
+                // A Back from TeamSelection can expose the game's exit confirmation
+                // instead of returning directly to WorldMap.  This recovery runs only
+                // after that one verified Back.  Rematch the safe Cancel action on a
+                // fresh frame and never retry it blindly.
+                if (!postBackCancelTapped)
+                {
+                    byte[] fresh = await client.CaptureScreenshotPngAsync(
+                        deviceName, cancellationToken);
+                    GameDetectionEvidence cancel = Match(
+                        fresh, TemplateId.StorageLimitCancelButton);
+                    if (HasBounds(cancel.MatchResult))
+                    {
+                        result.Evidence = new[] { cancel };
+                        await client.TapAsync(deviceName, cancel.MatchResult.CenterX,
+                            cancel.MatchResult.CenterY, cancellationToken);
+                        result.ActionTapCount++;
+                        result.PostBackConfirmationCancelled = true;
+                        postBackCancelTapped = true;
+                        result.RecoveryTransitions++;
+                        logger.Info($"[PostBackRecovery] DeviceName='{deviceName}', CancelBounds=({cancel.MatchResult.X},{cancel.MatchResult.Y},{cancel.MatchResult.Width},{cancel.MatchResult.Height}), Tap=({cancel.MatchResult.CenterX},{cancel.MatchResult.CenterY}), BackCount={result.BackCount}");
+                        continue;
+                    }
+                }
+
                 GameDetectionResult state = await detector.DetectAsync(deviceName, cancellationToken);
                 if (!state.IsSuccessful || state.State == GameState.Unknown)
                 {
@@ -191,7 +217,9 @@ namespace ADB_Tool_Automation_Post_FB.Infrastructure.StorageLimit
                 {
                     result.ReturnedToWorldMap = true;
                     return Complete(result, StorageLimitDialogOutcome.CancelledForResourceSwitch,
-                        "Resource-switch warning was cancelled; TeamSelection closed and WorldMap was verified.", null, watch);
+                        result.PostBackConfirmationCancelled
+                            ? "Resource-switch warning and post-Back confirmation were cancelled; WorldMap was verified."
+                            : "Resource-switch warning was cancelled; TeamSelection closed and WorldMap was verified.", null, watch);
                 }
                 if (state.State == GameState.ResourceSearchPanel)
                 {
