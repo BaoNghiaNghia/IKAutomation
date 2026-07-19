@@ -229,9 +229,11 @@ namespace ADB_Tool_Automation_Post_FB.Infrastructure.ResourceSearch
         {
             byte[] screenshot = await ldPlayerClient.CaptureScreenshotPngAsync(deviceName, cancellationToken);
             TemplateId levelTemplateId = GetLevelTemplateId(result.RequestedLevel);
-            ConfigurationTemplateEvidence minus = Match(screenshot, TemplateId.LevelMinusButton);
-            ConfigurationTemplateEvidence plus = Match(screenshot, TemplateId.LevelPlusButton);
             ConfigurationTemplateEvidence search = Match(screenshot, TemplateId.SearchButtonEnabled);
+            ConfigurationTemplateEvidence minus = MatchLevelControl(
+                screenshot, TemplateId.LevelMinusButton, search);
+            ConfigurationTemplateEvidence plus = MatchLevelControl(
+                screenshot, TemplateId.LevelPlusButton, search);
             ConfigurationTemplateEvidence currentLevel = MatchLevel(
                 screenshot, levelTemplateId, minus, plus, search);
             var evidence = new List<ConfigurationTemplateEvidence>
@@ -365,9 +367,11 @@ namespace ADB_Tool_Automation_Post_FB.Infrastructure.ResourceSearch
             GameDetectionResult state = await detector.DetectAsync(deviceName, cancellationToken);
             result.FinalState = state.State;
             byte[] screenshot = await ldPlayerClient.CaptureScreenshotPngAsync(deviceName, cancellationToken);
-            ConfigurationTemplateEvidence minus = Match(screenshot, TemplateId.LevelMinusButton);
-            ConfigurationTemplateEvidence plus = Match(screenshot, TemplateId.LevelPlusButton);
             ConfigurationTemplateEvidence search = Match(screenshot, TemplateId.SearchButtonEnabled);
+            ConfigurationTemplateEvidence minus = MatchLevelControl(
+                screenshot, TemplateId.LevelMinusButton, search);
+            ConfigurationTemplateEvidence plus = MatchLevelControl(
+                screenshot, TemplateId.LevelPlusButton, search);
             var evidence = new List<ConfigurationTemplateEvidence>
             {
                 Match(screenshot, TemplateId.ResourceTabSelected),
@@ -416,12 +420,12 @@ namespace ADB_Tool_Automation_Post_FB.Infrastructure.ResourceSearch
                 cancellationToken.ThrowIfCancellationRequested();
                 byte[] screenshot = await ldPlayerClient.CaptureScreenshotPngAsync(
                     deviceName, cancellationToken);
-                ConfigurationTemplateEvidence currentMinus = Match(
-                    screenshot, TemplateId.LevelMinusButton);
-                ConfigurationTemplateEvidence currentPlus = Match(
-                    screenshot, TemplateId.LevelPlusButton);
                 ConfigurationTemplateEvidence search = Match(
                     screenshot, TemplateId.SearchButtonEnabled);
+                ConfigurationTemplateEvidence currentMinus = MatchLevelControl(
+                    screenshot, TemplateId.LevelMinusButton, search);
+                ConfigurationTemplateEvidence currentPlus = MatchLevelControl(
+                    screenshot, TemplateId.LevelPlusButton, search);
                 last = MatchLevel(screenshot, levelTemplateId,
                     currentMinus, currentPlus, search);
                 if (last.Found) return last;
@@ -789,6 +793,50 @@ namespace ADB_Tool_Automation_Post_FB.Infrastructure.ResourceSearch
             return Evidence(templateId, match, match != null && match.Found
                 ? $"Template '{templateId}' matched by its stable center inside the last verified local bounds."
                 : $"Template '{templateId}' did not match directly or by its stable center inside the last verified local bounds.");
+        }
+
+        private ConfigurationTemplateEvidence MatchLevelControl(byte[] screenshot,
+            TemplateId templateId, ConfigurationTemplateEvidence search)
+        {
+            ConfigurationTemplateEvidence direct = Match(screenshot, templateId);
+            if (HasBounds(direct) || !HasBounds(search)) return direct;
+
+            ImageRegion? region = CreateSearchRelativeLevelControlRegion(templateId, search);
+            if (!region.HasValue) return direct;
+
+            byte[] sourceTemplate = templateRegistry.LoadBytes(templateId);
+            byte[] stableTemplate = TryCreateStableLevelControlTemplate(sourceTemplate)
+                ?? sourceTemplate;
+            ImageMatchResult match = imageMatcher.Find(screenshot, stableTemplate, region);
+            return Evidence(templateId, match, match != null && match.Found
+                ? $"Template '{templateId}' matched by its stable center inside the Search-relative level-control region."
+                : $"Template '{templateId}' did not match directly or inside the Search-relative level-control region.");
+        }
+
+        private static ImageRegion? CreateSearchRelativeLevelControlRegion(TemplateId templateId,
+            ConfigurationTemplateEvidence search)
+        {
+            if (!HasBounds(search)) return null;
+            if (templateId != TemplateId.LevelMinusButton
+                && templateId != TemplateId.LevelPlusButton) return null;
+
+            // These regions belong to the fixed 1280x720 search overlay. The Search
+            // button is rematched first, then the actual control must still match
+            // inside its small local region before its latest bounds can be tapped.
+            const int screenshotWidth = 1280;
+            const int screenshotHeight = 720;
+            int left = templateId == TemplateId.LevelMinusButton
+                ? search.X - 700
+                : search.X - 120;
+            int width = templateId == TemplateId.LevelMinusButton ? 200 : 180;
+            int top = search.Y + search.Height;
+            left = Math.Max(0, Math.Min(left, screenshotWidth - 1));
+            top = Math.Max(0, Math.Min(top, screenshotHeight - 1));
+            width = Math.Min(width, screenshotWidth - left);
+            int height = Math.Min(120, screenshotHeight - top);
+            return width > 0 && height > 0
+                ? new ImageRegion(left, top, width, height)
+                : (ImageRegion?)null;
         }
 
         private static byte[] TryCreateStableLevelControlTemplate(byte[] templateBytes)
