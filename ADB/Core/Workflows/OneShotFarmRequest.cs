@@ -33,6 +33,7 @@ namespace ADB_Tool_Automation_Post_FB.Core.Workflows
         public IReadOnlyList<TeamNumber> TeamPriority { get; set; }
         public bool AllowTeam1 { get; set; }
         public bool RequireMarchVerification { get; set; }
+        public bool RunUntilNoReadyTeams { get; set; }
         public ReadyTeamGateRunOptions ReadyTeamOptions { get; set; }
         public string RunId { get; set; }
     }

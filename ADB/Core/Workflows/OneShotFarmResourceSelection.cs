@@ -44,7 +44,8 @@ namespace ADB_Tool_Automation_Post_FB.Core.Workflows
                 TeamPriority = defaults.TeamPriority,
                 AllowTeam1 = defaults.AllowTeam1,
                 ReadyTeamOptions = defaults.ReadyTeamOptions,
-                RequireMarchVerification = defaults.RequireMarchVerification
+                RequireMarchVerification = defaults.RequireMarchVerification,
+                RunUntilNoReadyTeams = defaults.RunUntilNoReadyTeams
             };
         }
     }

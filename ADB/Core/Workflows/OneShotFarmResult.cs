@@ -46,6 +46,9 @@ namespace ADB_Tool_Automation_Post_FB.Core.Workflows
         public int TeamAvailabilityChecks { get; set; }
         public bool ReadyTeamObserved { get; set; }
         public IReadOnlyList<TeamNumber> ReadyTeams { get; set; }
+        public int CompletedDispatches { get; set; }
+        public IReadOnlyList<ResourceType> DispatchedResources { get; set; }
+        public IReadOnlyList<TeamNumber> BatchDispatchedTeams { get; set; }
         public GameState InitialState { get; set; }
         public GameState FinalState { get; set; }
         public OneShotFarmStep LastCompletedStep { get; set; }

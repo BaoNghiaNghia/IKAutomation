@@ -146,6 +146,7 @@ namespace ADB_Tool_Automation_Post_FB.Core.Workflows
                 TeamPriority = preferences.TeamPriority.ToArray(),
                 AllowTeam1 = preferences.AllowTeam1,
                 RequireMarchVerification = defaults.RequireMarchVerification,
+                RunUntilNoReadyTeams = true,
                 ReadyTeamOptions = new ReadyTeamGateRunOptions(
                     checked(preferences.ReadyCheckIntervalMinutes * 60000),
                     checked(preferences.ReadyMaxWaitHours * 3600000))

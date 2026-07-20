@@ -49,6 +49,9 @@ namespace ADB_Tool_Automation_Post_FB.Infrastructure.Workflows
             DateTimeOffset waitDeadline = waitStartedAt.AddMilliseconds(maxWaitMs);
             int checks = 0;
             IReadOnlyList<TeamNumber> eligibleReadyTeams = new TeamNumber[0];
+            var dispatchedResources = new List<ResourceType>();
+            var dispatchedTeams = new List<TeamNumber>();
+            OneShotFarmResult lastSuccessfulResult = null;
             try
             {
                 while (true)
@@ -86,6 +89,7 @@ namespace ADB_Tool_Automation_Post_FB.Infrastructure.Workflows
                     }
                     eligibleReadyTeams = (check.ReadyTeams ?? new TeamNumber[0])
                         .Where(team => request.AllowedTeams.Contains(team))
+                        .Where(team => !dispatchedTeams.Contains(team))
                         .Distinct()
                         .ToArray();
                     if (eligibleReadyTeams.Count > 0)
@@ -101,7 +105,52 @@ namespace ADB_Tool_Automation_Post_FB.Infrastructure.Workflows
                             WaitDeadline = waitDeadline,
                             Message = $"Ready allowed team(s): {string.Join(", ", eligibleReadyTeams)}."
                         });
-                        break;
+                        OneShotFarmRequest cycleRequest = CreateCycleRequest(request,
+                            eligibleReadyTeams, dispatchedResources);
+                        OneShotFarmResult result = await inner.RunAsync(
+                            deviceName, cycleRequest, progress, cancellationToken);
+                        result.TeamAvailabilityChecks = checks;
+                        result.ReadyTeamObserved = true;
+                        result.ReadyTeams = eligibleReadyTeams;
+                        result.Duration = watch.Elapsed;
+                        if (!result.Success || !request.RunUntilNoReadyTeams)
+                        {
+                            ApplyBatchSummary(result, dispatchedResources, dispatchedTeams);
+                            return result;
+                        }
+
+                        ResourceType dispatchedResource = result.DispatchedResource
+                            ?? result.LocatedResource ?? cycleRequest.ResourceType;
+                        dispatchedResources.Add(dispatchedResource);
+                        TeamNumber dispatchedTeam = result.DispatchedTeam
+                            ?? result.SelectedTeam ?? eligibleReadyTeams[0];
+                        if (!dispatchedTeams.Contains(dispatchedTeam))
+                            dispatchedTeams.Add(dispatchedTeam);
+                        lastSuccessfulResult = result;
+                        IReadOnlyList<ResourceType> nextResourceOrder = RotateAfter(
+                            request.SelectedResources ?? request.ResourcePriority,
+                            dispatchedResource);
+                        logger.Info($"[Ready Team Gate] DeviceName='{deviceName}', "
+                            + $"CompletedDispatches={dispatchedResources.Count}, "
+                            + $"DispatchedTeam='{dispatchedTeam}', "
+                            + $"DispatchedResource='{dispatchedResource}', "
+                            + $"NextResourceOrder='{string.Join(",", nextResourceOrder)}'");
+                        continue;
+                    }
+
+                    if (lastSuccessfulResult != null)
+                    {
+                        lastSuccessfulResult.TeamAvailabilityChecks = checks;
+                        lastSuccessfulResult.ReadyTeamObserved = true;
+                        lastSuccessfulResult.ReadyTeams = new TeamNumber[0];
+                        lastSuccessfulResult.Duration = watch.Elapsed;
+                        lastSuccessfulResult.Message = $"{dispatchedResources.Count} team(s) "
+                            + "were dispatched; no allowed ready team remains.";
+                        ApplyBatchSummary(lastSuccessfulResult, dispatchedResources,
+                            dispatchedTeams);
+                        Report(progress, Terminal(OneShotFarmProgressStage.Completed,
+                            request, checks, lastSuccessfulResult.Message));
+                        return lastSuccessfulResult;
                     }
 
                     long remainingMs = maxWaitMs - watch.ElapsedMilliseconds;
@@ -136,13 +185,6 @@ namespace ADB_Tool_Automation_Post_FB.Infrastructure.Workflows
                     await Task.Delay(delayMs, cancellationToken);
                 }
 
-                OneShotFarmResult result = await inner.RunAsync(
-                    deviceName, request, progress, cancellationToken);
-                result.TeamAvailabilityChecks = checks;
-                result.ReadyTeamObserved = true;
-                result.ReadyTeams = eligibleReadyTeams;
-                result.Duration = watch.Elapsed;
-                return result;
             }
             catch (OperationCanceledException)
             {
@@ -152,6 +194,59 @@ namespace ADB_Tool_Automation_Post_FB.Infrastructure.Workflows
                     "One-shot farm readiness waiting was cancelled.", null,
                     checks, watch.Elapsed);
             }
+        }
+
+        private static OneShotFarmRequest CreateCycleRequest(OneShotFarmRequest source,
+            IReadOnlyList<TeamNumber> eligibleReadyTeams,
+            IReadOnlyList<ResourceType> dispatchedResources)
+        {
+            IReadOnlyList<ResourceType> selected = source.SelectedResources
+                ?? source.ResourcePriority ?? new ResourceType[0];
+            IReadOnlyList<ResourceType> priority = dispatchedResources.Count == 0
+                ? source.ResourcePriority ?? selected
+                : RotateAfter(selected, dispatchedResources[dispatchedResources.Count - 1]);
+            IReadOnlyList<TeamNumber> teams = (source.TeamPriority ?? source.AllowedTeams)
+                .Where(eligibleReadyTeams.Contains).Distinct().ToArray();
+            return new OneShotFarmRequest
+            {
+                ResourceType = priority.Count == 0 ? source.ResourceType : priority[0],
+                TargetLevel = source.TargetLevel,
+                UnoccupiedOnly = source.UnoccupiedOnly,
+                ResourceLevelPriority = source.ResourceLevelPriority,
+                ResourcePriority = priority.ToArray(),
+                SelectedResources = selected.ToArray(),
+                ShuffleResourcePriority = dispatchedResources.Count == 0
+                    && source.ShuffleResourcePriority,
+                StorageLimitPolicy = source.StorageLimitPolicy,
+                AttemptsPerResourceLevel = source.AttemptsPerResourceLevel,
+                AllowedTeams = teams,
+                TeamPriority = teams,
+                AllowTeam1 = source.AllowTeam1,
+                RequireMarchVerification = source.RequireMarchVerification,
+                RunUntilNoReadyTeams = source.RunUntilNoReadyTeams,
+                ReadyTeamOptions = source.ReadyTeamOptions,
+                RunId = source.RunId
+            };
+        }
+
+        private static IReadOnlyList<ResourceType> RotateAfter(
+            IReadOnlyList<ResourceType> resources, ResourceType previous)
+        {
+            if (resources == null || resources.Count == 0) return new ResourceType[0];
+            var unique = resources.Distinct().ToArray();
+            int previousIndex = Array.IndexOf(unique, previous);
+            int start = previousIndex < 0 ? 0 : (previousIndex + 1) % unique.Length;
+            return Enumerable.Range(0, unique.Length)
+                .Select(offset => unique[(start + offset) % unique.Length]).ToArray();
+        }
+
+        private static void ApplyBatchSummary(OneShotFarmResult result,
+            IReadOnlyList<ResourceType> dispatchedResources,
+            IReadOnlyList<TeamNumber> dispatchedTeams)
+        {
+            result.CompletedDispatches = dispatchedResources.Count;
+            result.DispatchedResources = dispatchedResources.ToArray();
+            result.BatchDispatchedTeams = dispatchedTeams.ToArray();
         }
 
         private OneShotFarmProgress Terminal(OneShotFarmProgressStage stage,
@@ -202,6 +297,9 @@ namespace ADB_Tool_Automation_Post_FB.Infrastructure.Workflows
                 TeamAvailabilityChecks = checks,
                 ReadyTeamObserved = false,
                 ReadyTeams = new TeamNumber[0],
+                CompletedDispatches = 0,
+                DispatchedResources = new ResourceType[0],
+                BatchDispatchedTeams = new TeamNumber[0],
                 Duration = duration,
                 Message = message,
                 ErrorMessage = error,
