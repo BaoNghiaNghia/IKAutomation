@@ -160,11 +160,6 @@ namespace ADB_Tool_Automation_Post_FB.Infrastructure.ResourceSearch
                     context.PreviousPanelConfirmed = true;
                     context.LastPanelConfirmed = true;
 
-                    // LDPlayer can return from Tap before the transient toast has rendered.
-                    // Wait one fast-poll interval so the first observation is not just the
-                    // unchanged pre-toast panel frame.
-                    await Task.Delay(options.NotFoundFastPollIntervalMs, cancellationToken);
-
                     int fastWindowMs = Math.Min(options.NotFoundObservationWindowMs,
                         options.SearchTapVerificationTimeoutSeconds * 1000);
                     var fastWatch = Stopwatch.StartNew();
@@ -184,14 +179,14 @@ namespace ADB_Tool_Automation_Post_FB.Infrastructure.ResourceSearch
                     {
                         if (attempt < options.MaxSearchTapAttempts)
                             continue;
-                        if (context.PanelVisualChangeObserved
-                            && context.OpenPanelObservationCount >= options.MaxSearchTapAttempts)
+                        if (result.SearchTapCount >= 2
+                            && context.OpenPanelObservationCount >= result.SearchTapCount)
                         {
                             result.NotFoundObserved = true;
                             result.MatchedNotFoundVariant = VerifiedRetryPanelStayedOpenVariant;
                             return await CompleteAsync(deviceName, result, context,
                                 ResourceSearchOutcome.ResourceNotFound,
-                                "ResourceNotFound was inferred after bounded verified Search retries: the panel stayed open and a transient panel visual change was observed; no toast match was claimed.",
+                                "ResourceNotFound was inferred after two bounded verified Search taps: the panel remained confirmed and no popup or camera transition occurred; no toast match was claimed.",
                                 null, watch, cancellationToken);
                         }
                         return await CompleteAsync(deviceName, result, context, ResourceSearchOutcome.Timeout,
@@ -274,9 +269,7 @@ namespace ADB_Tool_Automation_Post_FB.Infrastructure.ResourceSearch
                 stable = comparison.DifferenceRatio <= options.CameraStableThreshold;
                 if (comparison.DifferenceRatio > options.CameraMovementThreshold)
                 {
-                    if (panelConfirmed)
-                        context.PanelVisualChangeObserved = true;
-                    else
+                    if (!panelConfirmed)
                     {
                         result.CameraMovementObserved = true;
                         context.StableFrameCount = 0;
@@ -620,7 +613,6 @@ namespace ADB_Tool_Automation_Post_FB.Infrastructure.ResourceSearch
             public byte[] LastFrame;
             public bool PreviousPanelConfirmed;
             public bool LastPanelConfirmed;
-            public bool PanelVisualChangeObserved;
             public int OpenPanelObservationCount;
             public int StableFrameCount;
             public int UnknownFrameCount;

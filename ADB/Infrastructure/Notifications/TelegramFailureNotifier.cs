@@ -2,6 +2,7 @@ using ADB_Tool_Automation_Post_FB.Core.Diagnostics;
 using ADB_Tool_Automation_Post_FB.Core.Notifications;
 using System;
 using System.Collections.Generic;
+using System.Net;
 using System.Net.Http;
 using System.Text;
 using System.Threading;
@@ -62,6 +63,17 @@ namespace ADB_Tool_Automation_Post_FB.Infrastructure.Notifications
                             + response.ReasonPhrase;
                         logger.Info("[Telegram Notification] Sent=False, HttpStatus="
                             + (int)response.StatusCode);
+                        if (response.StatusCode == HttpStatusCode.NotFound
+                            || response.StatusCode == HttpStatusCode.Unauthorized)
+                            return Result(true, false,
+                                "Telegram bot token is invalid or revoked (HTTP " + status
+                                + "). Create a new token in BotFather, update the environment variable, "
+                                + "then restart Visual Studio and IKAutomation.");
+                        if (response.StatusCode == HttpStatusCode.BadRequest)
+                            return Result(true, false,
+                                "Telegram rejected the chat ID or message (HTTP " + status
+                                + "). Send /start to the bot and verify "
+                                + ChatIdEnvironmentVariable + ".");
                         return Result(true, false,
                             "Telegram delivery failed (HTTP " + status
                             + "). Check the bot token, chat ID, and that /start was sent to the bot.");

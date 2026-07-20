@@ -330,10 +330,13 @@ namespace ADB_Tool_Automation_Post_FB.Infrastructure.MarchDispatch
             bool structural = allowFallback && !panel && world && !selected && changed;
             bool direct = !panel && world && !selected && readyDisappeared
                 && timerFound && timerChanged;
-            bool timerPlusStructural = !readyBeforeDispatch && timerChanged && structural;
+            bool worldMapTimer = !panel && world && !readyBeforeDispatch
+                && timerFound && timerChanged;
+            bool timerPlusStructural = worldMapTimer && structural;
             MarchVerificationMode mode = direct
                 ? MarchVerificationMode.ReadyDisappearedAndTimerProgression
                 : timerPlusStructural ? MarchVerificationMode.TimerProgressionPlusStructural
+                : worldMapTimer ? MarchVerificationMode.WorldMapTimerProgression
                 : structural ? MarchVerificationMode.StructuralFallback
                 : MarchVerificationMode.None;
             return new MarchDispatchObservation
@@ -355,11 +358,11 @@ namespace ADB_Tool_Automation_Post_FB.Infrastructure.MarchDispatch
                 TimerDifferenceRatio = timerDifference,
                 TimerRegion = timerRegion,
                 VerificationMode = mode,
-                DirectSuccessRuleMatched = direct,
+                DirectSuccessRuleMatched = direct || (worldMapTimer && !structural),
                 StructuralSuccessRuleMatched = structural,
                 TeamRegionDifference = comparison.DifferenceRatio,
                 TeamRegionChanged = changed,
-                SuccessRuleMatched = direct || timerPlusStructural || structural
+                SuccessRuleMatched = direct || worldMapTimer || structural
             };
         }
 
@@ -480,8 +483,9 @@ namespace ADB_Tool_Automation_Post_FB.Infrastructure.MarchDispatch
         {
             switch (mode)
             {
-                case MarchVerificationMode.ReadyDisappearedAndTimerProgression: return 3;
-                case MarchVerificationMode.TimerProgressionPlusStructural: return 2;
+                case MarchVerificationMode.ReadyDisappearedAndTimerProgression: return 4;
+                case MarchVerificationMode.TimerProgressionPlusStructural: return 3;
+                case MarchVerificationMode.WorldMapTimerProgression: return 2;
                 case MarchVerificationMode.StructuralFallback: return 1;
                 default: return 0;
             }

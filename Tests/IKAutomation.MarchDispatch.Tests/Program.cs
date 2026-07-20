@@ -50,6 +50,7 @@ internal static class Program
         Run("Excessive timer ROI change is rejected", ExcessiveTimerChangeRejected);
         Run("Team3 timer does not verify Team4", WrongTeamTimerIgnored);
         Run("Timer progression plus structural has distinct mode", TimerPlusStructuralMode);
+        Run("WorldMap timer progression succeeds without ready baseline", WorldMapTimerProgression);
         Run("Fallback requires selected border disappearance", FallbackNeedsBorderGone);
         Run("Fallback requires team ROI change", FallbackNeedsChange);
         Run("Missing ROI change cannot succeed", MissingChange);
@@ -135,6 +136,7 @@ internal static class Program
     private static void ExcessiveTimerChangeRejected() { var options=Harness.OptionsFor(1,1); var detector=new TeamMarchTimerDetector(options); ImageRegion region=options.TeamTimerRegions[TeamNumber.Team4]; byte[] a=TimerImage(region,"12:34"); byte[] b=SolidTimerImage(region,Color.White); var r=detector.Compare(a,b,region); Is(!r.ProgressionDetected,"large change accepted"); }
     private static void WrongTeamTimerIgnored() { var h=DirectHarness(); h.Timer.TimerTeam=TeamNumber.Team3; var r=Execute(h); Is(!r.DirectMarchVerified,"wrong team timer"); }
     private static void TimerPlusStructuralMode() { var h=DirectHarness(); h.Matcher.ReadyBefore=false; h.Comparer.Ratio=0.2; var r=Execute(h); Eq(DispatchMarchOutcome.MarchStarted,r.Outcome,"outcome"); Eq(MarchVerificationMode.TimerProgressionPlusStructural,r.VerificationMode,"mode"); Is(!r.DirectMarchVerified&&r.StructuralMarchVerified,"verification flags"); }
+    private static void WorldMapTimerProgression() { var h=DirectHarness(); h.Matcher.ReadyBefore=false; h.Matcher.SelectedAfter=true; h.Comparer.Ratio=0; var r=Execute(h); Eq(DispatchMarchOutcome.MarchStarted,r.Outcome,"outcome"); Eq(MarchVerificationMode.WorldMapTimerProgression,r.VerificationMode,"mode"); Is(r.DirectMarchVerified&&r.ExpectedTeamTimerVerified&&!r.StructuralMarchVerified,"verification flags"); }
     private static void FallbackNeedsBorderGone() { var h=NoSuccessHarness(); h.Comparer.Ratio=0.2; h.Matcher.SelectedAfter=true; var r=Execute(h); Eq(DispatchMarchOutcome.TransitionTimeout,r.Outcome,"outcome"); }
     private static void FallbackNeedsChange() { var h=NoSuccessHarness(); h.Comparer.Ratio=0; var r=Execute(h); Eq(DispatchMarchOutcome.TransitionTimeout,r.Outcome,"outcome"); }
     private static void MissingChange() { FallbackNeedsChange(); }
@@ -161,7 +163,7 @@ internal static class Program
     private static void OnlyExpectedTeam() { var h=new Harness(); var r=Execute(h); Eq(TeamNumber.Team4,r.DispatchedTeam.Value,"team"); Eq(1,r.ActionTapCount,"tap count"); }
     private static void NoCancellationNone() { string root=System.IO.Path.Combine(Environment.CurrentDirectory,"ADB","Infrastructure","MarchDispatch"); string forbidden="CancellationToken"+".None"; Is(!System.IO.File.ReadAllText(System.IO.Path.Combine(root,"DispatchSelectedTeamService.cs")).Contains(forbidden),"service token bypass"); Is(!System.IO.File.ReadAllText(System.IO.Path.Combine(root,"TeamMarchTimerDetector.cs")).Contains(forbidden),"detector token bypass"); }
     private static void TimerSampleCancellation() { var h=DirectHarness(); h.Options=Harness.OptionsFor(2,1,1000); h.Rebuild(); using(var c=new CancellationTokenSource(20)){var r=Execute(h,c.Token);Eq(DispatchMarchOutcome.Cancelled,r.Outcome,"outcome");Eq(1,r.ActionTapCount,"tap count");} }
-    private static void TimerOptionsLoad() { var o=AppConfigDispatchSelectedTeamOptionsProvider.Load(); Eq(4,o.TeamTimerRegions.Count,"ROI count"); Eq(1000,o.TimerSampleIntervalMs,"sample interval"); }
+    private static void TimerOptionsLoad() { var o=AppConfigDispatchSelectedTeamOptionsProvider.Load(); Eq(4,o.TeamTimerRegions.Count,"ROI count"); Eq(338,o.TeamTimerRegions[TeamNumber.Team1].Y,"Team1 timer Y"); Eq(503,o.TeamTimerRegions[TeamNumber.Team4].Y,"Team4 timer Y"); Eq(1000,o.TimerSampleIntervalMs,"sample interval"); }
     private static void TimerRangesValidated() { bool threw=false; try{var o=Harness.OptionsFor(1,1);new DispatchSelectedTeamOptions(o.PollIntervalMs,o.TransitionTimeoutSeconds,o.MaxActionTapAttempts,o.ActionTapRetryDelayMs,o.MaxTransientUnknownFrames,o.RequiredConsecutiveSuccessFrames,o.TeamRegionChangeThreshold,true,true,"Diagnostics/x",true,true,1,0.4,0.2,0.003,0.25,o.TeamTimerRegions,new ImageRegion(0,270,150,280));}catch(ArgumentException){threw=true;}Is(threw,"invalid range accepted"); }
     private static void DiagnosticFailureSafe() { var h=NoSuccessHarness(); h.Store.Throw=true; var r=Execute(h); Eq(DispatchMarchOutcome.TransitionTimeout,r.Outcome,"outcome"); }
     private static void ScreenshotCoordinates() { var h=new Harness(); h.Matcher.ActionX=1000; Execute(h); Eq(1050,h.Client.Taps[0].Item1,"screen X"); }

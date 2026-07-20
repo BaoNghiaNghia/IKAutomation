@@ -26,6 +26,7 @@ namespace IKAutomation.TelegramNotifications.Tests
             Run("Missing configuration reports actionable status", MissingConfigurationStatus);
             Run("Successful delivery reports sent status", SuccessfulDeliveryStatus);
             Run("HTTP failure reports status without token", HttpFailureReportsStatus);
+            Run("HTTP 404 identifies invalid token", NotFoundIdentifiesInvalidToken);
             Console.WriteLine($"Telegram notification tests: {passed} passed, {failed} failed.");
             return failed == 0 ? 0 : 1;
         }
@@ -123,6 +124,20 @@ namespace IKAutomation.TelegramNotifications.Tests
                 && result.Message.Contains("HTTP 401")
                 && !result.Message.Contains("secret-test-token"),
                 "HTTP status was not reported safely: " + result.Message);
+        }
+
+        private static void NotFoundIdentifiesInvalidToken()
+        {
+            var handler = new FakeHandler { StatusCode = HttpStatusCode.NotFound };
+            var notifier = new TelegramFailureNotifier(new HttpClient(handler),
+                "secret-test-token", "12345", new FakeLogger());
+            AutomationNotificationDeliveryResult result = notifier.NotifyAsync(
+                Notification(), Token).GetAwaiter().GetResult();
+            Assert(result.Attempted && !result.Success
+                && result.Message.Contains("invalid or revoked")
+                && result.Message.Contains("HTTP 404")
+                && !result.Message.Contains("secret-test-token"),
+                "HTTP 404 guidance was not safe or actionable: " + result.Message);
         }
 
         private static AutomationFailureNotification Notification() =>

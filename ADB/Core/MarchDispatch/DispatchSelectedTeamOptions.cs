@@ -95,7 +95,7 @@ namespace ADB_Tool_Automation_Post_FB.Core.MarchDispatch
             if ((long)rosterRegion.X + rosterRegion.Width > expectedWidth
                 || (long)rosterRegion.Y + rosterRegion.Height > expectedHeight)
                 throw new ArgumentOutOfRangeException(nameof(rosterRegion));
-            int rowHeight = rosterRegion.Height / 4;
+            int previousBottom = rosterRegion.Y;
             foreach (TeamNumber team in new[]
             {
                 TeamNumber.Team1, TeamNumber.Team2, TeamNumber.Team3, TeamNumber.Team4
@@ -107,15 +107,16 @@ namespace ADB_Tool_Automation_Post_FB.Core.MarchDispatch
                     || (long)region.Y + region.Height > expectedHeight)
                     throw new ArgumentOutOfRangeException(nameof(regions),
                         $"Timer ROI for '{team}' must be inside {expectedWidth}x{expectedHeight}.");
-                int index = (int)team - 1;
-                int rowTop = rosterRegion.Y + (index * rowHeight);
-                int rowBottom = index == 3
-                    ? rosterRegion.Y + rosterRegion.Height : rowTop + rowHeight;
                 if (region.X < rosterRegion.X
                     || region.X + region.Width > rosterRegion.X + rosterRegion.Width
-                    || region.Y < rowTop || region.Y + region.Height > rowBottom)
+                    || region.Y < rosterRegion.Y
+                    || region.Y + region.Height > rosterRegion.Y + rosterRegion.Height)
                     throw new ArgumentOutOfRangeException(nameof(regions),
-                        $"Timer ROI for '{team}' must stay inside its WorldMap team row.");
+                        $"Timer ROI for '{team}' must stay inside the WorldMap team roster.");
+                if (region.Y < previousBottom)
+                    throw new ArgumentOutOfRangeException(nameof(regions),
+                        "Timer ROIs must be ordered by team and must not overlap.");
+                previousBottom = region.Y + region.Height;
             }
         }
 

@@ -27,10 +27,10 @@ namespace ADB_Tool_Automation_Post_FB.Infrastructure.MarchDispatch
             Double("MaximumTimerDifferenceRatio", 0.25),
             new Dictionary<TeamNumber, ImageRegion>
             {
-                { TeamNumber.Team1, TimerRegion(1, 55, 310, 95, 28) },
-                { TeamNumber.Team2, TimerRegion(2, 55, 380, 95, 28) },
-                { TeamNumber.Team3, TimerRegion(3, 55, 450, 95, 28) },
-                { TeamNumber.Team4, TimerRegion(4, 55, 520, 95, 28) }
+                { TeamNumber.Team1, TimerRegion(1, 70, 338, 70, 24) },
+                { TeamNumber.Team2, TimerRegion(2, 70, 393, 70, 24) },
+                { TeamNumber.Team3, TimerRegion(3, 70, 448, 70, 24) },
+                { TeamNumber.Team4, TimerRegion(4, 70, 503, 70, 24) }
             },
             AppConfigWorldMapTeamAvailabilityOptionsProvider.Load().TeamRosterRegion);
 
