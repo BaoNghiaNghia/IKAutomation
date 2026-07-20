@@ -323,8 +323,9 @@
       <Version>4.1.1</Version>
     </PackageReference>
   </ItemGroup>
-  <ItemGroup Condition="'$(MSBuildRuntimeType)' == 'Core'">
-    <!-- dotnet MSBuild does not import ResolveNuGetPackageAssets for this legacy project format. -->
+  <ItemGroup>
+    <!-- Keep stable compile-time references for both Visual Studio and dotnet MSBuild.
+         PackageReference remains responsible for restore and native/build assets. -->
     <Reference Include="Auto_LDPlayer">
       <HintPath>$(NuGetPackageRoot)auto_ldplayer\1.1.0\lib\net471\Auto_LDPlayer.dll</HintPath>
       <Private>True</Private>
