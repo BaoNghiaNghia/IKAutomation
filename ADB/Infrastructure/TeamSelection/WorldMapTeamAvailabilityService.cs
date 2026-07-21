@@ -111,13 +111,17 @@ namespace ADB_Tool_Automation_Post_FB.Infrastructure.TeamSelection
                 byte[] badgeTemplate = registry.LoadBytes(BadgeTemplate(teams[index]));
                 ImageMatchResult badgeMatch = matcher.Find(screenshot, badgeTemplate,
                     rowRegion) ?? ImageMatchResult.NotFound();
-                if (!badgeMatch.Found || badgeMatch.Width <= 0 || badgeMatch.Height <= 0)
+                ImageMatchResult rowMatch = matcher.Find(screenshot, readyTemplate,
+                    rowRegion) ?? ImageMatchResult.NotFound();
+                bool badgeFound = badgeMatch.Found
+                    && badgeMatch.Width > 0 && badgeMatch.Height > 0;
+                bool readyFound = rowMatch.Found
+                    && rowMatch.Width > 0 && rowMatch.Height > 0;
+                if (!badgeFound && !readyFound)
                     continue;
 
                 availableTeams.Add(teams[index]);
-                ImageMatchResult rowMatch = matcher.Find(screenshot, readyTemplate,
-                    rowRegion) ?? ImageMatchResult.NotFound();
-                if (rowMatch.Found && rowMatch.Width > 0 && rowMatch.Height > 0)
+                if (readyFound)
                 {
                     readyTeams.Add(teams[index]);
                     readyMatches.Add(rowMatch);
