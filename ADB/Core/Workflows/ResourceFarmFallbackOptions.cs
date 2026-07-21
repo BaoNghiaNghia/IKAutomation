@@ -31,8 +31,8 @@ namespace ADB_Tool_Automation_Post_FB.Core.Workflows
                 throw new ArgumentException("ResourcePriority contains an unsupported resource.");
             if (LevelPriority == null || LevelPriority.Count == 0
                 || LevelPriority.Distinct().Count() != LevelPriority.Count
-                || LevelPriority.Any(x => x != 5 && x != 6 && x != 7))
-                throw new ArgumentException("LevelPriority supports unique levels 7, 6, and 5.");
+                || LevelPriority.Any(x => x < 1 || x > 30))
+                throw new ArgumentException("LevelPriority supports unique levels 1 through 30.");
             if (StorageLimitPolicy != StorageLimitPolicy.CancelAndSwitchResource)
                 throw new ArgumentException("One-shot fallback requires CancelAndSwitchResource.");
             if (MaxRecoveryTransitions < 1 || MaxRecoveryTransitions > 5) throw new ArgumentOutOfRangeException(nameof(MaxRecoveryTransitions));

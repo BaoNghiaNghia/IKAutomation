@@ -228,19 +228,22 @@ namespace ADB_Tool_Automation_Post_FB.Infrastructure.ResourceSearch
             CancellationToken cancellationToken)
         {
             byte[] screenshot = await ldPlayerClient.CaptureScreenshotPngAsync(deviceName, cancellationToken);
-            TemplateId levelTemplateId = GetLevelTemplateId(result.RequestedLevel);
+            TemplateId levelTemplateId;
+            bool hasLevelTemplate = TryGetLevelTemplateId(result.RequestedLevel, out levelTemplateId);
             ConfigurationTemplateEvidence search = Match(screenshot, TemplateId.SearchButtonEnabled);
             ConfigurationTemplateEvidence minus = MatchLevelControl(
                 screenshot, TemplateId.LevelMinusButton, search);
             ConfigurationTemplateEvidence plus = MatchLevelControl(
                 screenshot, TemplateId.LevelPlusButton, search);
-            ConfigurationTemplateEvidence currentLevel = MatchLevel(
-                screenshot, levelTemplateId, minus, plus, search);
+            ConfigurationTemplateEvidence currentLevel = hasLevelTemplate
+                ? MatchLevel(screenshot, levelTemplateId, minus, plus, search)
+                : null;
             var evidence = new List<ConfigurationTemplateEvidence>
             {
-                currentLevel, minus, plus, search
+                minus, plus, search
             };
-            if (currentLevel.Found)
+            if (currentLevel != null) evidence.Insert(0, currentLevel);
+            if (currentLevel != null && currentLevel.Found)
             {
                 result.LevelVerified = true;
                 result.ObservedLevel = result.RequestedLevel;
@@ -256,8 +259,12 @@ namespace ADB_Tool_Automation_Post_FB.Infrastructure.ResourceSearch
                 return false;
             }
 
+            int unchangedMinusFrames = 0;
+            bool minimumLevelVerified = false;
             for (int index = 0; index < options.ResetMinusTapCount; index++)
             {
+                byte[] before = await ldPlayerClient.CaptureScreenshotPngAsync(
+                    deviceName, cancellationToken);
                 if (!await TapFreshAsync(deviceName, TemplateId.LevelMinusButton,
                     minus, "ResetLevel", result, cancellationToken))
                 {
@@ -266,10 +273,26 @@ namespace ADB_Tool_Automation_Post_FB.Infrastructure.ResourceSearch
                     return false;
                 }
                 await Task.Delay(options.TapIntervalMs, cancellationToken);
+                byte[] after = await ldPlayerClient.CaptureScreenshotPngAsync(
+                    deviceName, cancellationToken);
+                bool changed;
+                if (TryCompareLevelValue(before, after, minus, plus, search, out changed))
+                {
+                    unchangedMinusFrames = changed ? 0 : unchangedMinusFrames + 1;
+                    if (unchangedMinusFrames >= 2)
+                    {
+                        minimumLevelVerified = true;
+                        break;
+                    }
+                }
             }
             int plusTapCount = result.RequestedLevel - options.MinimumLevel;
+            int verifiedPlusChanges = 0;
+            bool levelCeilingObserved = false;
             for (int index = 0; index < plusTapCount; index++)
             {
+                byte[] before = await ldPlayerClient.CaptureScreenshotPngAsync(
+                    deviceName, cancellationToken);
                 if (!await TapFreshAsync(deviceName, TemplateId.LevelPlusButton,
                     plus, "IncreaseLevel", result, cancellationToken))
                 {
@@ -278,15 +301,32 @@ namespace ADB_Tool_Automation_Post_FB.Infrastructure.ResourceSearch
                     return false;
                 }
                 await Task.Delay(options.TapIntervalMs, cancellationToken);
+                byte[] after = await ldPlayerClient.CaptureScreenshotPngAsync(
+                    deviceName, cancellationToken);
+                bool changed;
+                if (minimumLevelVerified
+                    && TryCompareLevelValue(before, after, minus, plus, search, out changed))
+                {
+                    if (!changed)
+                    {
+                        result.ObservedLevel = options.MinimumLevel + verifiedPlusChanges;
+                        levelCeilingObserved = true;
+                        break;
+                    }
+                    verifiedPlusChanges++;
+                }
             }
 
-            ConfigurationTemplateEvidence level = await PollForLevelAsync(
-                deviceName, levelTemplateId, minus, plus, cancellationToken);
-            evidence.Add(level);
-            result.LevelVerified = level.Found;
-            if (level.Found)
+            ConfigurationTemplateEvidence level = hasLevelTemplate
+                ? await PollForLevelAsync(deviceName, levelTemplateId, minus, plus, cancellationToken)
+                : null;
+            if (level != null) evidence.Add(level);
+            bool sequenceVerified = minimumLevelVerified && !levelCeilingObserved
+                && verifiedPlusChanges == plusTapCount;
+            result.LevelVerified = (level != null && level.Found) || sequenceVerified;
+            if (result.LevelVerified)
                 result.ObservedLevel = result.RequestedLevel;
-            else
+            else if (!result.ObservedLevel.HasValue && hasLevelTemplate)
             {
                 byte[] finalScreenshot = await ldPlayerClient.CaptureScreenshotPngAsync(
                     deviceName, cancellationToken);
@@ -305,14 +345,15 @@ namespace ADB_Tool_Automation_Post_FB.Infrastructure.ResourceSearch
                     evidence.Add(lowerLevel);
                 }
             }
-            AddStep(steps, "SetLevel", level.Found, 1, evidence,
-                level.Found
-                    ? $"Level {result.RequestedLevel} verified after {options.ResetMinusTapCount} minus and {plusTapCount} plus Taps."
+            AddStep(steps, "SetLevel", result.LevelVerified, 1, evidence,
+                result.LevelVerified
+                    ? $"Level {result.RequestedLevel} verified after a bounded reset and {plusTapCount} plus Taps"
+                        + (sequenceVerified ? " using current-value changes." : ".")
                     : result.ObservedLevel.HasValue
-                        ? $"{levelTemplateId} was not verified after the bounded Tap sequence; "
-                            + $"LevelValue{result.ObservedLevel.Value} was verified instead."
-                        : $"{levelTemplateId} was not verified after the bounded Tap sequence.", null);
-            return level.Found;
+                        ? $"Level {result.RequestedLevel} is unavailable; the verified account ceiling is "
+                            + $"level {result.ObservedLevel.Value}."
+                        : $"Level {result.RequestedLevel} was not verified after the bounded Tap sequence.", null);
+            return result.LevelVerified;
         }
 
         private bool TryMatchLowerVisibleLevel(byte[] screenshot, int requestedLevel,
@@ -320,9 +361,10 @@ namespace ADB_Tool_Automation_Post_FB.Infrastructure.ResourceSearch
             ConfigurationTemplateEvidence search, out int observedLevel,
             out ConfigurationTemplateEvidence evidence)
         {
-            for (int candidate = requestedLevel - 1; candidate >= 5; candidate--)
+            for (int candidate = requestedLevel - 1; candidate >= options.MinimumLevel; candidate--)
             {
-                TemplateId templateId = GetLevelTemplateId(candidate);
+                TemplateId templateId;
+                if (!TryGetLevelTemplateId(candidate, out templateId)) continue;
                 if (!templateRegistry.Exists(templateId))
                     continue;
                 ConfigurationTemplateEvidence match = MatchLevel(
@@ -421,11 +463,21 @@ namespace ADB_Tool_Automation_Post_FB.Infrastructure.ResourceSearch
                 screenshot, TemplateId.LevelMinusButton, search);
             ConfigurationTemplateEvidence plus = MatchLevelControl(
                 screenshot, TemplateId.LevelPlusButton, search);
+            TemplateId levelTemplateId;
+            bool hasLevelTemplate = TryGetLevelTemplateId(request.TargetLevel, out levelTemplateId);
+            ConfigurationTemplateEvidence finalLevel = hasLevelTemplate
+                ? MatchLevel(screenshot, levelTemplateId, minus, plus, search)
+                : Evidence(TemplateId.LevelPlusButton,
+                    result.LevelVerified && HasBounds(plus) ? ImageMatchResult.FoundAt(
+                        plus.X, plus.Y, plus.Width, plus.Height) : ImageMatchResult.NotFound(),
+                    result.LevelVerified
+                        ? $"Level {request.TargetLevel} retained the verified bounded sequence."
+                        : $"Level {request.TargetLevel} was not verified by the bounded sequence.");
             var evidence = new List<ConfigurationTemplateEvidence>
             {
                 Match(screenshot, TemplateId.ResourceTabSelected),
                 MatchResourceState(screenshot, profileProvider.Get(request.ResourceType).SelectedTemplate, search),
-                MatchLevel(screenshot, GetLevelTemplateId(request.TargetLevel), minus, plus, search),
+                finalLevel,
                 MatchFilterState(screenshot, request.UnoccupiedOnly
                     ? TemplateId.UnoccupiedFilterChecked : TemplateId.UnoccupiedFilterUnchecked, search),
                 search
@@ -568,6 +620,51 @@ namespace ADB_Tool_Automation_Post_FB.Infrastructure.ResourceSearch
             return right > left && bottom > top
                 ? new ImageRegion(left, top, right - left, bottom - top)
                 : (ImageRegion?)null;
+        }
+
+        private static bool TryCompareLevelValue(byte[] beforeBytes, byte[] afterBytes,
+            ConfigurationTemplateEvidence minus, ConfigurationTemplateEvidence plus,
+            ConfigurationTemplateEvidence search, out bool changed)
+        {
+            changed = false;
+            ImageRegion? region = CreateLevelValueRegion(minus, plus)
+                ?? CreateSearchRelativeLevelValueRegion(search);
+            if (!region.HasValue) return false;
+            try
+            {
+                using (var beforeStream = new MemoryStream(beforeBytes, writable: false))
+                using (var afterStream = new MemoryStream(afterBytes, writable: false))
+                using (var before = new Bitmap(beforeStream))
+                using (var after = new Bitmap(afterStream))
+                {
+                    ImageRegion roi = region.Value;
+                    if (before.Width != after.Width || before.Height != after.Height
+                        || roi.X + roi.Width > before.Width || roi.Y + roi.Height > before.Height)
+                        return false;
+
+                    int materialPixels = 0;
+                    int requiredPixels = Math.Max(20, roi.Width * roi.Height / 1000);
+                    for (int y = roi.Y; y < roi.Y + roi.Height; y += 2)
+                    for (int x = roi.X; x < roi.X + roi.Width; x += 2)
+                    {
+                        Color left = before.GetPixel(x, y);
+                        Color right = after.GetPixel(x, y);
+                        int leftLuma = (left.R * 299 + left.G * 587 + left.B * 114) / 1000;
+                        int rightLuma = (right.R * 299 + right.G * 587 + right.B * 114) / 1000;
+                        if (Math.Abs(leftLuma - rightLuma) < 24) continue;
+                        if (++materialPixels >= requiredPixels)
+                        {
+                            changed = true;
+                            return true;
+                        }
+                    }
+                    return true;
+                }
+            }
+            catch (ArgumentException)
+            {
+                return false;
+            }
         }
 
         private static byte[] TryCreateStableLevelTemplate(byte[] templateBytes)
@@ -923,19 +1020,20 @@ namespace ADB_Tool_Automation_Post_FB.Infrastructure.ResourceSearch
                 return $"Resource type '{request.ResourceType}' is not supported.";
             if (request.TargetLevel < options.MinimumLevel || request.TargetLevel > options.MaximumLevel)
                 return $"TargetLevel must be between {options.MinimumLevel} and {options.MaximumLevel}.";
-            if (request.TargetLevel != 5 && request.TargetLevel != 6 && request.TargetLevel != 7)
-                return "Only target levels 5, 6, and 7 are supported by the available verification templates.";
             return null;
         }
 
         private string ValidateTemplates(ResourceType resourceType, int targetLevel)
         {
-            foreach (TemplateId templateId in RequiredTemplates.Concat(new[]
+            var templates = RequiredTemplates.Concat(new[]
             {
                 profileProvider.Get(resourceType).SelectedTemplate,
-                profileProvider.Get(resourceType).UnselectedTemplate,
-                GetLevelTemplateId(targetLevel)
-            }))
+                profileProvider.Get(resourceType).UnselectedTemplate
+            }).ToList();
+            TemplateId levelTemplateId;
+            if (TryGetLevelTemplateId(targetLevel, out levelTemplateId))
+                templates.Add(levelTemplateId);
+            foreach (TemplateId templateId in templates)
             {
                 try
                 {
@@ -951,15 +1049,14 @@ namespace ADB_Tool_Automation_Post_FB.Infrastructure.ResourceSearch
             return null;
         }
 
-        private static TemplateId GetLevelTemplateId(int level)
+        private static bool TryGetLevelTemplateId(int level, out TemplateId templateId)
         {
             switch (level)
             {
-                case 5: return TemplateId.LevelValue5;
-                case 6: return TemplateId.LevelValue6;
-                case 7: return TemplateId.LevelValue7;
-                default: throw new ArgumentOutOfRangeException(nameof(level), level,
-                    "Only target levels 5, 6, and 7 are supported.");
+                case 5: templateId = TemplateId.LevelValue5; return true;
+                case 6: templateId = TemplateId.LevelValue6; return true;
+                case 7: templateId = TemplateId.LevelValue7; return true;
+                default: templateId = default(TemplateId); return false;
             }
         }
 

@@ -13,8 +13,8 @@ namespace ADB_Tool_Automation_Post_FB.Infrastructure.ResourceSearch
                 Read("ResourceSearchConfiguration.ActionVerificationTimeoutSeconds", 5),
                 Read("ResourceSearchConfiguration.MaxSelectionAttempts", 2),
                 Read("ResourceSearchConfiguration.MinimumLevel", 1),
-                Read("ResourceSearchConfiguration.MaximumLevel", 7),
-                Read("ResourceSearchConfiguration.ResetMinusTapCount", 8),
+                Read("ResourceSearchConfiguration.MaximumLevel", 30),
+                Read("ResourceSearchConfiguration.ResetMinusTapCount", 30),
                 Read("ResourceSearchConfiguration.TapIntervalMs", 150));
         }
 

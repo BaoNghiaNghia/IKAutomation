@@ -26,8 +26,8 @@ namespace ADB_Tool_Automation_Post_FB.Core.Workflows
                 throw new ArgumentException("ResourcePriority contains an unsupported resource.");
             if (LevelPriority == null || LevelPriority.Count == 0
                 || LevelPriority.Distinct().Count() != LevelPriority.Count
-                || LevelPriority.Any(x => x < 5 || x > 7))
-                throw new ArgumentException("LevelPriority must contain unique supported levels 5 through 7.");
+                || LevelPriority.Any(x => x < 1 || x > 30))
+                throw new ArgumentException("LevelPriority must contain unique levels 1 through 30.");
             if (AttemptsPerLevel < 1 || AttemptsPerLevel > 3)
                 throw new ArgumentOutOfRangeException(nameof(AttemptsPerLevel));
         }

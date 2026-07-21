@@ -100,8 +100,8 @@ namespace ADB_Tool_Automation_Post_FB.Core.Workflows
             if (resources < 2) return Invalid("Vui lòng chọn ít nhất 2 loại tài nguyên.");
             if (preferences.LevelPriority == null || preferences.LevelPriority.Count == 0)
                 return Invalid("Level priority cannot be empty.");
-            if (preferences.LevelPriority.Any(level => level < 1 || level > 7))
-                return Invalid("Level priority only supports levels 1 through 7.");
+            if (preferences.LevelPriority.Any(level => level < 1 || level > 30))
+                return Invalid("Level priority only supports levels 1 through 30.");
             if (preferences.LevelPriority.Distinct().Count() != preferences.LevelPriority.Count)
                 return Invalid("Level priority cannot contain duplicates.");
             if (preferences.TeamPriority == null || preferences.TeamPriority.Count == 0)

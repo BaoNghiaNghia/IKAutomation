@@ -26,8 +26,6 @@ namespace ADB_Tool_Automation_Post_FB.Core.ResourceSearch
             if (Levels.Distinct().Count() != Levels.Count) return "Levels cannot contain duplicates.";
             if (Levels.Any(level => level < minimumLevel || level > maximumLevel))
                 return $"Every level must be between {minimumLevel} and {maximumLevel}.";
-            if (Levels.Any(level => level != 5 && level != 6 && level != 7))
-                return "Only levels 5, 6, and 7 have verification templates.";
             if (AttemptsPerLevel < 1 || AttemptsPerLevel > 3)
                 return "AttemptsPerLevel must be between 1 and 3.";
             return null;

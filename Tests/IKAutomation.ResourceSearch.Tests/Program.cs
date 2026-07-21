@@ -40,6 +40,8 @@ namespace IKAutomation.ResourceSearch.Tests
             Run("Level six taps plus five times and verifies", LevelSix);
             Run("Level five taps plus four times and verifies", LevelFive);
             Run("Level seven unavailable reports visible level six", LevelSevenUnavailableReportsLevelSix);
+            Run("Level ten is verified by bounded value changes", DynamicLevelTen);
+            Run("Dynamic account ceiling below requested level is reported", DynamicAccountCeiling);
             Run("Missing level six template fails before input", MissingLevelSixTemplate);
             Run("Level seven already selected sends no level input", LevelSevenAlreadySelected);
             Run("Level seven already selected does not require level controls", LevelSevenAlreadySelectedWithoutControls);
@@ -179,6 +181,8 @@ namespace IKAutomation.ResourceSearch.Tests
         private static void LevelSix() { Fixture f = Setup(); ResourceSearchConfigurationRequest q = Request(); q.TargetLevel = 6; ResourceSearchConfigurationResult r = Execute(f, q); Assert(r.Success && r.LevelVerified, r.ErrorMessage); Equal(5, f.Client.PlusTaps, "Plus taps."); }
         private static void LevelFive() { Fixture f = Setup(); ResourceSearchConfigurationRequest q = Request(); q.TargetLevel = 5; ResourceSearchConfigurationResult r = Execute(f, q); Assert(r.Success && r.LevelVerified, r.ErrorMessage); Equal(4, f.Client.PlusTaps, "Plus taps."); }
         private static void LevelSevenUnavailableReportsLevelSix() { Fixture f = Setup(); f.Ui.MaxLevel = 6; ResourceSearchConfigurationResult r = Execute(f); Assert(!r.Success && !r.LevelVerified, "Unavailable level was accepted."); Equal((int?)6, r.ObservedLevel, "Observed level."); Equal(0, f.Client.SearchTaps, "Search taps."); }
+        private static void DynamicLevelTen() { Fixture f = Setup(maximumLevel: 30, resetMinusTapCount: 30); f.Ui.DynamicLevelFrames = true; f.Ui.MaxLevel = 12; var q = Request(); q.TargetLevel = 10; ResourceSearchConfigurationResult r = Execute(f, q); Assert(r.Success && r.LevelVerified, r.ErrorMessage); Equal((int?)10, r.ObservedLevel, "Observed level."); Equal(9, f.Client.PlusTaps, "Plus taps."); }
+        private static void DynamicAccountCeiling() { Fixture f = Setup(maximumLevel: 30, resetMinusTapCount: 30); f.Ui.DynamicLevelFrames = true; f.Ui.MaxLevel = 8; var q = Request(); q.TargetLevel = 10; ResourceSearchConfigurationResult r = Execute(f, q); Assert(!r.Success && !r.LevelVerified, "Unavailable dynamic level was accepted."); Equal((int?)8, r.ObservedLevel, "Account ceiling."); Equal(0, f.Client.SearchTaps, "Search taps."); }
         private static void MissingLevelSixTemplate() { Fixture f = Setup(); f.Registry.Missing = TemplateId.LevelValue6; ResourceSearchConfigurationRequest q = Request(); q.TargetLevel = 6; ResourceSearchConfigurationResult r = Execute(f, q); Assert(!r.Success && r.ErrorMessage.Contains("LevelValue6"), "missing target template"); Equal(0, f.Client.TotalInput, "input"); }
 
         private static void LevelSevenAlreadySelected()
@@ -374,7 +378,8 @@ namespace IKAutomation.ResourceSearch.Tests
             Assert(r.Success, r.ErrorMessage); Equal(0, f.Client.ResourceTaps, "Ambiguous selected state was tapped.");
         }
 
-        private static Fixture Setup(int pollMs = 1, int timeoutSeconds = 1, int tapIntervalMs = 1)
+        private static Fixture Setup(int pollMs = 1, int timeoutSeconds = 1,
+            int tapIntervalMs = 1, int maximumLevel = 7, int resetMinusTapCount = 8)
         {
             var ui = new FakeUi();
             var client = new FakeClient(ui);
@@ -383,7 +388,8 @@ namespace IKAutomation.ResourceSearch.Tests
             var registry = new FakeRegistry();
             var service = new ResourceSearchConfigurationService(navigation, detector, client,
                 registry, new FakeMatcher(ui),
-                new ResourceSearchConfigurationOptions(pollMs, timeoutSeconds, 2, 1, 7, 8, tapIntervalMs),
+                new ResourceSearchConfigurationOptions(pollMs, timeoutSeconds, 2, 1,
+                    maximumLevel, resetMinusTapCount, tapIntervalMs),
                 new DeviceOperationLock(), new FakeLogger());
             return new Fixture { Ui = ui, Client = client, Navigation = navigation,
                 Detector = detector, Registry = registry, Service = service };
@@ -493,7 +499,8 @@ namespace IKAutomation.ResourceSearch.Tests
                 HideLevelValue, AmbiguousResource, LevelRequiresStableChip,
                 FilterRequiresStableControl, ResourceRequiresStableIcon, HideUncheckedFilter,
                 ResourceRequiresCompactStableIcon, BinaryLevelFallback,
-                LevelControlsLoseDirectMatchAfterTap, LevelControlDirectMatchDisabled;
+                LevelControlsLoseDirectMatchAfterTap, LevelControlDirectMatchDisabled,
+                DynamicLevelFrames;
             public bool LevelControlsMissing;
             public bool ResourceTabSelected = true;
             public int Level = 3;
@@ -676,10 +683,18 @@ namespace IKAutomation.ResourceSearch.Tests
             public Task<byte[]> CaptureScreenshotPngAsync(string d, CancellationToken t)
             {
                 t.ThrowIfCancellationRequested();
-                if (!ui.BinaryLevelFallback) return Task.FromResult(new byte[] { 1 });
+                if (!ui.BinaryLevelFallback && !ui.DynamicLevelFrames)
+                    return Task.FromResult(new byte[] { 1 });
                 using (var bitmap = new Bitmap(1280, 720))
+                using (var graphics = Graphics.FromImage(bitmap))
                 using (var stream = new MemoryStream())
                 {
+                    if (ui.DynamicLevelFrames)
+                    {
+                        graphics.Clear(Color.Black);
+                        graphics.FillRectangle(Brushes.White, 145, 55,
+                            Math.Max(4, ui.Level * 5), 30);
+                    }
                     bitmap.Save(stream, ImageFormat.Png);
                     return Task.FromResult(stream.ToArray());
                 }
