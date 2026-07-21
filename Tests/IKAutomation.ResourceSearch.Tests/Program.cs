@@ -39,6 +39,7 @@ namespace IKAutomation.ResourceSearch.Tests
             Run("Level seven taps plus six times", PlusSix);
             Run("Level six taps plus five times and verifies", LevelSix);
             Run("Level five taps plus four times and verifies", LevelFive);
+            Run("Level seven unavailable reports visible level six", LevelSevenUnavailableReportsLevelSix);
             Run("Missing level six template fails before input", MissingLevelSixTemplate);
             Run("Level seven already selected sends no level input", LevelSevenAlreadySelected);
             Run("Level seven already selected does not require level controls", LevelSevenAlreadySelectedWithoutControls);
@@ -177,6 +178,7 @@ namespace IKAutomation.ResourceSearch.Tests
         private static void PlusSix() { Fixture f = Setup(); Execute(f); Equal(6, f.Client.PlusTaps, "Plus taps."); }
         private static void LevelSix() { Fixture f = Setup(); ResourceSearchConfigurationRequest q = Request(); q.TargetLevel = 6; ResourceSearchConfigurationResult r = Execute(f, q); Assert(r.Success && r.LevelVerified, r.ErrorMessage); Equal(5, f.Client.PlusTaps, "Plus taps."); }
         private static void LevelFive() { Fixture f = Setup(); ResourceSearchConfigurationRequest q = Request(); q.TargetLevel = 5; ResourceSearchConfigurationResult r = Execute(f, q); Assert(r.Success && r.LevelVerified, r.ErrorMessage); Equal(4, f.Client.PlusTaps, "Plus taps."); }
+        private static void LevelSevenUnavailableReportsLevelSix() { Fixture f = Setup(); f.Ui.MaxLevel = 6; ResourceSearchConfigurationResult r = Execute(f); Assert(!r.Success && !r.LevelVerified, "Unavailable level was accepted."); Equal((int?)6, r.ObservedLevel, "Observed level."); Equal(0, f.Client.SearchTaps, "Search taps."); }
         private static void MissingLevelSixTemplate() { Fixture f = Setup(); f.Registry.Missing = TemplateId.LevelValue6; ResourceSearchConfigurationRequest q = Request(); q.TargetLevel = 6; ResourceSearchConfigurationResult r = Execute(f, q); Assert(!r.Success && r.ErrorMessage.Contains("LevelValue6"), "missing target template"); Equal(0, f.Client.TotalInput, "input"); }
 
         private static void LevelSevenAlreadySelected()
@@ -495,6 +497,7 @@ namespace IKAutomation.ResourceSearch.Tests
             public bool LevelControlsMissing;
             public bool ResourceTabSelected = true;
             public int Level = 3;
+            public int MaxLevel = 7;
         }
 
         private sealed class FakeMatcher : IImageMatcher
@@ -664,7 +667,7 @@ namespace IKAutomation.ResourceSearch.Tests
                 if (x == 210 && y == 674) { ResourceTabTaps++; ui.ResourceTabSelected = true; }
                 else if ((x == 20 || x == 50 || x == 80 || x == 110) && y == 25) { ResourceTaps++; if (!ui.IgnoreResourceTap) ui.ResourceSelected = true; }
                 else if (x == 110) { MinusTaps++; ui.Level = Math.Max(1, ui.Level - 1); if (ui.LevelControlsLoseDirectMatchAfterTap) ui.LevelControlDirectMatchDisabled = true; }
-                else if (x == 210) { PlusTaps++; ui.Level = Math.Min(7, ui.Level + 1); if (ui.LevelControlsLoseDirectMatchAfterTap) ui.LevelControlDirectMatchDisabled = true; }
+                else if (x == 210) { PlusTaps++; ui.Level = Math.Min(ui.MaxLevel, ui.Level + 1); if (ui.LevelControlsLoseDirectMatchAfterTap) ui.LevelControlDirectMatchDisabled = true; }
                 else if (x == 310) { FilterTaps++; ui.FilterChecked = !ui.FilterChecked; }
                 else if (x == 408 && y == 362) { FilterTaps++; ui.FilterChecked = !ui.FilterChecked; }
                 else if (x == 410) SearchTaps++;

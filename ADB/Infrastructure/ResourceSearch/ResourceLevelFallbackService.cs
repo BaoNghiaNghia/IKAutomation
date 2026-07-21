@@ -125,6 +125,17 @@ namespace ADB_Tool_Automation_Post_FB.Infrastructure.ResourceSearch
                         {
                             attempt.Duration = attemptWatch.Elapsed; attempt.Message = configured.Message;
                             attempt.ErrorMessage = configured.ErrorMessage;
+                            if (configured.ObservedLevel.HasValue
+                                && configured.ObservedLevel.Value < level
+                                && policy.Levels.Contains(configured.ObservedLevel.Value))
+                            {
+                                attempt.Message = $"Requested level {level} is unavailable; "
+                                    + $"level {configured.ObservedLevel.Value} was verified. "
+                                    + "Continuing with the next configured level.";
+                                attempt.ErrorMessage = null;
+                                LogAttempt(deviceName, runId, attempt);
+                                break;
+                            }
                             NotFoundToastObservation notFound = await ObserveNotFoundToastAsync(
                                 deviceName, token);
                             if (notFound.Verified)

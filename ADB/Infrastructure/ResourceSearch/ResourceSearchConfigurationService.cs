@@ -243,6 +243,7 @@ namespace ADB_Tool_Automation_Post_FB.Infrastructure.ResourceSearch
             if (currentLevel.Found)
             {
                 result.LevelVerified = true;
+                result.ObservedLevel = result.RequestedLevel;
                 AddStep(steps, "SetLevel", true, 1, evidence,
                     $"Level {result.RequestedLevel} was already verified; no level input was sent.", null);
                 return true;
@@ -283,11 +284,59 @@ namespace ADB_Tool_Automation_Post_FB.Infrastructure.ResourceSearch
                 deviceName, levelTemplateId, minus, plus, cancellationToken);
             evidence.Add(level);
             result.LevelVerified = level.Found;
+            if (level.Found)
+                result.ObservedLevel = result.RequestedLevel;
+            else
+            {
+                byte[] finalScreenshot = await ldPlayerClient.CaptureScreenshotPngAsync(
+                    deviceName, cancellationToken);
+                ConfigurationTemplateEvidence finalSearch = Match(
+                    finalScreenshot, TemplateId.SearchButtonEnabled);
+                ConfigurationTemplateEvidence finalMinus = MatchLevelControl(
+                    finalScreenshot, TemplateId.LevelMinusButton, finalSearch);
+                ConfigurationTemplateEvidence finalPlus = MatchLevelControl(
+                    finalScreenshot, TemplateId.LevelPlusButton, finalSearch);
+                ConfigurationTemplateEvidence lowerLevel;
+                int observedLevel;
+                if (TryMatchLowerVisibleLevel(finalScreenshot, result.RequestedLevel,
+                    finalMinus, finalPlus, finalSearch, out observedLevel, out lowerLevel))
+                {
+                    result.ObservedLevel = observedLevel;
+                    evidence.Add(lowerLevel);
+                }
+            }
             AddStep(steps, "SetLevel", level.Found, 1, evidence,
                 level.Found
                     ? $"Level {result.RequestedLevel} verified after {options.ResetMinusTapCount} minus and {plusTapCount} plus Taps."
-                    : $"{levelTemplateId} was not verified after the bounded Tap sequence.", null);
+                    : result.ObservedLevel.HasValue
+                        ? $"{levelTemplateId} was not verified after the bounded Tap sequence; "
+                            + $"LevelValue{result.ObservedLevel.Value} was verified instead."
+                        : $"{levelTemplateId} was not verified after the bounded Tap sequence.", null);
             return level.Found;
+        }
+
+        private bool TryMatchLowerVisibleLevel(byte[] screenshot, int requestedLevel,
+            ConfigurationTemplateEvidence minus, ConfigurationTemplateEvidence plus,
+            ConfigurationTemplateEvidence search, out int observedLevel,
+            out ConfigurationTemplateEvidence evidence)
+        {
+            for (int candidate = requestedLevel - 1; candidate >= 5; candidate--)
+            {
+                TemplateId templateId = GetLevelTemplateId(candidate);
+                if (!templateRegistry.Exists(templateId))
+                    continue;
+                ConfigurationTemplateEvidence match = MatchLevel(
+                    screenshot, templateId, minus, plus, search);
+                if (match.Found)
+                {
+                    observedLevel = candidate;
+                    evidence = match;
+                    return true;
+                }
+            }
+            observedLevel = 0;
+            evidence = null;
+            return false;
         }
 
         private async Task<bool> ConfigureFilterAsync(string deviceName, bool requestedChecked,

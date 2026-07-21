@@ -9,6 +9,7 @@ namespace ADB_Tool_Automation_Post_FB.Core.ResourceSearch
         public bool Success { get; set; }
         public ResourceType RequestedResource { get; set; }
         public int RequestedLevel { get; set; }
+        public int? ObservedLevel { get; set; }
         public bool RequestedUnoccupiedOnly { get; set; }
         public bool ResourceVerified { get; set; }
         public bool LevelVerified { get; set; }
