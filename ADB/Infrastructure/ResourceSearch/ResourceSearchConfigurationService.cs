@@ -259,7 +259,6 @@ namespace ADB_Tool_Automation_Post_FB.Infrastructure.ResourceSearch
                 return false;
             }
 
-            int unchangedMinusFrames = 0;
             bool minimumLevelVerified = false;
             for (int index = 0; index < options.ResetMinusTapCount; index++)
             {
@@ -278,8 +277,7 @@ namespace ADB_Tool_Automation_Post_FB.Infrastructure.ResourceSearch
                 bool changed;
                 if (TryCompareLevelValue(before, after, minus, plus, search, out changed))
                 {
-                    unchangedMinusFrames = changed ? 0 : unchangedMinusFrames + 1;
-                    if (unchangedMinusFrames >= 2)
+                    if (!changed)
                     {
                         minimumLevelVerified = true;
                         break;
@@ -601,10 +599,10 @@ namespace ADB_Tool_Automation_Post_FB.Infrastructure.ResourceSearch
             // The level value and Search button share the fixed 1280x720 panel overlay.
             // This ROI is used only for matching the already-visible level; it is never
             // used as an input coordinate fallback.
-            int left = Math.Max(0, search.X - 480);
-            int top = Math.Max(0, search.Y + 70);
-            const int width = 330;
-            const int height = 70;
+            int left = Math.Max(0, search.X - 400);
+            int top = Math.Max(0, search.Y + 65);
+            const int width = 170;
+            const int height = 55;
             return new ImageRegion(left, top, width, height);
         }
 
@@ -627,8 +625,8 @@ namespace ADB_Tool_Automation_Post_FB.Infrastructure.ResourceSearch
             ConfigurationTemplateEvidence search, out bool changed)
         {
             changed = false;
-            ImageRegion? region = CreateLevelValueRegion(minus, plus)
-                ?? CreateSearchRelativeLevelValueRegion(search);
+            ImageRegion? region = CreateSearchRelativeLevelValueRegion(search)
+                ?? CreateLevelValueRegion(minus, plus);
             if (!region.HasValue) return false;
             try
             {

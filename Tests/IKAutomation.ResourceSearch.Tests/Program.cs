@@ -42,6 +42,7 @@ namespace IKAutomation.ResourceSearch.Tests
             Run("Level seven unavailable reports visible level six", LevelSevenUnavailableReportsLevelSix);
             Run("Level ten is verified by bounded value changes", DynamicLevelTen);
             Run("Dynamic account ceiling below requested level is reported", DynamicAccountCeiling);
+            Run("Minimum level requires only one bounded confirmation tap", MinimumLevelSingleConfirmation);
             Run("Missing level six template fails before input", MissingLevelSixTemplate);
             Run("Level seven already selected sends no level input", LevelSevenAlreadySelected);
             Run("Level seven already selected does not require level controls", LevelSevenAlreadySelectedWithoutControls);
@@ -183,6 +184,7 @@ namespace IKAutomation.ResourceSearch.Tests
         private static void LevelSevenUnavailableReportsLevelSix() { Fixture f = Setup(); f.Ui.MaxLevel = 6; ResourceSearchConfigurationResult r = Execute(f); Assert(!r.Success && !r.LevelVerified, "Unavailable level was accepted."); Equal((int?)6, r.ObservedLevel, "Observed level."); Equal(0, f.Client.SearchTaps, "Search taps."); }
         private static void DynamicLevelTen() { Fixture f = Setup(maximumLevel: 30, resetMinusTapCount: 30); f.Ui.DynamicLevelFrames = true; f.Ui.MaxLevel = 12; var q = Request(); q.TargetLevel = 10; ResourceSearchConfigurationResult r = Execute(f, q); Assert(r.Success && r.LevelVerified, r.ErrorMessage); Equal((int?)10, r.ObservedLevel, "Observed level."); Equal(9, f.Client.PlusTaps, "Plus taps."); }
         private static void DynamicAccountCeiling() { Fixture f = Setup(maximumLevel: 30, resetMinusTapCount: 30); f.Ui.DynamicLevelFrames = true; f.Ui.MaxLevel = 8; var q = Request(); q.TargetLevel = 10; ResourceSearchConfigurationResult r = Execute(f, q); Assert(!r.Success && !r.LevelVerified, "Unavailable dynamic level was accepted."); Equal((int?)8, r.ObservedLevel, "Account ceiling."); Equal(0, f.Client.SearchTaps, "Search taps."); }
+        private static void MinimumLevelSingleConfirmation() { Fixture f = Setup(maximumLevel: 30, resetMinusTapCount: 30); f.Ui.DynamicLevelFrames = true; f.Ui.Level = 1; f.Ui.MaxLevel = 6; var q = Request(); q.TargetLevel = 6; ResourceSearchConfigurationResult r = Execute(f, q); Assert(r.Success && r.LevelVerified, r.ErrorMessage); Equal(1, f.Client.MinusTaps, "Minimum confirmation taps."); Equal(5, f.Client.PlusTaps, "Plus taps."); }
         private static void MissingLevelSixTemplate() { Fixture f = Setup(); f.Registry.Missing = TemplateId.LevelValue6; ResourceSearchConfigurationRequest q = Request(); q.TargetLevel = 6; ResourceSearchConfigurationResult r = Execute(f, q); Assert(!r.Success && r.ErrorMessage.Contains("LevelValue6"), "missing target template"); Equal(0, f.Client.TotalInput, "input"); }
 
         private static void LevelSevenAlreadySelected()
@@ -692,7 +694,7 @@ namespace IKAutomation.ResourceSearch.Tests
                     if (ui.DynamicLevelFrames)
                     {
                         graphics.Clear(Color.Black);
-                        graphics.FillRectangle(Brushes.White, 145, 55,
+                        graphics.FillRectangle(Brushes.White, 25, 475,
                             Math.Max(4, ui.Level * 5), 30);
                     }
                     bitmap.Save(stream, ImageFormat.Png);

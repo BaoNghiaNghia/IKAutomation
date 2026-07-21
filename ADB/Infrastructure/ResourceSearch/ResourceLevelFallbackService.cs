@@ -34,6 +34,9 @@ namespace ADB_Tool_Automation_Post_FB.Infrastructure.ResourceSearch
         private readonly ResourceLevelFallbackOptions options;
         private readonly IResourceLevelFallbackDiagnosticStore diagnostics;
         private readonly IDiagnosticLogger logger;
+        private readonly object ceilingSync = new object();
+        private readonly Dictionary<string, RunLevelCeiling> ceilingsByDevice =
+            new Dictionary<string, RunLevelCeiling>(StringComparer.OrdinalIgnoreCase);
 
         public ResourceLevelFallbackService(IResourceSearchConfigurationService configuration,
             IResourceSearchExecutionService search, IGameStateDetector detector,
@@ -86,8 +89,15 @@ namespace ADB_Tool_Automation_Post_FB.Infrastructure.ResourceSearch
                         watch, "panel-unavailable", token, true);
 
                 bool needsToastClear = false;
+                int? knownCeiling = GetKnownCeiling(deviceName, runId);
                 foreach (int level in policy.Levels)
                 {
+                    if (knownCeiling.HasValue && level > knownCeiling.Value)
+                    {
+                        logger.Info($"[Resource Level Fallback] RunId='{runId}', DeviceName='{deviceName}', "
+                            + $"Level='{level}', Skipped=true, KnownAccountCeiling='{knownCeiling.Value}'");
+                        continue;
+                    }
                     for (int attemptNumber = 1; attemptNumber <= policy.AttemptsPerLevel; attemptNumber++)
                     {
                         token.ThrowIfCancellationRequested();
@@ -128,6 +138,8 @@ namespace ADB_Tool_Automation_Post_FB.Infrastructure.ResourceSearch
                             if (configured.ObservedLevel.HasValue
                                 && configured.ObservedLevel.Value < level)
                             {
+                                knownCeiling = RememberCeiling(deviceName, runId,
+                                    configured.ObservedLevel.Value);
                                 attempt.Message = $"Requested level {level} is unavailable; "
                                     + $"level {configured.ObservedLevel.Value} was verified. "
                                     + "Continuing with the next configured level.";
@@ -227,6 +239,48 @@ namespace ADB_Tool_Automation_Post_FB.Infrastructure.ResourceSearch
             return IsToastPair(shortAnchor, otherRegion)
                 ? new NotFoundToastObservation(true, "SearchOtherRegion")
                 : NotFoundToastObservation.NotVerified;
+        }
+
+        private int? GetKnownCeiling(string deviceName, string runId)
+        {
+            lock (ceilingSync)
+            {
+                RunLevelCeiling value;
+                if (!ceilingsByDevice.TryGetValue(deviceName, out value)
+                    || !string.Equals(value.RunId, runId, StringComparison.Ordinal))
+                {
+                    ceilingsByDevice[deviceName] = new RunLevelCeiling(runId, null);
+                    return null;
+                }
+                return value.Level;
+            }
+        }
+
+        private int RememberCeiling(string deviceName, string runId, int level)
+        {
+            lock (ceilingSync)
+            {
+                RunLevelCeiling current;
+                int ceiling = level;
+                if (ceilingsByDevice.TryGetValue(deviceName, out current)
+                    && string.Equals(current.RunId, runId, StringComparison.Ordinal)
+                    && current.Level.HasValue)
+                    ceiling = Math.Min(current.Level.Value, level);
+                ceilingsByDevice[deviceName] = new RunLevelCeiling(runId, ceiling);
+                return ceiling;
+            }
+        }
+
+        private sealed class RunLevelCeiling
+        {
+            public RunLevelCeiling(string runId, int? level)
+            {
+                RunId = runId;
+                Level = level;
+            }
+
+            public string RunId { get; }
+            public int? Level { get; }
         }
 
         private bool IsToastPair(ImageMatchResult first, ImageMatchResult second) =>
