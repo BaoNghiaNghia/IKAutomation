@@ -52,6 +52,7 @@ namespace ADB_Tool_Automation_Post_FB.Infrastructure.Workflows
             var dispatchedResources = new List<ResourceType>();
             var dispatchedTeams = new List<TeamNumber>();
             OneShotFarmResult lastSuccessfulResult = null;
+            int consecutiveNoReadyChecks = 0;
             try
             {
                 while (true)
@@ -94,6 +95,7 @@ namespace ADB_Tool_Automation_Post_FB.Infrastructure.Workflows
                         .ToArray();
                     if (eligibleReadyTeams.Count > 0)
                     {
+                        consecutiveNoReadyChecks = 0;
                         Report(progress, new OneShotFarmProgress
                         {
                             Stage = OneShotFarmProgressStage.ReadyTeamFound,
@@ -140,6 +142,28 @@ namespace ADB_Tool_Automation_Post_FB.Infrastructure.Workflows
 
                     if (lastSuccessfulResult != null)
                     {
+                        consecutiveNoReadyChecks++;
+                        if (consecutiveNoReadyChecks < options.NoReadyConfirmations)
+                        {
+                            logger.Info($"[Ready Team Gate] DeviceName='{deviceName}', "
+                                + $"PostDispatchNoReadyCheck={consecutiveNoReadyChecks}/"
+                                + $"{options.NoReadyConfirmations}, RecheckInMs="
+                                + $"{options.PostDispatchRecheckDelayMs}, Cancellation=false");
+                            Report(progress, new OneShotFarmProgress
+                            {
+                                Stage = OneShotFarmProgressStage.CheckingTeamAvailability,
+                                ReportedAt = DateTimeOffset.UtcNow,
+                                TeamAvailabilityChecks = checks,
+                                AllowedTeams = request.AllowedTeams,
+                                ReadyTeams = check.ReadyTeams ?? new TeamNumber[0],
+                                EligibleReadyTeams = new TeamNumber[0],
+                                Message = $"No ready team observed; confirming "
+                                    + $"({consecutiveNoReadyChecks}/{options.NoReadyConfirmations})."
+                            });
+                            await Task.Delay(options.PostDispatchRecheckDelayMs,
+                                cancellationToken);
+                            continue;
+                        }
                         lastSuccessfulResult.TeamAvailabilityChecks = checks;
                         lastSuccessfulResult.ReadyTeamObserved = true;
                         lastSuccessfulResult.ReadyTeams = new TeamNumber[0];

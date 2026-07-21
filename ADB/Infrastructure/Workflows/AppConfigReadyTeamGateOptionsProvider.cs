@@ -11,14 +11,23 @@ namespace ADB_Tool_Automation_Post_FB.Infrastructure.Workflows
         {
             int minutes = Int("CheckIntervalMinutes", 15);
             int maxWaitHours = Int("MaxWaitHours", 12);
+            int noReadyConfirmations = Int("NoReadyConfirmations", 3);
+            int postDispatchRecheckDelayMs = Int("PostDispatchRecheckDelayMs", 750);
             if (minutes < 1 || minutes > 1440)
                 throw new ConfigurationErrorsException(
                     "ReadyTeamGate.CheckIntervalMinutes must be between 1 and 1440.");
             if (maxWaitHours < 1 || maxWaitHours > 168)
                 throw new ConfigurationErrorsException(
                     "ReadyTeamGate.MaxWaitHours must be between 1 and 168.");
+            if (noReadyConfirmations < 1 || noReadyConfirmations > 10)
+                throw new ConfigurationErrorsException(
+                    "ReadyTeamGate.NoReadyConfirmations must be between 1 and 10.");
+            if (postDispatchRecheckDelayMs < 1 || postDispatchRecheckDelayMs > 30000)
+                throw new ConfigurationErrorsException(
+                    "ReadyTeamGate.PostDispatchRecheckDelayMs must be between 1 and 30000.");
             return new ReadyTeamGateOptions(checked(minutes * 60 * 1000),
-                checked(maxWaitHours * 60 * 60 * 1000));
+                checked(maxWaitHours * 60 * 60 * 1000), noReadyConfirmations,
+                postDispatchRecheckDelayMs);
         }
 
         private static int Int(string name, int fallback)
