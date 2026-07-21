@@ -49,6 +49,7 @@ namespace ADB_Tool_Automation_Post_FB.Infrastructure.Workflows
             DateTimeOffset waitDeadline = waitStartedAt.AddMilliseconds(maxWaitMs);
             int checks = 0;
             IReadOnlyList<TeamNumber> eligibleReadyTeams = new TeamNumber[0];
+            IReadOnlyList<TeamNumber> detectedTeams = new TeamNumber[0];
             var dispatchedResources = new List<ResourceType>();
             var dispatchedTeams = new List<TeamNumber>();
             OneShotFarmResult lastSuccessfulResult = null;
@@ -88,8 +89,13 @@ namespace ADB_Tool_Automation_Post_FB.Infrastructure.Workflows
                             OneShotFarmOutcome.TeamAvailabilityCheckFailed,
                             check.Message, check.ErrorMessage, checks, watch.Elapsed);
                     }
+                    detectedTeams = check.AvailableTeams ?? new TeamNumber[0];
+                    IReadOnlyList<TeamNumber> effectiveAllowedTeams = request.AllowedTeams
+                        .Where(detectedTeams.Contains)
+                        .Distinct()
+                        .ToArray();
                     eligibleReadyTeams = (check.ReadyTeams ?? new TeamNumber[0])
-                        .Where(team => request.AllowedTeams.Contains(team))
+                        .Where(team => effectiveAllowedTeams.Contains(team))
                         .Where(team => !dispatchedTeams.Contains(team))
                         .Distinct()
                         .ToArray();
@@ -101,7 +107,7 @@ namespace ADB_Tool_Automation_Post_FB.Infrastructure.Workflows
                             Stage = OneShotFarmProgressStage.ReadyTeamFound,
                             ReportedAt = DateTimeOffset.UtcNow,
                             TeamAvailabilityChecks = checks,
-                            AllowedTeams = request.AllowedTeams,
+                            AllowedTeams = effectiveAllowedTeams,
                             ReadyTeams = check.ReadyTeams ?? new TeamNumber[0],
                             EligibleReadyTeams = eligibleReadyTeams,
                             WaitDeadline = waitDeadline,
@@ -113,6 +119,7 @@ namespace ADB_Tool_Automation_Post_FB.Infrastructure.Workflows
                             deviceName, cycleRequest, progress, cancellationToken);
                         result.TeamAvailabilityChecks = checks;
                         result.ReadyTeamObserved = true;
+                        result.DetectedTeams = detectedTeams;
                         result.ReadyTeams = eligibleReadyTeams;
                         result.Duration = watch.Elapsed;
                         if (!result.Success || !request.RunUntilNoReadyTeams)
@@ -154,7 +161,7 @@ namespace ADB_Tool_Automation_Post_FB.Infrastructure.Workflows
                                 Stage = OneShotFarmProgressStage.CheckingTeamAvailability,
                                 ReportedAt = DateTimeOffset.UtcNow,
                                 TeamAvailabilityChecks = checks,
-                                AllowedTeams = request.AllowedTeams,
+                                AllowedTeams = effectiveAllowedTeams,
                                 ReadyTeams = check.ReadyTeams ?? new TeamNumber[0],
                                 EligibleReadyTeams = new TeamNumber[0],
                                 Message = $"No ready team observed; confirming "
@@ -166,6 +173,7 @@ namespace ADB_Tool_Automation_Post_FB.Infrastructure.Workflows
                         }
                         lastSuccessfulResult.TeamAvailabilityChecks = checks;
                         lastSuccessfulResult.ReadyTeamObserved = true;
+                        lastSuccessfulResult.DetectedTeams = detectedTeams;
                         lastSuccessfulResult.ReadyTeams = new TeamNumber[0];
                         lastSuccessfulResult.Duration = watch.Elapsed;
                         lastSuccessfulResult.Message = $"{dispatchedResources.Count} team(s) "
@@ -195,7 +203,7 @@ namespace ADB_Tool_Automation_Post_FB.Infrastructure.Workflows
                         Stage = OneShotFarmProgressStage.WaitingForReadyTeam,
                         ReportedAt = DateTimeOffset.UtcNow,
                         TeamAvailabilityChecks = checks,
-                        AllowedTeams = request.AllowedTeams,
+                        AllowedTeams = effectiveAllowedTeams,
                         ReadyTeams = check.ReadyTeams ?? new TeamNumber[0],
                         EligibleReadyTeams = new TeamNumber[0],
                         NextCheckAt = nextCheckAt,
@@ -204,7 +212,8 @@ namespace ADB_Tool_Automation_Post_FB.Infrastructure.Workflows
                     });
                     logger.Info($"[Ready Team Gate] DeviceName='{deviceName}', Check={checks}, "
                         + $"ReadyTeams='{string.Join(",", check.ReadyTeams ?? new TeamNumber[0])}', "
-                        + $"AllowedTeams='{string.Join(",", request.AllowedTeams)}', EligibleReady=false, "
+                        + $"DetectedTeams='{string.Join(",", detectedTeams)}', "
+                        + $"AllowedTeams='{string.Join(",", effectiveAllowedTeams)}', EligibleReady=false, "
                         + $"NextCheckInMs={delayMs}, Cancellation=false");
                     await Task.Delay(delayMs, cancellationToken);
                 }
@@ -320,6 +329,7 @@ namespace ADB_Tool_Automation_Post_FB.Infrastructure.Workflows
                 LastCompletedStep = OneShotFarmStep.Preflight,
                 TeamAvailabilityChecks = checks,
                 ReadyTeamObserved = false,
+                DetectedTeams = new TeamNumber[0],
                 ReadyTeams = new TeamNumber[0],
                 CompletedDispatches = 0,
                 DispatchedResources = new ResourceType[0],

@@ -47,10 +47,22 @@ namespace ADB_Tool_Automation_Post_FB.Infrastructure.TeamSelection
             if (string.IsNullOrWhiteSpace(deviceName))
                 throw new ArgumentException("LDPlayer device name is required.", nameof(deviceName));
 
-            if (!registry.Exists(TemplateId.WorldMapTeamReadyAnchor))
+            TemplateId[] requiredTemplates =
             {
-                string path = registry.GetPath(TemplateId.WorldMapTeamReadyAnchor);
-                return Failed($"Required template 'WorldMapTeamReadyAnchor' was not found at '{path}'.");
+                TemplateId.WorldMapTeamReadyAnchor,
+                TemplateId.Team1Badge,
+                TemplateId.Team2Badge,
+                TemplateId.Team3Badge,
+                TemplateId.Team4Badge
+            };
+            TemplateId? missingTemplate = requiredTemplates
+                .Where(template => !registry.Exists(template))
+                .Select(template => (TemplateId?)template)
+                .FirstOrDefault();
+            if (missingTemplate.HasValue)
+            {
+                string path = registry.GetPath(missingTemplate.Value);
+                return Failed($"Required template '{missingTemplate.Value}' was not found at '{path}'.");
             }
 
             NavigationResult navigationResult = await navigation.EnsureWorldMapAsync(
@@ -80,6 +92,7 @@ namespace ADB_Tool_Automation_Post_FB.Infrastructure.TeamSelection
             }
 
             byte[] readyTemplate = registry.LoadBytes(TemplateId.WorldMapTeamReadyAnchor);
+            var availableTeams = new List<TeamNumber>();
             var readyTeams = new List<TeamNumber>();
             var readyMatches = new List<ImageMatchResult>();
             TeamNumber[] teams =
@@ -95,6 +108,13 @@ namespace ADB_Tool_Automation_Post_FB.Infrastructure.TeamSelection
                     : rowHeight;
                 var rowRegion = new ImageRegion(options.TeamRosterRegion.X, rowY,
                     options.TeamRosterRegion.Width, height);
+                byte[] badgeTemplate = registry.LoadBytes(BadgeTemplate(teams[index]));
+                ImageMatchResult badgeMatch = matcher.Find(screenshot, badgeTemplate,
+                    rowRegion) ?? ImageMatchResult.NotFound();
+                if (!badgeMatch.Found || badgeMatch.Width <= 0 || badgeMatch.Height <= 0)
+                    continue;
+
+                availableTeams.Add(teams[index]);
                 ImageMatchResult rowMatch = matcher.Find(screenshot, readyTemplate,
                     rowRegion) ?? ImageMatchResult.NotFound();
                 if (rowMatch.Found && rowMatch.Width > 0 && rowMatch.Height > 0)
@@ -104,11 +124,18 @@ namespace ADB_Tool_Automation_Post_FB.Infrastructure.TeamSelection
                 }
             }
 
+            if (availableTeams.Count == 0)
+            {
+                return Failed("No team rows could be verified in the WorldMap roster; "
+                    + "team availability was not inferred.", null, GameState.WorldMap);
+            }
+
             ImageMatchResult match = readyMatches.FirstOrDefault()
                 ?? ImageMatchResult.NotFound();
             bool ready = readyTeams.Count > 0;
             logger.Info($"[WorldMap Team Availability] DeviceName='{deviceName}', "
                 + $"Ready={ready}, ReadyTeams='{string.Join(",", readyTeams)}', "
+                + $"AvailableTeams='{string.Join(",", availableTeams)}', "
                 + $"Bounds=({match.X},{match.Y},{match.Width},{match.Height}), "
                 + $"Region=({options.TeamRosterRegion.X},{options.TeamRosterRegion.Y},"
                 + $"{options.TeamRosterRegion.Width},{options.TeamRosterRegion.Height}), Cancellation=false");
@@ -116,14 +143,28 @@ namespace ADB_Tool_Automation_Post_FB.Infrastructure.TeamSelection
             {
                 Success = true,
                 AnyReadyTeam = ready,
+                AvailableTeams = availableTeams.AsReadOnly(),
                 ReadyTeams = readyTeams.AsReadOnly(),
                 FinalState = GameState.WorldMap,
                 ReadyMatch = match,
                 ReadyMatches = readyMatches.AsReadOnly(),
                 Message = ready
-                    ? $"Ready teams verified on WorldMap: {string.Join(", ", readyTeams)}."
-                    : "No ready team was found in the WorldMap roster."
+                    ? $"Detected {availableTeams.Count} team(s); ready teams: "
+                        + $"{string.Join(", ", readyTeams)}."
+                    : $"Detected {availableTeams.Count} team(s); no team is ready."
             };
+        }
+
+        private static TemplateId BadgeTemplate(TeamNumber team)
+        {
+            switch (team)
+            {
+                case TeamNumber.Team1: return TemplateId.Team1Badge;
+                case TeamNumber.Team2: return TemplateId.Team2Badge;
+                case TeamNumber.Team3: return TemplateId.Team3Badge;
+                case TeamNumber.Team4: return TemplateId.Team4Badge;
+                default: throw new ArgumentOutOfRangeException(nameof(team));
+            }
         }
 
         private static WorldMapTeamAvailabilityResult Failed(string message,
@@ -132,6 +173,7 @@ namespace ADB_Tool_Automation_Post_FB.Infrastructure.TeamSelection
             {
                 Success = false,
                 AnyReadyTeam = false,
+                AvailableTeams = new TeamNumber[0],
                 ReadyTeams = new TeamNumber[0],
                 FinalState = state,
                 Message = message,

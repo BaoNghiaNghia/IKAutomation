@@ -800,6 +800,7 @@ namespace ADB_Tool_Automation_Post_FB.UI
                 + $"Resource attempts:{Environment.NewLine}{resourceAttempts}{Environment.NewLine}"
                 + $"Selected team: {result.SelectedTeam?.ToString() ?? string.Empty}{Environment.NewLine}Dispatched team: {result.DispatchedTeam?.ToString() ?? string.Empty}{Environment.NewLine}"
                 + $"Team availability checks: {result.TeamAvailabilityChecks}{Environment.NewLine}Ready team observed: {result.ReadyTeamObserved}{Environment.NewLine}"
+                + $"Detected teams: {string.Join(",", result.DetectedTeams ?? new TeamNumber[0])}{Environment.NewLine}"
                 + $"Eligible ready teams: {string.Join(",", result.ReadyTeams ?? new TeamNumber[0])}{Environment.NewLine}"
                 + $"Completed dispatches: {result.CompletedDispatches}{Environment.NewLine}"
                 + $"Dispatched resources: {string.Join(",", result.DispatchedResources ?? new ResourceType[0])}{Environment.NewLine}"

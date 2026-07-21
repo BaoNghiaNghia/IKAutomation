@@ -8,6 +8,7 @@ namespace ADB_Tool_Automation_Post_FB.Core.TeamSelection
     {
         public bool Success { get; set; }
         public bool AnyReadyTeam { get; set; }
+        public IReadOnlyList<TeamNumber> AvailableTeams { get; set; }
         public IReadOnlyList<TeamNumber> ReadyTeams { get; set; }
         public GameState FinalState { get; set; }
         public ImageMatchResult ReadyMatch { get; set; }

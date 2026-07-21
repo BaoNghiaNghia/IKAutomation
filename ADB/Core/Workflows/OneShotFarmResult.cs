@@ -45,6 +45,7 @@ namespace ADB_Tool_Automation_Post_FB.Core.Workflows
         public TeamNumber? DispatchedTeam { get; set; }
         public int TeamAvailabilityChecks { get; set; }
         public bool ReadyTeamObserved { get; set; }
+        public IReadOnlyList<TeamNumber> DetectedTeams { get; set; }
         public IReadOnlyList<TeamNumber> ReadyTeams { get; set; }
         public int CompletedDispatches { get; set; }
         public IReadOnlyList<ResourceType> DispatchedResources { get; set; }
