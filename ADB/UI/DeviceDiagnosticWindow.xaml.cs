@@ -494,12 +494,21 @@ namespace ADB_Tool_Automation_Post_FB.UI
                 string.Equals(value.DeviceName, snapshot.DeviceName,
                     StringComparison.OrdinalIgnoreCase));
             if (item != null)
-                item.Status = $"{snapshot.State}: {snapshot.Message}";
-            if (snapshot.State == ContinuousFarmDeviceState.Stopped
-                || snapshot.State == ContinuousFarmDeviceState.Quarantined)
+            {
+                string retry = snapshot.NextAttemptAt.HasValue
+                    ? $"; next={snapshot.NextAttemptAt.Value.ToLocalTime():HH:mm:ss}"
+                    : string.Empty;
+                item.Status = $"{snapshot.State}: {snapshot.Message}{retry}";
+            }
+            if (snapshot.State == ContinuousFarmDeviceState.Stopped)
                 activeDeviceNames.Remove(snapshot.DeviceName);
             if (snapshot.State == ContinuousFarmDeviceState.Quarantined)
                 failedDeviceNames.Add(snapshot.DeviceName);
+            else if (snapshot.State == ContinuousFarmDeviceState.Preflight
+                || snapshot.State == ContinuousFarmDeviceState.Ready
+                || snapshot.State == ContinuousFarmDeviceState.Running
+                || snapshot.State == ContinuousFarmDeviceState.Waiting)
+                failedDeviceNames.Remove(snapshot.DeviceName);
             if (progress.FarmProgress?.DeviceProgress != null)
             {
                 ApplyOneShotFarmProgress(runGeneration, runCancellation,

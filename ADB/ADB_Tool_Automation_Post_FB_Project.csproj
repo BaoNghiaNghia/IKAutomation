@@ -172,6 +172,7 @@
     <Compile Include="Core\Vision\TemplateId.cs" />
     <Compile Include="Core\Workflows\IOneShotFarmDiagnosticService.cs" />
     <Compile Include="Core\Workflows\IContinuousFarmSupervisor.cs" />
+    <Compile Include="Core\Workflows\IDeviceRecoveryService.cs" />
     <Compile Include="Core\Workflows\FarmUiPreferences.cs" />
     <Compile Include="Core\Workflows\IOneShotFarmWorkflow.cs" />
     <Compile Include="Core\Workflows\IMultiDeviceOneShotFarmRunner.cs" />
@@ -262,6 +263,8 @@
     <Compile Include="Infrastructure\Vision\TemplateRegistry.cs" />
     <Compile Include="Infrastructure\Workflows\AppConfigOneShotFarmWorkflowOptionsProvider.cs" />
     <Compile Include="Infrastructure\Workflows\ContinuousFarmSupervisor.cs" />
+    <Compile Include="Infrastructure\Workflows\LdPlayerDeviceRecoveryService.cs" />
+    <Compile Include="Infrastructure\Workflows\LdPlayerDeviceRecoveryServiceFactory.cs" />
     <Compile Include="Infrastructure\Workflows\AppConfigReadyTeamGateOptionsProvider.cs" />
     <Compile Include="Infrastructure\Workflows\LocalAppDataFarmUiPreferencesStore.cs" />
     <Compile Include="Infrastructure\Workflows\MultiDeviceOneShotFarmRunner.cs" />

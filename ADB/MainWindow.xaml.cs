@@ -223,6 +223,7 @@ namespace ADB_Tool_Automation_Post_FB
                 AppConfigDispatchSelectedTeamOptionsProvider.LoadRequest(),
                 multiDeviceRunner,
                 new ContinuousFarmSupervisor(multiDeviceRunner,
+                    LdPlayerDeviceRecoveryServiceFactory.CreateFromAppConfig(),
                     new ContinuousFarmSupervisorOptions()),
                 AppConfigOneShotFarmWorkflowOptionsProvider.LoadRequest(),
                 AppConfigReadyTeamGateOptionsProvider.Load(),

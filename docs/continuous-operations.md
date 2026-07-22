@@ -61,17 +61,22 @@ supervisor's live state.
 - The WPF window exposes **Run Continuous** and renders each device's latest
   supervisor state in the device list. The existing bounded run and retry
   buttons remain available.
-- `Quarantined` is part of the model but is not activated until Phase 3.
+- `Quarantined` is activated by the Phase 2 watchdog when an attempt ignores
+  cancellation or the bounded recovery ladder is exhausted. Phase 3 will add
+  rolling failure thresholds and manual unquarantine controls.
 
 The initial defaults are a 15-minute normal cycle interval and a 2-minute
 technical-failure retry delay. Persisted supervisor settings will follow after
 the recovery policies below are in place.
 
-### Phase 2 - Watchdog and recovery ladder (next)
+### Phase 2 - Watchdog and recovery ladder (implemented)
 
-Track last screenshot, last verified state, last gameplay progress, current
-operation, and lock duration. If a device makes no verified progress for 3-5
-minutes, cancel only its current attempt and apply this bounded ladder:
+Track the latest workflow progress and current operation. Recovery captures a
+fresh screenshot and validates the LDPlayer boundary. If an active gameplay
+operation makes no progress for five minutes, cancel only its current attempt
+and apply this bounded ladder. The intentional ready-team wait uses a separate
+20-minute threshold so the normal 15-minute check interval is not treated as a
+hang:
 
 1. Retry screenshot capture.
 2. Validate LDPlayer/ADB availability.
@@ -80,15 +85,37 @@ minutes, cancel only its current attempt and apply this bounded ladder:
 5. Run preflight again.
 6. Escalate to quarantine when recovery remains unsuccessful.
 
-### Phase 3 - Backoff, circuit breaker, and quarantine
+The supervisor now records the latest progress timestamp and operation for each
+device. A five-minute no-progress watchdog cancels only that device's active
+attempt and allows ten seconds for cooperative shutdown. Recovery never starts
+while the old attempt may still own native LDPlayer work; such a device is
+quarantined immediately. Responsive failures run the bounded ladder above and
+return through a fresh workflow preflight. A failed ladder quarantines only the
+affected instance while healthy device loops continue. Ordinary bounded
+gameplay outcomes keep the existing independent retry behavior and do not
+restart LDPlayer as if they were infrastructure failures.
+
+### Phase 3 - Backoff, circuit breaker, and quarantine (implemented)
 
 - Use bounded exponential retry delays with jitter, for example 30 seconds,
   2 minutes, then 10 minutes.
 - Count technical failures in a rolling window per device.
 - Quarantine a device after a configurable threshold, initially five technical
   failures in 30 minutes.
-- Keep other devices active and expose manual retry/unquarantine controls.
+- Keep other devices active; automatic cooldown recovery is implemented, while
+  an explicit manual unquarantine control remains a UI follow-up.
 - Recheck quarantined devices after a cooling period, initially 30 minutes.
+
+Technical retries now use 30-second, 2-minute, and 10-minute delay tiers plus
+a stable per-device jitter of up to 15 seconds. Each device owns an independent
+rolling 30-minute technical-failure window. Five failures open its circuit and
+move only that device to `Quarantined`; the supervisor continues healthy device
+loops. After a 30-minute cooldown the recovery ladder probes the instance. A
+successful probe closes the circuit, clears the rolling failure counter, and
+requires a fresh preflight. Failed probes remain quarantined and repeat only
+after another cancellation-aware cooldown. An attempt that ignores watchdog
+cancellation remains hard-quarantined because starting another input path would
+risk concurrent commands on the same emulator.
 
 ### Phase 4 - Log, diagnostics, and disk retention
 

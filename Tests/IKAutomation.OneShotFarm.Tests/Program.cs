@@ -142,6 +142,11 @@ internal static class Program
         Run("One-Shot UI retries only failed devices", MultiDeviceUiRetriesFailures);
         Run("Continuous supervisor keeps device states independent", ContinuousSupervisorIsolatesDevices);
         Run("Continuous supervisor cancellation stops waiting devices", ContinuousSupervisorCancellationStopsWaiting);
+        Run("Watchdog recovers a cancellable stalled device", ContinuousWatchdogRecoversStalledDevice);
+        Run("Watchdog quarantines a runner that ignores cancellation", ContinuousWatchdogQuarantinesUnstoppedRunner);
+        Run("Technical retry uses configured backoff", ContinuousSupervisorUsesTechnicalBackoff);
+        Run("Circuit breaker quarantines and probes after cooldown", ContinuousCircuitBreakerRecoversAfterCooldown);
+        Run("Recovery ladder restarts only after softer steps fail", RecoveryLadderEscalatesInOrder);
         Run("Continuous supervisor has no default token bypass", ContinuousSupervisorHasNoNone);
         Run("Continuous supervisor UI is wired without replacing bounded run", ContinuousSupervisorUiIsWired);
         Console.WriteLine($"One-shot farm tests: {pass} passed, {fail} failed."); return fail == 0 ? 0 : 1;
@@ -187,6 +192,7 @@ internal static class Program
                     states.Add(value.Device.DeviceName + ":" + value.Device.State);
             });
             var supervisor = new ContinuousFarmSupervisor(runner,
+                new FakeDeviceRecovery(true),
                 new ContinuousFarmSupervisorOptions(1, 1));
             ContinuousFarmSupervisorResult result = supervisor.RunAsync(
                 new[] { "May 1", "May 2" }, new H().Request, progress,
@@ -215,6 +221,7 @@ internal static class Program
         {
             var runner = new ContinuousSupervisorRunner(cancellation, false);
             var supervisor = new ContinuousFarmSupervisor(runner,
+                new FakeDeviceRecovery(true),
                 new ContinuousFarmSupervisorOptions(60000, 60000));
             var progress = new InlineProgress<ContinuousFarmSupervisorProgress>(value =>
             {
@@ -239,9 +246,121 @@ internal static class Program
         Is(!code.Contains("CancellationToken.None"), "CancellationToken.None found");
         Is(code.Contains("Task.Delay(options.CycleIntervalMs, cancellationToken)"),
             "cycle delay does not use cancellation token");
-        Is(code.Contains("Task.Delay(options.FailureRetryDelayMs, cancellationToken)"),
-            "failure delay does not use cancellation token");
+        Is(code.Contains("Task.Delay(ordinaryDelay, cancellationToken)"),
+            "ordinary failure delay does not use cancellation token");
+        Is(code.Contains("Task.Delay(retryDelay, cancellationToken)"),
+            "technical backoff delay does not use cancellation token");
+        Is(code.Contains("Task.Delay(options.QuarantineCooldownMs, cancellationToken)"),
+            "quarantine cooldown does not use cancellation token");
     }
+
+    static void ContinuousWatchdogRecoversStalledDevice()
+    {
+        using (var cancellation = new CancellationTokenSource(TimeSpan.FromSeconds(5)))
+        {
+            var runner = new WatchdogRunner(cancellation, false);
+            var recovery = new FakeDeviceRecovery(true);
+            var supervisor = new ContinuousFarmSupervisor(runner, recovery,
+                new ContinuousFarmSupervisorOptions(cycleIntervalMs: 60000,
+                    failureRetryDelayMs: 1, noProgressTimeoutMs: 30,
+                    watchdogPollIntervalMs: 5, cancellationGraceMs: 100,
+                    technicalRetryDelaysMs: new[] { 1 }, retryJitterMaxMs: 0));
+            ContinuousFarmSupervisorResult result = supervisor.RunAsync(new[] { "May 1" },
+                new H().Request, null, cancellation.Token).GetAwaiter().GetResult();
+            Is(result.WasCancelled, "successful retry did not reach test cancellation");
+            Eq(1, recovery.Calls, "recovery calls");
+            Eq(1, result.Devices[0].WatchdogTimeoutCount, "watchdog count");
+            Is(runner.Calls >= 2, "device was not retried after recovery");
+        }
+    }
+
+    static void ContinuousWatchdogQuarantinesUnstoppedRunner()
+    {
+        using (var cancellation = new CancellationTokenSource(TimeSpan.FromSeconds(5)))
+        {
+            var runner = new WatchdogRunner(cancellation, true);
+            var recovery = new FakeDeviceRecovery(true);
+            var supervisor = new ContinuousFarmSupervisor(runner, recovery,
+                new ContinuousFarmSupervisorOptions(60000, 1, 30, 5, 20));
+            ContinuousFarmSupervisorResult result = supervisor.RunAsync(new[] { "May 1" },
+                new H().Request, null, cancellation.Token).GetAwaiter().GetResult();
+            Eq(ContinuousFarmDeviceState.Quarantined, result.Devices[0].State,
+                "unstopped runner state");
+            Eq(0, recovery.Calls, "recovery must not overlap an unstopped runner");
+        }
+    }
+
+    static void RecoveryLadderEscalatesInOrder()
+    {
+        var client = new RecoveryClient { ScreenshotFailures = 1, Running = true };
+        var service = new LdPlayerDeviceRecoveryService(client,
+            new LdPlayerDeviceRecoveryOptions("com.gtarcade.ioe.global", 1, 1));
+        DeviceRecoveryResult result = service.RecoverAsync("May 1",
+            new CancellationTokenSource(TimeSpan.FromSeconds(5)).Token)
+            .GetAwaiter().GetResult();
+        Is(result.Success, "recovery ladder did not recover");
+        Is(client.RunAppCalls >= 1, "game was not relaunched");
+        Is(client.CloseCalls == 0, "instance restart should not run after relaunch recovery");
+        Eq(DeviceRecoveryStep.Preflight, result.LastStep, "last recovery step");
+    }
+
+    static void ContinuousSupervisorUsesTechnicalBackoff()
+    {
+        using (var cancellation = new CancellationTokenSource(TimeSpan.FromSeconds(5)))
+        {
+            var runner = new TechnicalFailureRunner(cancellation, 2);
+            var snapshots = new List<ContinuousFarmDeviceSnapshot>();
+            var supervisor = new ContinuousFarmSupervisor(runner,
+                new FakeDeviceRecovery(true), SupervisorPolicyOptions(99));
+            var progress = new InlineProgress<ContinuousFarmSupervisorProgress>(value =>
+            {
+                lock (snapshots) snapshots.Add(value.Device);
+            });
+            supervisor.RunAsync(new[] { "May 1" }, new H().Request, progress,
+                cancellation.Token).GetAwaiter().GetResult();
+            lock (snapshots)
+                Is(snapshots.Any(item => item.LastBackoffDelayMs == 5),
+                    "first technical backoff tier was not used");
+        }
+    }
+
+    static void ContinuousCircuitBreakerRecoversAfterCooldown()
+    {
+        using (var cancellation = new CancellationTokenSource(TimeSpan.FromSeconds(5)))
+        {
+            var runner = new TechnicalFailureRunner(cancellation, 3);
+            var recovery = new FakeDeviceRecovery(true);
+            var states = new List<ContinuousFarmDeviceSnapshot>();
+            var supervisor = new ContinuousFarmSupervisor(runner, recovery,
+                SupervisorPolicyOptions(2));
+            var progress = new InlineProgress<ContinuousFarmSupervisorProgress>(value =>
+            {
+                lock (states) states.Add(value.Device);
+            });
+            ContinuousFarmSupervisorResult result = supervisor.RunAsync(new[] { "May 1" },
+                new H().Request, progress, cancellation.Token).GetAwaiter().GetResult();
+            lock (states)
+            {
+                Is(states.Any(item => item.State == ContinuousFarmDeviceState.Quarantined
+                    && item.CircuitOpenUntil.HasValue), "circuit never opened");
+                Is(states.Any(item => item.Message != null
+                    && item.Message.Contains("Circuit breaker closed")),
+                    "circuit never closed after recovery probe");
+            }
+            Is(recovery.Calls >= 3, "quarantine recovery probe did not run");
+            Eq(ContinuousFarmDeviceState.Stopped, result.Devices[0].State,
+                "test supervisor final state");
+        }
+    }
+
+    static ContinuousFarmSupervisorOptions SupervisorPolicyOptions(int threshold) =>
+        new ContinuousFarmSupervisorOptions(cycleIntervalMs: 60000,
+            failureRetryDelayMs: 5, noProgressTimeoutMs: 1000,
+            watchdogPollIntervalMs: 10, cancellationGraceMs: 10,
+            waitingNoProgressTimeoutMs: 2000,
+            technicalRetryDelaysMs: new[] { 5, 10, 20 }, retryJitterMaxMs: 0,
+            circuitFailureThreshold: threshold, circuitWindowMs: 10000,
+            quarantineCooldownMs: 20);
 
     static void ContinuousSupervisorUiIsWired()
     {
@@ -577,6 +696,55 @@ internal static class Program
     sealed class AvailabilityMatcher:IImageMatcher{public readonly HashSet<int> PresentRows=new HashSet<int>(new[]{1,2,3,4});public readonly HashSet<int> ReadyRows=new HashSet<int>();public readonly List<ImageRegion?> Regions=new List<ImageRegion?>();public ImageMatchResult Find(byte[] s,byte[] t,ImageRegion? r=null){Regions.Add(r);if(!r.HasValue||t==null||t.Length==0)return ImageMatchResult.NotFound();int row=((r.Value.Y-270)/70)+1;TemplateId id=(TemplateId)t[0];bool badge=(id==TemplateId.Team1Badge&&row==1)||(id==TemplateId.Team2Badge&&row==2)||(id==TemplateId.Team3Badge&&row==3)||(id==TemplateId.Team4Badge&&row==4);bool found=id==TemplateId.WorldMapTeamReadyAnchor?ReadyRows.Contains(row):badge&&PresentRows.Contains(row);return found?ImageMatchResult.FoundAt(70,r.Value.Y+10,20,20):ImageMatchResult.NotFound();}}
     sealed class AvailabilityClient:ILdPlayerClient{public int Captures,Inputs;public Task<byte[]> CaptureScreenshotPngAsync(string d,CancellationToken t){t.ThrowIfCancellationRequested();Captures++;return Task.FromResult(new byte[]{1});}public Task<IReadOnlyList<string>> GetDeviceNamesAsync(CancellationToken t)=>Task.FromResult<IReadOnlyList<string>>(new[]{"LDPlayer"});public Task<bool> IsRunningAsync(string d,CancellationToken t)=>Task.FromResult(true);public Task OpenAsync(string d,CancellationToken t)=>Task.CompletedTask;public Task CloseAsync(string d,CancellationToken t)=>Task.CompletedTask;public Task RunAppAsync(string d,string p,CancellationToken t)=>Task.CompletedTask;public Task TapAsync(string d,int x,int y,CancellationToken t){Inputs++;return Task.CompletedTask;}public Task TapByPercentAsync(string d,double x,double y,CancellationToken t){Inputs++;return Task.CompletedTask;}public Task LongPressAsync(string d,int x,int y,int ms,CancellationToken t){Inputs++;return Task.CompletedTask;}public Task SwipeByPercentAsync(string d,double sx,double sy,double ex,double ey,int ms,CancellationToken t){Inputs++;return Task.CompletedTask;}public Task BackAsync(string d,CancellationToken t){Inputs++;return Task.CompletedTask;}public Task InputTextAsync(string d,string v,CancellationToken t){Inputs++;return Task.CompletedTask;}public Task PressKeyAsync(string d,AndroidKeyCode k,CancellationToken t){Inputs++;return Task.CompletedTask;}}
     sealed class InlineProgress<T>:IProgress<T>{readonly Action<T> action;public InlineProgress(Action<T> action){this.action=action;}public void Report(T value){action(value);}}
+    sealed class FakeDeviceRecovery:IDeviceRecoveryService
+    {
+        readonly bool success;public int Calls;public FakeDeviceRecovery(bool success){this.success=success;}
+        public Task<DeviceRecoveryResult> RecoverAsync(string d,CancellationToken t){t.ThrowIfCancellationRequested();Calls++;return Task.FromResult(new DeviceRecoveryResult{Success=success,LastStep=DeviceRecoveryStep.Preflight,Steps=new DeviceRecoveryStepResult[0],Message=success?"recovered":"failed",ErrorMessage=success?null:"recovery failed"});}
+    }
+    sealed class WatchdogRunner:IMultiDeviceOneShotFarmRunner
+    {
+        readonly CancellationTokenSource supervisorCancellation;readonly bool ignoreCancellation;public int Calls;
+        public WatchdogRunner(CancellationTokenSource supervisorCancellation,bool ignoreCancellation){this.supervisorCancellation=supervisorCancellation;this.ignoreCancellation=ignoreCancellation;}
+        public async Task<MultiDeviceOneShotFarmResult> RunAsync(IReadOnlyList<string> devices,OneShotFarmRequest request,IProgress<MultiDeviceOneShotFarmProgress> progress,CancellationToken token)
+        {
+            Calls++;string device=devices.Single();
+            if(Calls==1)
+            {
+                if(ignoreCancellation)await new TaskCompletionSource<bool>(TaskCreationOptions.RunContinuationsAsynchronously).Task;
+                else await Task.Delay(Timeout.Infinite,token);
+            }
+            supervisorCancellation.Cancel();
+            return SuccessfulMultiDeviceResult(device);
+        }
+        static MultiDeviceOneShotFarmResult SuccessfulMultiDeviceResult(string device)
+        {
+            var farm=new OneShotFarmResult{DeviceName=device,Success=true,Outcome=OneShotFarmOutcome.MarchStarted,Message="completed"};
+            return new MultiDeviceOneShotFarmResult{MaximumConcurrency=20,Devices=new[]{new MultiDeviceOneShotFarmItemResult{DeviceName=device,Stage=MultiDeviceOneShotFarmStage.Completed,Result=farm}}};
+        }
+    }
+    sealed class RecoveryClient:ILdPlayerClient
+    {
+        public int ScreenshotFailures;public bool Running;public int RunAppCalls,CloseCalls,OpenCalls;
+        public Task<byte[]> CaptureScreenshotPngAsync(string d,CancellationToken t){t.ThrowIfCancellationRequested();if(ScreenshotFailures-->0)throw new InvalidOperationException("capture failed");return Task.FromResult(new byte[]{1});}
+        public Task<bool> IsRunningAsync(string d,CancellationToken t){t.ThrowIfCancellationRequested();return Task.FromResult(Running);}
+        public Task RunAppAsync(string d,string p,CancellationToken t){t.ThrowIfCancellationRequested();RunAppCalls++;return Task.CompletedTask;}
+        public Task CloseAsync(string d,CancellationToken t){t.ThrowIfCancellationRequested();CloseCalls++;return Task.CompletedTask;}
+        public Task OpenAsync(string d,CancellationToken t){t.ThrowIfCancellationRequested();OpenCalls++;return Task.CompletedTask;}
+        public Task<IReadOnlyList<string>> GetDeviceNamesAsync(CancellationToken t)=>Task.FromResult<IReadOnlyList<string>>(new[]{"May 1"});
+        public Task TapAsync(string d,int x,int y,CancellationToken t)=>Task.CompletedTask;public Task TapByPercentAsync(string d,double x,double y,CancellationToken t)=>Task.CompletedTask;
+        public Task LongPressAsync(string d,int x,int y,int ms,CancellationToken t)=>Task.CompletedTask;public Task SwipeByPercentAsync(string d,double sx,double sy,double ex,double ey,int ms,CancellationToken t)=>Task.CompletedTask;
+        public Task BackAsync(string d,CancellationToken t)=>Task.CompletedTask;public Task InputTextAsync(string d,string v,CancellationToken t)=>Task.CompletedTask;public Task PressKeyAsync(string d,AndroidKeyCode k,CancellationToken t)=>Task.CompletedTask;
+    }
+    sealed class TechnicalFailureRunner:IMultiDeviceOneShotFarmRunner
+    {
+        readonly CancellationTokenSource cancellation;readonly int cancelOnCall;public int Calls;
+        public TechnicalFailureRunner(CancellationTokenSource cancellation,int cancelOnCall){this.cancellation=cancellation;this.cancelOnCall=cancelOnCall;}
+        public Task<MultiDeviceOneShotFarmResult> RunAsync(IReadOnlyList<string> devices,OneShotFarmRequest request,IProgress<MultiDeviceOneShotFarmProgress> progress,CancellationToken token)
+        {
+            token.ThrowIfCancellationRequested();Calls++;if(Calls>=cancelOnCall)cancellation.Cancel();
+            throw new InvalidOperationException("technical failure " + Calls);
+        }
+    }
     sealed class ContinuousSupervisorRunner:IMultiDeviceOneShotFarmRunner
     {
         readonly object sync=new object();readonly Dictionary<string,int> calls=new Dictionary<string,int>(StringComparer.OrdinalIgnoreCase);
