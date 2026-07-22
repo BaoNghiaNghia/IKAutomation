@@ -225,7 +225,10 @@ namespace ADB_Tool_Automation_Post_FB
                 new ContinuousFarmSupervisor(multiDeviceRunner,
                     LdPlayerDeviceRecoveryServiceFactory.CreateFromAppConfig(),
                     new ContinuousFarmSupervisorOptions(),
-                    AppConfigOperationalMaintenanceOptionsProvider.Create()),
+                    AppConfigOperationalMaintenanceOptionsProvider.Create(),
+                    new LocalAppDataContinuousFarmCheckpointStore(
+                        new LocalAppDataContinuousFarmCheckpointPathProvider(),
+                        new ApplicationDiagnosticLogger())),
                 AppConfigOneShotFarmWorkflowOptionsProvider.LoadRequest(),
                 AppConfigReadyTeamGateOptionsProvider.Load(),
                 new LocalAppDataFarmUiPreferencesStore(

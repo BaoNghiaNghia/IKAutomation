@@ -14,16 +14,25 @@ namespace ADB_Tool_Automation_Post_FB.Infrastructure.Workflows
         private readonly IDeviceRecoveryService recoveryService;
         private readonly ContinuousFarmSupervisorOptions options;
         private readonly IOperationalMaintenanceService maintenanceService;
+        private readonly IContinuousFarmCheckpointStore checkpointStore;
+        private readonly ConcurrentDictionary<string, Queue<DateTimeOffset>> failureHistory =
+            new ConcurrentDictionary<string, Queue<DateTimeOffset>>(
+                StringComparer.OrdinalIgnoreCase);
+        private readonly ConcurrentDictionary<string, CheckpointWriteState> checkpointWriteStates =
+            new ConcurrentDictionary<string, CheckpointWriteState>(
+                StringComparer.OrdinalIgnoreCase);
 
         public ContinuousFarmSupervisor(IMultiDeviceOneShotFarmRunner runner,
             IDeviceRecoveryService recoveryService, ContinuousFarmSupervisorOptions options,
-            IOperationalMaintenanceService maintenanceService = null)
+            IOperationalMaintenanceService maintenanceService = null,
+            IContinuousFarmCheckpointStore checkpointStore = null)
         {
             this.runner = runner ?? throw new ArgumentNullException(nameof(runner));
             this.recoveryService = recoveryService
                 ?? throw new ArgumentNullException(nameof(recoveryService));
             this.options = options ?? throw new ArgumentNullException(nameof(options));
             this.maintenanceService = maintenanceService;
+            this.checkpointStore = checkpointStore;
         }
 
         public async Task<ContinuousFarmSupervisorResult> RunAsync(
@@ -56,10 +65,14 @@ namespace ADB_Tool_Automation_Post_FB.Infrastructure.Workflows
             IProgress<ContinuousFarmSupervisorProgress> progress,
             CancellationToken cancellationToken)
         {
-            ContinuousFarmDeviceSnapshot snapshot = NewSnapshot(deviceName);
-            var technicalFailures = new Queue<DateTimeOffset>();
+            ContinuousFarmCheckpoint checkpoint = LoadCheckpointSafely(deviceName,
+                cancellationToken);
+            ContinuousFarmDeviceSnapshot snapshot = RestoreSnapshot(deviceName, checkpoint);
+            var technicalFailures = RestoreTechnicalFailures(checkpoint);
+            snapshot.TechnicalFailuresInWindow = technicalFailures.Count;
+            failureHistory[deviceName] = technicalFailures;
             snapshots[deviceName] = snapshot;
-            Publish(snapshot, progress, null);
+            Publish(snapshot, progress, null, cancellationToken);
             try
             {
                 while (true)
@@ -70,7 +83,7 @@ namespace ADB_Tool_Automation_Post_FB.Infrastructure.Workflows
                     Transition(snapshot, ContinuousFarmDeviceState.Preflight,
                         $"Starting supervised cycle {snapshot.CycleCount}.", null, null);
                     MarkProgress(snapshot, "Starting cycle");
-                    Publish(snapshot, progress, null);
+                    Publish(snapshot, progress, null, cancellationToken);
 
                     AttemptResult attempt = await RunAttemptWithWatchdogAsync(deviceName,
                         request, snapshot, progress, cancellationToken);
@@ -78,7 +91,8 @@ namespace ADB_Tool_Automation_Post_FB.Infrastructure.Workflows
                     {
                         Quarantine(snapshot, progress,
                             "Watchdog cancelled the attempt, but it did not stop within the grace period.",
-                            "The previous workflow may still own native LDPlayer work; recovery input was suppressed.");
+                            "The previous workflow may still own native LDPlayer work; recovery input was suppressed.",
+                            cancellationToken);
                         return;
                     }
 
@@ -89,7 +103,7 @@ namespace ADB_Tool_Automation_Post_FB.Infrastructure.Workflows
                         DateTimeOffset next = DateTimeOffset.UtcNow.AddMilliseconds(options.CycleIntervalMs);
                         Transition(snapshot, ContinuousFarmDeviceState.Waiting,
                             "Cycle completed; waiting for the next supervised cycle.", null, next);
-                        Publish(snapshot, progress, null);
+                        Publish(snapshot, progress, null, cancellationToken);
                         await Task.Delay(options.CycleIntervalMs, cancellationToken);
                         continue;
                     }
@@ -106,7 +120,7 @@ namespace ADB_Tool_Automation_Post_FB.Infrastructure.Workflows
                         Transition(snapshot, ContinuousFarmDeviceState.Recovering,
                             "Cycle failed; this device will retry independently.",
                             attempt.Error, ordinaryRetryAt);
-                        Publish(snapshot, progress, null);
+                        Publish(snapshot, progress, null, cancellationToken);
                         await Task.Delay(ordinaryDelay, cancellationToken);
                         continue;
                     }
@@ -116,7 +130,7 @@ namespace ADB_Tool_Automation_Post_FB.Infrastructure.Workflows
                         attempt.WatchdogTimedOut
                             ? "Watchdog detected no progress; starting recovery ladder."
                             : "Cycle failed; starting recovery ladder.", attempt.Error, null);
-                    Publish(snapshot, progress, null);
+                    Publish(snapshot, progress, null, cancellationToken);
 
                     DeviceRecoveryResult recovery;
                     try
@@ -130,7 +144,7 @@ namespace ADB_Tool_Automation_Post_FB.Infrastructure.Workflows
                     catch (Exception exception)
                     {
                         Quarantine(snapshot, progress, "Recovery ladder threw an exception.",
-                            exception.Message);
+                            exception.Message, cancellationToken);
                         return;
                     }
 
@@ -160,7 +174,7 @@ namespace ADB_Tool_Automation_Post_FB.Infrastructure.Workflows
                         .AddMilliseconds(retryDelay);
                     Transition(snapshot, ContinuousFarmDeviceState.Recovering,
                         recovery.Message + " A fresh preflight will run before retry.", null, retryAt);
-                    Publish(snapshot, progress, null);
+                    Publish(snapshot, progress, null, cancellationToken);
                     await Task.Delay(retryDelay, cancellationToken);
                 }
             }
@@ -168,7 +182,7 @@ namespace ADB_Tool_Automation_Post_FB.Infrastructure.Workflows
             {
                 Transition(snapshot, ContinuousFarmDeviceState.Stopped,
                     "Continuous supervisor stopped.", snapshot.LastError, null);
-                Publish(snapshot, progress, null);
+                Publish(snapshot, progress, null, cancellationToken);
             }
             catch (Exception exception)
             {
@@ -177,7 +191,13 @@ namespace ADB_Tool_Automation_Post_FB.Infrastructure.Workflows
                 Transition(snapshot, ContinuousFarmDeviceState.Stopped,
                     "Continuous supervisor stopped after an unexpected error.",
                     exception.Message, null);
-                Publish(snapshot, progress, null);
+                Publish(snapshot, progress, null, cancellationToken);
+            }
+            finally
+            {
+                failureHistory.TryRemove(deviceName, out Queue<DateTimeOffset> ignoredHistory);
+                checkpointWriteStates.TryRemove(deviceName,
+                    out CheckpointWriteState ignoredCheckpointState);
             }
         }
 
@@ -195,7 +215,7 @@ namespace ADB_Tool_Automation_Post_FB.Infrastructure.Workflows
                 if (result.WasRun)
                 {
                     snapshot.LastMaintenanceAt = DateTimeOffset.UtcNow;
-                    Publish(snapshot, progress, null);
+                    Publish(snapshot, progress, null, cancellationToken);
                 }
             }
             catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
@@ -205,7 +225,7 @@ namespace ADB_Tool_Automation_Post_FB.Infrastructure.Workflows
             catch (Exception exception)
             {
                 snapshot.LastError = "Operational maintenance failed: " + exception.Message;
-                Publish(snapshot, progress, null);
+                Publish(snapshot, progress, null, cancellationToken);
             }
         }
 
@@ -223,7 +243,7 @@ namespace ADB_Tool_Automation_Post_FB.Infrastructure.Workflows
                     if (attemptToken.IsCancellationRequested) return;
                     ApplyFarmProgress(snapshot, value);
                     MarkProgress(snapshot, value?.Message ?? "Farm progress");
-                    Publish(snapshot, progress, value);
+                    Publish(snapshot, progress, value, attemptToken);
                 });
                 Task<MultiDeviceOneShotFarmResult> runTask;
                 try
@@ -269,6 +289,7 @@ namespace ADB_Tool_Automation_Post_FB.Infrastructure.Workflows
                 catch (Exception exception) { return AttemptResult.TechnicalFailure(exception.Message); }
                 MultiDeviceOneShotFarmItemResult item = result?.Devices?.FirstOrDefault(value =>
                     string.Equals(value.DeviceName, deviceName, StringComparison.OrdinalIgnoreCase));
+                ApplyResultObservation(snapshot, item?.Result);
                 bool succeeded = item != null && item.Stage == MultiDeviceOneShotFarmStage.Completed
                     && item.Result != null && item.Result.Success;
                 string error = item?.ErrorMessage ?? item?.Result?.ErrorMessage
@@ -277,12 +298,13 @@ namespace ADB_Tool_Automation_Post_FB.Infrastructure.Workflows
             }
         }
 
-        private static void Quarantine(ContinuousFarmDeviceSnapshot snapshot,
-            IProgress<ContinuousFarmSupervisorProgress> progress, string message, string error)
+        private void Quarantine(ContinuousFarmDeviceSnapshot snapshot,
+            IProgress<ContinuousFarmSupervisorProgress> progress, string message, string error,
+            CancellationToken cancellationToken)
         {
             snapshot.LastFailureAt = DateTimeOffset.UtcNow;
             Transition(snapshot, ContinuousFarmDeviceState.Quarantined, message, error, null);
-            Publish(snapshot, progress, null);
+            Publish(snapshot, progress, null, cancellationToken);
         }
 
         private async Task WaitInQuarantineAsync(string deviceName,
@@ -299,13 +321,13 @@ namespace ADB_Tool_Automation_Post_FB.Infrastructure.Workflows
                 snapshot.CircuitOpenUntil = retryAt;
                 Transition(snapshot, ContinuousFarmDeviceState.Quarantined,
                     message + " Automatic recovery will retry after cooldown.", error, retryAt);
-                Publish(snapshot, progress, null);
+                Publish(snapshot, progress, null, cancellationToken);
                 await Task.Delay(options.QuarantineCooldownMs, cancellationToken);
 
                 snapshot.RecoveryAttemptCount++;
                 Transition(snapshot, ContinuousFarmDeviceState.Recovering,
                     "Quarantine cooldown elapsed; probing device recovery.", null, null);
-                Publish(snapshot, progress, null);
+                Publish(snapshot, progress, null, cancellationToken);
                 DeviceRecoveryResult recovery;
                 try
                 {
@@ -330,7 +352,7 @@ namespace ADB_Tool_Automation_Post_FB.Infrastructure.Workflows
                     continue;
                 }
 
-                technicalFailures.Clear();
+                lock (technicalFailures) technicalFailures.Clear();
                 snapshot.TechnicalFailuresInWindow = 0;
                 snapshot.ConsecutiveFailures = 0;
                 snapshot.CircuitOpenUntil = null;
@@ -338,7 +360,7 @@ namespace ADB_Tool_Automation_Post_FB.Infrastructure.Workflows
                 Transition(snapshot, ContinuousFarmDeviceState.Recovering,
                     "Circuit breaker closed after a successful recovery probe; fresh preflight required.",
                     null, DateTimeOffset.UtcNow);
-                Publish(snapshot, progress, null);
+                Publish(snapshot, progress, null, cancellationToken);
                 return;
             }
         }
@@ -348,10 +370,13 @@ namespace ADB_Tool_Automation_Post_FB.Infrastructure.Workflows
         {
             DateTimeOffset now = DateTimeOffset.UtcNow;
             DateTimeOffset cutoff = now.AddMilliseconds(-options.CircuitWindowMs);
-            while (failures.Count > 0 && failures.Peek() < cutoff)
-                failures.Dequeue();
-            failures.Enqueue(now);
-            snapshot.TechnicalFailuresInWindow = failures.Count;
+            lock (failures)
+            {
+                while (failures.Count > 0 && failures.Peek() < cutoff)
+                    failures.Dequeue();
+                failures.Enqueue(now);
+                snapshot.TechnicalFailuresInWindow = failures.Count;
+            }
         }
 
         private int GetRetryDelayMs(string deviceName, int consecutiveFailures,
@@ -380,6 +405,12 @@ namespace ADB_Tool_Automation_Post_FB.Infrastructure.Workflows
             MultiDeviceOneShotFarmProgress progress)
         {
             if (progress == null) return;
+            if (progress.DeviceProgress?.CurrentResource != null)
+                snapshot.CurrentResource = progress.DeviceProgress.CurrentResource.Value.ToString();
+            if (progress.DeviceProgress?.CurrentLevel != null)
+                snapshot.CurrentLevel = progress.DeviceProgress.CurrentLevel;
+            if (progress.DeviceProgress?.CurrentTeam != null)
+                snapshot.CurrentTeam = progress.DeviceProgress.CurrentTeam.Value.ToString();
             ContinuousFarmDeviceState state;
             switch (progress.Stage)
             {
@@ -419,6 +450,61 @@ namespace ADB_Tool_Automation_Post_FB.Infrastructure.Workflows
                 Message = "Continuous supervisor started." };
         }
 
+        private ContinuousFarmCheckpoint LoadCheckpointSafely(string deviceName,
+            CancellationToken cancellationToken)
+        {
+            if (checkpointStore == null) return null;
+            try { return checkpointStore.Load(deviceName, cancellationToken); }
+            catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
+            {
+                throw;
+            }
+            catch { return null; }
+        }
+
+        private ContinuousFarmDeviceSnapshot RestoreSnapshot(string deviceName,
+            ContinuousFarmCheckpoint checkpoint)
+        {
+            if (checkpoint?.Device == null) return NewSnapshot(deviceName);
+            ContinuousFarmDeviceSnapshot snapshot = Copy(checkpoint.Device);
+            DateTimeOffset now = DateTimeOffset.UtcNow;
+            snapshot.DeviceName = deviceName;
+            snapshot.State = ContinuousFarmDeviceState.Preflight;
+            snapshot.RestoredFromCheckpoint = true;
+            snapshot.CheckpointSavedAt = checkpoint.SavedAt;
+            snapshot.LastTransitionAt = now;
+            snapshot.LastProgressAt = now;
+            snapshot.CurrentOperation = "Restart preflight";
+            snapshot.Message = "Checkpoint restored; a fresh preflight is required before any input.";
+            return snapshot;
+        }
+
+        private Queue<DateTimeOffset> RestoreTechnicalFailures(
+            ContinuousFarmCheckpoint checkpoint)
+        {
+            DateTimeOffset cutoff = DateTimeOffset.UtcNow
+                .AddMilliseconds(-options.CircuitWindowMs);
+            DateTimeOffset[] values = (checkpoint?.TechnicalFailureTimestamps
+                ?? new DateTimeOffset[0]).Where(value => value >= cutoff)
+                .OrderBy(value => value).ToArray();
+            return new Queue<DateTimeOffset>(values);
+        }
+
+        private static void ApplyResultObservation(ContinuousFarmDeviceSnapshot snapshot,
+            OneShotFarmResult result)
+        {
+            if (result == null) return;
+            if (result.CurrentResource.HasValue)
+                snapshot.CurrentResource = result.CurrentResource.Value.ToString();
+            else if (result.DispatchedResource.HasValue)
+                snapshot.CurrentResource = result.DispatchedResource.Value.ToString();
+            if (result.LocatedLevel.HasValue) snapshot.CurrentLevel = result.LocatedLevel;
+            if (result.DispatchedTeam.HasValue)
+                snapshot.CurrentTeam = result.DispatchedTeam.Value.ToString();
+            else if (result.SelectedTeam.HasValue)
+                snapshot.CurrentTeam = result.SelectedTeam.Value.ToString();
+        }
+
         private static void MarkProgress(ContinuousFarmDeviceSnapshot snapshot, string operation)
         {
             snapshot.LastProgressAt = DateTimeOffset.UtcNow;
@@ -437,14 +523,51 @@ namespace ADB_Tool_Automation_Post_FB.Infrastructure.Workflows
             snapshot.NextAttemptAt = nextAttemptAt;
         }
 
-        private static void Publish(ContinuousFarmDeviceSnapshot snapshot,
+        private void Publish(ContinuousFarmDeviceSnapshot snapshot,
             IProgress<ContinuousFarmSupervisorProgress> progress,
-            MultiDeviceOneShotFarmProgress farmProgress)
+            MultiDeviceOneShotFarmProgress farmProgress,
+            CancellationToken cancellationToken)
         {
+            SaveCheckpointSafely(snapshot, cancellationToken);
             if (progress == null) return;
             try { progress.Report(new ContinuousFarmSupervisorProgress
                 { Device = Copy(snapshot), FarmProgress = farmProgress }); }
             catch { }
+        }
+
+        private void SaveCheckpointSafely(ContinuousFarmDeviceSnapshot snapshot,
+            CancellationToken cancellationToken)
+        {
+            if (checkpointStore == null || cancellationToken.IsCancellationRequested) return;
+            CheckpointWriteState writeState = checkpointWriteStates.GetOrAdd(
+                snapshot.DeviceName, _ => new CheckpointWriteState());
+            lock (writeState)
+            {
+                if (!writeState.IsDue(snapshot, DateTimeOffset.UtcNow,
+                    options.CheckpointIntervalMs)) return;
+                try
+                {
+                    DateTimeOffset savedAt = DateTimeOffset.UtcNow;
+                    ContinuousFarmDeviceSnapshot copy = Copy(snapshot);
+                    copy.CheckpointSavedAt = savedAt;
+                    DateTimeOffset[] failures = new DateTimeOffset[0];
+                    if (failureHistory.TryGetValue(snapshot.DeviceName,
+                        out Queue<DateTimeOffset> history))
+                        lock (history) failures = history.ToArray();
+                    checkpointStore.Save(new ContinuousFarmCheckpoint
+                    {
+                        Version = 1,
+                        SavedAt = savedAt,
+                        Device = copy,
+                        TechnicalFailureTimestamps = failures
+                    }, cancellationToken);
+                    snapshot.CheckpointSavedAt = savedAt;
+                    writeState.Record(snapshot, savedAt);
+                }
+                catch (OperationCanceledException)
+                    when (cancellationToken.IsCancellationRequested) { }
+                catch { }
+            }
         }
 
         private static ContinuousFarmDeviceSnapshot Copy(ContinuousFarmDeviceSnapshot source) =>
@@ -460,6 +583,11 @@ namespace ADB_Tool_Automation_Post_FB.Infrastructure.Workflows
                 QuarantineCount = source.QuarantineCount,
                 CircuitOpenUntil = source.CircuitOpenUntil,
                 LastBackoffDelayMs = source.LastBackoffDelayMs,
+                CurrentResource = source.CurrentResource,
+                CurrentLevel = source.CurrentLevel,
+                CurrentTeam = source.CurrentTeam,
+                RestoredFromCheckpoint = source.RestoredFromCheckpoint,
+                CheckpointSavedAt = source.CheckpointSavedAt,
                 FreeDiskBytes = source.FreeDiskBytes,
                 DiagnosticWritesSuspended = source.DiagnosticWritesSuspended,
                 LastMaintenanceAt = source.LastMaintenanceAt,
@@ -482,6 +610,40 @@ namespace ADB_Tool_Automation_Post_FB.Infrastructure.Workflows
             public static AttemptResult UnstoppedTimeout() => new AttemptResult
                 { WatchdogTimedOut = true, RunnerDidNotStop = true, NeedsRecovery = true,
                     Error = "The timed-out workflow did not stop after cancellation." };
+        }
+
+        private sealed class CheckpointWriteState
+        {
+            private DateTimeOffset lastSavedAt;
+            private string signature;
+
+            public bool IsDue(ContinuousFarmDeviceSnapshot snapshot, DateTimeOffset now,
+                int intervalMs)
+            {
+                string current = Signature(snapshot);
+                return lastSavedAt == default(DateTimeOffset)
+                    || !string.Equals(signature, current, StringComparison.Ordinal)
+                    || (now - lastSavedAt).TotalMilliseconds >= intervalMs;
+            }
+
+            public void Record(ContinuousFarmDeviceSnapshot snapshot, DateTimeOffset savedAt)
+            {
+                lastSavedAt = savedAt;
+                signature = Signature(snapshot);
+            }
+
+            private static string Signature(ContinuousFarmDeviceSnapshot value) => string.Join("|",
+                value.State, value.CycleCount, value.ConsecutiveFailures,
+                value.WatchdogTimeoutCount, value.RecoveryAttemptCount,
+                value.TechnicalFailuresInWindow, value.QuarantineCount,
+                value.CurrentResource ?? string.Empty,
+                value.CurrentLevel?.ToString() ?? string.Empty,
+                value.CurrentTeam ?? string.Empty,
+                value.NextAttemptAt?.UtcDateTime.Ticks.ToString() ?? string.Empty,
+                value.CircuitOpenUntil?.UtcDateTime.Ticks.ToString() ?? string.Empty,
+                value.LastSuccessAt?.UtcDateTime.Ticks.ToString() ?? string.Empty,
+                value.LastFailureAt?.UtcDateTime.Ticks.ToString() ?? string.Empty,
+                value.DiagnosticWritesSuspended);
         }
 
         private sealed class InlineProgress<T> : IProgress<T>

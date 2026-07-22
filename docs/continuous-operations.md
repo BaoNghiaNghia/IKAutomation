@@ -133,12 +133,27 @@ risk concurrent commands on the same emulator.
   configured diagnostic root is resolved under the application directory and
   cleanup never scans outside that root.
 
-### Phase 5 - Persistent checkpoints
+### Phase 5 - Persistent checkpoints (implemented)
 
-Persist each device's supervisor state, last success/error, current resource,
-team, next check time, and recovery counters outside the repository. Restore a
-safe `Preflight` transition after application or host restart; never resume by
-sending a blind input from a stored gameplay state.
+- Each device owns a versioned JSON checkpoint under
+  `%LOCALAPPDATA%\IKAutomation\Checkpoints`, outside the repository and runtime
+  output folders.
+- Checkpoints record the supervisor snapshot, last success/error, observed
+  resource/level/team, next attempt time, watchdog/recovery/circuit counters,
+  disk status, and rolling technical-failure timestamps.
+- Writes use a same-directory temporary file, flushed to disk and atomically
+  replace the prior checkpoint. Concurrent device loops never share a file.
+- Meaningful state/counter/resource/team changes are persisted immediately;
+  unchanged progress is throttled to one checkpoint write per 30 seconds to
+  keep 15-day multi-device runs from generating unnecessary disk I/O.
+- Invalid or unsupported checkpoints are renamed with an `.invalid-*` suffix;
+  that device starts from a clean state while healthy device checkpoints remain
+  usable.
+- After application or host restart, persisted metadata is restored but the
+  execution state is always forced to `Preflight`. Stored gameplay state never
+  causes a Tap, Back, Swipe, or dispatch; normal live detection must pass again.
+- Checkpoint failures are non-fatal and isolated to the affected device. Every
+  checkpoint operation honors the active cancellation token.
 
 ### Phase 6 - Adaptive concurrency and staggered animation handling
 

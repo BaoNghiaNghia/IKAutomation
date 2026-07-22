@@ -146,6 +146,12 @@ internal static class Program
         Run("Watchdog quarantines a runner that ignores cancellation", ContinuousWatchdogQuarantinesUnstoppedRunner);
         Run("Technical retry uses configured backoff", ContinuousSupervisorUsesTechnicalBackoff);
         Run("Circuit breaker quarantines and probes after cooldown", ContinuousCircuitBreakerRecoversAfterCooldown);
+        Run("Continuous checkpoint round-trips device state", CheckpointRoundTripsDeviceState);
+        Run("Invalid checkpoint is isolated per device", CheckpointInvalidFileIsIsolated);
+        Run("Restart restores checkpoint through safe preflight", CheckpointRestoresAsPreflight);
+        Run("Supervisor checkpoints observed resource and team", CheckpointCapturesFarmObservation);
+        Run("Checkpoint persistence honors cancellation", CheckpointHonorsCancellation);
+        Run("Checkpoint code has no default token bypass", CheckpointHasNoNone);
         Run("Recovery ladder restarts only after softer steps fail", RecoveryLadderEscalatesInOrder);
         Run("Operational maintenance removes expired screenshots", MaintenanceRemovesExpiredScreenshots);
         Run("Operational maintenance enforces diagnostic quota", MaintenanceEnforcesDiagnosticQuota);
@@ -367,6 +373,162 @@ internal static class Program
             technicalRetryDelaysMs: new[] { 5, 10, 20 }, retryJitterMaxMs: 0,
             circuitFailureThreshold: threshold, circuitWindowMs: 10000,
             quarantineCooldownMs: 20);
+
+    static void CheckpointRoundTripsDeviceState()
+    {
+        string root = TemporaryDirectory();
+        try
+        {
+            var store = new LocalAppDataContinuousFarmCheckpointStore(
+                new TestCheckpointPath(root), new Log());
+            DateTimeOffset now = DateTimeOffset.UtcNow;
+            var checkpoint = new ContinuousFarmCheckpoint
+            {
+                Version = 1,
+                SavedAt = now,
+                TechnicalFailureTimestamps = new[] { now.AddMinutes(-2), now.AddMinutes(-1) },
+                Device = new ContinuousFarmDeviceSnapshot
+                {
+                    DeviceName = "May 1", State = ContinuousFarmDeviceState.Waiting,
+                    CycleCount = 9, ConsecutiveFailures = 2,
+                    LastTransitionAt = now, LastProgressAt = now,
+                    LastSuccessAt = now.AddMinutes(-3), LastError = "last error",
+                    NextAttemptAt = now.AddMinutes(15), CurrentResource = "Stone",
+                    CurrentLevel = 7, CurrentTeam = "Team3",
+                    WatchdogTimeoutCount = 1, RecoveryAttemptCount = 2,
+                    TechnicalFailuresInWindow = 2, QuarantineCount = 1
+                }
+            };
+            CancellationToken token = new CancellationTokenSource(
+                TimeSpan.FromSeconds(5)).Token;
+            store.Save(checkpoint, token);
+            ContinuousFarmCheckpoint loaded = store.Load("May 1", token);
+            Eq(9, loaded.Device.CycleCount, "cycle count");
+            Eq("Stone", loaded.Device.CurrentResource, "resource");
+            Eq(7, loaded.Device.CurrentLevel, "level");
+            Eq("Team3", loaded.Device.CurrentTeam, "team");
+            Eq(2, loaded.TechnicalFailureTimestamps.Count, "failure history");
+            Eq(1, Directory.GetFiles(root, "*.json").Length, "checkpoint files");
+            Eq(0, Directory.GetFiles(root, "*.tmp").Length, "temporary files");
+        }
+        finally { TryDeleteDirectory(root); }
+    }
+
+    static void CheckpointInvalidFileIsIsolated()
+    {
+        string root = TemporaryDirectory();
+        try
+        {
+            var store = new LocalAppDataContinuousFarmCheckpointStore(
+                new TestCheckpointPath(root), new Log());
+            CancellationToken token = new CancellationTokenSource(
+                TimeSpan.FromSeconds(5)).Token;
+            store.Save(TestCheckpoint("May 1", 1), token);
+            store.Save(TestCheckpoint("May 2", 2), token);
+            string first = Directory.GetFiles(root, "May 1-*.json").Single();
+            File.WriteAllText(first, "{invalid");
+            Is(store.Load("May 1", token) == null, "invalid checkpoint was accepted");
+            Eq(2, store.Load("May 2", token).Device.CycleCount,
+                "healthy checkpoint was affected");
+            Is(Directory.GetFiles(root, "*.invalid-*.json").Length == 1,
+                "invalid checkpoint was not quarantined");
+        }
+        finally { TryDeleteDirectory(root); }
+    }
+
+    static void CheckpointRestoresAsPreflight()
+    {
+        using (var cancellation = new CancellationTokenSource(TimeSpan.FromSeconds(5)))
+        {
+            var store = new MemoryCheckpointStore(TestCheckpoint("May 1", 6));
+            store.Current.Device.State = ContinuousFarmDeviceState.Running;
+            store.Current.Device.CurrentResource = "Wood";
+            store.Current.Device.CurrentTeam = "Team2";
+            var first = new TaskCompletionSource<ContinuousFarmDeviceSnapshot>();
+            var progress = new InlineProgress<ContinuousFarmSupervisorProgress>(value =>
+            {
+                first.TrySetResult(value.Device);
+            });
+            var runner = new CancelAfterSuccessRunner(cancellation);
+            var supervisor = new ContinuousFarmSupervisor(runner,
+                new FakeDeviceRecovery(true), new ContinuousFarmSupervisorOptions(1, 1),
+                null, store);
+            supervisor.RunAsync(new[] { "May 1" }, new H().Request, progress,
+                cancellation.Token).GetAwaiter().GetResult();
+            ContinuousFarmDeviceSnapshot restored = first.Task.GetAwaiter().GetResult();
+            Eq(ContinuousFarmDeviceState.Preflight, restored.State,
+                "stored gameplay state was resumed");
+            Is(restored.RestoredFromCheckpoint, "restore marker");
+            Eq(6, restored.CycleCount, "restored cycle count");
+            Eq("Wood", restored.CurrentResource, "restored observation");
+            Is(restored.Message.Contains("fresh preflight"), "safe restore message");
+        }
+    }
+
+    static void CheckpointCapturesFarmObservation()
+    {
+        using (var cancellation = new CancellationTokenSource(TimeSpan.FromSeconds(5)))
+        {
+            var store = new MemoryCheckpointStore();
+            var supervisor = new ContinuousFarmSupervisor(
+                new ObservedFarmRunner(cancellation), new FakeDeviceRecovery(true),
+                new ContinuousFarmSupervisorOptions(1, 1), null, store);
+            supervisor.RunAsync(new[] { "May 1" }, new H().Request, null,
+                cancellation.Token).GetAwaiter().GetResult();
+            Eq("Food", store.Current.Device.CurrentResource, "observed resource");
+            Eq(6, store.Current.Device.CurrentLevel, "observed level");
+            Eq("Team3", store.Current.Device.CurrentTeam, "observed team");
+            Is(store.Saves > 1, "checkpoint was not updated during progress");
+        }
+    }
+
+    static ContinuousFarmCheckpoint TestCheckpoint(string deviceName, int cycles) =>
+        new ContinuousFarmCheckpoint
+        {
+            Version = 1,
+            SavedAt = DateTimeOffset.UtcNow,
+            Device = new ContinuousFarmDeviceSnapshot
+            {
+                DeviceName = deviceName, State = ContinuousFarmDeviceState.Waiting,
+                CycleCount = cycles, LastTransitionAt = DateTimeOffset.UtcNow,
+                LastProgressAt = DateTimeOffset.UtcNow
+            },
+            TechnicalFailureTimestamps = new DateTimeOffset[0]
+        };
+
+    static void CheckpointHasNoNone()
+    {
+        string[] files = { "Core/Workflows/IContinuousFarmCheckpointStore.cs",
+            "Infrastructure/Workflows/LocalAppDataContinuousFarmCheckpointStore.cs",
+            "Infrastructure/Workflows/ContinuousFarmSupervisor.cs" };
+        foreach (string file in files)
+            Is(!File.ReadAllText(Path.Combine(Environment.CurrentDirectory, "ADB", file))
+                .Contains("CancellationToken.None"), "token bypass: " + file);
+    }
+
+    static void CheckpointHonorsCancellation()
+    {
+        string root = TemporaryDirectory();
+        try
+        {
+            var store = new LocalAppDataContinuousFarmCheckpointStore(
+                new TestCheckpointPath(root), new Log());
+            using (var cancellation = new CancellationTokenSource())
+            {
+                cancellation.Cancel();
+                bool saveCancelled = false;
+                try { store.Save(TestCheckpoint("May 1", 1), cancellation.Token); }
+                catch (OperationCanceledException) { saveCancelled = true; }
+                Is(saveCancelled, "cancelled save continued");
+                bool loadCancelled = false;
+                try { store.Load("May 1", cancellation.Token); }
+                catch (OperationCanceledException) { loadCancelled = true; }
+                Is(loadCancelled, "cancelled load continued");
+            }
+            Eq(0, Directory.GetFiles(root).Length, "cancelled operation wrote a file");
+        }
+        finally { TryDeleteDirectory(root); }
+    }
 
     static void MaintenanceRemovesExpiredScreenshots()
     {
@@ -830,6 +992,14 @@ internal static class Program
     sealed class DelegateProgress:IProgress<OneShotFarmProgress>{readonly Action<OneShotFarmProgress> action;public DelegateProgress(Action<OneShotFarmProgress> action){this.action=action;}public void Report(OneShotFarmProgress value){action(value);}}
     sealed class ThrowingProgress:IProgress<OneShotFarmProgress>{public void Report(OneShotFarmProgress value){throw new InvalidOperationException("closed UI");}}
     sealed class TestPreferencePath:IFarmUiPreferencesPathProvider{readonly string path;public TestPreferencePath(string path){this.path=path;}public string GetPath()=>path;}
+    sealed class TestCheckpointPath:IContinuousFarmCheckpointPathProvider{readonly string path;public TestCheckpointPath(string path){this.path=path;}public string GetDirectory()=>path;}
+    sealed class MemoryCheckpointStore:IContinuousFarmCheckpointStore
+    {
+        public ContinuousFarmCheckpoint Current;public int Saves;
+        public MemoryCheckpointStore(ContinuousFarmCheckpoint current=null){Current=current;}
+        public ContinuousFarmCheckpoint Load(string deviceName,CancellationToken token){token.ThrowIfCancellationRequested();return Current;}
+        public void Save(ContinuousFarmCheckpoint checkpoint,CancellationToken token){token.ThrowIfCancellationRequested();Saves++;Current=checkpoint;}
+    }
     sealed class FailingCommitter:IFarmUiPreferencesFileCommitter{public void Commit(string temporaryPath,string destinationPath){throw new IOException("commit failed");}}
     sealed class PreferenceFixture:IDisposable{public readonly string Root;public readonly string FilePath;public readonly LocalAppDataFarmUiPreferencesStore Store;public PreferenceFixture(){Root=Path.Combine(Path.GetTempPath(),"IKAutomation.Tests",Guid.NewGuid().ToString("N"));FilePath=Path.Combine(Root,"farm-ui-preferences.json");Store=new LocalAppDataFarmUiPreferencesStore(new TestPreferencePath(FilePath),new Log());}public void Save(FarmUiPreferences p){Is(Store.SaveAsync(p,default(CancellationToken)).GetAwaiter().GetResult().Success,"save");}public FarmUiPreferencesLoadResult Load()=>Store.LoadAsync(ValidPreferences(),default(CancellationToken)).GetAwaiter().GetResult();public void Dispose(){try{if(Directory.Exists(Root))Directory.Delete(Root,true);}catch{}}}
     sealed class FakeAvailability:IWorldMapTeamAvailabilityService{readonly Queue<bool> values;public int Calls;public readonly Queue<IReadOnlyList<TeamNumber>> ReadyTeamSequences=new Queue<IReadOnlyList<TeamNumber>>();public IReadOnlyList<TeamNumber> AvailableTeams=new[]{TeamNumber.Team1,TeamNumber.Team2,TeamNumber.Team3,TeamNumber.Team4};public TeamNumber ReadyTeam=TeamNumber.Team4;public bool TechnicalFailure;public Action BeforeCheck;public Action AfterCheck;public FakeAvailability(params bool[] values){this.values=new Queue<bool>(values);}public Task<WorldMapTeamAvailabilityResult> CheckAsync(string d,CancellationToken t){t.ThrowIfCancellationRequested();BeforeCheck?.Invoke();Calls++;IReadOnlyList<TeamNumber> teams=ReadyTeamSequences.Count>0?ReadyTeamSequences.Dequeue():(values.Count>0&&values.Dequeue()?new[]{ReadyTeam}:new TeamNumber[0]);AfterCheck?.Invoke();return Task.FromResult(new WorldMapTeamAvailabilityResult{Success=!TechnicalFailure,AnyReadyTeam=teams.Count>0,AvailableTeams=AvailableTeams,ReadyTeams=teams,ReadyMatches=new ImageMatchResult[0],FinalState=GameState.WorldMap,Message=TechnicalFailure?"failed":teams.Count>0?"ready":"busy",ErrorMessage=TechnicalFailure?"detector error":null});}}
@@ -907,6 +1077,26 @@ internal static class Program
             return Task.FromResult(new MultiDeviceOneShotFarmResult{MaximumConcurrency=20,WasCancelled=false,Devices=new[]{new MultiDeviceOneShotFarmItemResult{DeviceName=device,Stage=success?MultiDeviceOneShotFarmStage.Completed:MultiDeviceOneShotFarmStage.Failed,Result=farmResult,ErrorMessage=farmResult.ErrorMessage}}});
         }
         int CallsUnsafe(string device){return calls.TryGetValue(device,out int count)?count:0;}
+    }
+    sealed class CancelAfterSuccessRunner:IMultiDeviceOneShotFarmRunner
+    {
+        readonly CancellationTokenSource cancellation;public CancelAfterSuccessRunner(CancellationTokenSource cancellation){this.cancellation=cancellation;}
+        public Task<MultiDeviceOneShotFarmResult> RunAsync(IReadOnlyList<string> devices,OneShotFarmRequest request,IProgress<MultiDeviceOneShotFarmProgress> progress,CancellationToken token)
+        {
+            token.ThrowIfCancellationRequested();string device=devices.Single();cancellation.Cancel();
+            return Task.FromResult(new MultiDeviceOneShotFarmResult{Devices=new[]{new MultiDeviceOneShotFarmItemResult{DeviceName=device,Stage=MultiDeviceOneShotFarmStage.Completed,Result=new OneShotFarmResult{DeviceName=device,Success=true,Outcome=OneShotFarmOutcome.MarchStarted}}}});
+        }
+    }
+    sealed class ObservedFarmRunner:IMultiDeviceOneShotFarmRunner
+    {
+        readonly CancellationTokenSource cancellation;public ObservedFarmRunner(CancellationTokenSource cancellation){this.cancellation=cancellation;}
+        public Task<MultiDeviceOneShotFarmResult> RunAsync(IReadOnlyList<string> devices,OneShotFarmRequest request,IProgress<MultiDeviceOneShotFarmProgress> progress,CancellationToken token)
+        {
+            token.ThrowIfCancellationRequested();string device=devices.Single();
+            progress?.Report(new MultiDeviceOneShotFarmProgress{DeviceName=device,Stage=MultiDeviceOneShotFarmStage.Running,Message="observed",DeviceProgress=new OneShotFarmProgress{Stage=OneShotFarmProgressStage.RunningFarmStep,CurrentResource=ResourceType.Food,CurrentLevel=6,CurrentTeam=TeamNumber.Team3}});
+            cancellation.Cancel();
+            return Task.FromResult(new MultiDeviceOneShotFarmResult{Devices=new[]{new MultiDeviceOneShotFarmItemResult{DeviceName=device,Stage=MultiDeviceOneShotFarmStage.Completed,Result=new OneShotFarmResult{DeviceName=device,Success=true,Outcome=OneShotFarmOutcome.MarchStarted,CurrentResource=ResourceType.Food,LocatedLevel=6,SelectedTeam=TeamNumber.Team3}}}});
+        }
     }
     sealed class MultiDeviceWorkflowProbe
     {

@@ -20,6 +20,7 @@
     <Compile Include="..\..\ADB\Infrastructure\Workflows\LocalAppDataFarmUiPreferencesStore.cs" Link="Production\LocalAppDataFarmUiPreferencesStore.cs" />
     <Compile Include="..\..\ADB\Infrastructure\Workflows\MultiDeviceOneShotFarmRunner.cs" Link="Production\MultiDeviceOneShotFarmRunner.cs" />
     <Compile Include="..\..\ADB\Infrastructure\Workflows\ContinuousFarmSupervisor.cs" Link="Production\ContinuousFarmSupervisor.cs" />
+    <Compile Include="..\..\ADB\Infrastructure\Workflows\LocalAppDataContinuousFarmCheckpointStore.cs" Link="Production\LocalAppDataContinuousFarmCheckpointStore.cs" />
     <Compile Include="..\..\ADB\Infrastructure\Workflows\FileSystemOperationalMaintenanceService.cs" Link="Production\FileSystemOperationalMaintenanceService.cs" />
     <Compile Include="..\..\ADB\Infrastructure\Workflows\LdPlayerDeviceRecoveryService.cs" Link="Production\LdPlayerDeviceRecoveryService.cs" />
     <Compile Include="..\..\ADB\Infrastructure\TeamSelection\WorldMapTeamAvailabilityService.cs" Link="Production\WorldMapTeamAvailabilityService.cs" />

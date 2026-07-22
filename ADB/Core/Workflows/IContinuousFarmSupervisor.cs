@@ -44,6 +44,11 @@ namespace ADB_Tool_Automation_Post_FB.Core.Workflows
         public int QuarantineCount { get; set; }
         public DateTimeOffset? CircuitOpenUntil { get; set; }
         public int LastBackoffDelayMs { get; set; }
+        public string CurrentResource { get; set; }
+        public int? CurrentLevel { get; set; }
+        public string CurrentTeam { get; set; }
+        public bool RestoredFromCheckpoint { get; set; }
+        public DateTimeOffset? CheckpointSavedAt { get; set; }
         public long FreeDiskBytes { get; set; }
         public bool DiagnosticWritesSuspended { get; set; }
         public DateTimeOffset? LastMaintenanceAt { get; set; }
@@ -71,7 +76,8 @@ namespace ADB_Tool_Automation_Post_FB.Core.Workflows
             int waitingNoProgressTimeoutMs = 1200000,
             IReadOnlyList<int> technicalRetryDelaysMs = null,
             int retryJitterMaxMs = 15000, int circuitFailureThreshold = 5,
-            int circuitWindowMs = 1800000, int quarantineCooldownMs = 1800000)
+            int circuitWindowMs = 1800000, int quarantineCooldownMs = 1800000,
+            int checkpointIntervalMs = 30000)
         {
             if (cycleIntervalMs < 1)
                 throw new ArgumentOutOfRangeException(nameof(cycleIntervalMs));
@@ -98,6 +104,8 @@ namespace ADB_Tool_Automation_Post_FB.Core.Workflows
                 throw new ArgumentOutOfRangeException(nameof(circuitWindowMs));
             if (quarantineCooldownMs < 1)
                 throw new ArgumentOutOfRangeException(nameof(quarantineCooldownMs));
+            if (checkpointIntervalMs < 1)
+                throw new ArgumentOutOfRangeException(nameof(checkpointIntervalMs));
             CycleIntervalMs = cycleIntervalMs;
             FailureRetryDelayMs = failureRetryDelayMs;
             NoProgressTimeoutMs = noProgressTimeoutMs;
@@ -109,6 +117,7 @@ namespace ADB_Tool_Automation_Post_FB.Core.Workflows
             CircuitFailureThreshold = circuitFailureThreshold;
             CircuitWindowMs = circuitWindowMs;
             QuarantineCooldownMs = quarantineCooldownMs;
+            CheckpointIntervalMs = checkpointIntervalMs;
         }
 
         public int CycleIntervalMs { get; }
@@ -122,5 +131,6 @@ namespace ADB_Tool_Automation_Post_FB.Core.Workflows
         public int CircuitFailureThreshold { get; }
         public int CircuitWindowMs { get; }
         public int QuarantineCooldownMs { get; }
+        public int CheckpointIntervalMs { get; }
     }
 }
