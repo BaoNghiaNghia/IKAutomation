@@ -133,7 +133,10 @@ internal static class Program
         Run("One-Shot UI has per-run Stop cancellation", OneShotUiHasStop);
         Run("One-Shot UI hides manual diagnostic controls", OneShotUiIsFocused);
         Run("Multi-device runner caps concurrency at twenty", MultiDeviceConcurrencyIsCapped);
+        Run("Concurrent retry shares the twenty-device limit", ConcurrentBatchesShareConcurrencyLimit);
         Run("Multi-device runner isolates requests per device", MultiDeviceRequestsAreIsolated);
+        Run("One device failure does not stop other devices", MultiDeviceFailureIsIsolated);
+        Run("One-Shot UI retries only failed devices", MultiDeviceUiRetriesFailures);
         Console.WriteLine($"One-shot farm tests: {pass} passed, {fail} failed."); return fail == 0 ? 0 : 1;
     }
     static void Run(string n, Action a) { try { a(); pass++; Console.WriteLine("PASS: " + n); } catch (Exception e) { fail++; Console.WriteLine("FAIL: " + n + " - " + e); } }
@@ -184,6 +187,61 @@ internal static class Program
             Is(!string.Equals(probe.Requests[0].RunId, probe.Requests[1].RunId,
                     StringComparison.Ordinal), "devices shared a run id");
         }
+    }
+
+    static void ConcurrentBatchesShareConcurrencyLimit()
+    {
+        var probe = new MultiDeviceWorkflowProbe(20);
+        var runner = new MultiDeviceOneShotFarmRunner(
+            () => new MultiDeviceProbeWorkflow(probe), 20);
+        using (var cancellation = new CancellationTokenSource(TimeSpan.FromSeconds(10)))
+        {
+            Task<MultiDeviceOneShotFarmResult> first = runner.RunAsync(
+                Enumerable.Range(1, 15).Select(index => "First" + index).ToArray(),
+                new H().Request, null, cancellation.Token);
+            Task<MultiDeviceOneShotFarmResult> retry = runner.RunAsync(
+                Enumerable.Range(1, 15).Select(index => "Retry" + index).ToArray(),
+                new H().Request, null, cancellation.Token);
+            Is(probe.RequiredConcurrencyReached.Task.Wait(TimeSpan.FromSeconds(5)),
+                "concurrent batches did not fill the shared limit");
+            Eq(20, probe.MaximumActive, "concurrent batches exceeded shared limit");
+            probe.Release.TrySetResult(true);
+            Task.WhenAll(first, retry).GetAwaiter().GetResult();
+            Eq(20, probe.MaximumActive, "shared limit changed after queued work");
+        }
+    }
+
+    static void MultiDeviceFailureIsIsolated()
+    {
+        var runner = new MultiDeviceOneShotFarmRunner(
+            () => new SelectiveFailureWorkflow(), 2);
+        using (var cancellation = new CancellationTokenSource(TimeSpan.FromSeconds(10)))
+        {
+            MultiDeviceOneShotFarmResult result = runner.RunAsync(
+                new[] { "Failing Device", "Healthy Device" }, new H().Request,
+                null, cancellation.Token).GetAwaiter().GetResult();
+            Eq(MultiDeviceOneShotFarmStage.Failed,
+                result.Devices.Single(item => item.DeviceName == "Failing Device").Stage,
+                "failed device stage");
+            Eq(MultiDeviceOneShotFarmStage.Completed,
+                result.Devices.Single(item => item.DeviceName == "Healthy Device").Stage,
+                "healthy device was stopped");
+        }
+    }
+
+    static void MultiDeviceUiRetriesFailures()
+    {
+        string root = Path.Combine(Environment.CurrentDirectory, "ADB", "UI");
+        string xaml = File.ReadAllText(Path.Combine(root, "DeviceDiagnosticWindow.xaml"));
+        string code = File.ReadAllText(Path.Combine(root, "DeviceDiagnosticWindow.xaml.cs"));
+        Is(xaml.Contains("RetryFailedDevicesButton")
+            && xaml.Contains("RetryFailedDevices_Click"), "retry button missing");
+        Is(code.Contains("item.Stage == MultiDeviceOneShotFarmStage.Failed")
+            && code.Contains("RunDeviceBatchAsync(devices, retryRequest"),
+            "retry does not isolate failed devices");
+        Is(code.Contains("deviceAttemptVersions")
+            && code.Contains("IsCurrentDeviceAttempt"),
+            "stale device attempts can overwrite retry results");
     }
 
     static void Invalid(){var h=new H();h.Request.ResourceType=(ResourceType)99;var r=Go(h);Eq(OneShotFarmOutcome.PreconditionFailed,r.Outcome,"outcome");Eq(0,h.Total,"calls");}
@@ -422,6 +480,22 @@ internal static class Program
                     LastCompletedStep=OneShotFarmStep.Completed,Message="completed"};
             }
             finally{probe.Exit();}
+        }
+    }
+    sealed class SelectiveFailureWorkflow:IOneShotFarmWorkflow
+    {
+        public Task<OneShotFarmResult> RunAsync(string d,OneShotFarmRequest r,CancellationToken t)=>RunAsync(d,r,null,t);
+        public Task<OneShotFarmResult> RunAsync(string d,OneShotFarmRequest r,IProgress<OneShotFarmProgress> p,CancellationToken t)
+        {
+            t.ThrowIfCancellationRequested();bool success=d=="Healthy Device";
+            return Task.FromResult(new OneShotFarmResult{DeviceName=d,Success=success,
+                Outcome=success?OneShotFarmOutcome.MarchStarted:OneShotFarmOutcome.SearchExecutionFailed,
+                RequestedResource=r.ResourceType,RequestedLevel=r.TargetLevel,AttemptedLevels=new int[0],
+                AttemptedResources=new ResourceType[0],SelectedResources=r.SelectedResources,
+                ShuffledResourcePriority=r.ResourcePriority,StorageFullResources=new ResourceType[0],
+                LevelsExhaustedResources=new ResourceType[0],Steps=new OneShotFarmStepResult[0],
+                LastCompletedStep=success?OneShotFarmStep.Completed:OneShotFarmStep.ExecuteSearch,
+                Message=success?"completed":"failed"});
         }
     }
     sealed class Log:IDiagnosticLogger{public void Info(string m){}public void Error(string m,Exception e){}}

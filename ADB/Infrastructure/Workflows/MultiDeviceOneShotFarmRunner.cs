@@ -13,6 +13,7 @@ namespace ADB_Tool_Automation_Post_FB.Infrastructure.Workflows
 
         private readonly Func<IOneShotFarmWorkflow> workflowFactory;
         private readonly int maximumConcurrency;
+        private readonly SemaphoreSlim executionGate;
 
         public MultiDeviceOneShotFarmRunner(Func<IOneShotFarmWorkflow> workflowFactory,
             int maximumConcurrency = MaximumSupportedConcurrency)
@@ -22,6 +23,7 @@ namespace ADB_Tool_Automation_Post_FB.Infrastructure.Workflows
             if (maximumConcurrency < 1 || maximumConcurrency > MaximumSupportedConcurrency)
                 throw new ArgumentOutOfRangeException(nameof(maximumConcurrency));
             this.maximumConcurrency = maximumConcurrency;
+            executionGate = new SemaphoreSlim(maximumConcurrency, maximumConcurrency);
         }
 
         public async Task<MultiDeviceOneShotFarmResult> RunAsync(
@@ -40,20 +42,17 @@ namespace ADB_Tool_Automation_Post_FB.Infrastructure.Workflows
                 throw new ArgumentException("At least one LDPlayer device must be selected.",
                     nameof(deviceNames));
 
-            using (var gate = new SemaphoreSlim(maximumConcurrency, maximumConcurrency))
+            Task<MultiDeviceOneShotFarmItemResult>[] tasks = devices
+                .Select(device => Task.Run(() => RunDeviceAsync(device, request,
+                    executionGate, progress, cancellationToken)))
+                .ToArray();
+            MultiDeviceOneShotFarmItemResult[] results = await Task.WhenAll(tasks);
+            return new MultiDeviceOneShotFarmResult
             {
-                Task<MultiDeviceOneShotFarmItemResult>[] tasks = devices
-                    .Select(device => Task.Run(() => RunDeviceAsync(device, request,
-                        gate, progress, cancellationToken)))
-                    .ToArray();
-                MultiDeviceOneShotFarmItemResult[] results = await Task.WhenAll(tasks);
-                return new MultiDeviceOneShotFarmResult
-                {
-                    Devices = results,
-                    MaximumConcurrency = maximumConcurrency,
-                    WasCancelled = cancellationToken.IsCancellationRequested
-                };
-            }
+                Devices = results,
+                MaximumConcurrency = maximumConcurrency,
+                WasCancelled = cancellationToken.IsCancellationRequested
+            };
         }
 
         private async Task<MultiDeviceOneShotFarmItemResult> RunDeviceAsync(

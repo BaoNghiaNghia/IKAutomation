@@ -48,6 +48,15 @@ namespace ADB_Tool_Automation_Post_FB.UI
         private DateTimeOffset? oneShotFarmWaitDeadline;
         private readonly ObservableCollection<DeviceSelectionItem> deviceSelections =
             new ObservableCollection<DeviceSelectionItem>();
+        private readonly HashSet<string> failedDeviceNames =
+            new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+        private readonly HashSet<string> activeDeviceNames =
+            new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+        private readonly Dictionary<string, long> deviceAttemptVersions =
+            new Dictionary<string, long>(StringComparer.OrdinalIgnoreCase);
+        private OneShotFarmRequest retryRequest;
+        private int activeDeviceBatchCount;
+        private long nextDeviceAttemptVersion;
 
         public DeviceDiagnosticWindow(
             IDeviceDiagnosticService diagnosticService,
@@ -348,23 +357,73 @@ namespace ADB_Tool_Automation_Post_FB.UI
             OneShotFarmRequest request = FarmUiPreferencesMapper.CreateRequest(
                 preferences, defaultOneShotFarmRequest);
             string saveWarning = saveResult.Success ? null : saveResult.Message;
-            var runCancellation = CancellationTokenSource.CreateLinkedTokenSource(
-                lifetimeCancellation.Token);
-            oneShotFarmCancellation = runCancellation;
-            oneShotFarmCancellationRequested = false;
-            long runGeneration = ++oneShotFarmRunGeneration;
+            failedDeviceNames.Clear();
+            retryRequest = request;
+            RetryFailedDevicesButton.IsEnabled = false;
+            await RunDeviceBatchAsync(selectedDevices, request, saveWarning, false);
+        }
+
+        private async void RetryFailedDevices_Click(object sender, RoutedEventArgs e)
+        {
+            if (oneShotFarmCancellationRequested) return;
+            string[] devices = failedDeviceNames
+                .Where(name => !activeDeviceNames.Contains(name))
+                .Where(name => deviceSelections.Any(item => string.Equals(
+                    item.DeviceName, name, StringComparison.OrdinalIgnoreCase)))
+                .ToArray();
+            if (devices.Length == 0 || retryRequest == null)
+            {
+                failedDeviceNames.Clear();
+                retryRequest = null;
+                RetryFailedDevicesButton.IsEnabled = false;
+                StatusTextBlock.Text = "Không còn thiết bị lỗi để chạy lại.";
+                return;
+            }
+
+            await RunDeviceBatchAsync(devices, retryRequest, null, true);
+        }
+
+        private async Task RunDeviceBatchAsync(string[] deviceNames,
+            OneShotFarmRequest request, string saveWarning, bool isRetry)
+        {
+            CancellationTokenSource runCancellation = oneShotFarmCancellation;
+            if (runCancellation == null)
+            {
+                runCancellation = CancellationTokenSource.CreateLinkedTokenSource(
+                    lifetimeCancellation.Token);
+                oneShotFarmCancellation = runCancellation;
+                oneShotFarmCancellationRequested = false;
+                oneShotFarmRunGeneration++;
+            }
+            long runGeneration = oneShotFarmRunGeneration;
+            activeDeviceBatchCount++;
+            var attemptVersions = new Dictionary<string, long>(
+                StringComparer.OrdinalIgnoreCase);
+            foreach (string deviceName in deviceNames)
+            {
+                long attemptVersion = ++nextDeviceAttemptVersion;
+                attemptVersions[deviceName] = attemptVersion;
+                deviceAttemptVersions[deviceName] = attemptVersion;
+                activeDeviceNames.Add(deviceName);
+            }
             var progress = new Progress<MultiDeviceOneShotFarmProgress>(value =>
-                ApplyMultiDeviceFarmProgress(runGeneration, runCancellation, value));
-            foreach (DeviceSelectionItem item in deviceSelections.Where(item => item.IsSelected))
+                ApplyMultiDeviceFarmProgress(runGeneration, runCancellation,
+                    attemptVersions, value));
+            foreach (DeviceSelectionItem item in deviceSelections.Where(item =>
+                deviceNames.Contains(item.DeviceName, StringComparer.OrdinalIgnoreCase)))
                 item.Status = "Queued";
             RunOneShotFarmButton.IsEnabled = false;
+            RetryFailedDevicesButton.IsEnabled = false;
             StopOneShotFarmButton.IsEnabled = true;
             OneShotFarmResourcesGroupBox.IsEnabled = false;
-            StatusTextBlock.Text = $"Đang chạy {selectedDevices.Length} thiết bị; tối đa 20 thiết bị đồng thời...";
+            StatusTextBlock.Text = isRetry
+                ? $"Đang chạy lại {deviceNames.Length} thiết bị lỗi; các thiết bị khác không bị ảnh hưởng..."
+                : $"Đang chạy {deviceNames.Length} thiết bị; tối đa 20 thiết bị đồng thời...";
             try
             {
                 MultiDeviceOneShotFarmResult result = await multiDeviceFarmRunner.RunAsync(
-                    selectedDevices, request, progress, runCancellation.Token);
+                    deviceNames, request, progress, runCancellation.Token);
+                UpdateRetryCandidates(result, request, attemptVersions);
                 StatusTextBlock.Text = FormatMultiDeviceFarmResult(result)
                     + (string.IsNullOrWhiteSpace(saveWarning) ? string.Empty
                         : Environment.NewLine + "Warning: " + saveWarning);
@@ -379,28 +438,72 @@ namespace ADB_Tool_Automation_Post_FB.UI
             }
             catch (Exception exception)
             {
+                foreach (string deviceName in deviceNames.Where(name =>
+                    IsCurrentDeviceAttempt(name, attemptVersions)))
+                    failedDeviceNames.Add(deviceName);
+                retryRequest = request;
+                foreach (DeviceSelectionItem item in deviceSelections.Where(item =>
+                    failedDeviceNames.Contains(item.DeviceName)))
+                    item.Status = "Failed: " + exception.Message;
                 StatusTextBlock.Text = $"Error: {exception.Message}";
                 AppendNotificationStatus(await NotifyExceptionSafelyAsync(
-                    string.Join(",", selectedDevices), exception));
+                    string.Join(",", deviceNames), exception));
             }
             finally
             {
-                StopOneShotFarmProgressTimer();
-                if (ReferenceEquals(oneShotFarmCancellation, runCancellation))
-                    oneShotFarmCancellation = null;
-                runCancellation.Dispose();
-                RunOneShotFarmButton.IsEnabled = true;
-                StopOneShotFarmButton.IsEnabled = false;
-                OneShotFarmResourcesGroupBox.IsEnabled = true;
+                foreach (string deviceName in deviceNames.Where(name =>
+                    IsCurrentDeviceAttempt(name, attemptVersions)))
+                    activeDeviceNames.Remove(deviceName);
+                activeDeviceBatchCount--;
+                if (activeDeviceBatchCount == 0)
+                {
+                    StopOneShotFarmProgressTimer();
+                    if (ReferenceEquals(oneShotFarmCancellation, runCancellation))
+                        oneShotFarmCancellation = null;
+                    runCancellation.Dispose();
+                    RunOneShotFarmButton.IsEnabled = true;
+                    StopOneShotFarmButton.IsEnabled = false;
+                    OneShotFarmResourcesGroupBox.IsEnabled = true;
+                    if (failedDeviceNames.Count == 0) retryRequest = null;
+                }
+                RefreshRetryButtonState();
             }
         }
 
+        private void UpdateRetryCandidates(MultiDeviceOneShotFarmResult result,
+            OneShotFarmRequest request, IReadOnlyDictionary<string, long> attemptVersions)
+        {
+            foreach (string deviceName in attemptVersions.Keys.Where(name =>
+                IsCurrentDeviceAttempt(name, attemptVersions)))
+                failedDeviceNames.Remove(deviceName);
+            foreach (MultiDeviceOneShotFarmItemResult item in result?.Devices
+                ?? new MultiDeviceOneShotFarmItemResult[0])
+            {
+                if (item.Stage == MultiDeviceOneShotFarmStage.Failed
+                    && IsCurrentDeviceAttempt(item.DeviceName, attemptVersions))
+                    failedDeviceNames.Add(item.DeviceName);
+            }
+            retryRequest = failedDeviceNames.Count > 0 || activeDeviceBatchCount > 1
+                ? request
+                : null;
+        }
+
+        private void RefreshRetryButtonState()
+        {
+            RetryFailedDevicesButton.IsEnabled = !oneShotFarmCancellationRequested
+                && retryRequest != null
+                && failedDeviceNames.Any(name => !activeDeviceNames.Contains(name));
+        }
+
         private void ApplyMultiDeviceFarmProgress(long runGeneration,
-            CancellationTokenSource runCancellation, MultiDeviceOneShotFarmProgress progress)
+            CancellationTokenSource runCancellation,
+            IReadOnlyDictionary<string, long> attemptVersions,
+            MultiDeviceOneShotFarmProgress progress)
         {
             if (progress == null || !OneShotFarmProgressUtilities.IsCurrentRun(
                 runGeneration, oneShotFarmRunGeneration, runCancellation,
-                oneShotFarmCancellation)) return;
+                oneShotFarmCancellation)
+                || !IsCurrentDeviceAttempt(progress.DeviceName, attemptVersions)) return;
             DeviceSelectionItem item = deviceSelections.FirstOrDefault(value =>
                 string.Equals(value.DeviceName, progress.DeviceName,
                     StringComparison.OrdinalIgnoreCase));
@@ -408,6 +511,23 @@ namespace ADB_Tool_Automation_Post_FB.UI
                 item.Status = string.IsNullOrWhiteSpace(progress.Message)
                     ? progress.Stage.ToString()
                     : $"{progress.Stage}: {progress.Message}";
+            if (progress.Stage == MultiDeviceOneShotFarmStage.Failed)
+            {
+                activeDeviceNames.Remove(progress.DeviceName);
+                failedDeviceNames.Add(progress.DeviceName);
+                RefreshRetryButtonState();
+            }
+            else if (progress.Stage == MultiDeviceOneShotFarmStage.Completed)
+            {
+                activeDeviceNames.Remove(progress.DeviceName);
+                failedDeviceNames.Remove(progress.DeviceName);
+                RefreshRetryButtonState();
+            }
+            else if (progress.Stage == MultiDeviceOneShotFarmStage.Cancelled)
+            {
+                activeDeviceNames.Remove(progress.DeviceName);
+                RefreshRetryButtonState();
+            }
             if (progress.DeviceProgress != null)
             {
                 ApplyOneShotFarmProgress(runGeneration, runCancellation,
@@ -415,6 +535,15 @@ namespace ADB_Tool_Automation_Post_FB.UI
                 ProgressMessageTextBlock.Text = $"[{progress.DeviceName}] "
                     + (progress.DeviceProgress.Message ?? progress.Message ?? "-");
             }
+        }
+
+        private bool IsCurrentDeviceAttempt(string deviceName,
+            IReadOnlyDictionary<string, long> attemptVersions)
+        {
+            return !string.IsNullOrWhiteSpace(deviceName)
+                && attemptVersions.TryGetValue(deviceName, out long attemptVersion)
+                && deviceAttemptVersions.TryGetValue(deviceName, out long currentVersion)
+                && attemptVersion == currentVersion;
         }
 
         private async void SaveFarmSettings_Click(object sender, RoutedEventArgs e)
@@ -458,6 +587,7 @@ namespace ADB_Tool_Automation_Post_FB.UI
             if (currentRun == null || oneShotFarmCancellationRequested) return;
             oneShotFarmCancellationRequested = true;
             StopOneShotFarmButton.IsEnabled = false;
+            RetryFailedDevicesButton.IsEnabled = false;
             ProgressStageTextBlock.Text = OneShotFarmProgressStage.Stopping.ToString();
             ProgressMessageTextBlock.Text = "Stopping One-Shot Farm...";
             StopOneShotFarmProgressTimer();
