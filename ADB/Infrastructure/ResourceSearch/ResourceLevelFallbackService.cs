@@ -91,8 +91,14 @@ namespace ADB_Tool_Automation_Post_FB.Infrastructure.ResourceSearch
                 bool needsToastClear = false;
                 int? knownCeiling = GetKnownCeiling(deviceName, runId);
                 int? unconfirmedCeiling = null;
-                foreach (int level in policy.Levels)
+                var plannedLevels = (knownCeiling.HasValue
+                    ? BuildEffectiveLevels(policy.Levels, knownCeiling.Value)
+                    : policy.Levels).ToList();
+                var processedLevels = new HashSet<int>();
+                for (int levelIndex = 0; levelIndex < plannedLevels.Count; levelIndex++)
                 {
+                    int level = plannedLevels[levelIndex];
+                    processedLevels.Add(level);
                     if (knownCeiling.HasValue && level > knownCeiling.Value)
                     {
                         logger.Info($"[Resource Level Fallback] RunId='{runId}', DeviceName='{deviceName}', "
@@ -143,6 +149,8 @@ namespace ADB_Tool_Automation_Post_FB.Infrastructure.ResourceSearch
                                     ? configured.ObservedLevel.Value
                                     : Math.Min(unconfirmedCeiling.Value,
                                         configured.ObservedLevel.Value);
+                                if (!plannedLevels.Contains(configured.ObservedLevel.Value))
+                                    plannedLevels.Add(configured.ObservedLevel.Value);
                                 attempt.Message = $"Requested level {level} is unavailable; "
                                     + $"level {configured.ObservedLevel.Value} was verified. "
                                     + "Continuing with the next configured level.";
@@ -175,6 +183,12 @@ namespace ADB_Tool_Automation_Post_FB.Infrastructure.ResourceSearch
                         {
                             knownCeiling = RememberCeiling(deviceName, runId, level);
                             unconfirmedCeiling = null;
+                            IReadOnlyList<int> effectiveLevels = BuildEffectiveLevels(
+                                policy.Levels, knownCeiling.Value);
+                            plannedLevels = plannedLevels.Take(levelIndex + 1)
+                                .Concat(effectiveLevels.Where(candidate =>
+                                    !processedLevels.Contains(candidate)))
+                                .ToList();
                         }
 
                         ResourceSearchExecutionResult searched = await search.ExecuteAsync(deviceName,
@@ -278,6 +292,23 @@ namespace ADB_Tool_Automation_Post_FB.Infrastructure.ResourceSearch
                 ceilingsByDevice[deviceName] = new RunLevelCeiling(runId, ceiling);
                 return ceiling;
             }
+        }
+
+        private IReadOnlyList<int> BuildEffectiveLevels(
+            IReadOnlyList<int> requestedLevels, int accountCeiling)
+        {
+            var effective = requestedLevels
+                .Where(level => level <= accountCeiling)
+                .Distinct()
+                .ToList();
+            for (int level = accountCeiling;
+                effective.Count < requestedLevels.Count
+                    && level >= configurationOptions.MinimumLevel;
+                level--)
+            {
+                if (!effective.Contains(level)) effective.Add(level);
+            }
+            return effective;
         }
 
         private sealed class RunLevelCeiling
