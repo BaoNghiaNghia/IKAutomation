@@ -1,68 +1,18 @@
 <Window x:Class="ADB_Tool_Automation_Post_FB.UI.DeviceDiagnosticWindow"
         xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
         xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
-        Title="IKAutomation - Device Diagnostic"
-        Width="620" Height="720"
-        MinWidth="560" MinHeight="640"
+        Title="IKAutomation - Farm Control"
+        Width="680" Height="760"
+        MinWidth="600" MinHeight="660"
         WindowStartupLocation="CenterOwner">
     <ScrollViewer VerticalScrollBarVisibility="Auto">
         <StackPanel Margin="20">
-            <TextBlock Text="Infinity Kingdom Device Diagnostic"
-                       FontSize="20" FontWeight="Bold" Margin="0,0,0,16"/>
+            <TextBlock Text="Infinity Kingdom Farm Control"
+                       FontSize="20" FontWeight="Bold" Margin="0,0,0,12"/>
 
-            <Grid>
-                <Grid.ColumnDefinitions>
-                    <ColumnDefinition Width="150"/>
-                    <ColumnDefinition Width="*"/>
-                </Grid.ColumnDefinitions>
-                <Grid.RowDefinitions>
-                    <RowDefinition Height="Auto"/>
-                    <RowDefinition Height="Auto"/>
-                    <RowDefinition Height="Auto"/>
-                    <RowDefinition Height="Auto"/>
-                </Grid.RowDefinitions>
-
-                <TextBlock Grid.Row="0" Grid.Column="0" Text="Device name" VerticalAlignment="Center"/>
-                <Grid Grid.Row="0" Grid.Column="1" Margin="0,4">
-                    <Grid.ColumnDefinitions>
-                        <ColumnDefinition Width="*"/>
-                        <ColumnDefinition Width="Auto"/>
-                    </Grid.ColumnDefinitions>
-                    <ComboBox x:Name="DeviceNameComboBox" Grid.Column="0"
-                              IsEditable="True" IsTextSearchEnabled="True"
-                              ToolTip="Select an LDPlayer instance or enter its exact name"/>
-                    <Button Grid.Column="1" Content="Refresh" Click="RefreshDevices_Click"
-                            Padding="12,3" Margin="8,0,0,0"/>
-                </Grid>
-
-                <TextBlock Grid.Row="1" Grid.Column="0" Text="Package name" VerticalAlignment="Center"/>
-                <TextBox x:Name="PackageNameTextBox" Grid.Row="1" Grid.Column="1" Margin="0,4"
-                         IsReadOnly="True" Background="#FFF2F2F2"/>
-
-                <TextBlock Grid.Row="2" Grid.Column="0" Text="State name" VerticalAlignment="Center"/>
-                <ComboBox x:Name="StateNameComboBox" Grid.Row="2" Grid.Column="1" Margin="0,4"
-                          IsEditable="True" Text="world_map">
-                    <ComboBoxItem Content="world_map"/>
-                    <ComboBoxItem Content="search_panel"/>
-                    <ComboBoxItem Content="resource_not_found"/>
-                    <ComboBoxItem Content="resource_found"/>
-                    <ComboBoxItem Content="resource_popup"/>
-                    <ComboBoxItem Content="team_panel"/>
-                    <ComboBoxItem Content="team_free"/>
-                    <ComboBoxItem Content="team_busy"/>
-                    <ComboBoxItem Content="march_started"/>
-                    <ComboBoxItem Content="network_error"/>
-                    <ComboBoxItem Content="unknown_popup"/>
-                </ComboBox>
-
-                <TextBlock Grid.Row="3" Grid.Column="0" Text="Note" VerticalAlignment="Top" Margin="0,8,0,0"/>
-                <TextBox x:Name="NoteTextBox" Grid.Row="3" Grid.Column="1" Margin="0,4"
-                         Height="56" AcceptsReturn="True" TextWrapping="Wrap"/>
-            </Grid>
-
-            <GroupBox Header="Thiết bị chạy đồng thời (tối đa 20)" Margin="0,12,0,0">
+            <GroupBox Header="Thiết bị chạy đồng thời (tối đa 20)">
                 <StackPanel Margin="8">
-                    <ListBox x:Name="DeviceSelectionListBox" Height="145"
+                    <ListBox x:Name="DeviceSelectionListBox" Height="120"
                              ScrollViewer.VerticalScrollBarVisibility="Auto">
                         <ListBox.ItemTemplate>
                             <DataTemplate>
@@ -81,6 +31,8 @@
                         </ListBox.ItemTemplate>
                     </ListBox>
                     <WrapPanel Margin="0,8,0,0">
+                        <Button Content="Làm mới" Click="RefreshDevices_Click"
+                                Padding="12,4" Margin="0,0,8,0"/>
                         <Button Content="Chọn tất cả" Click="SelectAllDevices_Click"
                                 Padding="12,4" Margin="0,0,8,0"/>
                         <Button Content="Bỏ chọn" Click="ClearDeviceSelection_Click"
@@ -90,7 +42,7 @@
             </GroupBox>
 
             <GroupBox x:Name="OneShotFarmResourcesGroupBox"
-                      Header="Tài nguyên One-Shot Farm" Margin="0,12,0,8">
+                      Header="Cấu hình farm" Margin="0,10,0,8">
                 <StackPanel Margin="10,6">
                     <WrapPanel Margin="0,0,0,8">
                         <CheckBox x:Name="IronResourceCheckBox" Content="Sắt" Margin="0,0,18,0"/>
@@ -98,49 +50,51 @@
                         <CheckBox x:Name="WoodResourceCheckBox" Content="Rừng" Margin="0,0,18,0"/>
                         <CheckBox x:Name="FoodResourceCheckBox" Content="Đất nông nghiệp"/>
                     </WrapPanel>
-                    <Grid>
-                        <Grid.ColumnDefinitions>
-                            <ColumnDefinition Width="180"/><ColumnDefinition Width="*"/>
-                        </Grid.ColumnDefinitions>
-                        <Grid.RowDefinitions>
-                            <RowDefinition Height="Auto"/><RowDefinition Height="Auto"/>
-                            <RowDefinition Height="Auto"/><RowDefinition Height="Auto"/>
-                            <RowDefinition Height="Auto"/>
-                        </Grid.RowDefinitions>
-                        <TextBlock Grid.Row="0" Text="Level priority" VerticalAlignment="Center"/>
-                        <TextBox x:Name="LevelPriorityTextBox" Grid.Row="0" Grid.Column="1" Text="7,6,5" Margin="0,2"/>
-                        <TextBlock Grid.Row="1" Text="Team priority" VerticalAlignment="Center"/>
-                        <TextBox x:Name="TeamPriorityTextBox" Grid.Row="1" Grid.Column="1" Text="4,3,2" Margin="0,2"/>
-                        <TextBlock Grid.Row="2" Text="Kiểm tra đội mỗi (phút)" VerticalAlignment="Center"/>
-                        <TextBox x:Name="ReadyCheckIntervalTextBox" Grid.Row="2" Grid.Column="1" Text="15" Margin="0,2"/>
-                        <TextBlock Grid.Row="3" Text="Dừng chờ sau (giờ)" VerticalAlignment="Center"/>
-                        <TextBox x:Name="ReadyMaxWaitTextBox" Grid.Row="3" Grid.Column="1" Text="12" Margin="0,2"/>
-                        <WrapPanel Grid.Row="4" Grid.ColumnSpan="2" Margin="0,6,0,0">
-                            <CheckBox x:Name="AllowTeam1CheckBox" Content="Cho phép Team1" Margin="0,0,18,0"/>
-                            <CheckBox x:Name="UnoccupiedOnlyCheckBox" Content="Chỉ mục tiêu chưa có người khai thác"/>
-                        </WrapPanel>
-                    </Grid>
-                    <WrapPanel Margin="0,8,0,0">
-                        <Button Content="Save Settings" Click="SaveFarmSettings_Click" Padding="12,5" Margin="0,0,8,0"/>
-                        <Button Content="Restore Defaults" Click="RestoreFarmDefaults_Click" Padding="12,5"/>
+                    <CheckBox x:Name="UnoccupiedOnlyCheckBox"
+                              Content="Chỉ mục tiêu chưa có người khai thác" Margin="0,0,0,6"/>
+                    <Expander Header="Thiết lập nâng cao" IsExpanded="False">
+                        <Grid Margin="0,6,0,0">
+                            <Grid.ColumnDefinitions>
+                                <ColumnDefinition Width="180"/><ColumnDefinition Width="*"/>
+                            </Grid.ColumnDefinitions>
+                            <Grid.RowDefinitions>
+                                <RowDefinition Height="Auto"/><RowDefinition Height="Auto"/>
+                                <RowDefinition Height="Auto"/><RowDefinition Height="Auto"/>
+                                <RowDefinition Height="Auto"/>
+                            </Grid.RowDefinitions>
+                            <TextBlock Grid.Row="0" Text="Ưu tiên cấp" VerticalAlignment="Center"/>
+                            <TextBox x:Name="LevelPriorityTextBox" Grid.Row="0" Grid.Column="1" Text="7,6,5" Margin="0,2"/>
+                            <TextBlock Grid.Row="1" Text="Ưu tiên đội" VerticalAlignment="Center"/>
+                            <TextBox x:Name="TeamPriorityTextBox" Grid.Row="1" Grid.Column="1" Text="4,3,2" Margin="0,2"/>
+                            <TextBlock Grid.Row="2" Text="Kiểm tra đội mỗi (phút)" VerticalAlignment="Center"/>
+                            <TextBox x:Name="ReadyCheckIntervalTextBox" Grid.Row="2" Grid.Column="1" Text="15" Margin="0,2"/>
+                            <TextBlock Grid.Row="3" Text="Dừng chờ sau (giờ)" VerticalAlignment="Center"/>
+                            <TextBox x:Name="ReadyMaxWaitTextBox" Grid.Row="3" Grid.Column="1" Text="12" Margin="0,2"/>
+                            <CheckBox x:Name="AllowTeam1CheckBox" Grid.Row="4" Grid.ColumnSpan="2"
+                                      Content="Cho phép Team1" Margin="0,6,0,0"/>
+                        </Grid>
+                    </Expander>
+                    <WrapPanel Margin="0,6,0,0">
+                        <Button Content="Lưu cấu hình" Click="SaveFarmSettings_Click" Padding="12,5" Margin="0,0,8,0"/>
+                        <Button Content="Khôi phục mặc định" Click="RestoreFarmDefaults_Click" Padding="12,5"/>
                     </WrapPanel>
                 </StackPanel>
             </GroupBox>
 
             <WrapPanel Margin="0,0,0,8">
-                <Button x:Name="RunOneShotFarmButton" Content="Run Selected Devices"
+                <Button x:Name="RunOneShotFarmButton" Content="Chạy thiết bị đã chọn"
                         Click="RunOneShotFarm_Click" Padding="14,7" Margin="0,0,8,8"/>
-                <Button x:Name="RunContinuousFarmButton" Content="Run Continuous"
+                <Button x:Name="RunContinuousFarmButton" Content="Chạy liên tục"
                         Click="RunContinuousFarm_Click" Padding="14,7" Margin="0,0,8,8"/>
-                <Button x:Name="RetryFailedDevicesButton" Content="Retry Failed Devices"
+                <Button x:Name="RetryFailedDevicesButton" Content="Chạy lại thiết bị lỗi"
                         Click="RetryFailedDevices_Click" Padding="14,7" Margin="0,0,8,8"
                         IsEnabled="False"/>
-                <Button x:Name="StopOneShotFarmButton" Content="Stop"
+                <Button x:Name="StopOneShotFarmButton" Content="Dừng"
                         Click="StopOneShotFarm_Click" Padding="14,7" Margin="0,0,8,8"
                         IsEnabled="False"/>
             </WrapPanel>
 
-            <GroupBox Header="Continuous Health Dashboard" Margin="0,4,0,8">
+            <GroupBox Header="Sức khỏe hệ thống" Margin="0,4,0,8">
                 <Grid Margin="10">
                     <Grid.ColumnDefinitions>
                         <ColumnDefinition Width="175"/>
@@ -157,7 +111,7 @@
                     <TextBlock x:Name="HealthStatesTextBlock" Grid.Row="1" Grid.Column="1" Text="-" TextWrapping="Wrap"/>
                     <TextBlock Grid.Row="2" Text="Lỗi / ổ đĩa"/>
                     <TextBlock x:Name="HealthPressureTextBlock" Grid.Row="2" Grid.Column="1" Text="-"/>
-                    <TextBlock Grid.Row="3" Text="Adaptive load"/>
+                    <TextBlock Grid.Row="3" Text="Tải thích ứng"/>
                     <TextBlock x:Name="HealthLoadTextBlock" Grid.Row="3" Grid.Column="1" Text="-"/>
                     <TextBlock Grid.Row="4" Text="Heartbeat gần nhất"/>
                     <TextBlock x:Name="HealthHeartbeatTextBlock" Grid.Row="4" Grid.Column="1" Text="-" TextWrapping="Wrap"/>
@@ -166,7 +120,7 @@
                 </Grid>
             </GroupBox>
 
-            <GroupBox Header="One-Shot Farm Progress" Margin="0,4,0,8">
+            <GroupBox Header="Tiến trình farm" Margin="0,4,0,8">
                 <Grid Margin="10">
                     <Grid.ColumnDefinitions>
                         <ColumnDefinition Width="175"/>
@@ -181,24 +135,25 @@
                         <RowDefinition Height="Auto"/>
                     </Grid.RowDefinitions>
                     <TextBlock Grid.Row="0" Text="Trạng thái"/><TextBlock x:Name="ProgressStageTextBlock" Grid.Row="0" Grid.Column="1" Text="Idle"/>
-                    <TextBlock Grid.Row="1" Text="Message"/><TextBlock x:Name="ProgressMessageTextBlock" Grid.Row="1" Grid.Column="1" Text="-" TextWrapping="Wrap"/>
+                    <TextBlock Grid.Row="1" Text="Thông báo"/><TextBlock x:Name="ProgressMessageTextBlock" Grid.Row="1" Grid.Column="1" Text="-" TextWrapping="Wrap"/>
                     <TextBlock Grid.Row="2" Text="Số lần kiểm tra"/><TextBlock x:Name="ProgressChecksTextBlock" Grid.Row="2" Grid.Column="1" Text="0"/>
-                    <TextBlock Grid.Row="3" Text="Allowed teams"/><TextBlock x:Name="ProgressAllowedTeamsTextBlock" Grid.Row="3" Grid.Column="1" Text="-"/>
-                    <TextBlock Grid.Row="4" Text="Ready teams"/><TextBlock x:Name="ProgressReadyTeamsTextBlock" Grid.Row="4" Grid.Column="1" Text="-"/>
-                    <TextBlock Grid.Row="5" Text="Eligible teams"/><TextBlock x:Name="ProgressEligibleTeamsTextBlock" Grid.Row="5" Grid.Column="1" Text="-"/>
+                    <TextBlock Grid.Row="3" Text="Đội được phép"/><TextBlock x:Name="ProgressAllowedTeamsTextBlock" Grid.Row="3" Grid.Column="1" Text="-"/>
+                    <TextBlock Grid.Row="4" Text="Đội sẵn sàng"/><TextBlock x:Name="ProgressReadyTeamsTextBlock" Grid.Row="4" Grid.Column="1" Text="-"/>
+                    <TextBlock Grid.Row="5" Text="Đội có thể chọn"/><TextBlock x:Name="ProgressEligibleTeamsTextBlock" Grid.Row="5" Grid.Column="1" Text="-"/>
                     <TextBlock Grid.Row="6" Text="Lần kiểm tra tiếp theo"/><TextBlock x:Name="ProgressNextCheckTextBlock" Grid.Row="6" Grid.Column="1" Text="-"/>
-                    <TextBlock Grid.Row="7" Text="Countdown"/><TextBlock x:Name="ProgressCountdownTextBlock" Grid.Row="7" Grid.Column="1" Text="00:00"/>
+                    <TextBlock Grid.Row="7" Text="Đếm ngược"/><TextBlock x:Name="ProgressCountdownTextBlock" Grid.Row="7" Grid.Column="1" Text="00:00"/>
                     <TextBlock Grid.Row="8" Text="Thời gian chờ còn lại"/><TextBlock x:Name="ProgressWaitRemainingTextBlock" Grid.Row="8" Grid.Column="1" Text="00:00:00"/>
                     <TextBlock Grid.Row="9" Text="Bước hiện tại"/><TextBlock x:Name="ProgressCurrentStepTextBlock" Grid.Row="9" Grid.Column="1" Text="-"/>
                     <TextBlock Grid.Row="10" Text="Tài nguyên / cấp / đội"/><TextBlock x:Name="ProgressCurrentContextTextBlock" Grid.Row="10" Grid.Column="1" Text="-" TextWrapping="Wrap"/>
                 </Grid>
             </GroupBox>
 
-            <TextBlock Text="Status" FontWeight="Bold" Margin="0,8,0,4"/>
-            <Border BorderBrush="#FFBDBDBD" BorderThickness="1" Padding="10" MinHeight="90">
-                <TextBlock x:Name="StatusTextBlock" Text="Ready. No input action runs automatically."
-                           TextWrapping="Wrap"/>
-            </Border>
+            <GroupBox Header="Chi tiết lần chạy gần nhất" Margin="0,4,0,0">
+                <ScrollViewer MaxHeight="220" VerticalScrollBarVisibility="Auto" Padding="10">
+                    <TextBlock x:Name="StatusTextBlock" Text="Sẵn sàng."
+                               TextWrapping="Wrap"/>
+                </ScrollViewer>
+            </GroupBox>
         </StackPanel>
     </ScrollViewer>
 </Window>

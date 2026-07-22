@@ -24,16 +24,6 @@ namespace ADB_Tool_Automation_Post_FB.UI
     public partial class DeviceDiagnosticWindow : Window
     {
         private readonly IDeviceDiagnosticService diagnosticService;
-        private readonly IGameStateDetector gameStateDetector;
-        private readonly IWorldMapNavigationService navigationService;
-        private readonly IResourceSearchConfigurationService resourceSearchConfigurationService;
-        private readonly IResourceSearchExecutionService resourceSearchExecutionService;
-        private readonly IResourcePopupVerificationService resourcePopupVerificationService;
-        private readonly IOpenTeamSelectionService openTeamSelectionService;
-        private readonly ISelectFarmTeamService selectFarmTeamService;
-        private readonly TeamSelectionRequest defaultFarmTeamRequest;
-        private readonly IDispatchSelectedTeamService dispatchSelectedTeamService;
-        private readonly DispatchMarchRequest defaultDispatchRequest;
         private readonly IMultiDeviceOneShotFarmRunner multiDeviceFarmRunner;
         private readonly IContinuousFarmSupervisor continuousFarmSupervisor;
         private readonly OneShotFarmRequest defaultOneShotFarmRequest;
@@ -61,16 +51,6 @@ namespace ADB_Tool_Automation_Post_FB.UI
 
         public DeviceDiagnosticWindow(
             IDeviceDiagnosticService diagnosticService,
-            IGameStateDetector gameStateDetector,
-            IWorldMapNavigationService navigationService,
-            IResourceSearchConfigurationService resourceSearchConfigurationService,
-            IResourceSearchExecutionService resourceSearchExecutionService,
-            IResourcePopupVerificationService resourcePopupVerificationService,
-            IOpenTeamSelectionService openTeamSelectionService,
-            ISelectFarmTeamService selectFarmTeamService,
-            TeamSelectionRequest defaultFarmTeamRequest,
-            IDispatchSelectedTeamService dispatchSelectedTeamService,
-            DispatchMarchRequest defaultDispatchRequest,
             IMultiDeviceOneShotFarmRunner multiDeviceFarmRunner,
             IContinuousFarmSupervisor continuousFarmSupervisor,
             OneShotFarmRequest defaultOneShotFarmRequest,
@@ -80,26 +60,6 @@ namespace ADB_Tool_Automation_Post_FB.UI
         {
             this.diagnosticService = diagnosticService
                 ?? throw new ArgumentNullException(nameof(diagnosticService));
-            this.gameStateDetector = gameStateDetector
-                ?? throw new ArgumentNullException(nameof(gameStateDetector));
-            this.navigationService = navigationService
-                ?? throw new ArgumentNullException(nameof(navigationService));
-            this.resourceSearchConfigurationService = resourceSearchConfigurationService
-                ?? throw new ArgumentNullException(nameof(resourceSearchConfigurationService));
-            this.resourceSearchExecutionService = resourceSearchExecutionService
-                ?? throw new ArgumentNullException(nameof(resourceSearchExecutionService));
-            this.resourcePopupVerificationService = resourcePopupVerificationService
-                ?? throw new ArgumentNullException(nameof(resourcePopupVerificationService));
-            this.openTeamSelectionService = openTeamSelectionService
-                ?? throw new ArgumentNullException(nameof(openTeamSelectionService));
-            this.selectFarmTeamService = selectFarmTeamService
-                ?? throw new ArgumentNullException(nameof(selectFarmTeamService));
-            this.defaultFarmTeamRequest = defaultFarmTeamRequest
-                ?? throw new ArgumentNullException(nameof(defaultFarmTeamRequest));
-            this.dispatchSelectedTeamService = dispatchSelectedTeamService
-                ?? throw new ArgumentNullException(nameof(dispatchSelectedTeamService));
-            this.defaultDispatchRequest = defaultDispatchRequest
-                ?? throw new ArgumentNullException(nameof(defaultDispatchRequest));
             this.multiDeviceFarmRunner = multiDeviceFarmRunner
                 ?? throw new ArgumentNullException(nameof(multiDeviceFarmRunner));
             this.continuousFarmSupervisor = continuousFarmSupervisor
@@ -119,9 +79,6 @@ namespace ADB_Tool_Automation_Post_FB.UI
             oneShotFarmProgressTimer = new DispatcherTimer { Interval = TimeSpan.FromSeconds(1) };
             oneShotFarmProgressTimer.Tick += OneShotFarmProgressTimer_Tick;
             ApplyFarmPreferences(defaultFarmPreferences);
-            PackageNameTextBox.Text = string.IsNullOrWhiteSpace(diagnosticService.Configuration.PackageName)
-                ? "(not configured)"
-                : diagnosticService.Configuration.PackageName;
             Loaded += async (sender, args) => await LoadFarmPreferencesAndRefreshAsync();
             Closed += (sender, args) =>
             {
@@ -164,11 +121,9 @@ namespace ADB_Tool_Automation_Post_FB.UI
 
         private async Task RefreshDeviceListAsync()
         {
-            string currentDevice = DeviceNameComboBox.Text?.Trim();
             await RunOperationAsync(async cancellationToken =>
             {
                 IReadOnlyList<string> deviceNames = await diagnosticService.GetDeviceNamesAsync(cancellationToken);
-                DeviceNameComboBox.ItemsSource = deviceNames;
 
                 var previous = deviceSelections.ToDictionary(item => item.DeviceName,
                     item => item, StringComparer.OrdinalIgnoreCase);
@@ -185,14 +140,9 @@ namespace ADB_Tool_Automation_Post_FB.UI
                     });
                 }
 
-                string selectedDevice = deviceNames.FirstOrDefault(name =>
-                    string.Equals(name, currentDevice, StringComparison.OrdinalIgnoreCase))
-                    ?? deviceNames.FirstOrDefault();
-                DeviceNameComboBox.Text = selectedDevice ?? currentDevice ?? string.Empty;
-
                 return deviceNames.Count == 0
                     ? "No LDPlayer instances were found. Check LDCONSOLE_PATH and create an instance in LDPlayer."
-                    : $"Found {deviceNames.Count} LDPlayer instance(s). Selected: {DeviceNameComboBox.Text}.";
+                    : $"Found {deviceNames.Count} LDPlayer instance(s).";
             });
         }
 
@@ -204,124 +154,6 @@ namespace ADB_Tool_Automation_Post_FB.UI
         private void ClearDeviceSelection_Click(object sender, RoutedEventArgs e)
         {
             foreach (DeviceSelectionItem item in deviceSelections) item.IsSelected = false;
-        }
-
-        private async void CheckDevice_Click(object sender, RoutedEventArgs e)
-        {
-            await RunOperationAsync(async cancellationToken =>
-            {
-                DeviceDiagnosticResult result = await diagnosticService.CheckDeviceAsync(
-                    GetSelectedDeviceName(),
-                    cancellationToken);
-                return FormatCheckResult(result);
-            });
-        }
-
-        private async void LaunchGame_Click(object sender, RoutedEventArgs e)
-        {
-            await RunOperationAsync(async cancellationToken =>
-            {
-                await diagnosticService.LaunchGameAsync(GetSelectedDeviceName(), cancellationToken);
-                return "Game launch command sent. Use Capture Screenshot when the desired screen is visible.";
-            });
-        }
-
-        private async void CaptureScreenshot_Click(object sender, RoutedEventArgs e)
-        {
-            await RunOperationAsync(async cancellationToken =>
-            {
-                ScreenshotCaptureResult result = await diagnosticService.CaptureScreenshotAsync(
-                    GetSelectedDeviceName(),
-                    StateNameComboBox.Text,
-                    NoteTextBox.Text,
-                    cancellationToken);
-                return $"Screenshot saved: {result.ScreenshotPath}{Environment.NewLine}"
-                    + $"Metadata: {result.MetadataPath}{Environment.NewLine}"
-                    + $"Resolution: {result.Width}x{result.Height}";
-            });
-        }
-
-        private async void DetectCurrentState_Click(object sender, RoutedEventArgs e)
-        {
-            await RunOperationAsync(async cancellationToken =>
-            {
-                GameDetectionResult result = await gameStateDetector.DetectAsync(
-                    GetSelectedDeviceName(),
-                    cancellationToken);
-                return FormatDetectionResult(result);
-            });
-        }
-
-        private async void EnsureWorldMap_Click(object sender, RoutedEventArgs e)
-        {
-            await RunOperationAsync(async cancellationToken => FormatNavigationResult(
-                await navigationService.EnsureWorldMapAsync(GetSelectedDeviceName(), cancellationToken)));
-        }
-
-        private async void OpenSearchPanel_Click(object sender, RoutedEventArgs e)
-        {
-            await RunOperationAsync(async cancellationToken => FormatNavigationResult(
-                await navigationService.OpenResourceSearchPanelAsync(GetSelectedDeviceName(), cancellationToken)));
-        }
-
-        private async void ConfigureSearch_Click(object sender, RoutedEventArgs e)
-        {
-            await RunOperationAsync(async cancellationToken => FormatConfigurationResult(
-                await resourceSearchConfigurationService.ConfigureAsync(
-                    GetSelectedDeviceName(),
-                    new ResourceSearchConfigurationRequest
-                    {
-                        ResourceType = ResourceType.Iron,
-                        TargetLevel = 7,
-                        UnoccupiedOnly = true
-                    },
-                    cancellationToken)));
-        }
-
-        private async void ExecuteSearch_Click(object sender, RoutedEventArgs e)
-        {
-            await RunOperationAsync(async cancellationToken => FormatExecutionResult(
-                await resourceSearchExecutionService.ExecuteAsync(
-                    GetSelectedDeviceName(),
-                    new ResourceSearchExecutionRequest
-                    {
-                        ConfigureBeforeSearch = true,
-                        Configuration = new ResourceSearchConfigurationRequest
-                        {
-                            ResourceType = ResourceType.Iron,
-                            TargetLevel = 7,
-                            UnoccupiedOnly = true
-                        }
-                    },
-                    cancellationToken)));
-        }
-
-        private async void VerifyResourcePopup_Click(object sender, RoutedEventArgs e)
-        {
-            await RunOperationAsync(async cancellationToken => FormatPopupResult(
-                await resourcePopupVerificationService.VerifyAsync(
-                    GetSelectedDeviceName(), cancellationToken)));
-        }
-
-        private async void OpenTeamSelection_Click(object sender, RoutedEventArgs e)
-        {
-            await RunOperationAsync(async cancellationToken => FormatOpenTeamSelectionResult(
-                await openTeamSelectionService.OpenAsync(
-                    GetSelectedDeviceName(), cancellationToken)));
-        }
-
-        private async void SelectFarmTeam_Click(object sender, RoutedEventArgs e)
-        {
-            await RunOperationAsync(async cancellationToken => FormatSelectFarmTeamResult(
-                await selectFarmTeamService.SelectAsync(GetSelectedDeviceName(),
-                    defaultFarmTeamRequest, cancellationToken)));
-        }
-
-        private async void DispatchSelectedTeam_Click(object sender, RoutedEventArgs e)
-        {
-            await RunOperationAsync(async cancellationToken => FormatDispatchMarchResult(
-                await dispatchSelectedTeamService.DispatchAsync(GetSelectedDeviceName(),
-                    defaultDispatchRequest, cancellationToken)));
         }
 
         private async void RunOneShotFarm_Click(object sender, RoutedEventArgs e)
@@ -895,15 +727,6 @@ namespace ADB_Tool_Automation_Post_FB.UI
         }
 
 
-        private async void BackTest_Click(object sender, RoutedEventArgs e)
-        {
-            await RunOperationAsync(async cancellationToken =>
-            {
-                await diagnosticService.BackAsync(GetSelectedDeviceName(), cancellationToken);
-                return "Back command sent.";
-            });
-        }
-
         private async Task RunOperationAsync(Func<CancellationToken, Task<string>> operation)
         {
             IsEnabled = false;
@@ -940,18 +763,6 @@ namespace ADB_Tool_Automation_Post_FB.UI
                 + $"Current foreground package: {result.CurrentForegroundPackage ?? "unavailable"}{Environment.NewLine}"
                 + $"Package matches: {packageStatus}{Environment.NewLine}"
                 + $"Error: {result.ErrorMessage ?? string.Empty}";
-        }
-
-        private string GetSelectedDeviceName()
-        {
-            string deviceName = DeviceNameComboBox.Text?.Trim();
-            if (string.IsNullOrWhiteSpace(deviceName))
-            {
-                throw new InvalidOperationException(
-                    "No LDPlayer instance is selected. Start LDPlayer, click Refresh, then select a device.");
-            }
-
-            return deviceName;
         }
 
         private static string FormatDetectionResult(GameDetectionResult result)

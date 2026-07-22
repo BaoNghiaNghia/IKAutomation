@@ -214,16 +214,6 @@ namespace ADB_Tool_Automation_Post_FB
                 adaptiveConcurrencyGate);
             var diagnosticWindow = new DeviceDiagnosticWindow(
                 DeviceDiagnosticServiceFactory.CreateFromAppConfig(),
-                GameStateDetectorFactory.CreateFromAppConfig(),
-                WorldMapNavigationServiceFactory.CreateFromAppConfig(),
-                ResourceSearchConfigurationServiceFactory.CreateFromAppConfig(),
-                ResourceSearchExecutionServiceFactory.CreateFromAppConfig(),
-                ResourcePopupVerificationServiceFactory.CreateFromAppConfig(),
-                OpenTeamSelectionServiceFactory.CreateFromAppConfig(),
-                SelectFarmTeamServiceFactory.CreateFromAppConfig(),
-                AppConfigFarmTeamSelectionOptionsProvider.LoadRequest(),
-                DispatchSelectedTeamServiceFactory.CreateFromAppConfig(),
-                AppConfigDispatchSelectedTeamOptionsProvider.LoadRequest(),
                 multiDeviceRunner,
                 new ContinuousFarmSupervisor(multiDeviceRunner,
                     LdPlayerDeviceRecoveryServiceFactory.CreateFromAppConfig(),
