@@ -20,6 +20,8 @@ namespace ADB_Tool_Automation_Post_FB.Infrastructure.MarchDispatch
             byte[] screenshotPng, CancellationToken cancellationToken)
         {
             cancellationToken.ThrowIfCancellationRequested();
+            if (!ADB_Tool_Automation_Post_FB.Core.Diagnostics.DiagnosticStorageGate.IsWriteEnabled)
+                return null;
             if (screenshotPng == null || screenshotPng.Length == 0) throw new ArgumentException("Screenshot PNG is required.", nameof(screenshotPng));
             DateTimeOffset now = DateTimeOffset.Now;
             string directory = Path.Combine(root, ScreenshotPathPolicy.SanitizeDeviceName(deviceName), now.ToString("yyyy-MM-dd"));

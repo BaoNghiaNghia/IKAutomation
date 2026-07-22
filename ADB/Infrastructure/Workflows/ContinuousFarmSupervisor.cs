@@ -13,14 +13,17 @@ namespace ADB_Tool_Automation_Post_FB.Infrastructure.Workflows
         private readonly IMultiDeviceOneShotFarmRunner runner;
         private readonly IDeviceRecoveryService recoveryService;
         private readonly ContinuousFarmSupervisorOptions options;
+        private readonly IOperationalMaintenanceService maintenanceService;
 
         public ContinuousFarmSupervisor(IMultiDeviceOneShotFarmRunner runner,
-            IDeviceRecoveryService recoveryService, ContinuousFarmSupervisorOptions options)
+            IDeviceRecoveryService recoveryService, ContinuousFarmSupervisorOptions options,
+            IOperationalMaintenanceService maintenanceService = null)
         {
             this.runner = runner ?? throw new ArgumentNullException(nameof(runner));
             this.recoveryService = recoveryService
                 ?? throw new ArgumentNullException(nameof(recoveryService));
             this.options = options ?? throw new ArgumentNullException(nameof(options));
+            this.maintenanceService = maintenanceService;
         }
 
         public async Task<ContinuousFarmSupervisorResult> RunAsync(
@@ -62,6 +65,7 @@ namespace ADB_Tool_Automation_Post_FB.Infrastructure.Workflows
                 while (true)
                 {
                     cancellationToken.ThrowIfCancellationRequested();
+                    await RunMaintenanceSafelyAsync(snapshot, progress, cancellationToken);
                     snapshot.CycleCount++;
                     Transition(snapshot, ContinuousFarmDeviceState.Preflight,
                         $"Starting supervised cycle {snapshot.CycleCount}.", null, null);
@@ -173,6 +177,34 @@ namespace ADB_Tool_Automation_Post_FB.Infrastructure.Workflows
                 Transition(snapshot, ContinuousFarmDeviceState.Stopped,
                     "Continuous supervisor stopped after an unexpected error.",
                     exception.Message, null);
+                Publish(snapshot, progress, null);
+            }
+        }
+
+        private async Task RunMaintenanceSafelyAsync(ContinuousFarmDeviceSnapshot snapshot,
+            IProgress<ContinuousFarmSupervisorProgress> progress,
+            CancellationToken cancellationToken)
+        {
+            if (maintenanceService == null) return;
+            try
+            {
+                OperationalMaintenanceResult result = await maintenanceService
+                    .RunIfDueAsync(cancellationToken);
+                snapshot.FreeDiskBytes = result.FreeDiskBytes;
+                snapshot.DiagnosticWritesSuspended = result.DiagnosticWritesSuspended;
+                if (result.WasRun)
+                {
+                    snapshot.LastMaintenanceAt = DateTimeOffset.UtcNow;
+                    Publish(snapshot, progress, null);
+                }
+            }
+            catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
+            {
+                throw;
+            }
+            catch (Exception exception)
+            {
+                snapshot.LastError = "Operational maintenance failed: " + exception.Message;
                 Publish(snapshot, progress, null);
             }
         }
@@ -428,6 +460,9 @@ namespace ADB_Tool_Automation_Post_FB.Infrastructure.Workflows
                 QuarantineCount = source.QuarantineCount,
                 CircuitOpenUntil = source.CircuitOpenUntil,
                 LastBackoffDelayMs = source.LastBackoffDelayMs,
+                FreeDiskBytes = source.FreeDiskBytes,
+                DiagnosticWritesSuspended = source.DiagnosticWritesSuspended,
+                LastMaintenanceAt = source.LastMaintenanceAt,
                 LastError = source.LastError };
 
         private sealed class AttemptResult

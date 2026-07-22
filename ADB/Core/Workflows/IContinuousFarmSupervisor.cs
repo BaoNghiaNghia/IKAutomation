@@ -44,6 +44,9 @@ namespace ADB_Tool_Automation_Post_FB.Core.Workflows
         public int QuarantineCount { get; set; }
         public DateTimeOffset? CircuitOpenUntil { get; set; }
         public int LastBackoffDelayMs { get; set; }
+        public long FreeDiskBytes { get; set; }
+        public bool DiagnosticWritesSuspended { get; set; }
+        public DateTimeOffset? LastMaintenanceAt { get; set; }
         public string Message { get; set; }
         public string LastError { get; set; }
     }

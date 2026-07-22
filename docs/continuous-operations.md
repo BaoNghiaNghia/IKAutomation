@@ -117,13 +117,21 @@ after another cancellation-aware cooldown. An attempt that ignores watchdog
 cancellation remains hard-quarantined because starting another input path would
 risk concurrent commands on the same emulator.
 
-### Phase 4 - Log, diagnostics, and disk retention
+### Phase 4 - Log, diagnostics, and disk retention (implemented)
 
-- Rotate application logs daily or at 10-20 MB.
-- Keep logs for 30 days and error diagnostics for 7-15 days.
-- Do not retain routine success screenshots unless sampled.
-- Stop creating new diagnostics and alert when free disk space falls below a
-  configured threshold, initially 10 GB.
+- `Logger` appends across restarts and rotates daily or when `log.txt` reaches
+  20 MB. Rotated files are kept under `Logs` for 30 days.
+- `FileSystemOperationalMaintenanceService` runs at most once per configured
+  interval even when many device loops request maintenance concurrently.
+- PNG/JSON diagnostics older than 14 days are removed first. Remaining files
+  are then deleted oldest-first until the 5 GB diagnostic quota is respected.
+- Free space is checked after cleanup. Diagnostic writes are suspended below
+  10 GB and resume only above 12 GB, providing hysteresis and preventing disk
+  pressure from flapping. Gameplay loops remain isolated and continue without
+  optional screenshots.
+- Maintenance and all diagnostic-write suppression honor cancellation. The
+  configured diagnostic root is resolved under the application directory and
+  cleanup never scans outside that root.
 
 ### Phase 5 - Persistent checkpoints
 

@@ -43,6 +43,7 @@ namespace ADB_Tool_Automation_Post_FB.Infrastructure.Diagnostics
             CancellationToken cancellationToken)
         {
             cancellationToken.ThrowIfCancellationRequested();
+            if (!DiagnosticStorageGate.IsWriteEnabled) return null;
             if (pngBytes == null || pngBytes.Length == 0)
                 throw new ArgumentException("Screenshot PNG data is required.", nameof(pngBytes));
 

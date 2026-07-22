@@ -1,4 +1,5 @@
 using ADB_Tool_Automation_Post_FB.Core.Abstractions;
+using ADB_Tool_Automation_Post_FB.Core.Diagnostics;
 using ADB_Tool_Automation_Post_FB.Core.Workflows;
 using ADB_Tool_Automation_Post_FB.Infrastructure.Diagnostics;
 using System;
@@ -17,6 +18,7 @@ namespace ADB_Tool_Automation_Post_FB.Infrastructure.Workflows
             OneShotFarmOutcome outcome, CancellationToken cancellationToken)
         {
             cancellationToken.ThrowIfCancellationRequested();
+            if (!DiagnosticStorageGate.IsWriteEnabled) return null;
             byte[] png = await client.CaptureScreenshotPngAsync(deviceName, cancellationToken);
             DateTimeOffset now = DateTimeOffset.Now;
             string dir = Path.Combine(root, ScreenshotPathPolicy.SanitizeDeviceName(deviceName), now.ToString("yyyy-MM-dd"));

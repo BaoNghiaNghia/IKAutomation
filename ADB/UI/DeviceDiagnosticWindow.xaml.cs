@@ -498,7 +498,9 @@ namespace ADB_Tool_Automation_Post_FB.UI
                 string retry = snapshot.NextAttemptAt.HasValue
                     ? $"; next={snapshot.NextAttemptAt.Value.ToLocalTime():HH:mm:ss}"
                     : string.Empty;
-                item.Status = $"{snapshot.State}: {snapshot.Message}{retry}";
+                string storage = snapshot.DiagnosticWritesSuspended
+                    ? "; diagnostics suspended (low disk)" : string.Empty;
+                item.Status = $"{snapshot.State}: {snapshot.Message}{retry}{storage}";
             }
             if (snapshot.State == ContinuousFarmDeviceState.Stopped)
                 activeDeviceNames.Remove(snapshot.DeviceName);

@@ -147,6 +147,12 @@ internal static class Program
         Run("Technical retry uses configured backoff", ContinuousSupervisorUsesTechnicalBackoff);
         Run("Circuit breaker quarantines and probes after cooldown", ContinuousCircuitBreakerRecoversAfterCooldown);
         Run("Recovery ladder restarts only after softer steps fail", RecoveryLadderEscalatesInOrder);
+        Run("Operational maintenance removes expired screenshots", MaintenanceRemovesExpiredScreenshots);
+        Run("Operational maintenance enforces diagnostic quota", MaintenanceEnforcesDiagnosticQuota);
+        Run("Disk pressure gate uses resume hysteresis", MaintenanceDiskGateUsesHysteresis);
+        Run("Operational maintenance is interval gated", MaintenanceRunsOnlyWhenDue);
+        Run("Logger rotates without clearing startup log", LoggerUsesRotationAndRetention);
+        Run("Diagnostic stores honor disk-pressure gate", DiagnosticStoresHonorStorageGate);
         Run("Continuous supervisor has no default token bypass", ContinuousSupervisorHasNoNone);
         Run("Continuous supervisor UI is wired without replacing bounded run", ContinuousSupervisorUiIsWired);
         Console.WriteLine($"One-shot farm tests: {pass} passed, {fail} failed."); return fail == 0 ? 0 : 1;
@@ -361,6 +367,143 @@ internal static class Program
             technicalRetryDelaysMs: new[] { 5, 10, 20 }, retryJitterMaxMs: 0,
             circuitFailureThreshold: threshold, circuitWindowMs: 10000,
             quarantineCooldownMs: 20);
+
+    static void MaintenanceRemovesExpiredScreenshots()
+    {
+        string root = TemporaryDirectory();
+        try
+        {
+            string expired = Path.Combine(root, "old.png");
+            string current = Path.Combine(root, "current.png");
+            File.WriteAllBytes(expired, new byte[4]);
+            File.WriteAllBytes(current, new byte[4]);
+            DateTimeOffset now = new DateTimeOffset(2026, 7, 22, 12, 0, 0,
+                TimeSpan.Zero);
+            File.SetLastWriteTimeUtc(expired, now.UtcDateTime.AddDays(-15));
+            File.SetLastWriteTimeUtc(current, now.UtcDateTime);
+            var service = Maintenance(root, now, 14, 1000);
+            OperationalMaintenanceResult result = service.RunIfDueAsync(
+                new CancellationTokenSource(TimeSpan.FromSeconds(5)).Token)
+                .GetAwaiter().GetResult();
+            Is(!File.Exists(expired), "expired screenshot was retained");
+            Is(File.Exists(current), "current screenshot was deleted");
+            Eq(1, result.DeletedFileCount, "deleted files");
+        }
+        finally { DiagnosticStorageGate.Resume(); TryDeleteDirectory(root); }
+    }
+
+    static void MaintenanceEnforcesDiagnosticQuota()
+    {
+        string root = TemporaryDirectory();
+        try
+        {
+            string older = Path.Combine(root, "older.png");
+            string newer = Path.Combine(root, "newer.png");
+            File.WriteAllBytes(older, new byte[4]);
+            File.WriteAllBytes(newer, new byte[4]);
+            File.SetLastWriteTimeUtc(older, DateTime.UtcNow.AddMinutes(-2));
+            File.SetLastWriteTimeUtc(newer, DateTime.UtcNow.AddMinutes(-1));
+            OperationalMaintenanceResult result = Maintenance(root,
+                DateTimeOffset.Now, 100, 6).RunIfDueAsync(
+                    new CancellationTokenSource(TimeSpan.FromSeconds(5)).Token)
+                .GetAwaiter().GetResult();
+            Is(!File.Exists(older) && File.Exists(newer),
+                "oldest screenshot was not removed first");
+            Is(result.DiagnosticBytes <= 6, "diagnostic quota remains exceeded");
+        }
+        finally { DiagnosticStorageGate.Resume(); TryDeleteDirectory(root); }
+    }
+
+    static void MaintenanceDiskGateUsesHysteresis()
+    {
+        string root = TemporaryDirectory();
+        long free = 5;
+        DateTimeOffset now = DateTimeOffset.Now;
+        try
+        {
+            var options = new OperationalMaintenanceOptions(root, 1, 14, 100, 10, 12);
+            var service = new FileSystemOperationalMaintenanceService(options, new Log(),
+                () => now, path => free);
+            CancellationToken token = new CancellationTokenSource(TimeSpan.FromSeconds(5)).Token;
+            Is(service.RunIfDueAsync(token).GetAwaiter().GetResult()
+                .DiagnosticWritesSuspended, "low disk did not suspend diagnostics");
+            free = 11; now = now.AddMilliseconds(2);
+            Is(service.RunIfDueAsync(token).GetAwaiter().GetResult()
+                .DiagnosticWritesSuspended, "gate resumed below hysteresis threshold");
+            free = 12; now = now.AddMilliseconds(2);
+            Is(!service.RunIfDueAsync(token).GetAwaiter().GetResult()
+                .DiagnosticWritesSuspended, "gate did not resume at safe threshold");
+        }
+        finally { DiagnosticStorageGate.Resume(); TryDeleteDirectory(root); }
+    }
+
+    static void MaintenanceRunsOnlyWhenDue()
+    {
+        string root = TemporaryDirectory();
+        int probes = 0;
+        DateTimeOffset now = DateTimeOffset.Now;
+        try
+        {
+            var options = new OperationalMaintenanceOptions(root, 60000, 14, 100, 0, 0);
+            var service = new FileSystemOperationalMaintenanceService(options, new Log(),
+                () => now, path => { probes++; return 100; });
+            CancellationToken token = new CancellationTokenSource(TimeSpan.FromSeconds(5)).Token;
+            Is(service.RunIfDueAsync(token).GetAwaiter().GetResult().WasRun,
+                "first maintenance did not run");
+            Is(!service.RunIfDueAsync(token).GetAwaiter().GetResult().WasRun,
+                "maintenance ignored interval gate");
+            Eq(1, probes, "disk probes");
+        }
+        finally { DiagnosticStorageGate.Resume(); TryDeleteDirectory(root); }
+    }
+
+    static FileSystemOperationalMaintenanceService Maintenance(string root,
+        DateTimeOffset now, int retentionDays, long quota) =>
+        new FileSystemOperationalMaintenanceService(
+            new OperationalMaintenanceOptions(root, 1, retentionDays, quota, 0, 0),
+            new Log(), () => now, path => 1000);
+
+    static string TemporaryDirectory()
+    {
+        string path = Path.Combine(Path.GetTempPath(), "ikautomation-maintenance-"
+            + Guid.NewGuid().ToString("N"));
+        Directory.CreateDirectory(path);
+        return path;
+    }
+
+    static void TryDeleteDirectory(string path)
+    {
+        try { if (Directory.Exists(path)) Directory.Delete(path, true); }
+        catch { }
+    }
+
+    static void LoggerUsesRotationAndRetention()
+    {
+        string code = File.ReadAllText(Path.Combine(Environment.CurrentDirectory,
+            "ADB", "Helpers", "Logger.cs"));
+        Is(code.Contains("RotateIfRequired") && code.Contains("CleanupArchives"),
+            "log rotation or retention is missing");
+        Is(!code.Contains("Xóa toàn bộ log khi khởi động")
+            && !code.Contains("File.WriteAllText(LogFilePath, string.Empty);\n\n                //"),
+            "startup still clears the log");
+    }
+
+    static void DiagnosticStoresHonorStorageGate()
+    {
+        string[] files = { "Infrastructure/Diagnostics/ScreenshotFileStore.cs",
+            "Infrastructure/Workflows/OneShotFarmDiagnosticService.cs",
+            "Infrastructure/GameDetection/UnknownScreenshotStore.cs",
+            "Infrastructure/MarchDispatch/DispatchMarchDiagnosticStore.cs",
+            "Infrastructure/ResourcePopup/ResourcePopupDiagnosticStore.cs",
+            "Infrastructure/ResourceSearch/ResourceLevelFallbackDiagnosticStore.cs",
+            "Infrastructure/ResourceSearch/ResourceSearchDiagnosticStore.cs",
+            "Infrastructure/TeamSelection/OpenTeamSelectionDiagnosticStore.cs",
+            "Infrastructure/TeamSelection/SelectFarmTeamDiagnosticStore.cs" };
+        foreach (string file in files)
+            Is(File.ReadAllText(Path.Combine(Environment.CurrentDirectory, "ADB", file))
+                .Contains("DiagnosticStorageGate.IsWriteEnabled"),
+                "storage gate missing: " + file);
+    }
 
     static void ContinuousSupervisorUiIsWired()
     {

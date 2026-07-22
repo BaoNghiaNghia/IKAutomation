@@ -20,8 +20,10 @@ namespace ADB_Tool_Automation_Post_FB.Infrastructure.ResourcePopup
         public async Task<string> SaveAsync(string deviceName, ResourcePopupOutcome outcome,
             byte[] pngBytes, CancellationToken cancellationToken)
         {
-            if (pngBytes == null || pngBytes.Length == 0) throw new ArgumentException("PNG data is required.", nameof(pngBytes));
             cancellationToken.ThrowIfCancellationRequested();
+            if (!ADB_Tool_Automation_Post_FB.Core.Diagnostics.DiagnosticStorageGate.IsWriteEnabled)
+                return null;
+            if (pngBytes == null || pngBytes.Length == 0) throw new ArgumentException("PNG data is required.", nameof(pngBytes));
             DateTimeOffset now = DateTimeOffset.Now;
             string directory = SafeDirectory(root,
                 ScreenshotPathPolicy.SanitizeDeviceName(deviceName), now.ToString("yyyy-MM-dd"));

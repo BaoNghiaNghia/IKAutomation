@@ -34,6 +34,8 @@ namespace ADB_Tool_Automation_Post_FB.Infrastructure.GameDetection
             CancellationToken cancellationToken)
         {
             cancellationToken.ThrowIfCancellationRequested();
+            if (!ADB_Tool_Automation_Post_FB.Core.Diagnostics.DiagnosticStorageGate.IsWriteEnabled)
+                return null;
             if (screenshotPng == null || screenshotPng.Length == 0)
                 throw new ArgumentException("Unknown-state screenshot PNG is required.", nameof(screenshotPng));
 

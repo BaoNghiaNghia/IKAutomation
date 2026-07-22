@@ -21,6 +21,9 @@ namespace ADB_Tool_Automation_Post_FB.Infrastructure.ResourceSearch
         public async Task<string> SaveResultAsync(string deviceName, ResourceSearchOutcome outcome,
             byte[] pngBytes, CancellationToken cancellationToken)
         {
+            cancellationToken.ThrowIfCancellationRequested();
+            if (!ADB_Tool_Automation_Post_FB.Core.Diagnostics.DiagnosticStorageGate.IsWriteEnabled)
+                return null;
             ValidateBytes(pngBytes);
             DateTimeOffset now = DateTimeOffset.Now;
             string directory = SafeDirectory(resultRoot,
@@ -35,6 +38,9 @@ namespace ADB_Tool_Automation_Post_FB.Infrastructure.ResourceSearch
         public async Task SaveObservationAsync(string deviceName, DateTimeOffset burstTimestamp,
             int frameIndex, byte[] pngBytes, CancellationToken cancellationToken)
         {
+            cancellationToken.ThrowIfCancellationRequested();
+            if (!ADB_Tool_Automation_Post_FB.Core.Diagnostics.DiagnosticStorageGate.IsWriteEnabled)
+                return;
             if (frameIndex < 1) throw new ArgumentOutOfRangeException(nameof(frameIndex));
             ValidateBytes(pngBytes);
             string directory = SafeDirectory(observationRoot,

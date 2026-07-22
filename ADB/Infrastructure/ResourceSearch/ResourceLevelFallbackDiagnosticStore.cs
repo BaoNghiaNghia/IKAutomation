@@ -1,4 +1,5 @@
 using ADB_Tool_Automation_Post_FB.Core.ResourceSearch;
+using ADB_Tool_Automation_Post_FB.Core.Diagnostics;
 using System;
 using System.IO;
 using System.Linq;
@@ -21,6 +22,7 @@ namespace ADB_Tool_Automation_Post_FB.Infrastructure.ResourceSearch
             byte[] pngBytes, CancellationToken cancellationToken)
         {
             cancellationToken.ThrowIfCancellationRequested();
+            if (!DiagnosticStorageGate.IsWriteEnabled) return Task.FromResult<string>(null);
             if (pngBytes == null || pngBytes.Length == 0) throw new ArgumentException("PNG bytes are required.", nameof(pngBytes));
             DateTime now = DateTime.Now;
             string directory = Path.Combine(rootDirectory, Sanitize(deviceName), now.ToString("yyyy-MM-dd"));
