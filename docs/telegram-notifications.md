@@ -50,3 +50,13 @@ Telegram Bot API messages are limited to 4096 characters. IKAutomation sends a
 bounded summary containing device, outcome, last completed step, resource, level,
 team, message, error, and diagnostic path. Delivery errors are logged without the
 request URI or bot token and never replace the gameplay result.
+
+## Continuous health heartbeat
+
+`Run Continuous` sends an aggregate health heartbeat at startup and every six
+hours. The same snapshot drives the in-app Continuous Health Dashboard, so a
+Telegram delivery failure is visible without stopping automation.
+
+To change the interval, set `Operations.TelegramHeartbeatIntervalMinutes` in
+`ADB/App.config`. Keep the interval positive; invalid values fall back to 360
+minutes. Heartbeat messages list details only for unhealthy devices.

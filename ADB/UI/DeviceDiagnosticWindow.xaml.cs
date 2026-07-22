@@ -484,9 +484,12 @@ namespace ADB_Tool_Automation_Post_FB.UI
             IReadOnlyDictionary<string, long> attemptVersions,
             ContinuousFarmSupervisorProgress progress)
         {
-            if (progress?.Device == null || !OneShotFarmProgressUtilities.IsCurrentRun(
+            if (progress == null || !OneShotFarmProgressUtilities.IsCurrentRun(
                 runGeneration, oneShotFarmRunGeneration, runCancellation,
-                oneShotFarmCancellation)
+                oneShotFarmCancellation)) return;
+            if (progress.Health != null)
+                ApplyHealthDashboard(progress.Health);
+            if (progress.Device == null
                 || !IsCurrentDeviceAttempt(progress.Device.DeviceName,
                     attemptVersions)) return;
             ContinuousFarmDeviceSnapshot snapshot = progress.Device;
@@ -521,6 +524,26 @@ namespace ADB_Tool_Automation_Post_FB.UI
                 ProgressMessageTextBlock.Text = $"[{snapshot.DeviceName}] "
                     + snapshot.Message;
             }
+        }
+
+        private void ApplyHealthDashboard(ContinuousFarmHealthSnapshot health)
+        {
+            HealthOverviewTextBlock.Text = $"{health.HealthyDevices}/{health.TotalDevices} healthy";
+            HealthStatesTextBlock.Text = $"running={health.RunningDevices}; waiting={health.WaitingDevices}; "
+                + $"recovering={health.RecoveringDevices}; quarantined={health.QuarantinedDevices}; "
+                + $"stopped={health.StoppedDevices}";
+            HealthPressureTextBlock.Text = $"failures={health.DevicesWithFailures}; low disk={health.LowDiskDevices}";
+            HealthLoadTextBlock.Text = health.ConcurrencyLimit > 0
+                ? $"{health.ActiveExecutions}/{health.ConcurrencyLimit}" : "-";
+            string heartbeatState = !health.LastHeartbeatAttemptAt.HasValue ? "-"
+                : health.LastHeartbeatSucceeded == true ? "sent"
+                : health.LastHeartbeatSucceeded == false ? "failed" : "skipped";
+            HealthHeartbeatTextBlock.Text = health.LastHeartbeatAttemptAt.HasValue
+                ? $"{health.LastHeartbeatAttemptAt.Value.ToLocalTime():yyyy-MM-dd HH:mm:ss} - {heartbeatState}; {health.HeartbeatMessage}"
+                : "-";
+            TimeSpan uptime = health.GeneratedAt - health.StartedAt;
+            if (uptime < TimeSpan.Zero) uptime = TimeSpan.Zero;
+            HealthUptimeTextBlock.Text = $"{(int)uptime.TotalDays}d {uptime.Hours:00}:{uptime.Minutes:00}:{uptime.Seconds:00}";
         }
 
         private async Task RunDeviceBatchAsync(string[] deviceNames,

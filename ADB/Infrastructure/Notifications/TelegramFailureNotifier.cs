@@ -1,5 +1,6 @@
 using ADB_Tool_Automation_Post_FB.Core.Diagnostics;
 using ADB_Tool_Automation_Post_FB.Core.Notifications;
+using ADB_Tool_Automation_Post_FB.Core.Workflows;
 using System;
 using System.Collections.Generic;
 using System.Net;
@@ -10,7 +11,8 @@ using System.Threading.Tasks;
 
 namespace ADB_Tool_Automation_Post_FB.Infrastructure.Notifications
 {
-    public sealed class TelegramFailureNotifier : IAutomationFailureNotifier
+    public sealed class TelegramFailureNotifier : IAutomationFailureNotifier,
+        IContinuousFarmHeartbeatNotifier
     {
         public const string BotTokenEnvironmentVariable = "IKAUTOMATION_TELEGRAM_BOT_TOKEN";
         public const string ChatIdEnvironmentVariable = "IKAUTOMATION_TELEGRAM_CHAT_ID";
@@ -96,8 +98,68 @@ namespace ADB_Tool_Automation_Post_FB.Infrastructure.Notifications
             }
         }
 
+        public async Task<ContinuousFarmHeartbeatDeliveryResult> NotifyHeartbeatAsync(
+            ContinuousFarmHealthSnapshot snapshot, CancellationToken cancellationToken)
+        {
+            cancellationToken.ThrowIfCancellationRequested();
+            if (snapshot == null)
+                return HeartbeatResult(false, false,
+                    "Telegram heartbeat was skipped because the health snapshot was empty.");
+            if (!IsConfigured)
+            {
+                logger.Info("[Telegram Heartbeat] Sent=False, Reason=NotConfigured");
+                return HeartbeatResult(false, false,
+                    $"Telegram is not configured. Set {BotTokenEnvironmentVariable} and {ChatIdEnvironmentVariable}, then restart IKAutomation.");
+            }
+            try
+            {
+                string endpoint = "https://api.telegram.org/bot" + botToken + "/sendMessage";
+                using (var content = new FormUrlEncodedContent(new Dictionary<string, string>
+                {
+                    ["chat_id"] = chatId,
+                    ["text"] = FormatHeartbeat(snapshot),
+                    ["disable_web_page_preview"] = "true"
+                }))
+                using (HttpResponseMessage response = await httpClient.PostAsync(
+                    endpoint, content, cancellationToken))
+                {
+                    if (!response.IsSuccessStatusCode)
+                    {
+                        string status = ((int)response.StatusCode) + " "
+                            + response.ReasonPhrase;
+                        logger.Info("[Telegram Heartbeat] Sent=False, HttpStatus="
+                            + (int)response.StatusCode);
+                        return HeartbeatResult(true, false,
+                            "Telegram heartbeat delivery failed (HTTP " + status + ").");
+                    }
+                }
+                logger.Info("[Telegram Heartbeat] Sent=True, Devices="
+                    + snapshot.TotalDevices + ", Healthy=" + snapshot.HealthyDevices);
+                return HeartbeatResult(true, true, "Telegram heartbeat sent.");
+            }
+            catch (OperationCanceledException) { throw; }
+            catch (Exception exception)
+            {
+                logger.Error("[Telegram Heartbeat] Delivery failed. Bot token was not logged.",
+                    new InvalidOperationException(
+                        "Telegram transport failure: " + exception.GetType().Name));
+                return HeartbeatResult(true, false,
+                    "Telegram heartbeat delivery failed ("
+                    + exception.GetType().Name + ").");
+            }
+        }
+
         private static AutomationNotificationDeliveryResult Result(bool attempted,
             bool success, string message) => new AutomationNotificationDeliveryResult
+            {
+                Attempted = attempted,
+                Success = success,
+                Message = message
+            };
+
+        private static ContinuousFarmHeartbeatDeliveryResult HeartbeatResult(
+            bool attempted, bool success, string message) =>
+            new ContinuousFarmHeartbeatDeliveryResult
             {
                 Attempted = attempted,
                 Success = success,
@@ -120,6 +182,54 @@ namespace ADB_Tool_Automation_Post_FB.Infrastructure.Notifications
             string result = builder.ToString().TrimEnd();
             return result.Length <= TelegramMessageLimit
                 ? result : result.Substring(0, TelegramMessageLimit - 16) + "\n...[truncated]";
+        }
+
+        public static string FormatHeartbeat(ContinuousFarmHealthSnapshot snapshot)
+        {
+            if (snapshot == null) return "IKAutomation heartbeat: no health data.";
+            var builder = new StringBuilder();
+            builder.AppendLine("IKAutomation heartbeat");
+            builder.Append("Uptime: ").AppendLine(FormatDuration(
+                snapshot.GeneratedAt - snapshot.StartedAt));
+            builder.Append("Devices: ").Append(snapshot.HealthyDevices).Append('/')
+                .Append(snapshot.TotalDevices).AppendLine(" healthy");
+            builder.Append("States: running=").Append(snapshot.RunningDevices)
+                .Append(", waiting=").Append(snapshot.WaitingDevices)
+                .Append(", recovering=").Append(snapshot.RecoveringDevices)
+                .Append(", quarantined=").Append(snapshot.QuarantinedDevices)
+                .Append(", stopped=").AppendLine(snapshot.StoppedDevices.ToString());
+            builder.Append("Pressure: failures=").Append(snapshot.DevicesWithFailures)
+                .Append(", low-disk=").Append(snapshot.LowDiskDevices);
+            if (snapshot.ConcurrencyLimit > 0)
+                builder.Append(", load=").Append(snapshot.ActiveExecutions).Append('/')
+                    .Append(snapshot.ConcurrencyLimit);
+            builder.AppendLine();
+            foreach (ContinuousFarmDeviceHealth device in snapshot.Devices
+                ?? new ContinuousFarmDeviceHealth[0])
+            {
+                if (!string.Equals(device.State, "Recovering", StringComparison.Ordinal)
+                    && !string.Equals(device.State, "Quarantined", StringComparison.Ordinal)
+                    && !string.Equals(device.State, "Stopped", StringComparison.Ordinal)
+                    && device.ConsecutiveFailures == 0
+                    && !device.DiagnosticWritesSuspended) continue;
+                builder.Append("- ").Append(device.DeviceName).Append(": ")
+                    .Append(device.State).Append(", failures=")
+                    .Append(device.ConsecutiveFailures);
+                if (!string.IsNullOrWhiteSpace(device.LastError))
+                    builder.Append(", error=").Append(device.LastError.Trim());
+                builder.AppendLine();
+            }
+            string result = builder.ToString().TrimEnd();
+            return result.Length <= TelegramMessageLimit
+                ? result : result.Substring(0, TelegramMessageLimit - 16)
+                    + "\n...[truncated]";
+        }
+
+        private static string FormatDuration(TimeSpan duration)
+        {
+            if (duration < TimeSpan.Zero) duration = TimeSpan.Zero;
+            return ((int)duration.TotalDays) + "d " + duration.Hours + "h "
+                + duration.Minutes + "m";
         }
 
         private static void Append(StringBuilder builder, string label, string value)

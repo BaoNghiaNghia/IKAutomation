@@ -227,12 +227,13 @@ namespace ADB_Tool_Automation_Post_FB
                 multiDeviceRunner,
                 new ContinuousFarmSupervisor(multiDeviceRunner,
                     LdPlayerDeviceRecoveryServiceFactory.CreateFromAppConfig(),
-                    new ContinuousFarmSupervisorOptions(),
+                    AppConfigContinuousFarmSupervisorOptionsProvider.Load(),
                     AppConfigOperationalMaintenanceOptionsProvider.Create(),
                     new LocalAppDataContinuousFarmCheckpointStore(
                         new LocalAppDataContinuousFarmCheckpointPathProvider(),
                         new ApplicationDiagnosticLogger()),
-                    adaptiveConcurrencyGate),
+                    adaptiveConcurrencyGate,
+                    TelegramFailureNotifierFactory.CreateFromEnvironment()),
                 AppConfigOneShotFarmWorkflowOptionsProvider.LoadRequest(),
                 AppConfigReadyTeamGateOptionsProvider.Load(),
                 new LocalAppDataFarmUiPreferencesStore(

@@ -177,11 +177,19 @@ risk concurrent commands on the same emulator.
 
 ### Phase 7 - Operational notifications and heartbeat
 
-- Notify Telegram on quarantine, recovery, emulator restart, disk pressure, and
-  supervisor shutdown.
-- Send an aggregated heartbeat every six hours with active, waiting, recovering,
-  and quarantined device counts.
-- Deduplicate repeated errors so a failing device cannot flood Telegram.
+- The continuous supervisor now emits a shared health snapshot whenever a
+  device changes state. The WPF dashboard shows healthy/total devices, state
+  counts, failure and low-disk pressure, adaptive load, uptime, and the latest
+  heartbeat delivery result.
+- Telegram sends one startup heartbeat and then an aggregated heartbeat every
+  six hours by default. Configure the bounded interval with
+  `Operations.TelegramHeartbeatIntervalMinutes`.
+- Heartbeats contain aggregate counts plus details only for recovering,
+  quarantined, stopped, failing, or low-disk devices.
+- Telegram transport or configuration failures update dashboard delivery state
+  but never fail, cancel, or pause a device workflow.
+- Event-driven notifications for individual quarantine/recovery/emulator-restart
+  transitions and their deduplication remain separate work.
 
 ## Readiness for a 15-day run
 

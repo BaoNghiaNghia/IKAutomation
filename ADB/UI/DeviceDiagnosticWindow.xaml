@@ -140,6 +140,32 @@
                         IsEnabled="False"/>
             </WrapPanel>
 
+            <GroupBox Header="Continuous Health Dashboard" Margin="0,4,0,8">
+                <Grid Margin="10">
+                    <Grid.ColumnDefinitions>
+                        <ColumnDefinition Width="175"/>
+                        <ColumnDefinition Width="*"/>
+                    </Grid.ColumnDefinitions>
+                    <Grid.RowDefinitions>
+                        <RowDefinition Height="Auto"/><RowDefinition Height="Auto"/>
+                        <RowDefinition Height="Auto"/><RowDefinition Height="Auto"/>
+                        <RowDefinition Height="Auto"/><RowDefinition Height="Auto"/>
+                    </Grid.RowDefinitions>
+                    <TextBlock Grid.Row="0" Text="Tổng quan"/>
+                    <TextBlock x:Name="HealthOverviewTextBlock" Grid.Row="0" Grid.Column="1" Text="Idle"/>
+                    <TextBlock Grid.Row="1" Text="Trạng thái thiết bị"/>
+                    <TextBlock x:Name="HealthStatesTextBlock" Grid.Row="1" Grid.Column="1" Text="-" TextWrapping="Wrap"/>
+                    <TextBlock Grid.Row="2" Text="Lỗi / ổ đĩa"/>
+                    <TextBlock x:Name="HealthPressureTextBlock" Grid.Row="2" Grid.Column="1" Text="-"/>
+                    <TextBlock Grid.Row="3" Text="Adaptive load"/>
+                    <TextBlock x:Name="HealthLoadTextBlock" Grid.Row="3" Grid.Column="1" Text="-"/>
+                    <TextBlock Grid.Row="4" Text="Heartbeat gần nhất"/>
+                    <TextBlock x:Name="HealthHeartbeatTextBlock" Grid.Row="4" Grid.Column="1" Text="-" TextWrapping="Wrap"/>
+                    <TextBlock Grid.Row="5" Text="Uptime"/>
+                    <TextBlock x:Name="HealthUptimeTextBlock" Grid.Row="5" Grid.Column="1" Text="00:00:00"/>
+                </Grid>
+            </GroupBox>
+
             <GroupBox Header="One-Shot Farm Progress" Margin="0,4,0,8">
                 <Grid Margin="10">
                     <Grid.ColumnDefinitions>

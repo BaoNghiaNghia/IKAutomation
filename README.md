@@ -188,6 +188,7 @@ Do not commit `bin`, `obj`, `.vs`, logs, diagnostics, screenshots, local setting
 - Async operations propagate `CancellationToken`, and polling is bounded.
 - Device operations use the shared lock/workflow lease to prevent overlapping input.
 - `ContinuousFarmSupervisor` owns independent device loops and state snapshots; it reuses the bounded multi-device runner instead of adding gameplay logic to WPF.
+- Continuous runs publish a live health dashboard and send a bounded Telegram heartbeat at startup and every six hours; Telegram failures never stop device workflows.
 - A shared adaptive gate starts at 6 active devices, stays within 4-20, reacts to host CPU, available memory, preflight latency, and recent technical failures, and staggers automation/recovery admissions.
 - The long-running operations roadmap and state model are documented in `docs/continuous-operations.md`.
 

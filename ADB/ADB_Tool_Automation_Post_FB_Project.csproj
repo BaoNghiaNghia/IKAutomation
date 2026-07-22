@@ -172,6 +172,7 @@
     <Compile Include="Core\Vision\TemplateId.cs" />
     <Compile Include="Core\Workflows\IOneShotFarmDiagnosticService.cs" />
     <Compile Include="Core\Workflows\IContinuousFarmSupervisor.cs" />
+    <Compile Include="Core\Workflows\IContinuousFarmHeartbeatNotifier.cs" />
     <Compile Include="Core\Workflows\IAdaptiveConcurrencyGate.cs" />
     <Compile Include="Core\Workflows\IContinuousFarmCheckpointStore.cs" />
     <Compile Include="Core\Workflows\IDeviceRecoveryService.cs" />
@@ -266,6 +267,7 @@
     <Compile Include="Infrastructure\Vision\TemplateRegistry.cs" />
     <Compile Include="Infrastructure\Workflows\AppConfigOneShotFarmWorkflowOptionsProvider.cs" />
     <Compile Include="Infrastructure\Workflows\ContinuousFarmSupervisor.cs" />
+    <Compile Include="Infrastructure\Workflows\AppConfigContinuousFarmSupervisorOptionsProvider.cs" />
     <Compile Include="Infrastructure\Workflows\AdaptiveConcurrencyGate.cs" />
     <Compile Include="Infrastructure\Workflows\AppConfigAdaptiveConcurrencyOptionsProvider.cs" />
     <Compile Include="Infrastructure\Workflows\LocalAppDataContinuousFarmCheckpointStore.cs" />

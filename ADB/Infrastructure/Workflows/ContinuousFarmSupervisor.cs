@@ -16,6 +16,7 @@ namespace ADB_Tool_Automation_Post_FB.Infrastructure.Workflows
         private readonly IOperationalMaintenanceService maintenanceService;
         private readonly IContinuousFarmCheckpointStore checkpointStore;
         private readonly IAdaptiveConcurrencyGate adaptiveConcurrencyGate;
+        private readonly IContinuousFarmHeartbeatNotifier heartbeatNotifier;
         private readonly ConcurrentDictionary<string, Queue<DateTimeOffset>> failureHistory =
             new ConcurrentDictionary<string, Queue<DateTimeOffset>>(
                 StringComparer.OrdinalIgnoreCase);
@@ -27,7 +28,8 @@ namespace ADB_Tool_Automation_Post_FB.Infrastructure.Workflows
             IDeviceRecoveryService recoveryService, ContinuousFarmSupervisorOptions options,
             IOperationalMaintenanceService maintenanceService = null,
             IContinuousFarmCheckpointStore checkpointStore = null,
-            IAdaptiveConcurrencyGate adaptiveConcurrencyGate = null)
+            IAdaptiveConcurrencyGate adaptiveConcurrencyGate = null,
+            IContinuousFarmHeartbeatNotifier heartbeatNotifier = null)
         {
             this.runner = runner ?? throw new ArgumentNullException(nameof(runner));
             this.recoveryService = recoveryService
@@ -36,6 +38,7 @@ namespace ADB_Tool_Automation_Post_FB.Infrastructure.Workflows
             this.maintenanceService = maintenanceService;
             this.checkpointStore = checkpointStore;
             this.adaptiveConcurrencyGate = adaptiveConcurrencyGate;
+            this.heartbeatNotifier = heartbeatNotifier;
         }
 
         public async Task<ContinuousFarmSupervisorResult> RunAsync(
@@ -54,8 +57,43 @@ namespace ADB_Tool_Automation_Post_FB.Infrastructure.Workflows
 
             var snapshots = new ConcurrentDictionary<string, ContinuousFarmDeviceSnapshot>(
                 StringComparer.OrdinalIgnoreCase);
-            await Task.WhenAll(devices.Select(device => RunDeviceLoopAsync(device, request,
-                snapshots, progress, cancellationToken)));
+            DateTimeOffset startedAt = DateTimeOffset.UtcNow;
+            foreach (string device in devices)
+            {
+                ContinuousFarmCheckpoint checkpoint = LoadCheckpointSafely(device,
+                    cancellationToken);
+                ContinuousFarmDeviceSnapshot snapshot = RestoreSnapshot(device, checkpoint);
+                Queue<DateTimeOffset> technicalFailures =
+                    RestoreTechnicalFailures(checkpoint);
+                snapshot.TechnicalFailuresInWindow = technicalFailures.Count;
+                snapshots[device] = snapshot;
+                failureHistory[device] = technicalFailures;
+            }
+            var heartbeatState = new HeartbeatState();
+            var dashboardProgress = new InlineProgress<ContinuousFarmSupervisorProgress>(value =>
+            {
+                value.Health = BuildHealthSnapshot(snapshots, startedAt, heartbeatState);
+                ReportSafely(progress, value);
+            });
+            using (var heartbeatCancellation = CancellationTokenSource
+                .CreateLinkedTokenSource(cancellationToken))
+            {
+                Task heartbeatTask = RunHeartbeatLoopAsync(snapshots, startedAt,
+                    heartbeatState, progress, heartbeatCancellation.Token);
+                Task[] deviceTasks = devices.Select(device => RunDeviceLoopAsync(device,
+                    request, snapshots, dashboardProgress, cancellationToken)).ToArray();
+                try
+                {
+                    await Task.WhenAll(deviceTasks);
+                }
+                finally
+                {
+                    heartbeatCancellation.Cancel();
+                    try { await heartbeatTask; }
+                    catch (OperationCanceledException)
+                        when (heartbeatCancellation.IsCancellationRequested) { }
+                }
+            }
             return new ContinuousFarmSupervisorResult
             {
                 Devices = devices.Select(device => Copy(snapshots[device])).ToArray(),
@@ -63,17 +101,61 @@ namespace ADB_Tool_Automation_Post_FB.Infrastructure.Workflows
             };
         }
 
+        private async Task RunHeartbeatLoopAsync(
+            ConcurrentDictionary<string, ContinuousFarmDeviceSnapshot> snapshots,
+            DateTimeOffset startedAt, HeartbeatState heartbeatState,
+            IProgress<ContinuousFarmSupervisorProgress> progress,
+            CancellationToken cancellationToken)
+        {
+            while (true)
+            {
+                cancellationToken.ThrowIfCancellationRequested();
+                ContinuousFarmHealthSnapshot health = BuildHealthSnapshot(snapshots,
+                    startedAt, heartbeatState);
+                if (heartbeatNotifier != null)
+                {
+                    heartbeatState.LastAttemptAt = DateTimeOffset.UtcNow;
+                    try
+                    {
+                        ContinuousFarmHeartbeatDeliveryResult delivery =
+                            await heartbeatNotifier.NotifyHeartbeatAsync(health,
+                                cancellationToken);
+                        heartbeatState.LastSucceeded = delivery != null
+                            && delivery.Attempted ? delivery.Success : (bool?)null;
+                        heartbeatState.Message = delivery?.Message
+                            ?? "Heartbeat notifier returned no delivery result.";
+                    }
+                    catch (OperationCanceledException)
+                        when (cancellationToken.IsCancellationRequested)
+                    {
+                        throw;
+                    }
+                    catch (Exception exception)
+                    {
+                        heartbeatState.LastSucceeded = false;
+                        heartbeatState.Message = "Heartbeat delivery failed ("
+                            + exception.GetType().Name + ").";
+                    }
+                }
+                else
+                {
+                    heartbeatState.LastAttemptAt = DateTimeOffset.UtcNow;
+                    heartbeatState.LastSucceeded = null;
+                    heartbeatState.Message = "Telegram heartbeat notifier is not configured.";
+                }
+                ReportHealthSafely(progress, BuildHealthSnapshot(snapshots, startedAt,
+                    heartbeatState), snapshots.Values.FirstOrDefault());
+                await Task.Delay(options.HeartbeatIntervalMs, cancellationToken);
+            }
+        }
+
         private async Task RunDeviceLoopAsync(string deviceName, OneShotFarmRequest request,
             ConcurrentDictionary<string, ContinuousFarmDeviceSnapshot> snapshots,
             IProgress<ContinuousFarmSupervisorProgress> progress,
             CancellationToken cancellationToken)
         {
-            ContinuousFarmCheckpoint checkpoint = LoadCheckpointSafely(deviceName,
-                cancellationToken);
-            ContinuousFarmDeviceSnapshot snapshot = RestoreSnapshot(deviceName, checkpoint);
-            var technicalFailures = RestoreTechnicalFailures(checkpoint);
-            snapshot.TechnicalFailuresInWindow = technicalFailures.Count;
-            failureHistory[deviceName] = technicalFailures;
+            ContinuousFarmDeviceSnapshot snapshot = snapshots[deviceName];
+            Queue<DateTimeOffset> technicalFailures = failureHistory[deviceName];
             snapshots[deviceName] = snapshot;
             Publish(snapshot, progress, null, cancellationToken);
             try
@@ -540,6 +622,79 @@ namespace ADB_Tool_Automation_Post_FB.Infrastructure.Workflows
             catch { }
         }
 
+        private static ContinuousFarmHealthSnapshot BuildHealthSnapshot(
+            ConcurrentDictionary<string, ContinuousFarmDeviceSnapshot> snapshots,
+            DateTimeOffset startedAt, HeartbeatState heartbeatState)
+        {
+            ContinuousFarmDeviceSnapshot[] devices = snapshots.Values
+                .Select(Copy).OrderBy(value => value.DeviceName,
+                    StringComparer.OrdinalIgnoreCase).ToArray();
+            bool Healthy(ContinuousFarmDeviceSnapshot value) =>
+                (value.State == ContinuousFarmDeviceState.Ready
+                    || value.State == ContinuousFarmDeviceState.Running
+                    || value.State == ContinuousFarmDeviceState.Waiting)
+                && value.ConsecutiveFailures == 0
+                && !value.DiagnosticWritesSuspended;
+            return new ContinuousFarmHealthSnapshot
+            {
+                StartedAt = startedAt,
+                GeneratedAt = DateTimeOffset.UtcNow,
+                TotalDevices = devices.Length,
+                HealthyDevices = devices.Count(Healthy),
+                PreflightDevices = devices.Count(value =>
+                    value.State == ContinuousFarmDeviceState.Preflight),
+                ReadyDevices = devices.Count(value =>
+                    value.State == ContinuousFarmDeviceState.Ready),
+                RunningDevices = devices.Count(value =>
+                    value.State == ContinuousFarmDeviceState.Running),
+                WaitingDevices = devices.Count(value =>
+                    value.State == ContinuousFarmDeviceState.Waiting),
+                RecoveringDevices = devices.Count(value =>
+                    value.State == ContinuousFarmDeviceState.Recovering),
+                QuarantinedDevices = devices.Count(value =>
+                    value.State == ContinuousFarmDeviceState.Quarantined),
+                StoppedDevices = devices.Count(value =>
+                    value.State == ContinuousFarmDeviceState.Stopped),
+                DevicesWithFailures = devices.Count(value =>
+                    value.ConsecutiveFailures > 0),
+                LowDiskDevices = devices.Count(value => value.DiagnosticWritesSuspended),
+                ActiveExecutions = devices.Length == 0 ? 0
+                    : devices.Max(value => value.ActiveExecutions),
+                ConcurrencyLimit = devices.Length == 0 ? 0
+                    : devices.Max(value => value.ConcurrencyLimit),
+                LastHeartbeatAttemptAt = heartbeatState.LastAttemptAt,
+                LastHeartbeatSucceeded = heartbeatState.LastSucceeded,
+                HeartbeatMessage = heartbeatState.Message,
+                Devices = devices.Select(value => new ContinuousFarmDeviceHealth
+                {
+                    DeviceName = value.DeviceName,
+                    State = value.State.ToString(),
+                    ConsecutiveFailures = value.ConsecutiveFailures,
+                    DiagnosticWritesSuspended = value.DiagnosticWritesSuspended,
+                    LastError = value.LastError
+                }).ToArray()
+            };
+        }
+
+        private static void ReportSafely(
+            IProgress<ContinuousFarmSupervisorProgress> progress,
+            ContinuousFarmSupervisorProgress value)
+        {
+            if (progress == null) return;
+            try { progress.Report(value); }
+            catch { }
+        }
+
+        private static void ReportHealthSafely(
+            IProgress<ContinuousFarmSupervisorProgress> progress,
+            ContinuousFarmHealthSnapshot health,
+            ContinuousFarmDeviceSnapshot representative) => ReportSafely(progress,
+                new ContinuousFarmSupervisorProgress
+                {
+                    Device = representative == null ? null : Copy(representative),
+                    Health = health
+                });
+
         private void SaveCheckpointSafely(ContinuousFarmDeviceSnapshot snapshot,
             CancellationToken cancellationToken)
         {
@@ -653,6 +808,13 @@ namespace ADB_Tool_Automation_Post_FB.Infrastructure.Workflows
             public static AttemptResult UnstoppedTimeout() => new AttemptResult
                 { WatchdogTimedOut = true, RunnerDidNotStop = true, NeedsRecovery = true,
                     Error = "The timed-out workflow did not stop after cancellation." };
+        }
+
+        private sealed class HeartbeatState
+        {
+            public DateTimeOffset? LastAttemptAt { get; set; }
+            public bool? LastSucceeded { get; set; }
+            public string Message { get; set; }
         }
 
         private sealed class CheckpointWriteState

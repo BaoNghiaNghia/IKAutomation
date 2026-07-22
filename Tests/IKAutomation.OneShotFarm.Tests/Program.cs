@@ -146,6 +146,8 @@ internal static class Program
         Run("One-Shot UI retries only failed devices", MultiDeviceUiRetriesFailures);
         Run("Continuous supervisor keeps device states independent", ContinuousSupervisorIsolatesDevices);
         Run("Continuous supervisor cancellation stops waiting devices", ContinuousSupervisorCancellationStopsWaiting);
+        Run("Continuous supervisor publishes aggregated health", ContinuousSupervisorPublishesHealth);
+        Run("Heartbeat failure does not stop device workflows", HeartbeatFailureIsIsolated);
         Run("Watchdog recovers a cancellable stalled device", ContinuousWatchdogRecoversStalledDevice);
         Run("Watchdog quarantines a runner that ignores cancellation", ContinuousWatchdogQuarantinesUnstoppedRunner);
         Run("Technical retry uses configured backoff", ContinuousSupervisorUsesTechnicalBackoff);
@@ -252,6 +254,52 @@ internal static class Program
                 "cancellation did not interrupt the supervisor delay promptly");
             Eq(ContinuousFarmDeviceState.Stopped, result.Devices[0].State,
                 "final device state");
+        }
+    }
+
+    static void ContinuousSupervisorPublishesHealth()
+    {
+        using (var cancellation = new CancellationTokenSource(TimeSpan.FromSeconds(5)))
+        {
+            var health = new List<ContinuousFarmHealthSnapshot>();
+            var notifier = new FakeHeartbeatNotifier();
+            var supervisor = new ContinuousFarmSupervisor(
+                new CancelAfterSuccessRunner(cancellation),
+                new FakeDeviceRecovery(true),
+                new ContinuousFarmSupervisorOptions(60000, 60000,
+                    heartbeatIntervalMs: 60000), null, null, null, notifier);
+            var progress = new InlineProgress<ContinuousFarmSupervisorProgress>(value =>
+            {
+                if (value.Health != null) lock (health) health.Add(value.Health);
+            });
+            supervisor.RunAsync(new[] { "May 1", "May 2" }, new H().Request,
+                progress, cancellation.Token).GetAwaiter().GetResult();
+            Is(notifier.Calls >= 1, "startup heartbeat was not sent");
+            lock (health)
+            {
+                Is(health.Any(value => value.TotalDevices == 2),
+                    "dashboard did not aggregate both devices");
+                Is(health.Any(value => value.LastHeartbeatSucceeded == true),
+                    "heartbeat delivery status was not published");
+            }
+        }
+    }
+
+    static void HeartbeatFailureIsIsolated()
+    {
+        using (var cancellation = new CancellationTokenSource(TimeSpan.FromSeconds(5)))
+        {
+            var notifier = new FakeHeartbeatNotifier { ThrowOnNotify = true };
+            var runner = new CancelAfterSuccessRunner(cancellation);
+            var supervisor = new ContinuousFarmSupervisor(runner,
+                new FakeDeviceRecovery(true),
+                new ContinuousFarmSupervisorOptions(60000, 60000,
+                    heartbeatIntervalMs: 60000), null, null, null, notifier);
+            ContinuousFarmSupervisorResult result = supervisor.RunAsync(
+                new[] { "May 1" }, new H().Request, null, cancellation.Token)
+                .GetAwaiter().GetResult();
+            Is(result.WasCancelled, "workflow did not continue after heartbeat failure");
+            Is(notifier.Calls >= 1, "heartbeat notifier was not invoked");
         }
     }
 
@@ -1161,6 +1209,18 @@ internal static class Program
             return Task.FromResult(new MultiDeviceOneShotFarmResult{MaximumConcurrency=20,WasCancelled=false,Devices=new[]{new MultiDeviceOneShotFarmItemResult{DeviceName=device,Stage=success?MultiDeviceOneShotFarmStage.Completed:MultiDeviceOneShotFarmStage.Failed,Result=farmResult,ErrorMessage=farmResult.ErrorMessage}}});
         }
         int CallsUnsafe(string device){return calls.TryGetValue(device,out int count)?count:0;}
+    }
+    sealed class FakeHeartbeatNotifier:IContinuousFarmHeartbeatNotifier
+    {
+        public int Calls;public bool ThrowOnNotify;public bool IsConfigured=>true;
+        public Task<ContinuousFarmHeartbeatDeliveryResult> NotifyHeartbeatAsync(
+            ContinuousFarmHealthSnapshot snapshot,CancellationToken token)
+        {
+            token.ThrowIfCancellationRequested();Calls++;
+            if(ThrowOnNotify)throw new InvalidOperationException("telegram offline");
+            return Task.FromResult(new ContinuousFarmHeartbeatDeliveryResult
+                {Attempted=true,Success=true,Message="sent"});
+        }
     }
     sealed class CancelAfterSuccessRunner:IMultiDeviceOneShotFarmRunner
     {

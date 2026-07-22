@@ -1,6 +1,7 @@
 using ADB_Tool_Automation_Post_FB.Core.Diagnostics;
 using ADB_Tool_Automation_Post_FB.Core.Notifications;
 using ADB_Tool_Automation_Post_FB.Infrastructure.Notifications;
+using ADB_Tool_Automation_Post_FB.Core.Workflows;
 using System;
 using System.Collections.Generic;
 using System.Net;
@@ -27,6 +28,8 @@ namespace IKAutomation.TelegramNotifications.Tests
             Run("Successful delivery reports sent status", SuccessfulDeliveryStatus);
             Run("HTTP failure reports status without token", HttpFailureReportsStatus);
             Run("HTTP 404 identifies invalid token", NotFoundIdentifiesInvalidToken);
+            Run("Configured notifier posts health heartbeat", SendsHeartbeat);
+            Run("Heartbeat highlights unhealthy devices", HeartbeatHighlightsUnhealthyDevices);
             Console.WriteLine($"Telegram notification tests: {passed} passed, {failed} failed.");
             return failed == 0 ? 0 : 1;
         }
@@ -138,6 +141,48 @@ namespace IKAutomation.TelegramNotifications.Tests
                 && result.Message.Contains("HTTP 404")
                 && !result.Message.Contains("secret-test-token"),
                 "HTTP 404 guidance was not safe or actionable: " + result.Message);
+        }
+
+        private static void SendsHeartbeat()
+        {
+            var handler = new FakeHandler();
+            var notifier = new TelegramFailureNotifier(new HttpClient(handler),
+                "test-token", "12345", new FakeLogger());
+            ContinuousFarmHeartbeatDeliveryResult result = notifier
+                .NotifyHeartbeatAsync(Health(), Token).GetAwaiter().GetResult();
+            Assert(result.Attempted && result.Success, "Heartbeat was not delivered.");
+            Assert(handler.Body.Contains("IKAutomation+heartbeat")
+                && handler.Body.IndexOf("Devices%3A+1%2F2+healthy",
+                    StringComparison.OrdinalIgnoreCase) >= 0, handler.Body);
+        }
+
+        private static void HeartbeatHighlightsUnhealthyDevices()
+        {
+            string text = TelegramFailureNotifier.FormatHeartbeat(Health());
+            Assert(text.Contains("May 2: Quarantined")
+                && text.Contains("capture failed")
+                && !text.Contains("May 1: Waiting"),
+                "Heartbeat device summary was not focused: " + text);
+        }
+
+        private static ContinuousFarmHealthSnapshot Health()
+        {
+            DateTimeOffset now = DateTimeOffset.UtcNow;
+            return new ContinuousFarmHealthSnapshot
+            {
+                StartedAt = now.AddHours(-7), GeneratedAt = now,
+                TotalDevices = 2, HealthyDevices = 1, WaitingDevices = 1,
+                QuarantinedDevices = 1, DevicesWithFailures = 1,
+                ActiveExecutions = 1, ConcurrencyLimit = 6,
+                Devices = new[]
+                {
+                    new ContinuousFarmDeviceHealth { DeviceName = "May 1",
+                        State = "Waiting" },
+                    new ContinuousFarmDeviceHealth { DeviceName = "May 2",
+                        State = "Quarantined", ConsecutiveFailures = 3,
+                        LastError = "capture failed" }
+                }
+            };
         }
 
         private static AutomationFailureNotification Notification() =>

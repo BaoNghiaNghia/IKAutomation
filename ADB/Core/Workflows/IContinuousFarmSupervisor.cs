@@ -62,6 +62,7 @@ namespace ADB_Tool_Automation_Post_FB.Core.Workflows
     {
         public ContinuousFarmDeviceSnapshot Device { get; set; }
         public MultiDeviceOneShotFarmProgress FarmProgress { get; set; }
+        public ContinuousFarmHealthSnapshot Health { get; set; }
     }
 
     public sealed class ContinuousFarmSupervisorResult
@@ -79,7 +80,8 @@ namespace ADB_Tool_Automation_Post_FB.Core.Workflows
             IReadOnlyList<int> technicalRetryDelaysMs = null,
             int retryJitterMaxMs = 15000, int circuitFailureThreshold = 5,
             int circuitWindowMs = 1800000, int quarantineCooldownMs = 1800000,
-            int checkpointIntervalMs = 30000)
+            int checkpointIntervalMs = 30000,
+            int heartbeatIntervalMs = 21600000)
         {
             if (cycleIntervalMs < 1)
                 throw new ArgumentOutOfRangeException(nameof(cycleIntervalMs));
@@ -108,6 +110,8 @@ namespace ADB_Tool_Automation_Post_FB.Core.Workflows
                 throw new ArgumentOutOfRangeException(nameof(quarantineCooldownMs));
             if (checkpointIntervalMs < 1)
                 throw new ArgumentOutOfRangeException(nameof(checkpointIntervalMs));
+            if (heartbeatIntervalMs < 1)
+                throw new ArgumentOutOfRangeException(nameof(heartbeatIntervalMs));
             CycleIntervalMs = cycleIntervalMs;
             FailureRetryDelayMs = failureRetryDelayMs;
             NoProgressTimeoutMs = noProgressTimeoutMs;
@@ -120,6 +124,7 @@ namespace ADB_Tool_Automation_Post_FB.Core.Workflows
             CircuitWindowMs = circuitWindowMs;
             QuarantineCooldownMs = quarantineCooldownMs;
             CheckpointIntervalMs = checkpointIntervalMs;
+            HeartbeatIntervalMs = heartbeatIntervalMs;
         }
 
         public int CycleIntervalMs { get; }
@@ -134,5 +139,6 @@ namespace ADB_Tool_Automation_Post_FB.Core.Workflows
         public int CircuitWindowMs { get; }
         public int QuarantineCooldownMs { get; }
         public int CheckpointIntervalMs { get; }
+        public int HeartbeatIntervalMs { get; }
     }
 }
