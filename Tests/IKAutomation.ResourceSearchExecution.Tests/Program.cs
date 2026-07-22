@@ -63,6 +63,7 @@ namespace IKAutomation.ResourceSearchExecution.Tests
             Run("Open panel after one attempt is Timeout", OpenPanelTimeout);
             Run("Verified retries infer NotFound when transient toast is missed", RetryPanelNoChangeInfersNotFound);
             Run("Verified retries infer NotFound after transient panel change", RetryPanelChangeInfersNotFound);
+            Run("Verified retries infer NotFound from a partial toast anchor", RetryPartialToastInfersNotFound);
             Run("Located requires panel closed", LocatedNeedsClosedPanel);
             Run("Located requires WorldMap", LocatedNeedsWorldMap);
             Run("Located requires camera movement", LocatedNeedsMovement);
@@ -160,6 +161,7 @@ namespace IKAutomation.ResourceSearchExecution.Tests
         private static void OpenPanelTimeout() { var r=Execute(Setup(maxAttempts:1)); Is(r.Outcome==ResourceSearchOutcome.Timeout,"outcome"); }
         private static void RetryPanelNoChangeInfersNotFound() { Fixture f=Setup(maxAttempts:2,windowMs:3); var r=Execute(f); Is(r.Outcome==ResourceSearchOutcome.ResourceNotFound&&r.NotFoundObserved,"outcome"); Is(!r.NotFoundToastVerified&&r.MatchedNotFoundVariant=="VerifiedRetryPanelStayedOpen","inference evidence"); Eq(2,r.SearchTapCount,"bounded retries"); }
         private static void RetryPanelChangeInfersNotFound() { Fixture f=Setup(maxAttempts:2,windowMs:3); f.Stability.Differences.Enqueue(.05); f.Stability.Differences.Enqueue(.05); var r=Execute(f); Is(r.Outcome==ResourceSearchOutcome.ResourceNotFound&&r.NotFoundObserved,"outcome"); Is(!r.NotFoundToastVerified&&r.MatchedNotFoundVariant=="VerifiedRetryPanelStayedOpen","inference evidence"); Eq(2,r.SearchTapCount,"bounded retries"); Is(!r.CameraMovementObserved,"panel animation was treated as camera movement"); }
+        private static void RetryPartialToastInfersNotFound() { Fixture f=Setup(maxAttempts:2,windowMs:3); f.Matcher.Short=true; f.Matcher.ToastFrames.Add(2); var r=Execute(f); Is(r.Outcome==ResourceSearchOutcome.ResourceNotFound&&r.NotFoundObserved,"outcome"); Is(!r.NotFoundToastVerified&&r.MatchedNotFoundVariant=="PartialToastPanelStayedOpen","partial evidence"); Eq(2,r.SearchTapCount,"bounded retries"); }
         private static void LocatedNeedsClosedPanel() { Fixture f=Setup(requiredStable:1); f.Stability.Differences.Enqueue(.1); f.Stability.Differences.Enqueue(.001); var r=Execute(f); Is(!r.Success,"success"); }
         private static void LocatedNeedsWorldMap() { Fixture f=Setup(requiredStable:1); f.Detector.SetStates(Panel(),State(GameState.ContinentMap),State(GameState.ContinentMap)); f.Stability.Differences.Enqueue(.1); f.Stability.Differences.Enqueue(.001); Is(!Execute(f).Success,"success"); }
         private static void LocatedNeedsMovement() { Fixture f=Setup(requiredStable:1); f.Detector.SetStates(Panel(),World(),World()); f.Stability.Differences.Enqueue(.001); f.Stability.Differences.Enqueue(.001); Is(!Execute(f).Success,"success"); }

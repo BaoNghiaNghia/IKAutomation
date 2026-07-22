@@ -21,6 +21,7 @@ namespace ADB_Tool_Automation_Post_FB.Infrastructure.ResourceSearch
         private const string LegacyMoveAreaVariant = "LegacyMoveArea";
         private const string SearchOtherRegionVariant = "SearchOtherRegion";
         private const string VerifiedRetryPanelStayedOpenVariant = "VerifiedRetryPanelStayedOpen";
+        private const string PartialToastPanelStayedOpenVariant = "PartialToastPanelStayedOpen";
 
         private static readonly TemplateId[] RequiredTemplates =
         {
@@ -179,6 +180,15 @@ namespace ADB_Tool_Automation_Post_FB.Infrastructure.ResourceSearch
                     {
                         if (attempt < options.MaxSearchTapAttempts)
                             continue;
+                        if (result.SearchTapCount >= 2 && HasPartialNotFoundToast(observations))
+                        {
+                            result.NotFoundObserved = true;
+                            result.MatchedNotFoundVariant = PartialToastPanelStayedOpenVariant;
+                            return await CompleteAsync(deviceName, result, context,
+                                ResourceSearchOutcome.ResourceNotFound,
+                                "ResourceNotFound was inferred after two bounded verified Search taps: the panel remained confirmed and a partial not-found toast anchor was observed.",
+                                null, watch, cancellationToken);
+                        }
                         if (result.SearchTapCount >= 2
                             && context.OpenPanelObservationCount >= result.SearchTapCount)
                         {
@@ -553,6 +563,13 @@ namespace ADB_Tool_Automation_Post_FB.Infrastructure.ResourceSearch
             HasBounds(first) && HasBounds(second)
             && Math.Abs(first.CenterY - second.CenterY)
                 <= options.MaxToastAnchorVerticalDistancePx;
+
+        private static bool HasPartialNotFoundToast(IEnumerable<ResourceSearchObservation> observations) =>
+            observations != null && observations.Any(item =>
+                item.ToastAnchorFound
+                || item.ToastActionAnchorFound
+                || item.ShortAnchorFound
+                || item.OtherRegionAnchorFound);
 
         private static ResourceSearchExecutionResult NewResult(List<ResourceSearchObservation> observations) =>
             new ResourceSearchExecutionResult
