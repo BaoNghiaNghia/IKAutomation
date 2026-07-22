@@ -669,7 +669,6 @@ namespace ADB_Tool_Automation_Post_FB.UI
             LevelPriorityTextBox.Text = string.Join(",", preferences.LevelPriority ?? new int[0]);
             TeamPriorityTextBox.Text = string.Join(",", (preferences.TeamPriority
                 ?? new TeamNumber[0]).Select(team => (int)team));
-            AllowTeam1CheckBox.IsChecked = preferences.AllowTeam1;
             ReadyCheckIntervalTextBox.Text = preferences.ReadyCheckIntervalMinutes
                 .ToString(CultureInfo.InvariantCulture);
             ReadyMaxWaitTextBox.Text = preferences.ReadyMaxWaitHours
@@ -700,7 +699,7 @@ namespace ADB_Tool_Automation_Post_FB.UI
                 Food = FoodResourceCheckBox.IsChecked == true,
                 LevelPriority = levels,
                 TeamPriority = teamValues.Select(value => (TeamNumber)value).ToArray(),
-                AllowTeam1 = AllowTeam1CheckBox.IsChecked == true,
+                AllowTeam1 = teamValues.Contains((int)TeamNumber.Team1),
                 ReadyCheckIntervalMinutes = intervalMinutes,
                 ReadyMaxWaitHours = maxWaitHours,
                 UnoccupiedOnly = UnoccupiedOnlyCheckBox.IsChecked == true

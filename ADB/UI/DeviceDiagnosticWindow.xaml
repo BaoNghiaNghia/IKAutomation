@@ -230,31 +230,82 @@
 
                             <Expander Header="Thiết lập nâng cao" IsExpanded="False"
                                       Foreground="{StaticResource TextPrimaryBrush}">
-                                <Grid Margin="0,10,0,0">
-                                    <Grid.ColumnDefinitions>
-                                        <ColumnDefinition Width="155"/>
-                                        <ColumnDefinition Width="*"/>
-                                    </Grid.ColumnDefinitions>
-                                    <Grid.RowDefinitions>
-                                        <RowDefinition Height="Auto"/><RowDefinition Height="Auto"/>
-                                        <RowDefinition Height="Auto"/><RowDefinition Height="Auto"/>
-                                        <RowDefinition Height="Auto"/>
-                                    </Grid.RowDefinitions>
-                                    <TextBlock Grid.Row="0" Text="Ưu tiên cấp" Style="{StaticResource CaptionStyle}"/>
-                                    <TextBox x:Name="LevelPriorityTextBox" Grid.Row="0" Grid.Column="1"
-                                             Text="7,6,5" Style="{StaticResource InputStyle}" Margin="0,0,0,6"/>
-                                    <TextBlock Grid.Row="1" Text="Ưu tiên đội" Style="{StaticResource CaptionStyle}"/>
-                                    <TextBox x:Name="TeamPriorityTextBox" Grid.Row="1" Grid.Column="1"
-                                             Text="4,3,2" Style="{StaticResource InputStyle}" Margin="0,0,0,6"/>
-                                    <TextBlock Grid.Row="2" Text="Kiểm tra mỗi (phút)" Style="{StaticResource CaptionStyle}"/>
-                                    <TextBox x:Name="ReadyCheckIntervalTextBox" Grid.Row="2" Grid.Column="1"
-                                             Text="15" Style="{StaticResource InputStyle}" Margin="0,0,0,6"/>
-                                    <TextBlock Grid.Row="3" Text="Dừng chờ sau (giờ)" Style="{StaticResource CaptionStyle}"/>
-                                    <TextBox x:Name="ReadyMaxWaitTextBox" Grid.Row="3" Grid.Column="1"
-                                             Text="12" Style="{StaticResource InputStyle}"/>
-                                    <CheckBox x:Name="AllowTeam1CheckBox" Grid.Row="4" Grid.ColumnSpan="2"
-                                              Content="Cho phép Team1" Margin="0,10,0,0"/>
-                                </Grid>
+                                <StackPanel Margin="0,10,0,0">
+                                    <Border Background="#FFF8FAFC" BorderBrush="#FFE2E8F0"
+                                            BorderThickness="1" CornerRadius="7" Padding="10">
+                                        <StackPanel>
+                                            <TextBlock Text="Chiến lược tìm kiếm"
+                                                       FontWeight="SemiBold"
+                                                       Foreground="{StaticResource TextPrimaryBrush}"/>
+                                            <TextBlock Text="Thử lần lượt từ trái sang phải; cấp hoặc đội không có trên thiết bị sẽ được bỏ qua."
+                                                       Style="{StaticResource CaptionStyle}"
+                                                       TextWrapping="Wrap" Margin="0,3,0,10"/>
+                                            <Grid>
+                                                <Grid.ColumnDefinitions>
+                                                    <ColumnDefinition Width="125"/>
+                                                    <ColumnDefinition Width="*"/>
+                                                </Grid.ColumnDefinitions>
+                                                <Grid.RowDefinitions>
+                                                    <RowDefinition Height="Auto"/>
+                                                    <RowDefinition Height="Auto"/>
+                                                </Grid.RowDefinitions>
+                                                <TextBlock Text="Thứ tự cấp"
+                                                           Style="{StaticResource CaptionStyle}"
+                                                           ToolTip="Danh sách cấp tài nguyên, cách nhau bằng dấu phẩy."/>
+                                                <TextBox x:Name="LevelPriorityTextBox" Grid.Column="1"
+                                                         Text="7,6,5" Style="{StaticResource InputStyle}"
+                                                         Margin="0,0,0,7"
+                                                         ToolTip="Ví dụ: 7,6,5. Hỗ trợ cấp 1 đến 30, không lặp."/>
+                                                <TextBlock Grid.Row="1" Text="Thứ tự đội"
+                                                           Style="{StaticResource CaptionStyle}"
+                                                           ToolTip="Danh sách đội được phép dùng, theo thứ tự ưu tiên."/>
+                                                <TextBox x:Name="TeamPriorityTextBox" Grid.Row="1" Grid.Column="1"
+                                                         Text="4,3,2" Style="{StaticResource InputStyle}"
+                                                         ToolTip="Ví dụ: 4,3,2,1. Chỉ các đội có trong danh sách mới được dùng."/>
+                                            </Grid>
+                                            <TextBlock Text="Thêm số 1 vào danh sách nếu muốn dùng Đội 1."
+                                                       Foreground="#FF1D4ED8" FontSize="12"
+                                                       Margin="125,6,0,0" TextWrapping="Wrap"/>
+                                        </StackPanel>
+                                    </Border>
+
+                                    <Border Background="#FFF8FAFC" BorderBrush="#FFE2E8F0"
+                                            BorderThickness="1" CornerRadius="7" Padding="10"
+                                            Margin="0,8,0,0">
+                                        <StackPanel>
+                                            <TextBlock Text="Lịch chờ đội"
+                                                       FontWeight="SemiBold"
+                                                       Foreground="{StaticResource TextPrimaryBrush}"/>
+                                            <TextBlock Text="Chỉ áp dụng khi chưa có đội phù hợp đang sẵn sàng."
+                                                       Style="{StaticResource CaptionStyle}"
+                                                       TextWrapping="Wrap" Margin="0,3,0,10"/>
+                                            <Grid>
+                                                <Grid.ColumnDefinitions>
+                                                    <ColumnDefinition Width="125"/>
+                                                    <ColumnDefinition Width="*"/>
+                                                </Grid.ColumnDefinitions>
+                                                <Grid.RowDefinitions>
+                                                    <RowDefinition Height="Auto"/>
+                                                    <RowDefinition Height="Auto"/>
+                                                </Grid.RowDefinitions>
+                                                <TextBlock Text="Kiểm tra lại sau"
+                                                           Style="{StaticResource CaptionStyle}"/>
+                                                <TextBox x:Name="ReadyCheckIntervalTextBox" Grid.Column="1"
+                                                         Text="15" Style="{StaticResource InputStyle}"
+                                                         Margin="0,0,0,7"
+                                                         ToolTip="Số phút giữa hai lần kiểm tra, từ 1 đến 1440."/>
+                                                <TextBlock Grid.Row="1" Text="Chờ tối đa"
+                                                           Style="{StaticResource CaptionStyle}"/>
+                                                <TextBox x:Name="ReadyMaxWaitTextBox" Grid.Row="1" Grid.Column="1"
+                                                         Text="12" Style="{StaticResource InputStyle}"
+                                                         ToolTip="Tổng số giờ chờ tối đa, từ 1 đến 168."/>
+                                            </Grid>
+                                            <TextBlock Text="Đơn vị: phút cho chu kỳ kiểm tra, giờ cho thời gian chờ tối đa."
+                                                       Style="{StaticResource CaptionStyle}"
+                                                       FontSize="12" Margin="125,6,0,0" TextWrapping="Wrap"/>
+                                        </StackPanel>
+                                    </Border>
+                                </StackPanel>
                             </Expander>
 
                             <WrapPanel Margin="0,12,0,0">
