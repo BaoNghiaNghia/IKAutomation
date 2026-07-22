@@ -35,6 +35,7 @@ namespace ADB_Tool_Automation_Post_FB.UI
         private readonly IDispatchSelectedTeamService dispatchSelectedTeamService;
         private readonly DispatchMarchRequest defaultDispatchRequest;
         private readonly IMultiDeviceOneShotFarmRunner multiDeviceFarmRunner;
+        private readonly IContinuousFarmSupervisor continuousFarmSupervisor;
         private readonly OneShotFarmRequest defaultOneShotFarmRequest;
         private readonly IFarmUiPreferencesStore farmPreferencesStore;
         private readonly IAutomationFailureNotifier failureNotifier;
@@ -71,6 +72,7 @@ namespace ADB_Tool_Automation_Post_FB.UI
             IDispatchSelectedTeamService dispatchSelectedTeamService,
             DispatchMarchRequest defaultDispatchRequest,
             IMultiDeviceOneShotFarmRunner multiDeviceFarmRunner,
+            IContinuousFarmSupervisor continuousFarmSupervisor,
             OneShotFarmRequest defaultOneShotFarmRequest,
             ReadyTeamGateOptions defaultReadyTeamGateOptions,
             IFarmUiPreferencesStore farmPreferencesStore,
@@ -100,6 +102,8 @@ namespace ADB_Tool_Automation_Post_FB.UI
                 ?? throw new ArgumentNullException(nameof(defaultDispatchRequest));
             this.multiDeviceFarmRunner = multiDeviceFarmRunner
                 ?? throw new ArgumentNullException(nameof(multiDeviceFarmRunner));
+            this.continuousFarmSupervisor = continuousFarmSupervisor
+                ?? throw new ArgumentNullException(nameof(continuousFarmSupervisor));
             this.defaultOneShotFarmRequest = defaultOneShotFarmRequest
                 ?? throw new ArgumentNullException(nameof(defaultOneShotFarmRequest));
             this.farmPreferencesStore = farmPreferencesStore
@@ -383,6 +387,128 @@ namespace ADB_Tool_Automation_Post_FB.UI
             await RunDeviceBatchAsync(devices, retryRequest, null, true);
         }
 
+        private async void RunContinuousFarm_Click(object sender, RoutedEventArgs e)
+        {
+            if (oneShotFarmCancellation != null) return;
+            string[] selectedDevices = deviceSelections
+                .Where(item => item.IsSelected)
+                .Select(item => item.DeviceName)
+                .ToArray();
+            if (selectedDevices.Length == 0)
+            {
+                StatusTextBlock.Text = "Hãy chọn ít nhất một thiết bị LDPlayer để chạy.";
+                return;
+            }
+            if (!TryReadFarmPreferences(out FarmUiPreferences preferences,
+                out string validationError))
+            {
+                StatusTextBlock.Text = validationError;
+                return;
+            }
+
+            OneShotFarmRequest request = FarmUiPreferencesMapper.CreateRequest(
+                preferences, defaultOneShotFarmRequest);
+            request.RunUntilNoReadyTeams = true;
+            failedDeviceNames.Clear();
+            retryRequest = null;
+            await RunContinuousSupervisorAsync(selectedDevices, request);
+        }
+
+        private async Task RunContinuousSupervisorAsync(string[] deviceNames,
+            OneShotFarmRequest request)
+        {
+            CancellationTokenSource runCancellation =
+                CancellationTokenSource.CreateLinkedTokenSource(
+                    lifetimeCancellation.Token);
+            oneShotFarmCancellation = runCancellation;
+            oneShotFarmCancellationRequested = false;
+            oneShotFarmRunGeneration++;
+            long runGeneration = oneShotFarmRunGeneration;
+            var attemptVersions = new Dictionary<string, long>(
+                StringComparer.OrdinalIgnoreCase);
+            foreach (string deviceName in deviceNames)
+            {
+                long attemptVersion = ++nextDeviceAttemptVersion;
+                attemptVersions[deviceName] = attemptVersion;
+                deviceAttemptVersions[deviceName] = attemptVersion;
+                activeDeviceNames.Add(deviceName);
+            }
+            var progress = new Progress<ContinuousFarmSupervisorProgress>(value =>
+                ApplyContinuousFarmProgress(runGeneration, runCancellation,
+                    attemptVersions, value));
+            RunOneShotFarmButton.IsEnabled = false;
+            RunContinuousFarmButton.IsEnabled = false;
+            RetryFailedDevicesButton.IsEnabled = false;
+            StopOneShotFarmButton.IsEnabled = true;
+            OneShotFarmResourcesGroupBox.IsEnabled = false;
+            StatusTextBlock.Text = $"Continuous supervisor đang quản lý {deviceNames.Length} thiết bị...";
+            try
+            {
+                ContinuousFarmSupervisorResult result =
+                    await continuousFarmSupervisor.RunAsync(deviceNames, request,
+                        progress, runCancellation.Token);
+                StatusTextBlock.Text = "Continuous supervisor đã dừng."
+                    + Environment.NewLine + string.Join(Environment.NewLine,
+                        result.Devices.Select(item =>
+                            $"- {item.DeviceName}: {item.State}; cycles={item.CycleCount}; failures={item.ConsecutiveFailures}"));
+            }
+            catch (OperationCanceledException)
+            {
+                StatusTextBlock.Text = "Continuous supervisor đã dừng.";
+            }
+            catch (Exception exception)
+            {
+                StatusTextBlock.Text = "Continuous supervisor error: " + exception.Message;
+                AppendNotificationStatus(await NotifyExceptionSafelyAsync(
+                    string.Join(",", deviceNames), exception));
+            }
+            finally
+            {
+                foreach (string deviceName in deviceNames.Where(name =>
+                    IsCurrentDeviceAttempt(name, attemptVersions)))
+                    activeDeviceNames.Remove(deviceName);
+                StopOneShotFarmProgressTimer();
+                if (ReferenceEquals(oneShotFarmCancellation, runCancellation))
+                    oneShotFarmCancellation = null;
+                runCancellation.Dispose();
+                RunOneShotFarmButton.IsEnabled = true;
+                RunContinuousFarmButton.IsEnabled = true;
+                StopOneShotFarmButton.IsEnabled = false;
+                OneShotFarmResourcesGroupBox.IsEnabled = true;
+                RefreshRetryButtonState();
+            }
+        }
+
+        private void ApplyContinuousFarmProgress(long runGeneration,
+            CancellationTokenSource runCancellation,
+            IReadOnlyDictionary<string, long> attemptVersions,
+            ContinuousFarmSupervisorProgress progress)
+        {
+            if (progress?.Device == null || !OneShotFarmProgressUtilities.IsCurrentRun(
+                runGeneration, oneShotFarmRunGeneration, runCancellation,
+                oneShotFarmCancellation)
+                || !IsCurrentDeviceAttempt(progress.Device.DeviceName,
+                    attemptVersions)) return;
+            ContinuousFarmDeviceSnapshot snapshot = progress.Device;
+            DeviceSelectionItem item = deviceSelections.FirstOrDefault(value =>
+                string.Equals(value.DeviceName, snapshot.DeviceName,
+                    StringComparison.OrdinalIgnoreCase));
+            if (item != null)
+                item.Status = $"{snapshot.State}: {snapshot.Message}";
+            if (snapshot.State == ContinuousFarmDeviceState.Stopped
+                || snapshot.State == ContinuousFarmDeviceState.Quarantined)
+                activeDeviceNames.Remove(snapshot.DeviceName);
+            if (snapshot.State == ContinuousFarmDeviceState.Quarantined)
+                failedDeviceNames.Add(snapshot.DeviceName);
+            if (progress.FarmProgress?.DeviceProgress != null)
+            {
+                ApplyOneShotFarmProgress(runGeneration, runCancellation,
+                    progress.FarmProgress.DeviceProgress);
+                ProgressMessageTextBlock.Text = $"[{snapshot.DeviceName}] "
+                    + snapshot.Message;
+            }
+        }
+
         private async Task RunDeviceBatchAsync(string[] deviceNames,
             OneShotFarmRequest request, string saveWarning, bool isRetry)
         {
@@ -413,6 +539,7 @@ namespace ADB_Tool_Automation_Post_FB.UI
                 deviceNames.Contains(item.DeviceName, StringComparer.OrdinalIgnoreCase)))
                 item.Status = "Queued";
             RunOneShotFarmButton.IsEnabled = false;
+            RunContinuousFarmButton.IsEnabled = false;
             RetryFailedDevicesButton.IsEnabled = false;
             StopOneShotFarmButton.IsEnabled = true;
             OneShotFarmResourcesGroupBox.IsEnabled = false;
@@ -462,6 +589,7 @@ namespace ADB_Tool_Automation_Post_FB.UI
                         oneShotFarmCancellation = null;
                     runCancellation.Dispose();
                     RunOneShotFarmButton.IsEnabled = true;
+                    RunContinuousFarmButton.IsEnabled = true;
                     StopOneShotFarmButton.IsEnabled = false;
                     OneShotFarmResourcesGroupBox.IsEnabled = true;
                     if (failedDeviceNames.Count == 0) retryRequest = null;

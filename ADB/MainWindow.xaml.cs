@@ -1,6 +1,7 @@
 ﻿using ADB_Tool_Automation_Post_FB.Exceptions;
 using ADB_Tool_Automation_Post_FB.Helpers;
 using ADB_Tool_Automation_Post_FB.Models;
+using ADB_Tool_Automation_Post_FB.Core.Workflows;
 using ADB_Tool_Automation_Post_FB.Infrastructure.Diagnostics;
 using ADB_Tool_Automation_Post_FB.Infrastructure.GameDetection;
 using ADB_Tool_Automation_Post_FB.Infrastructure.LDPlayer;
@@ -204,6 +205,10 @@ namespace ADB_Tool_Automation_Post_FB
 
         private void Button_Click_DeviceDiagnostic(object sender, RoutedEventArgs e)
         {
+            var multiDeviceRunner = new MultiDeviceOneShotFarmRunner(
+                () => OneShotFarmWorkflowFactory.CreateFromAppConfig(),
+                () => OneShotFarmWorkflowFactory.CreateTeamAvailabilityFromAppConfig(),
+                MultiDeviceOneShotFarmRunner.MaximumSupportedConcurrency);
             var diagnosticWindow = new DeviceDiagnosticWindow(
                 DeviceDiagnosticServiceFactory.CreateFromAppConfig(),
                 GameStateDetectorFactory.CreateFromAppConfig(),
@@ -216,10 +221,9 @@ namespace ADB_Tool_Automation_Post_FB
                 AppConfigFarmTeamSelectionOptionsProvider.LoadRequest(),
                 DispatchSelectedTeamServiceFactory.CreateFromAppConfig(),
                 AppConfigDispatchSelectedTeamOptionsProvider.LoadRequest(),
-                new MultiDeviceOneShotFarmRunner(
-                    () => OneShotFarmWorkflowFactory.CreateFromAppConfig(),
-                    () => OneShotFarmWorkflowFactory.CreateTeamAvailabilityFromAppConfig(),
-                    MultiDeviceOneShotFarmRunner.MaximumSupportedConcurrency),
+                multiDeviceRunner,
+                new ContinuousFarmSupervisor(multiDeviceRunner,
+                    new ContinuousFarmSupervisorOptions()),
                 AppConfigOneShotFarmWorkflowOptionsProvider.LoadRequest(),
                 AppConfigReadyTeamGateOptionsProvider.Load(),
                 new LocalAppDataFarmUiPreferencesStore(

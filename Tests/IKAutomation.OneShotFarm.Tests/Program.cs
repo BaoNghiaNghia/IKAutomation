@@ -140,6 +140,10 @@ internal static class Program
         Run("Preflight failure does not stop healthy devices", MultiDevicePreflightFailureIsIsolated);
         Run("Ready gate consumes preflight result without duplicate check", MultiDevicePreflightIsReused);
         Run("One-Shot UI retries only failed devices", MultiDeviceUiRetriesFailures);
+        Run("Continuous supervisor keeps device states independent", ContinuousSupervisorIsolatesDevices);
+        Run("Continuous supervisor cancellation stops waiting devices", ContinuousSupervisorCancellationStopsWaiting);
+        Run("Continuous supervisor has no default token bypass", ContinuousSupervisorHasNoNone);
+        Run("Continuous supervisor UI is wired without replacing bounded run", ContinuousSupervisorUiIsWired);
         Console.WriteLine($"One-shot farm tests: {pass} passed, {fail} failed."); return fail == 0 ? 0 : 1;
     }
     static void Run(string n, Action a) { try { a(); pass++; Console.WriteLine("PASS: " + n); } catch (Exception e) { fail++; Console.WriteLine("FAIL: " + n + " - " + e); } }
@@ -169,6 +173,91 @@ internal static class Program
             Is(result.Devices.All(item => item.Stage == MultiDeviceOneShotFarmStage.Completed),
                 "all devices should complete");
         }
+    }
+
+    static void ContinuousSupervisorIsolatesDevices()
+    {
+        using (var cancellation = new CancellationTokenSource(TimeSpan.FromSeconds(5)))
+        {
+            var runner = new ContinuousSupervisorRunner(cancellation, true);
+            var states = new List<string>();
+            var progress = new InlineProgress<ContinuousFarmSupervisorProgress>(value =>
+            {
+                lock (states)
+                    states.Add(value.Device.DeviceName + ":" + value.Device.State);
+            });
+            var supervisor = new ContinuousFarmSupervisor(runner,
+                new ContinuousFarmSupervisorOptions(1, 1));
+            ContinuousFarmSupervisorResult result = supervisor.RunAsync(
+                new[] { "May 1", "May 2" }, new H().Request, progress,
+                cancellation.Token).GetAwaiter().GetResult();
+
+            Is(result.WasCancelled, "supervisor cancellation was not reported");
+            Is(result.Devices.All(item => item.State == ContinuousFarmDeviceState.Stopped),
+                "all device loops should stop on cancellation");
+            Is(runner.Calls("May 1") >= 2, "failed device did not retry independently");
+            Is(runner.Calls("May 2") >= 2, "healthy device did not continue cycling");
+            lock (states)
+            {
+                Is(states.Contains("May 1:Recovering"), "failed device never entered Recovering");
+                Is(states.Contains("May 1:Waiting"), "recovered device never entered Waiting");
+                Is(states.Contains("May 2:Waiting"), "healthy device never entered Waiting");
+                Is(states.Any(item => item.EndsWith(":Preflight")), "Preflight was not reported");
+                Is(states.Any(item => item.EndsWith(":Ready")), "Ready was not reported");
+                Is(states.Any(item => item.EndsWith(":Running")), "Running was not reported");
+            }
+        }
+    }
+
+    static void ContinuousSupervisorCancellationStopsWaiting()
+    {
+        using (var cancellation = new CancellationTokenSource(TimeSpan.FromSeconds(5)))
+        {
+            var runner = new ContinuousSupervisorRunner(cancellation, false);
+            var supervisor = new ContinuousFarmSupervisor(runner,
+                new ContinuousFarmSupervisorOptions(60000, 60000));
+            var progress = new InlineProgress<ContinuousFarmSupervisorProgress>(value =>
+            {
+                if (value.Device.State == ContinuousFarmDeviceState.Waiting)
+                    cancellation.Cancel();
+            });
+            DateTime started = DateTime.UtcNow;
+            ContinuousFarmSupervisorResult result = supervisor.RunAsync(
+                new[] { "May 1" }, new H().Request, progress,
+                cancellation.Token).GetAwaiter().GetResult();
+            Is(DateTime.UtcNow - started < TimeSpan.FromSeconds(2),
+                "cancellation did not interrupt the supervisor delay promptly");
+            Eq(ContinuousFarmDeviceState.Stopped, result.Devices[0].State,
+                "final device state");
+        }
+    }
+
+    static void ContinuousSupervisorHasNoNone()
+    {
+        string code = File.ReadAllText(Path.Combine(Environment.CurrentDirectory,
+            "ADB", "Infrastructure", "Workflows", "ContinuousFarmSupervisor.cs"));
+        Is(!code.Contains("CancellationToken.None"), "CancellationToken.None found");
+        Is(code.Contains("Task.Delay(options.CycleIntervalMs, cancellationToken)"),
+            "cycle delay does not use cancellation token");
+        Is(code.Contains("Task.Delay(options.FailureRetryDelayMs, cancellationToken)"),
+            "failure delay does not use cancellation token");
+    }
+
+    static void ContinuousSupervisorUiIsWired()
+    {
+        string root = Path.Combine(Environment.CurrentDirectory, "ADB");
+        string xaml = File.ReadAllText(Path.Combine(root, "UI",
+            "DeviceDiagnosticWindow.xaml"));
+        string code = File.ReadAllText(Path.Combine(root, "UI",
+            "DeviceDiagnosticWindow.xaml.cs"));
+        string main = File.ReadAllText(Path.Combine(root, "MainWindow.xaml.cs"));
+        Is(xaml.Contains("Run Selected Devices") && xaml.Contains("Run Continuous"),
+            "bounded or continuous run control is missing");
+        Is(code.Contains("continuousFarmSupervisor.RunAsync")
+            && code.Contains("RunContinuousSupervisorAsync"),
+            "continuous supervisor is not called by the UI");
+        Is(main.Contains("new ContinuousFarmSupervisor("),
+            "continuous supervisor is not composed in MainWindow");
     }
 
     static void MultiDeviceRequestsAreIsolated()
@@ -487,6 +576,27 @@ internal static class Program
     sealed class AvailabilityDetector:IGameStateDetector{public GameState State=GameState.WorldMap;public Task<GameDetectionResult> DetectAsync(string d,CancellationToken t)=>Task.FromResult(Result());public GameDetectionResult Detect(byte[] p)=>Result();GameDetectionResult Result()=>new GameDetectionResult{State=State,IsSuccessful=State!=GameState.Unknown,Evidence=new GameDetectionEvidence[0]};}
     sealed class AvailabilityMatcher:IImageMatcher{public readonly HashSet<int> PresentRows=new HashSet<int>(new[]{1,2,3,4});public readonly HashSet<int> ReadyRows=new HashSet<int>();public readonly List<ImageRegion?> Regions=new List<ImageRegion?>();public ImageMatchResult Find(byte[] s,byte[] t,ImageRegion? r=null){Regions.Add(r);if(!r.HasValue||t==null||t.Length==0)return ImageMatchResult.NotFound();int row=((r.Value.Y-270)/70)+1;TemplateId id=(TemplateId)t[0];bool badge=(id==TemplateId.Team1Badge&&row==1)||(id==TemplateId.Team2Badge&&row==2)||(id==TemplateId.Team3Badge&&row==3)||(id==TemplateId.Team4Badge&&row==4);bool found=id==TemplateId.WorldMapTeamReadyAnchor?ReadyRows.Contains(row):badge&&PresentRows.Contains(row);return found?ImageMatchResult.FoundAt(70,r.Value.Y+10,20,20):ImageMatchResult.NotFound();}}
     sealed class AvailabilityClient:ILdPlayerClient{public int Captures,Inputs;public Task<byte[]> CaptureScreenshotPngAsync(string d,CancellationToken t){t.ThrowIfCancellationRequested();Captures++;return Task.FromResult(new byte[]{1});}public Task<IReadOnlyList<string>> GetDeviceNamesAsync(CancellationToken t)=>Task.FromResult<IReadOnlyList<string>>(new[]{"LDPlayer"});public Task<bool> IsRunningAsync(string d,CancellationToken t)=>Task.FromResult(true);public Task OpenAsync(string d,CancellationToken t)=>Task.CompletedTask;public Task CloseAsync(string d,CancellationToken t)=>Task.CompletedTask;public Task RunAppAsync(string d,string p,CancellationToken t)=>Task.CompletedTask;public Task TapAsync(string d,int x,int y,CancellationToken t){Inputs++;return Task.CompletedTask;}public Task TapByPercentAsync(string d,double x,double y,CancellationToken t){Inputs++;return Task.CompletedTask;}public Task LongPressAsync(string d,int x,int y,int ms,CancellationToken t){Inputs++;return Task.CompletedTask;}public Task SwipeByPercentAsync(string d,double sx,double sy,double ex,double ey,int ms,CancellationToken t){Inputs++;return Task.CompletedTask;}public Task BackAsync(string d,CancellationToken t){Inputs++;return Task.CompletedTask;}public Task InputTextAsync(string d,string v,CancellationToken t){Inputs++;return Task.CompletedTask;}public Task PressKeyAsync(string d,AndroidKeyCode k,CancellationToken t){Inputs++;return Task.CompletedTask;}}
+    sealed class InlineProgress<T>:IProgress<T>{readonly Action<T> action;public InlineProgress(Action<T> action){this.action=action;}public void Report(T value){action(value);}}
+    sealed class ContinuousSupervisorRunner:IMultiDeviceOneShotFarmRunner
+    {
+        readonly object sync=new object();readonly Dictionary<string,int> calls=new Dictionary<string,int>(StringComparer.OrdinalIgnoreCase);
+        readonly CancellationTokenSource cancellation;readonly bool failFirstDeviceOnce;
+        public ContinuousSupervisorRunner(CancellationTokenSource cancellation,bool failFirstDeviceOnce){this.cancellation=cancellation;this.failFirstDeviceOnce=failFirstDeviceOnce;}
+        public int Calls(string device){lock(sync){return calls.TryGetValue(device,out int count)?count:0;}}
+        public Task<MultiDeviceOneShotFarmResult> RunAsync(IReadOnlyList<string> devices,OneShotFarmRequest request,IProgress<MultiDeviceOneShotFarmProgress> progress,CancellationToken token)
+        {
+            token.ThrowIfCancellationRequested();string device=devices.Single();int call;
+            lock(sync){calls.TryGetValue(device,out call);call++;calls[device]=call;}
+            progress?.Report(new MultiDeviceOneShotFarmProgress{DeviceName=device,Stage=MultiDeviceOneShotFarmStage.Preflight,Message="preflight"});
+            progress?.Report(new MultiDeviceOneShotFarmProgress{DeviceName=device,Stage=MultiDeviceOneShotFarmStage.Queued,Message="ready"});
+            progress?.Report(new MultiDeviceOneShotFarmProgress{DeviceName=device,Stage=MultiDeviceOneShotFarmStage.Running,Message="running",DeviceProgress=new OneShotFarmProgress{Stage=OneShotFarmProgressStage.RunningFarmStep}});
+            bool success=!(failFirstDeviceOnce&&device=="May 1"&&call==1);
+            lock(sync){if(CallsUnsafe("May 1")>=2&&CallsUnsafe("May 2")>=2)cancellation.Cancel();}
+            var farmResult=new OneShotFarmResult{DeviceName=device,Success=success,Outcome=success?OneShotFarmOutcome.MarchStarted:OneShotFarmOutcome.SearchExecutionFailed,Message=success?"completed":"failed",ErrorMessage=success?null:"search failed"};
+            return Task.FromResult(new MultiDeviceOneShotFarmResult{MaximumConcurrency=20,WasCancelled=false,Devices=new[]{new MultiDeviceOneShotFarmItemResult{DeviceName=device,Stage=success?MultiDeviceOneShotFarmStage.Completed:MultiDeviceOneShotFarmStage.Failed,Result=farmResult,ErrorMessage=farmResult.ErrorMessage}}});
+        }
+        int CallsUnsafe(string device){return calls.TryGetValue(device,out int count)?count:0;}
+    }
     sealed class MultiDeviceWorkflowProbe
     {
         readonly object sync = new object();

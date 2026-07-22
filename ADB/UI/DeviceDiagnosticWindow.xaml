@@ -130,6 +130,8 @@
             <WrapPanel Margin="0,0,0,8">
                 <Button x:Name="RunOneShotFarmButton" Content="Run Selected Devices"
                         Click="RunOneShotFarm_Click" Padding="14,7" Margin="0,0,8,8"/>
+                <Button x:Name="RunContinuousFarmButton" Content="Run Continuous"
+                        Click="RunContinuousFarm_Click" Padding="14,7" Margin="0,0,8,8"/>
                 <Button x:Name="RetryFailedDevicesButton" Content="Retry Failed Devices"
                         Click="RetryFailedDevices_Click" Padding="14,7" Margin="0,0,8,8"
                         IsEnabled="False"/>

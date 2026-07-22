@@ -11,14 +11,17 @@ IKAutomation is a Windows WPF automation application for **Infinity Kingdom** ru
 - Detect game states with template matching instead of relying on fixed delays alone.
 - Navigate from the city to the World Map.
 - Check whether an allowed team is ready before starting a farm run.
+- Select and run up to 20 LDPlayer instances concurrently with isolated per-device results.
+- Preflight all selected instances before farming and retry failed instances without stopping healthy ones.
 - Search Iron, Stone, Wood, or Food using configurable resource and level priorities.
 - Fall back between resource types and levels when a target cannot be found or used.
 - Verify resource popups, select an available farm team, and verify march dispatch.
 - Stop an active or waiting run through per-run cancellation.
 - Save diagnostic screenshots and detailed workflow status.
 - Optionally send failure notifications through a Telegram bot.
+- Maintain a per-device continuous-supervisor state model for long-running orchestration.
 
-The One-Shot Farm workflow stops after one verified successful dispatch. It is not an infinite farming scheduler or multi-device orchestrator.
+The gameplay workflow remains bounded and verifiable. Multi-device orchestration is kept outside the gameplay workflow; the continuous-supervisor foundation repeatedly schedules bounded runs and is being integrated incrementally for unattended operation.
 
 ## Requirements
 
@@ -116,7 +119,9 @@ Start the application, click **IK Device Diagnostic**, and select the target LDP
 4. Configure the team recheck interval and maximum wait duration.
 5. Optionally enable Team 1 and the unoccupied-resource-only filter.
 6. Save the settings if they should be reused.
-7. Click **Run One-Shot Farm**.
+7. Select one or more LDPlayer instances and click **Run Selected Devices** for
+   a bounded batch, or **Run Continuous** to keep supervising each device until
+   **Stop** is clicked.
 
 Click **Stop** to cancel the current run or a readiness wait. By default, the readiness gate checks every 15 minutes and stops after 12 hours if no allowed team becomes available.
 
@@ -182,11 +187,13 @@ Do not commit `bin`, `obj`, `.vs`, logs, diagnostics, screenshots, local setting
 - State transitions are verified after input.
 - Async operations propagate `CancellationToken`, and polling is bounded.
 - Device operations use the shared lock/workflow lease to prevent overlapping input.
+- `ContinuousFarmSupervisor` owns independent device loops and state snapshots; it reuses the bounded multi-device runner instead of adding gameplay logic to WPF.
+- The long-running operations roadmap and state model are documented in `docs/continuous-operations.md`.
 
 ## Known limitations
 
 - Runtime recognition currently targets the Vietnamese 1280 x 720 UI.
-- The application operates on one selected LDPlayer instance per workflow; parallel multi-instance orchestration is not implemented.
+- Continuous-supervisor core services are implemented, but watchdog, recovery ladder, circuit breaker, persistence, and adaptive concurrency are still staged roadmap work before a 15-day unattended run is considered production-ready.
 - Some Facebook-era code, names, and project metadata still remain during migration.
 - Screenshot capture depends on the behavior and configuration of the installed LDPlayer version.
 - NuGet may report an existing `Emgu.CV` version warning because the legacy `Auto_LDPlayer` dependency requests a different version. Package versions are intentionally not upgraded as part of the migration work.
