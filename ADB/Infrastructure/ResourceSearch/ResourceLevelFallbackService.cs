@@ -90,6 +90,7 @@ namespace ADB_Tool_Automation_Post_FB.Infrastructure.ResourceSearch
 
                 bool needsToastClear = false;
                 int? knownCeiling = GetKnownCeiling(deviceName, runId);
+                int? unconfirmedCeiling = null;
                 foreach (int level in policy.Levels)
                 {
                     if (knownCeiling.HasValue && level > knownCeiling.Value)
@@ -138,8 +139,10 @@ namespace ADB_Tool_Automation_Post_FB.Infrastructure.ResourceSearch
                             if (configured.ObservedLevel.HasValue
                                 && configured.ObservedLevel.Value < level)
                             {
-                                knownCeiling = RememberCeiling(deviceName, runId,
-                                    configured.ObservedLevel.Value);
+                                unconfirmedCeiling = !unconfirmedCeiling.HasValue
+                                    ? configured.ObservedLevel.Value
+                                    : Math.Min(unconfirmedCeiling.Value,
+                                        configured.ObservedLevel.Value);
                                 attempt.Message = $"Requested level {level} is unavailable; "
                                     + $"level {configured.ObservedLevel.Value} was verified. "
                                     + "Continuing with the next configured level.";
@@ -166,6 +169,12 @@ namespace ADB_Tool_Automation_Post_FB.Infrastructure.ResourceSearch
                             return await CompleteAsync(deviceName, runId, result, ResourceLevelFallbackOutcome.ConfigurationFailed,
                                 configured.Message, configured.ErrorMessage, watch,
                                 $"level-{level}_configurationfailed", token, true);
+                        }
+
+                        if (unconfirmedCeiling.HasValue && level <= unconfirmedCeiling.Value)
+                        {
+                            knownCeiling = RememberCeiling(deviceName, runId, level);
+                            unconfirmedCeiling = null;
                         }
 
                         ResourceSearchExecutionResult searched = await search.ExecuteAsync(deviceName,
