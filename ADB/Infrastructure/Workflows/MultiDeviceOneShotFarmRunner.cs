@@ -2,6 +2,7 @@ using ADB_Tool_Automation_Post_FB.Core.Workflows;
 using ADB_Tool_Automation_Post_FB.Core.TeamSelection;
 using System;
 using System.Collections.Generic;
+using System.Diagnostics;
 using System.Linq;
 using System.Threading;
 using System.Threading.Tasks;
@@ -16,6 +17,7 @@ namespace ADB_Tool_Automation_Post_FB.Infrastructure.Workflows
         private readonly Func<IWorldMapTeamAvailabilityService> availabilityFactory;
         private readonly int maximumConcurrency;
         private readonly SemaphoreSlim executionGate;
+        private readonly IAdaptiveConcurrencyGate adaptiveConcurrencyGate;
 
         public MultiDeviceOneShotFarmRunner(Func<IOneShotFarmWorkflow> workflowFactory,
             int maximumConcurrency = MaximumSupportedConcurrency)
@@ -26,6 +28,13 @@ namespace ADB_Tool_Automation_Post_FB.Infrastructure.Workflows
         public MultiDeviceOneShotFarmRunner(Func<IOneShotFarmWorkflow> workflowFactory,
             Func<IWorldMapTeamAvailabilityService> availabilityFactory,
             int maximumConcurrency = MaximumSupportedConcurrency)
+            : this(workflowFactory, availabilityFactory, maximumConcurrency, null)
+        {
+        }
+
+        public MultiDeviceOneShotFarmRunner(Func<IOneShotFarmWorkflow> workflowFactory,
+            Func<IWorldMapTeamAvailabilityService> availabilityFactory,
+            int maximumConcurrency, IAdaptiveConcurrencyGate adaptiveConcurrencyGate)
         {
             this.workflowFactory = workflowFactory
                 ?? throw new ArgumentNullException(nameof(workflowFactory));
@@ -33,6 +42,7 @@ namespace ADB_Tool_Automation_Post_FB.Infrastructure.Workflows
                 throw new ArgumentOutOfRangeException(nameof(maximumConcurrency));
             this.maximumConcurrency = maximumConcurrency;
             this.availabilityFactory = availabilityFactory;
+            this.adaptiveConcurrencyGate = adaptiveConcurrencyGate;
             executionGate = new SemaphoreSlim(maximumConcurrency, maximumConcurrency);
         }
 
@@ -87,6 +97,8 @@ namespace ADB_Tool_Automation_Post_FB.Infrastructure.Workflows
             {
                 Devices = results,
                 MaximumConcurrency = maximumConcurrency,
+                AdaptiveConcurrencyEnabled = adaptiveConcurrencyGate != null,
+                FinalConcurrencyLimit = GetConcurrencySnapshot().CurrentLimit,
                 WasCancelled = cancellationToken.IsCancellationRequested
             };
         }
@@ -97,11 +109,23 @@ namespace ADB_Tool_Automation_Post_FB.Infrastructure.Workflows
         {
             Report(progress, deviceName, MultiDeviceOneShotFarmStage.Preflight,
                 null, "Checking WorldMap, screenshot, roster and eligible teams.");
+            IAdaptiveConcurrencyLease adaptiveLease = null;
             bool entered = false;
+            bool succeeded = false;
+            bool technicalFailure = false;
+            var stopwatch = Stopwatch.StartNew();
             try
             {
-                await executionGate.WaitAsync(cancellationToken);
-                entered = true;
+                if (adaptiveConcurrencyGate == null)
+                {
+                    await executionGate.WaitAsync(cancellationToken);
+                    entered = true;
+                }
+                else
+                {
+                    adaptiveLease = await adaptiveConcurrencyGate.AcquireAsync(deviceName,
+                        AdaptiveOperationKind.Automation, cancellationToken);
+                }
                 IWorldMapTeamAvailabilityService service = availabilityFactory();
                 if (service == null)
                     throw new InvalidOperationException("The preflight factory returned null.");
@@ -109,6 +133,7 @@ namespace ADB_Tool_Automation_Post_FB.Infrastructure.Workflows
                     deviceName, cancellationToken);
                 if (availability == null || !availability.Success)
                 {
+                    technicalFailure = true;
                     string message = availability?.Message
                         ?? "Multi-device preflight returned no result.";
                     Report(progress, deviceName, MultiDeviceOneShotFarmStage.Failed,
@@ -127,6 +152,7 @@ namespace ADB_Tool_Automation_Post_FB.Infrastructure.Workflows
                     ? $"Preflight passed; eligible ready teams: {string.Join(", ", eligible)}."
                     : "Preflight passed; no allowed team is ready, waiting is required.";
                 Report(progress, deviceName, stage, null, status);
+                succeeded = true;
                 return new PreflightResult
                 {
                     DeviceName = deviceName,
@@ -151,12 +177,23 @@ namespace ADB_Tool_Automation_Post_FB.Infrastructure.Workflows
             }
             catch (Exception exception)
             {
+                technicalFailure = true;
                 Report(progress, deviceName, MultiDeviceOneShotFarmStage.Failed,
                     null, exception.Message);
                 return FailedPreflight(deviceName, exception.Message, exception.Message);
             }
             finally
             {
+                stopwatch.Stop();
+                adaptiveConcurrencyGate?.Report(new AdaptiveConcurrencyObservation
+                {
+                    DeviceName = deviceName,
+                    Success = succeeded,
+                    TechnicalFailure = technicalFailure,
+                    DurationMs = stopwatch.ElapsedMilliseconds,
+                    UseDurationAsPressure = true
+                });
+                adaptiveLease?.Dispose();
                 if (entered) executionGate.Release();
             }
         }
@@ -204,11 +241,23 @@ namespace ADB_Tool_Automation_Post_FB.Infrastructure.Workflows
         {
             Report(progress, deviceName, MultiDeviceOneShotFarmStage.Queued,
                 null, "Waiting for an execution slot.");
+            IAdaptiveConcurrencyLease adaptiveLease = null;
             bool entered = false;
+            bool succeeded = false;
+            bool technicalFailure = false;
+            var stopwatch = Stopwatch.StartNew();
             try
             {
-                await gate.WaitAsync(cancellationToken);
-                entered = true;
+                if (adaptiveConcurrencyGate == null)
+                {
+                    await gate.WaitAsync(cancellationToken);
+                    entered = true;
+                }
+                else
+                {
+                    adaptiveLease = await adaptiveConcurrencyGate.AcquireAsync(deviceName,
+                        AdaptiveOperationKind.Automation, cancellationToken);
+                }
                 cancellationToken.ThrowIfCancellationRequested();
                 Report(progress, deviceName, MultiDeviceOneShotFarmStage.Running,
                     null, "One-Shot Farm started.");
@@ -226,6 +275,8 @@ namespace ADB_Tool_Automation_Post_FB.Infrastructure.Workflows
                     : result != null && result.Outcome == OneShotFarmOutcome.Cancelled
                         ? MultiDeviceOneShotFarmStage.Cancelled
                         : MultiDeviceOneShotFarmStage.Failed;
+                succeeded = stage == MultiDeviceOneShotFarmStage.Completed;
+                technicalFailure = IsTechnicalFailure(result, stage);
                 string message = result?.Message ?? result?.ErrorMessage
                     ?? "One-Shot Farm returned no result.";
                 Report(progress, deviceName, stage, null, message);
@@ -249,6 +300,7 @@ namespace ADB_Tool_Automation_Post_FB.Infrastructure.Workflows
             }
             catch (Exception exception)
             {
+                technicalFailure = true;
                 Report(progress, deviceName, MultiDeviceOneShotFarmStage.Failed,
                     null, exception.Message);
                 return new MultiDeviceOneShotFarmItemResult
@@ -260,6 +312,16 @@ namespace ADB_Tool_Automation_Post_FB.Infrastructure.Workflows
             }
             finally
             {
+                stopwatch.Stop();
+                adaptiveConcurrencyGate?.Report(new AdaptiveConcurrencyObservation
+                {
+                    DeviceName = deviceName,
+                    Success = succeeded,
+                    TechnicalFailure = technicalFailure,
+                    DurationMs = stopwatch.ElapsedMilliseconds,
+                    UseDurationAsPressure = false
+                });
+                adaptiveLease?.Dispose();
                 if (entered) gate.Release();
             }
         }
@@ -297,15 +359,49 @@ namespace ADB_Tool_Automation_Post_FB.Infrastructure.Workflows
             public MultiDeviceOneShotFarmItemResult ItemResult { get; set; }
         }
 
-        private static void Report(IProgress<MultiDeviceOneShotFarmProgress> progress,
+        private AdaptiveConcurrencySnapshot GetConcurrencySnapshot() =>
+            adaptiveConcurrencyGate?.GetSnapshot() ?? new AdaptiveConcurrencySnapshot
+            {
+                Enabled = false,
+                CurrentLimit = maximumConcurrency,
+                ActiveExecutions = 0
+            };
+
+        private static bool IsTechnicalFailure(OneShotFarmResult result,
+            MultiDeviceOneShotFarmStage stage)
+        {
+            if (stage != MultiDeviceOneShotFarmStage.Failed || result == null)
+                return stage == MultiDeviceOneShotFarmStage.Failed;
+            switch (result.Outcome)
+            {
+                case OneShotFarmOutcome.ResourceNotFound:
+                case OneShotFarmOutcome.ResourceLevelsExhausted:
+                case OneShotFarmOutcome.NoEligibleTeam:
+                case OneShotFarmOutcome.AllCandidateStoragesFull:
+                case OneShotFarmOutcome.ResourcePlanExhausted:
+                case OneShotFarmOutcome.TeamAvailabilityWaitTimeout:
+                case OneShotFarmOutcome.PreconditionFailed:
+                case OneShotFarmOutcome.Cancelled:
+                    return false;
+                default:
+                    return true;
+            }
+        }
+
+        private void Report(IProgress<MultiDeviceOneShotFarmProgress> progress,
             string deviceName, MultiDeviceOneShotFarmStage stage,
-            OneShotFarmProgress deviceProgress, string message) =>
+            OneShotFarmProgress deviceProgress, string message)
+        {
+            AdaptiveConcurrencySnapshot concurrency = GetConcurrencySnapshot();
             progress?.Report(new MultiDeviceOneShotFarmProgress
             {
                 DeviceName = deviceName,
                 Stage = stage,
                 DeviceProgress = deviceProgress,
-                Message = message
+                Message = message,
+                ConcurrencyLimit = concurrency.CurrentLimit,
+                ActiveExecutions = concurrency.ActiveExecutions
             });
+        }
     }
 }

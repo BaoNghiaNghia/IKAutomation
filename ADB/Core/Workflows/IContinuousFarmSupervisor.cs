@@ -52,6 +52,8 @@ namespace ADB_Tool_Automation_Post_FB.Core.Workflows
         public long FreeDiskBytes { get; set; }
         public bool DiagnosticWritesSuspended { get; set; }
         public DateTimeOffset? LastMaintenanceAt { get; set; }
+        public int ConcurrencyLimit { get; set; }
+        public int ActiveExecutions { get; set; }
         public string Message { get; set; }
         public string LastError { get; set; }
     }

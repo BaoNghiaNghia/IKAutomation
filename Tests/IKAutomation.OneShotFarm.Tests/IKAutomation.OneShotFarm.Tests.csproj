@@ -19,6 +19,7 @@
     <Compile Include="..\..\ADB\Infrastructure\Workflows\ReadyTeamOneShotFarmWorkflow.cs" Link="Production\ReadyTeamOneShotFarmWorkflow.cs" />
     <Compile Include="..\..\ADB\Infrastructure\Workflows\LocalAppDataFarmUiPreferencesStore.cs" Link="Production\LocalAppDataFarmUiPreferencesStore.cs" />
     <Compile Include="..\..\ADB\Infrastructure\Workflows\MultiDeviceOneShotFarmRunner.cs" Link="Production\MultiDeviceOneShotFarmRunner.cs" />
+    <Compile Include="..\..\ADB\Infrastructure\Workflows\AdaptiveConcurrencyGate.cs" Link="Production\AdaptiveConcurrencyGate.cs" />
     <Compile Include="..\..\ADB\Infrastructure\Workflows\ContinuousFarmSupervisor.cs" Link="Production\ContinuousFarmSupervisor.cs" />
     <Compile Include="..\..\ADB\Infrastructure\Workflows\LocalAppDataContinuousFarmCheckpointStore.cs" Link="Production\LocalAppDataContinuousFarmCheckpointStore.cs" />
     <Compile Include="..\..\ADB\Infrastructure\Workflows\FileSystemOperationalMaintenanceService.cs" Link="Production\FileSystemOperationalMaintenanceService.cs" />

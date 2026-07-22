@@ -133,6 +133,10 @@ internal static class Program
         Run("One-Shot UI has per-run Stop cancellation", OneShotUiHasStop);
         Run("One-Shot UI hides manual diagnostic controls", OneShotUiIsFocused);
         Run("Multi-device runner caps concurrency at twenty", MultiDeviceConcurrencyIsCapped);
+        Run("Adaptive gate enforces its live concurrency limit", AdaptiveGateEnforcesLiveLimit);
+        Run("Adaptive gate reduces concurrency under host pressure", AdaptiveGateReducesOnPressure);
+        Run("Adaptive gate increases slowly without exceeding maximum", AdaptiveGateIncreasesWithinMaximum);
+        Run("Adaptive stagger honors cancellation", AdaptiveStaggerHonorsCancellation);
         Run("Concurrent retry shares the twenty-device limit", ConcurrentBatchesShareConcurrencyLimit);
         Run("Multi-device runner isolates requests per device", MultiDeviceRequestsAreIsolated);
         Run("One device failure does not stop other devices", MultiDeviceFailureIsIsolated);
@@ -705,6 +709,86 @@ internal static class Program
         }
     }
 
+    static void AdaptiveGateEnforcesLiveLimit()
+    {
+        var gate = new AdaptiveConcurrencyGate(new AdaptiveConcurrencyOptions(
+            minimumConcurrency: 1, initialConcurrency: 2, maximumConcurrency: 4,
+            sampleIntervalMs: 60000, healthySamplesToIncrease: 100,
+            automationStaggerMinMs: 0, automationStaggerMaxMs: 0,
+            recoveryStaggerMinMs: 0, recoveryStaggerMaxMs: 0),
+            new FakeHostResourceProbe(10, 8L * 1024 * 1024 * 1024));
+        IAdaptiveConcurrencyLease first = gate.AcquireAsync("May 1",
+            AdaptiveOperationKind.Automation, default(CancellationToken)).GetAwaiter().GetResult();
+        IAdaptiveConcurrencyLease second = gate.AcquireAsync("May 2",
+            AdaptiveOperationKind.Automation, default(CancellationToken)).GetAwaiter().GetResult();
+        Task<IAdaptiveConcurrencyLease> third = gate.AcquireAsync("May 3",
+            AdaptiveOperationKind.Automation, default(CancellationToken));
+        Is(!third.Wait(30), "third device bypassed live limit");
+        Eq(2, gate.GetSnapshot().ActiveExecutions, "active count");
+        first.Dispose();
+        IAdaptiveConcurrencyLease admitted = third.GetAwaiter().GetResult();
+        Eq(2, gate.GetSnapshot().ActiveExecutions, "queued device was not admitted");
+        admitted.Dispose();
+        second.Dispose();
+    }
+
+    static void AdaptiveGateReducesOnPressure()
+    {
+        var gate = new AdaptiveConcurrencyGate(new AdaptiveConcurrencyOptions(
+            minimumConcurrency: 1, initialConcurrency: 3, maximumConcurrency: 4,
+            sampleIntervalMs: 1, healthySamplesToIncrease: 100, highCpuPercent: 50,
+            automationStaggerMinMs: 0, automationStaggerMaxMs: 0,
+            recoveryStaggerMinMs: 0, recoveryStaggerMaxMs: 0),
+            new FakeHostResourceProbe(99, 8L * 1024 * 1024 * 1024));
+        using (gate.AcquireAsync("May 1", AdaptiveOperationKind.Automation,
+            default(CancellationToken)).GetAwaiter().GetResult()) { }
+        Thread.Sleep(5);
+        using (gate.AcquireAsync("May 2", AdaptiveOperationKind.Automation,
+            default(CancellationToken)).GetAwaiter().GetResult()) { }
+        Eq(1, gate.GetSnapshot().CurrentLimit, "pressure did not reduce limit");
+    }
+
+    static void AdaptiveStaggerHonorsCancellation()
+    {
+        var gate = new AdaptiveConcurrencyGate(new AdaptiveConcurrencyOptions(
+            minimumConcurrency: 1, initialConcurrency: 1, maximumConcurrency: 1,
+            sampleIntervalMs: 60000, healthySamplesToIncrease: 100,
+            automationStaggerMinMs: 200, automationStaggerMaxMs: 200,
+            recoveryStaggerMinMs: 0, recoveryStaggerMaxMs: 0),
+            new FakeHostResourceProbe(10, 8L * 1024 * 1024 * 1024));
+        using (gate.AcquireAsync("May 1", AdaptiveOperationKind.Automation,
+            default(CancellationToken)).GetAwaiter().GetResult()) { }
+        using (var source = new CancellationTokenSource(10))
+        {
+            bool cancelled = false;
+            try
+            {
+                gate.AcquireAsync("May 2", AdaptiveOperationKind.Automation,
+                    source.Token).GetAwaiter().GetResult();
+            }
+            catch (OperationCanceledException) { cancelled = true; }
+            Is(cancelled, "stagger delay ignored cancellation");
+        }
+    }
+
+    static void AdaptiveGateIncreasesWithinMaximum()
+    {
+        var gate = new AdaptiveConcurrencyGate(new AdaptiveConcurrencyOptions(
+            minimumConcurrency: 1, initialConcurrency: 1, maximumConcurrency: 2,
+            sampleIntervalMs: 1, healthySamplesToIncrease: 1,
+            automationStaggerMinMs: 0, automationStaggerMaxMs: 0,
+            recoveryStaggerMinMs: 0, recoveryStaggerMaxMs: 0),
+            new FakeHostResourceProbe(10, 8L * 1024 * 1024 * 1024));
+        for (int index = 0; index < 4; index++)
+        {
+            using (gate.AcquireAsync("Healthy " + index,
+                AdaptiveOperationKind.Automation, default(CancellationToken))
+                .GetAwaiter().GetResult()) { }
+            Thread.Sleep(3);
+        }
+        Eq(2, gate.GetSnapshot().CurrentLimit, "healthy samples exceeded maximum");
+    }
+
     static void ConcurrentBatchesShareConcurrencyLimit()
     {
         var probe = new MultiDeviceWorkflowProbe(20);
@@ -1196,6 +1280,13 @@ internal static class Program
                 StorageFullResources=new ResourceType[0],LevelsExhaustedResources=new ResourceType[0],
                 Steps=new OneShotFarmStepResult[0],Message="completed"});
         }
+    }
+    sealed class FakeHostResourceProbe:IHostResourceProbe
+    {
+        readonly double cpu;readonly long memory;
+        public FakeHostResourceProbe(double cpu,long memory){this.cpu=cpu;this.memory=memory;}
+        public HostResourceSnapshot Sample()=>new HostResourceSnapshot
+            {CpuUsagePercent=cpu,AvailableMemoryBytes=memory};
     }
     sealed class Log:IDiagnosticLogger{public void Info(string m){}public void Error(string m,Exception e){}}
 }

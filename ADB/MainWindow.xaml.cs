@@ -205,10 +205,13 @@ namespace ADB_Tool_Automation_Post_FB
 
         private void Button_Click_DeviceDiagnostic(object sender, RoutedEventArgs e)
         {
+            var adaptiveConcurrencyGate = new AdaptiveConcurrencyGate(
+                AppConfigAdaptiveConcurrencyOptionsProvider.Load());
             var multiDeviceRunner = new MultiDeviceOneShotFarmRunner(
                 () => OneShotFarmWorkflowFactory.CreateFromAppConfig(),
                 () => OneShotFarmWorkflowFactory.CreateTeamAvailabilityFromAppConfig(),
-                MultiDeviceOneShotFarmRunner.MaximumSupportedConcurrency);
+                MultiDeviceOneShotFarmRunner.MaximumSupportedConcurrency,
+                adaptiveConcurrencyGate);
             var diagnosticWindow = new DeviceDiagnosticWindow(
                 DeviceDiagnosticServiceFactory.CreateFromAppConfig(),
                 GameStateDetectorFactory.CreateFromAppConfig(),
@@ -228,7 +231,8 @@ namespace ADB_Tool_Automation_Post_FB
                     AppConfigOperationalMaintenanceOptionsProvider.Create(),
                     new LocalAppDataContinuousFarmCheckpointStore(
                         new LocalAppDataContinuousFarmCheckpointPathProvider(),
-                        new ApplicationDiagnosticLogger())),
+                        new ApplicationDiagnosticLogger()),
+                    adaptiveConcurrencyGate),
                 AppConfigOneShotFarmWorkflowOptionsProvider.LoadRequest(),
                 AppConfigReadyTeamGateOptionsProvider.Load(),
                 new LocalAppDataFarmUiPreferencesStore(

@@ -500,7 +500,10 @@ namespace ADB_Tool_Automation_Post_FB.UI
                     : string.Empty;
                 string storage = snapshot.DiagnosticWritesSuspended
                     ? "; diagnostics suspended (low disk)" : string.Empty;
-                item.Status = $"{snapshot.State}: {snapshot.Message}{retry}{storage}";
+                string concurrency = snapshot.ConcurrencyLimit > 0
+                    ? $"; load={snapshot.ActiveExecutions}/{snapshot.ConcurrencyLimit}"
+                    : string.Empty;
+                item.Status = $"{snapshot.State}: {snapshot.Message}{retry}{storage}{concurrency}";
             }
             if (snapshot.State == ContinuousFarmDeviceState.Stopped)
                 activeDeviceNames.Remove(snapshot.DeviceName);
@@ -1155,7 +1158,10 @@ namespace ADB_Tool_Automation_Post_FB.UI
                     ?? (string.IsNullOrWhiteSpace(item.ErrorMessage) ? "-" : item.ErrorMessage);
                 return $"- {item.DeviceName}: {item.Stage} ({outcome})";
             }));
-            return $"Multi-device run: {devices.Length} device(s), concurrency limit: {result?.MaximumConcurrency ?? 0}"
+            string concurrency = result != null && result.AdaptiveConcurrencyEnabled
+                ? $"adaptive concurrency: {result.FinalConcurrencyLimit}/{result.MaximumConcurrency}"
+                : $"concurrency limit: {result?.MaximumConcurrency ?? 0}";
+            return $"Multi-device run: {devices.Length} device(s), {concurrency}"
                 + $"{Environment.NewLine}Completed: {completed}; Failed: {failed}; Cancelled: {cancelled}"
                 + (string.IsNullOrWhiteSpace(details) ? string.Empty
                     : Environment.NewLine + details);

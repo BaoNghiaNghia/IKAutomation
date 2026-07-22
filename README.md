@@ -188,12 +188,13 @@ Do not commit `bin`, `obj`, `.vs`, logs, diagnostics, screenshots, local setting
 - Async operations propagate `CancellationToken`, and polling is bounded.
 - Device operations use the shared lock/workflow lease to prevent overlapping input.
 - `ContinuousFarmSupervisor` owns independent device loops and state snapshots; it reuses the bounded multi-device runner instead of adding gameplay logic to WPF.
+- A shared adaptive gate starts at 6 active devices, stays within 4-20, reacts to host CPU, available memory, preflight latency, and recent technical failures, and staggers automation/recovery admissions.
 - The long-running operations roadmap and state model are documented in `docs/continuous-operations.md`.
 
 ## Known limitations
 
 - Runtime recognition currently targets the Vietnamese 1280 x 720 UI.
-- Continuous-supervisor core services are implemented, but watchdog, recovery ladder, circuit breaker, persistence, and adaptive concurrency are still staged roadmap work before a 15-day unattended run is considered production-ready.
+- Continuous-supervisor safeguards are implemented, but staged soak testing is still required before a 15-day unattended run is considered production-ready.
 - Some Facebook-era code, names, and project metadata still remain during migration.
 - Screenshot capture depends on the behavior and configuration of the installed LDPlayer version.
 - NuGet may report an existing `Emgu.CV` version warning because the legacy `Auto_LDPlayer` dependency requests a different version. Package versions are intentionally not upgraded as part of the migration work.

@@ -157,13 +157,22 @@ risk concurrent commands on the same emulator.
 
 ### Phase 6 - Adaptive concurrency and staggered animation handling
 
-- Start conservatively at 4-6 active devices and adjust below the hard limit of
-  20 using CPU, memory, screenshot latency, and LDPlayer/ADB error rate.
-- Stagger device starts and repeated actions by 2-10 seconds.
-- Stagger emulator restarts by 30-60 seconds.
-- For animated transitions, require the relevant ROI to be stable for 2-3
-  frames, allow a bounded transient `Unknown`, prioritize overlays/dialogs, and
-  rematch from a fresh frame before tapping.
+- `AdaptiveConcurrencyGate` is shared by preflight, gameplay and recovery work.
+  It starts at 6, never drops below 4, and never exceeds the hard limit of 20.
+- The gate decreases one slot when host CPU, available memory, recent preflight
+  latency, or the rolling technical-failure rate crosses its configured
+  threshold. It increases one slot only after three healthy samples.
+- Automation admissions are staggered by a deterministic 2-10 seconds and
+  recovery/restart admissions by 30-60 seconds. Both the queue and stagger
+  delay honor the active cancellation token.
+- Business outcomes such as no resource, no eligible team, full storage, or a
+  readiness timeout do not count as infrastructure pressure.
+- Current active/limit values are propagated through per-device progress and
+  shown in the device status. All thresholds are `Operations.Adaptive*` or
+  `Operations.*Stagger*` keys in `App.config`.
+- Animated transition hardening remains separate work: require the relevant ROI
+  to be stable for 2-3 frames, allow a bounded transient `Unknown`, prioritize
+  overlays/dialogs, and rematch from a fresh frame before tapping.
 - Never use full-screen brightness to infer day/night or transition completion.
 
 ### Phase 7 - Operational notifications and heartbeat

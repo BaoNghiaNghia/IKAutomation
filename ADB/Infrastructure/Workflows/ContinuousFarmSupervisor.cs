@@ -15,6 +15,7 @@ namespace ADB_Tool_Automation_Post_FB.Infrastructure.Workflows
         private readonly ContinuousFarmSupervisorOptions options;
         private readonly IOperationalMaintenanceService maintenanceService;
         private readonly IContinuousFarmCheckpointStore checkpointStore;
+        private readonly IAdaptiveConcurrencyGate adaptiveConcurrencyGate;
         private readonly ConcurrentDictionary<string, Queue<DateTimeOffset>> failureHistory =
             new ConcurrentDictionary<string, Queue<DateTimeOffset>>(
                 StringComparer.OrdinalIgnoreCase);
@@ -25,7 +26,8 @@ namespace ADB_Tool_Automation_Post_FB.Infrastructure.Workflows
         public ContinuousFarmSupervisor(IMultiDeviceOneShotFarmRunner runner,
             IDeviceRecoveryService recoveryService, ContinuousFarmSupervisorOptions options,
             IOperationalMaintenanceService maintenanceService = null,
-            IContinuousFarmCheckpointStore checkpointStore = null)
+            IContinuousFarmCheckpointStore checkpointStore = null,
+            IAdaptiveConcurrencyGate adaptiveConcurrencyGate = null)
         {
             this.runner = runner ?? throw new ArgumentNullException(nameof(runner));
             this.recoveryService = recoveryService
@@ -33,6 +35,7 @@ namespace ADB_Tool_Automation_Post_FB.Infrastructure.Workflows
             this.options = options ?? throw new ArgumentNullException(nameof(options));
             this.maintenanceService = maintenanceService;
             this.checkpointStore = checkpointStore;
+            this.adaptiveConcurrencyGate = adaptiveConcurrencyGate;
         }
 
         public async Task<ContinuousFarmSupervisorResult> RunAsync(
@@ -135,7 +138,7 @@ namespace ADB_Tool_Automation_Post_FB.Infrastructure.Workflows
                     DeviceRecoveryResult recovery;
                     try
                     {
-                        recovery = await recoveryService.RecoverAsync(deviceName, cancellationToken);
+                        recovery = await RecoverAsync(deviceName, cancellationToken);
                     }
                     catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
                     {
@@ -331,7 +334,7 @@ namespace ADB_Tool_Automation_Post_FB.Infrastructure.Workflows
                 DeviceRecoveryResult recovery;
                 try
                 {
-                    recovery = await recoveryService.RecoverAsync(deviceName, cancellationToken);
+                    recovery = await RecoverAsync(deviceName, cancellationToken);
                 }
                 catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
                 {
@@ -405,6 +408,8 @@ namespace ADB_Tool_Automation_Post_FB.Infrastructure.Workflows
             MultiDeviceOneShotFarmProgress progress)
         {
             if (progress == null) return;
+            snapshot.ConcurrencyLimit = progress.ConcurrencyLimit;
+            snapshot.ActiveExecutions = progress.ActiveExecutions;
             if (progress.DeviceProgress?.CurrentResource != null)
                 snapshot.CurrentResource = progress.DeviceProgress.CurrentResource.Value.ToString();
             if (progress.DeviceProgress?.CurrentLevel != null)
@@ -591,7 +596,45 @@ namespace ADB_Tool_Automation_Post_FB.Infrastructure.Workflows
                 FreeDiskBytes = source.FreeDiskBytes,
                 DiagnosticWritesSuspended = source.DiagnosticWritesSuspended,
                 LastMaintenanceAt = source.LastMaintenanceAt,
+                ConcurrencyLimit = source.ConcurrencyLimit,
+                ActiveExecutions = source.ActiveExecutions,
                 LastError = source.LastError };
+
+        private async Task<DeviceRecoveryResult> RecoverAsync(string deviceName,
+            CancellationToken cancellationToken)
+        {
+            if (adaptiveConcurrencyGate == null)
+                return await recoveryService.RecoverAsync(deviceName, cancellationToken);
+            using (IAdaptiveConcurrencyLease lease = await adaptiveConcurrencyGate.AcquireAsync(
+                deviceName, AdaptiveOperationKind.Recovery, cancellationToken))
+            {
+                DateTimeOffset started = DateTimeOffset.UtcNow;
+                try
+                {
+                    DeviceRecoveryResult result = await recoveryService.RecoverAsync(
+                        deviceName, cancellationToken);
+                    adaptiveConcurrencyGate.Report(new AdaptiveConcurrencyObservation
+                    {
+                        DeviceName = deviceName,
+                        Success = result != null && result.Success,
+                        TechnicalFailure = result == null || !result.Success,
+                        DurationMs = (long)(DateTimeOffset.UtcNow - started).TotalMilliseconds
+                    });
+                    return result;
+                }
+                catch
+                {
+                    adaptiveConcurrencyGate.Report(new AdaptiveConcurrencyObservation
+                    {
+                        DeviceName = deviceName,
+                        Success = false,
+                        TechnicalFailure = true,
+                        DurationMs = (long)(DateTimeOffset.UtcNow - started).TotalMilliseconds
+                    });
+                    throw;
+                }
+            }
+        }
 
         private sealed class AttemptResult
         {

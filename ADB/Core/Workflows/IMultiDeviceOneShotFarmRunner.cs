@@ -31,6 +31,8 @@ namespace ADB_Tool_Automation_Post_FB.Core.Workflows
         public MultiDeviceOneShotFarmStage Stage { get; set; }
         public OneShotFarmProgress DeviceProgress { get; set; }
         public string Message { get; set; }
+        public int ConcurrencyLimit { get; set; }
+        public int ActiveExecutions { get; set; }
     }
 
     public sealed class MultiDeviceOneShotFarmItemResult
@@ -46,5 +48,7 @@ namespace ADB_Tool_Automation_Post_FB.Core.Workflows
         public IReadOnlyList<MultiDeviceOneShotFarmItemResult> Devices { get; set; }
         public int MaximumConcurrency { get; set; }
         public bool WasCancelled { get; set; }
+        public bool AdaptiveConcurrencyEnabled { get; set; }
+        public int FinalConcurrencyLimit { get; set; }
     }
 }
