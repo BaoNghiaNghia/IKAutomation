@@ -9,6 +9,8 @@ using ADB_Tool_Automation_Post_FB.Core.TeamSelection;
 using ADB_Tool_Automation_Post_FB.Core.Workflows;
 using System;
 using System.Collections.Generic;
+using System.Collections.ObjectModel;
+using System.ComponentModel;
 using System.Globalization;
 using System.Linq;
 using System.Threading;
@@ -32,7 +34,7 @@ namespace ADB_Tool_Automation_Post_FB.UI
         private readonly TeamSelectionRequest defaultFarmTeamRequest;
         private readonly IDispatchSelectedTeamService dispatchSelectedTeamService;
         private readonly DispatchMarchRequest defaultDispatchRequest;
-        private readonly IOneShotFarmWorkflow oneShotFarmWorkflow;
+        private readonly IMultiDeviceOneShotFarmRunner multiDeviceFarmRunner;
         private readonly OneShotFarmRequest defaultOneShotFarmRequest;
         private readonly IFarmUiPreferencesStore farmPreferencesStore;
         private readonly IAutomationFailureNotifier failureNotifier;
@@ -44,6 +46,8 @@ namespace ADB_Tool_Automation_Post_FB.UI
         private long oneShotFarmRunGeneration;
         private DateTimeOffset? oneShotFarmNextCheckAt;
         private DateTimeOffset? oneShotFarmWaitDeadline;
+        private readonly ObservableCollection<DeviceSelectionItem> deviceSelections =
+            new ObservableCollection<DeviceSelectionItem>();
 
         public DeviceDiagnosticWindow(
             IDeviceDiagnosticService diagnosticService,
@@ -57,7 +61,7 @@ namespace ADB_Tool_Automation_Post_FB.UI
             TeamSelectionRequest defaultFarmTeamRequest,
             IDispatchSelectedTeamService dispatchSelectedTeamService,
             DispatchMarchRequest defaultDispatchRequest,
-            IOneShotFarmWorkflow oneShotFarmWorkflow,
+            IMultiDeviceOneShotFarmRunner multiDeviceFarmRunner,
             OneShotFarmRequest defaultOneShotFarmRequest,
             ReadyTeamGateOptions defaultReadyTeamGateOptions,
             IFarmUiPreferencesStore farmPreferencesStore,
@@ -85,8 +89,8 @@ namespace ADB_Tool_Automation_Post_FB.UI
                 ?? throw new ArgumentNullException(nameof(dispatchSelectedTeamService));
             this.defaultDispatchRequest = defaultDispatchRequest
                 ?? throw new ArgumentNullException(nameof(defaultDispatchRequest));
-            this.oneShotFarmWorkflow = oneShotFarmWorkflow
-                ?? throw new ArgumentNullException(nameof(oneShotFarmWorkflow));
+            this.multiDeviceFarmRunner = multiDeviceFarmRunner
+                ?? throw new ArgumentNullException(nameof(multiDeviceFarmRunner));
             this.defaultOneShotFarmRequest = defaultOneShotFarmRequest
                 ?? throw new ArgumentNullException(nameof(defaultOneShotFarmRequest));
             this.farmPreferencesStore = farmPreferencesStore
@@ -98,6 +102,7 @@ namespace ADB_Tool_Automation_Post_FB.UI
                     ?? throw new ArgumentNullException(nameof(defaultReadyTeamGateOptions)));
 
             InitializeComponent();
+            DeviceSelectionListBox.ItemsSource = deviceSelections;
             oneShotFarmProgressTimer = new DispatcherTimer { Interval = TimeSpan.FromSeconds(1) };
             oneShotFarmProgressTimer.Tick += OneShotFarmProgressTimer_Tick;
             ApplyFarmPreferences(defaultFarmPreferences);
@@ -152,6 +157,21 @@ namespace ADB_Tool_Automation_Post_FB.UI
                 IReadOnlyList<string> deviceNames = await diagnosticService.GetDeviceNamesAsync(cancellationToken);
                 DeviceNameComboBox.ItemsSource = deviceNames;
 
+                var previous = deviceSelections.ToDictionary(item => item.DeviceName,
+                    item => item, StringComparer.OrdinalIgnoreCase);
+                bool initialLoad = previous.Count == 0;
+                deviceSelections.Clear();
+                foreach (string deviceName in deviceNames)
+                {
+                    DeviceSelectionItem existing;
+                    bool found = previous.TryGetValue(deviceName, out existing);
+                    deviceSelections.Add(new DeviceSelectionItem(deviceName)
+                    {
+                        IsSelected = found ? existing.IsSelected : initialLoad,
+                        Status = found ? existing.Status : "Ready"
+                    });
+                }
+
                 string selectedDevice = deviceNames.FirstOrDefault(name =>
                     string.Equals(name, currentDevice, StringComparison.OrdinalIgnoreCase))
                     ?? deviceNames.FirstOrDefault();
@@ -161,6 +181,16 @@ namespace ADB_Tool_Automation_Post_FB.UI
                     ? "No LDPlayer instances were found. Check LDCONSOLE_PATH and create an instance in LDPlayer."
                     : $"Found {deviceNames.Count} LDPlayer instance(s). Selected: {DeviceNameComboBox.Text}.";
             });
+        }
+
+        private void SelectAllDevices_Click(object sender, RoutedEventArgs e)
+        {
+            foreach (DeviceSelectionItem item in deviceSelections) item.IsSelected = true;
+        }
+
+        private void ClearDeviceSelection_Click(object sender, RoutedEventArgs e)
+        {
+            foreach (DeviceSelectionItem item in deviceSelections) item.IsSelected = false;
         }
 
         private async void CheckDevice_Click(object sender, RoutedEventArgs e)
@@ -284,6 +314,15 @@ namespace ADB_Tool_Automation_Post_FB.UI
         private async void RunOneShotFarm_Click(object sender, RoutedEventArgs e)
         {
             if (oneShotFarmCancellation != null) return;
+            string[] selectedDevices = deviceSelections
+                .Where(item => item.IsSelected)
+                .Select(item => item.DeviceName)
+                .ToArray();
+            if (selectedDevices.Length == 0)
+            {
+                StatusTextBlock.Text = "Hãy chọn ít nhất một thiết bị LDPlayer để chạy.";
+                return;
+            }
             if (!TryReadFarmPreferences(out FarmUiPreferences preferences, out string validationError))
             {
                 StatusTextBlock.Text = validationError;
@@ -314,22 +353,25 @@ namespace ADB_Tool_Automation_Post_FB.UI
             oneShotFarmCancellation = runCancellation;
             oneShotFarmCancellationRequested = false;
             long runGeneration = ++oneShotFarmRunGeneration;
-            var progress = new Progress<OneShotFarmProgress>(value =>
-                ApplyOneShotFarmProgress(runGeneration, runCancellation, value));
+            var progress = new Progress<MultiDeviceOneShotFarmProgress>(value =>
+                ApplyMultiDeviceFarmProgress(runGeneration, runCancellation, value));
+            foreach (DeviceSelectionItem item in deviceSelections.Where(item => item.IsSelected))
+                item.Status = "Queued";
             RunOneShotFarmButton.IsEnabled = false;
             StopOneShotFarmButton.IsEnabled = true;
             OneShotFarmResourcesGroupBox.IsEnabled = false;
-            StatusTextBlock.Text = "Waiting for an allowed ready team or running One-Shot Farm...";
+            StatusTextBlock.Text = $"Đang chạy {selectedDevices.Length} thiết bị; tối đa 20 thiết bị đồng thời...";
             try
             {
-                OneShotFarmResult result = await oneShotFarmWorkflow.RunAsync(
-                    GetSelectedDeviceName(), request, progress, runCancellation.Token);
-                StatusTextBlock.Text = FormatOneShotFarmResult(result)
+                MultiDeviceOneShotFarmResult result = await multiDeviceFarmRunner.RunAsync(
+                    selectedDevices, request, progress, runCancellation.Token);
+                StatusTextBlock.Text = FormatMultiDeviceFarmResult(result)
                     + (string.IsNullOrWhiteSpace(saveWarning) ? string.Empty
                         : Environment.NewLine + "Warning: " + saveWarning);
-                if (ShouldNotifyFailure(result))
+                foreach (MultiDeviceOneShotFarmItemResult item in result.Devices
+                    .Where(item => ShouldNotifyFailure(item.Result)))
                     AppendNotificationStatus(await NotifyFailureSafelyAsync(
-                        GetSelectedDeviceName(), result));
+                        item.DeviceName, item.Result));
             }
             catch (OperationCanceledException)
             {
@@ -339,7 +381,7 @@ namespace ADB_Tool_Automation_Post_FB.UI
             {
                 StatusTextBlock.Text = $"Error: {exception.Message}";
                 AppendNotificationStatus(await NotifyExceptionSafelyAsync(
-                    GetSelectedDeviceName(), exception));
+                    string.Join(",", selectedDevices), exception));
             }
             finally
             {
@@ -350,6 +392,28 @@ namespace ADB_Tool_Automation_Post_FB.UI
                 RunOneShotFarmButton.IsEnabled = true;
                 StopOneShotFarmButton.IsEnabled = false;
                 OneShotFarmResourcesGroupBox.IsEnabled = true;
+            }
+        }
+
+        private void ApplyMultiDeviceFarmProgress(long runGeneration,
+            CancellationTokenSource runCancellation, MultiDeviceOneShotFarmProgress progress)
+        {
+            if (progress == null || !OneShotFarmProgressUtilities.IsCurrentRun(
+                runGeneration, oneShotFarmRunGeneration, runCancellation,
+                oneShotFarmCancellation)) return;
+            DeviceSelectionItem item = deviceSelections.FirstOrDefault(value =>
+                string.Equals(value.DeviceName, progress.DeviceName,
+                    StringComparison.OrdinalIgnoreCase));
+            if (item != null)
+                item.Status = string.IsNullOrWhiteSpace(progress.Message)
+                    ? progress.Stage.ToString()
+                    : $"{progress.Stage}: {progress.Message}";
+            if (progress.DeviceProgress != null)
+            {
+                ApplyOneShotFarmProgress(runGeneration, runCancellation,
+                    progress.DeviceProgress);
+                ProgressMessageTextBlock.Text = $"[{progress.DeviceName}] "
+                    + (progress.DeviceProgress.Message ?? progress.Message ?? "-");
             }
         }
 
@@ -809,6 +873,25 @@ namespace ADB_Tool_Automation_Post_FB.UI
                 + $"Message: {result.Message}{Environment.NewLine}Error: {result.ErrorMessage ?? string.Empty}{Environment.NewLine}Steps:{Environment.NewLine}{steps}";
         }
 
+        private static string FormatMultiDeviceFarmResult(MultiDeviceOneShotFarmResult result)
+        {
+            MultiDeviceOneShotFarmItemResult[] devices = result?.Devices?.ToArray()
+                ?? new MultiDeviceOneShotFarmItemResult[0];
+            int completed = devices.Count(item => item.Stage == MultiDeviceOneShotFarmStage.Completed);
+            int failed = devices.Count(item => item.Stage == MultiDeviceOneShotFarmStage.Failed);
+            int cancelled = devices.Count(item => item.Stage == MultiDeviceOneShotFarmStage.Cancelled);
+            string details = string.Join(Environment.NewLine, devices.Select(item =>
+            {
+                string outcome = item.Result?.Outcome.ToString()
+                    ?? (string.IsNullOrWhiteSpace(item.ErrorMessage) ? "-" : item.ErrorMessage);
+                return $"- {item.DeviceName}: {item.Stage} ({outcome})";
+            }));
+            return $"Multi-device run: {devices.Length} device(s), concurrency limit: {result?.MaximumConcurrency ?? 0}"
+                + $"{Environment.NewLine}Completed: {completed}; Failed: {failed}; Cancelled: {cancelled}"
+                + (string.IsNullOrWhiteSpace(details) ? string.Empty
+                    : Environment.NewLine + details);
+        }
+
         private static bool ShouldNotifyFailure(OneShotFarmResult result)
         {
             if (result == null || result.Success) return false;
@@ -899,7 +982,44 @@ namespace ADB_Tool_Automation_Post_FB.UI
             Error = result.ErrorMessage,
             DiagnosticPath = result.DiagnosticScreenshotPath
         };
+    }
 
+    internal sealed class DeviceSelectionItem : INotifyPropertyChanged
+    {
+        private bool isSelected;
+        private string status;
 
+        public DeviceSelectionItem(string deviceName)
+        {
+            DeviceName = deviceName ?? throw new ArgumentNullException(nameof(deviceName));
+        }
+
+        public string DeviceName { get; }
+
+        public bool IsSelected
+        {
+            get => isSelected;
+            set
+            {
+                if (isSelected == value) return;
+                isSelected = value;
+                PropertyChanged?.Invoke(this,
+                    new PropertyChangedEventArgs(nameof(IsSelected)));
+            }
+        }
+
+        public string Status
+        {
+            get => status;
+            set
+            {
+                if (string.Equals(status, value, StringComparison.Ordinal)) return;
+                status = value;
+                PropertyChanged?.Invoke(this,
+                    new PropertyChangedEventArgs(nameof(Status)));
+            }
+        }
+
+        public event PropertyChangedEventHandler PropertyChanged;
     }
 }

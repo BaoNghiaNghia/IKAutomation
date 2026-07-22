@@ -216,7 +216,9 @@ namespace ADB_Tool_Automation_Post_FB
                 AppConfigFarmTeamSelectionOptionsProvider.LoadRequest(),
                 DispatchSelectedTeamServiceFactory.CreateFromAppConfig(),
                 AppConfigDispatchSelectedTeamOptionsProvider.LoadRequest(),
-                OneShotFarmWorkflowFactory.CreateFromAppConfig(),
+                new MultiDeviceOneShotFarmRunner(
+                    () => OneShotFarmWorkflowFactory.CreateFromAppConfig(),
+                    MultiDeviceOneShotFarmRunner.MaximumSupportedConcurrency),
                 AppConfigOneShotFarmWorkflowOptionsProvider.LoadRequest(),
                 AppConfigReadyTeamGateOptionsProvider.Load(),
                 new LocalAppDataFarmUiPreferencesStore(

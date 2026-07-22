@@ -60,6 +60,35 @@
                          Height="56" AcceptsReturn="True" TextWrapping="Wrap"/>
             </Grid>
 
+            <GroupBox Header="Thiết bị chạy đồng thời (tối đa 20)" Margin="0,12,0,0">
+                <StackPanel Margin="8">
+                    <ListBox x:Name="DeviceSelectionListBox" Height="145"
+                             ScrollViewer.VerticalScrollBarVisibility="Auto">
+                        <ListBox.ItemTemplate>
+                            <DataTemplate>
+                                <Grid Margin="2">
+                                    <Grid.ColumnDefinitions>
+                                        <ColumnDefinition Width="220"/>
+                                        <ColumnDefinition Width="*"/>
+                                    </Grid.ColumnDefinitions>
+                                    <CheckBox IsChecked="{Binding IsSelected}"
+                                              Content="{Binding DeviceName}"/>
+                                    <TextBlock Grid.Column="1" Text="{Binding Status}"
+                                               TextTrimming="CharacterEllipsis"
+                                               ToolTip="{Binding Status}"/>
+                                </Grid>
+                            </DataTemplate>
+                        </ListBox.ItemTemplate>
+                    </ListBox>
+                    <WrapPanel Margin="0,8,0,0">
+                        <Button Content="Chọn tất cả" Click="SelectAllDevices_Click"
+                                Padding="12,4" Margin="0,0,8,0"/>
+                        <Button Content="Bỏ chọn" Click="ClearDeviceSelection_Click"
+                                Padding="12,4"/>
+                    </WrapPanel>
+                </StackPanel>
+            </GroupBox>
+
             <GroupBox x:Name="OneShotFarmResourcesGroupBox"
                       Header="Tài nguyên One-Shot Farm" Margin="0,12,0,8">
                 <StackPanel Margin="10,6">
@@ -99,7 +128,7 @@
             </GroupBox>
 
             <WrapPanel Margin="0,0,0,8">
-                <Button x:Name="RunOneShotFarmButton" Content="Run One-Shot Farm"
+                <Button x:Name="RunOneShotFarmButton" Content="Run Selected Devices"
                         Click="RunOneShotFarm_Click" Padding="14,7" Margin="0,0,8,8"/>
                 <Button x:Name="StopOneShotFarmButton" Content="Stop"
                         Click="StopOneShotFarm_Click" Padding="14,7" Margin="0,0,8,8"

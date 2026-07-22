@@ -173,6 +173,7 @@
     <Compile Include="Core\Workflows\IOneShotFarmDiagnosticService.cs" />
     <Compile Include="Core\Workflows\FarmUiPreferences.cs" />
     <Compile Include="Core\Workflows\IOneShotFarmWorkflow.cs" />
+    <Compile Include="Core\Workflows\IMultiDeviceOneShotFarmRunner.cs" />
     <Compile Include="Core\Workflows\IRandomProvider.cs" />
     <Compile Include="Core\Workflows\MissingRuntimeTemplate.cs" />
     <Compile Include="Core\Workflows\OneShotFarmOutcome.cs" />
@@ -261,6 +262,7 @@
     <Compile Include="Infrastructure\Workflows\AppConfigOneShotFarmWorkflowOptionsProvider.cs" />
     <Compile Include="Infrastructure\Workflows\AppConfigReadyTeamGateOptionsProvider.cs" />
     <Compile Include="Infrastructure\Workflows\LocalAppDataFarmUiPreferencesStore.cs" />
+    <Compile Include="Infrastructure\Workflows\MultiDeviceOneShotFarmRunner.cs" />
     <Compile Include="Infrastructure\Workflows\AppConfigResourceFarmFallbackOptionsProvider.cs" />
     <Compile Include="Infrastructure\Workflows\OneShotFarmDiagnosticService.cs" />
     <Compile Include="Infrastructure\Workflows\OneShotFarmWorkflow.cs" />

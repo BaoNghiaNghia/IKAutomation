@@ -132,6 +132,8 @@ internal static class Program
         Run("WorldMap readiness service has no default token bypass", AvailabilityHasNoNone);
         Run("One-Shot UI has per-run Stop cancellation", OneShotUiHasStop);
         Run("One-Shot UI hides manual diagnostic controls", OneShotUiIsFocused);
+        Run("Multi-device runner caps concurrency at twenty", MultiDeviceConcurrencyIsCapped);
+        Run("Multi-device runner isolates requests per device", MultiDeviceRequestsAreIsolated);
         Console.WriteLine($"One-shot farm tests: {pass} passed, {fail} failed."); return fail == 0 ? 0 : 1;
     }
     static void Run(string n, Action a) { try { a(); pass++; Console.WriteLine("PASS: " + n); } catch (Exception e) { fail++; Console.WriteLine("FAIL: " + n + " - " + e); } }
@@ -141,6 +143,48 @@ internal static class Program
         => new ResourceFarmFallbackService(h.Nav,new FakeFallback(h.Config,h.Search),h.Popup,h.Open,h.Select,h.Dispatch,
             profiles??new FakeProfiles(),new ResourceFarmFallbackOptions(),new Log())
             .RunAsync("LDPlayer",h.Request,GameState.WorldMap,t).GetAwaiter().GetResult();
+
+    static void MultiDeviceConcurrencyIsCapped()
+    {
+        var probe = new MultiDeviceWorkflowProbe(20);
+        var runner = new MultiDeviceOneShotFarmRunner(
+            () => new MultiDeviceProbeWorkflow(probe), 20);
+        using (var cancellation = new CancellationTokenSource(TimeSpan.FromSeconds(10)))
+        {
+            Task<MultiDeviceOneShotFarmResult> run = runner.RunAsync(
+                Enumerable.Range(1, 25).Select(index => "Device" + index).ToArray(),
+                new H().Request, null, cancellation.Token);
+            Is(probe.RequiredConcurrencyReached.Task.Wait(TimeSpan.FromSeconds(5)),
+                "twenty devices did not enter concurrently");
+            Eq(20, probe.MaximumActive, "maximum active workflows");
+            probe.Release.TrySetResult(true);
+            MultiDeviceOneShotFarmResult result = run.GetAwaiter().GetResult();
+            Eq(25, result.Devices.Count, "device results");
+            Is(result.Devices.All(item => item.Stage == MultiDeviceOneShotFarmStage.Completed),
+                "all devices should complete");
+        }
+    }
+
+    static void MultiDeviceRequestsAreIsolated()
+    {
+        var probe = new MultiDeviceWorkflowProbe(2);
+        var runner = new MultiDeviceOneShotFarmRunner(
+            () => new MultiDeviceProbeWorkflow(probe), 2);
+        using (var cancellation = new CancellationTokenSource(TimeSpan.FromSeconds(10)))
+        {
+            Task<MultiDeviceOneShotFarmResult> run = runner.RunAsync(
+                new[] { "May 1", "May 2" }, new H().Request, null, cancellation.Token);
+            Is(probe.RequiredConcurrencyReached.Task.Wait(TimeSpan.FromSeconds(5)),
+                "two devices did not enter concurrently");
+            probe.Release.TrySetResult(true);
+            run.GetAwaiter().GetResult();
+            Eq(2, probe.Requests.Count, "request count");
+            Is(!ReferenceEquals(probe.Requests[0], probe.Requests[1]),
+                "devices shared a mutable request");
+            Is(!string.Equals(probe.Requests[0].RunId, probe.Requests[1].RunId,
+                    StringComparison.Ordinal), "devices shared a run id");
+        }
+    }
 
     static void Invalid(){var h=new H();h.Request.ResourceType=(ResourceType)99;var r=Go(h);Eq(OneShotFarmOutcome.PreconditionFailed,r.Outcome,"outcome");Eq(0,h.Total,"calls");}
     static void Unknown(){var h=new H();h.Detector.Initial=GameState.Unknown;var r=Go(h);Eq(OneShotFarmOutcome.PreconditionFailed,r.Outcome,"outcome");Eq(0,h.Nav.EnsureCalls,"input");}
@@ -298,7 +342,7 @@ internal static class Program
     static void AvailabilityMissingTemplate(){var f=new AvailabilityFixture();f.Registry.Missing.Add(TemplateId.WorldMapTeamReadyAnchor);var r=f.Service.CheckAsync("LDPlayer",default(CancellationToken)).GetAwaiter().GetResult();Is(!r.Success&&!r.AnyReadyTeam,"missing template accepted");Eq(0,f.Nav.EnsureCalls,"navigation");Eq(0,f.Client.Captures,"capture");}
     static void AvailabilityHasNoNone(){string source=File.ReadAllText(Path.Combine(Environment.CurrentDirectory,"ADB","Infrastructure","TeamSelection","WorldMapTeamAvailabilityService.cs"));Is(!source.Contains("CancellationToken"+".None"),"token bypass");}
     static void OneShotUiHasStop(){string root=Path.Combine(Environment.CurrentDirectory,"ADB","UI");string xaml=File.ReadAllText(Path.Combine(root,"DeviceDiagnosticWindow.xaml"));string code=File.ReadAllText(Path.Combine(root,"DeviceDiagnosticWindow.xaml.cs"));Is(xaml.Contains("StopOneShotFarmButton")&&xaml.Contains("StopOneShotFarm_Click"),"Stop button missing");Is(code.Contains("CreateLinkedTokenSource")&&code.Contains("oneShotFarmCancellation")&&code.Contains("currentRun.Cancel()"),"per-run cancellation missing");Is(!code.Substring(code.IndexOf("private async void RunOneShotFarm_Click"),code.IndexOf("private void ApplyFarmPreferences")-code.IndexOf("private async void RunOneShotFarm_Click")).Contains("RunOperationAsync"),"one-shot still disables the whole window");}
-    static void OneShotUiIsFocused(){string xaml=File.ReadAllText(Path.Combine(Environment.CurrentDirectory,"ADB","UI","DeviceDiagnosticWindow.xaml"));foreach(string hidden in new[]{"Tap Test","Swipe Test","Check Device","Launch Game","Capture Screenshot","Detect Current State","Ensure World Map","Open Search Panel","Configure Search","Search Iron","Verify Resource Popup","Open Team Selection","Select Farm Team","Dispatch Selected Team","Back Test"})Is(!xaml.Contains(hidden),"manual control remains: "+hidden);Is(xaml.Contains("Run One-Shot Farm")&&xaml.Contains("Content=\"Stop\""),"farm controls missing");}
+    static void OneShotUiIsFocused(){string xaml=File.ReadAllText(Path.Combine(Environment.CurrentDirectory,"ADB","UI","DeviceDiagnosticWindow.xaml"));foreach(string hidden in new[]{"Tap Test","Swipe Test","Check Device","Launch Game","Capture Screenshot","Detect Current State","Ensure World Map","Open Search Panel","Configure Search","Search Iron","Verify Resource Popup","Open Team Selection","Select Farm Team","Dispatch Selected Team","Back Test"})Is(!xaml.Contains(hidden),"manual control remains: "+hidden);Is(xaml.Contains("Run Selected Devices")&&xaml.Contains("Content=\"Stop\""),"farm controls missing");}
     static OneShotFarmWorkflow PlanWorkflow(H h,FakePlan plan,FakeRegistry registry=null,FakeRandom random=null)=>new OneShotFarmWorkflow(h.Nav,new FakeFallback(h.Config,h.Search),h.Popup,h.Open,h.Select,h.Dispatch,h.Detector,h.Lock,new OneShotFarmWorkflowOptions(true,true,"Diagnostics/OneShotFarm"),h.Diag,new Log(),new ResourceFarmFallbackOptions(),plan,registry==null?null:new FakeProfiles(),registry,random);
 
     sealed class H
@@ -334,5 +378,51 @@ internal static class Program
     sealed class AvailabilityDetector:IGameStateDetector{public GameState State=GameState.WorldMap;public Task<GameDetectionResult> DetectAsync(string d,CancellationToken t)=>Task.FromResult(Result());public GameDetectionResult Detect(byte[] p)=>Result();GameDetectionResult Result()=>new GameDetectionResult{State=State,IsSuccessful=State!=GameState.Unknown,Evidence=new GameDetectionEvidence[0]};}
     sealed class AvailabilityMatcher:IImageMatcher{public readonly HashSet<int> PresentRows=new HashSet<int>(new[]{1,2,3,4});public readonly HashSet<int> ReadyRows=new HashSet<int>();public readonly List<ImageRegion?> Regions=new List<ImageRegion?>();public ImageMatchResult Find(byte[] s,byte[] t,ImageRegion? r=null){Regions.Add(r);if(!r.HasValue||t==null||t.Length==0)return ImageMatchResult.NotFound();int row=((r.Value.Y-270)/70)+1;TemplateId id=(TemplateId)t[0];bool badge=(id==TemplateId.Team1Badge&&row==1)||(id==TemplateId.Team2Badge&&row==2)||(id==TemplateId.Team3Badge&&row==3)||(id==TemplateId.Team4Badge&&row==4);bool found=id==TemplateId.WorldMapTeamReadyAnchor?ReadyRows.Contains(row):badge&&PresentRows.Contains(row);return found?ImageMatchResult.FoundAt(70,r.Value.Y+10,20,20):ImageMatchResult.NotFound();}}
     sealed class AvailabilityClient:ILdPlayerClient{public int Captures,Inputs;public Task<byte[]> CaptureScreenshotPngAsync(string d,CancellationToken t){t.ThrowIfCancellationRequested();Captures++;return Task.FromResult(new byte[]{1});}public Task<IReadOnlyList<string>> GetDeviceNamesAsync(CancellationToken t)=>Task.FromResult<IReadOnlyList<string>>(new[]{"LDPlayer"});public Task<bool> IsRunningAsync(string d,CancellationToken t)=>Task.FromResult(true);public Task OpenAsync(string d,CancellationToken t)=>Task.CompletedTask;public Task CloseAsync(string d,CancellationToken t)=>Task.CompletedTask;public Task RunAppAsync(string d,string p,CancellationToken t)=>Task.CompletedTask;public Task TapAsync(string d,int x,int y,CancellationToken t){Inputs++;return Task.CompletedTask;}public Task TapByPercentAsync(string d,double x,double y,CancellationToken t){Inputs++;return Task.CompletedTask;}public Task LongPressAsync(string d,int x,int y,int ms,CancellationToken t){Inputs++;return Task.CompletedTask;}public Task SwipeByPercentAsync(string d,double sx,double sy,double ex,double ey,int ms,CancellationToken t){Inputs++;return Task.CompletedTask;}public Task BackAsync(string d,CancellationToken t){Inputs++;return Task.CompletedTask;}public Task InputTextAsync(string d,string v,CancellationToken t){Inputs++;return Task.CompletedTask;}public Task PressKeyAsync(string d,AndroidKeyCode k,CancellationToken t){Inputs++;return Task.CompletedTask;}}
+    sealed class MultiDeviceWorkflowProbe
+    {
+        readonly object sync = new object();
+        readonly int requiredConcurrency;
+        int active;
+        public MultiDeviceWorkflowProbe(int requiredConcurrency){this.requiredConcurrency=requiredConcurrency;}
+        public int MaximumActive { get; private set; }
+        public List<OneShotFarmRequest> Requests { get; } = new List<OneShotFarmRequest>();
+        public TaskCompletionSource<bool> RequiredConcurrencyReached { get; } =
+            new TaskCompletionSource<bool>(TaskCreationOptions.RunContinuationsAsynchronously);
+        public TaskCompletionSource<bool> Release { get; } =
+            new TaskCompletionSource<bool>(TaskCreationOptions.RunContinuationsAsynchronously);
+        public void Enter(OneShotFarmRequest request)
+        {
+            lock(sync)
+            {
+                Requests.Add(request);
+                active++;
+                MaximumActive=Math.Max(MaximumActive,active);
+                if(active>=requiredConcurrency)RequiredConcurrencyReached.TrySetResult(true);
+            }
+        }
+        public void Exit(){lock(sync){active--;}}
+    }
+    sealed class MultiDeviceProbeWorkflow:IOneShotFarmWorkflow
+    {
+        readonly MultiDeviceWorkflowProbe probe;
+        public MultiDeviceProbeWorkflow(MultiDeviceWorkflowProbe probe){this.probe=probe;}
+        public Task<OneShotFarmResult> RunAsync(string d,OneShotFarmRequest r,CancellationToken t)=>RunAsync(d,r,null,t);
+        public async Task<OneShotFarmResult> RunAsync(string d,OneShotFarmRequest r,IProgress<OneShotFarmProgress> p,CancellationToken t)
+        {
+            t.ThrowIfCancellationRequested();probe.Enter(r);
+            try
+            {
+                using(t.Register(()=>probe.Release.TrySetCanceled())){await probe.Release.Task;}
+                t.ThrowIfCancellationRequested();
+                return new OneShotFarmResult{DeviceName=d,Success=true,Outcome=OneShotFarmOutcome.MarchStarted,
+                    RequestedResource=r.ResourceType,RequestedLevel=r.TargetLevel,AttemptedLevels=new int[0],
+                    AttemptedResources=new ResourceType[0],SelectedResources=r.SelectedResources,
+                    ShuffledResourcePriority=r.ResourcePriority,StorageFullResources=new ResourceType[0],
+                    LevelsExhaustedResources=new ResourceType[0],Steps=new OneShotFarmStepResult[0],
+                    LastCompletedStep=OneShotFarmStep.Completed,Message="completed"};
+            }
+            finally{probe.Exit();}
+        }
+    }
     sealed class Log:IDiagnosticLogger{public void Info(string m){}public void Error(string m,Exception e){}}
 }
