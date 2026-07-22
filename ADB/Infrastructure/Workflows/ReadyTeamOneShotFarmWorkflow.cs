@@ -54,6 +54,8 @@ namespace ADB_Tool_Automation_Post_FB.Infrastructure.Workflows
             var dispatchedTeams = new List<TeamNumber>();
             OneShotFarmResult lastSuccessfulResult = null;
             int consecutiveNoReadyChecks = 0;
+            WorldMapTeamAvailabilityResult initialAvailability =
+                request.InitialTeamAvailability;
             try
             {
                 while (true)
@@ -78,8 +80,16 @@ namespace ADB_Tool_Automation_Post_FB.Infrastructure.Workflows
                         WaitDeadline = waitDeadline,
                         Message = $"Checking allowed teams (attempt {checks + 1})."
                     });
-                    WorldMapTeamAvailabilityResult check = await availability.CheckAsync(
-                        deviceName, cancellationToken);
+                    WorldMapTeamAvailabilityResult check;
+                    if (initialAvailability != null)
+                    {
+                        check = initialAvailability;
+                        initialAvailability = null;
+                    }
+                    else
+                    {
+                        check = await availability.CheckAsync(deviceName, cancellationToken);
+                    }
                     checks++;
                     if (!check.Success)
                     {

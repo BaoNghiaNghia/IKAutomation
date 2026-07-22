@@ -35,6 +35,7 @@ namespace ADB_Tool_Automation_Post_FB.Core.Workflows
         public bool RequireMarchVerification { get; set; }
         public bool RunUntilNoReadyTeams { get; set; }
         public ReadyTeamGateRunOptions ReadyTeamOptions { get; set; }
+        public WorldMapTeamAvailabilityResult InitialTeamAvailability { get; set; }
         public string RunId { get; set; }
     }
 }

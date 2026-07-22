@@ -17,6 +17,8 @@ namespace ADB_Tool_Automation_Post_FB.Core.Workflows
     public enum MultiDeviceOneShotFarmStage
     {
         Queued,
+        Preflight,
+        WaitingForReadyTeam,
         Running,
         Completed,
         Failed,

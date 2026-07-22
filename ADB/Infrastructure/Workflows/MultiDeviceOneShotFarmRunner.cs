@@ -1,4 +1,5 @@
 using ADB_Tool_Automation_Post_FB.Core.Workflows;
+using ADB_Tool_Automation_Post_FB.Core.TeamSelection;
 using System;
 using System.Collections.Generic;
 using System.Linq;
@@ -12,10 +13,18 @@ namespace ADB_Tool_Automation_Post_FB.Infrastructure.Workflows
         public const int MaximumSupportedConcurrency = 20;
 
         private readonly Func<IOneShotFarmWorkflow> workflowFactory;
+        private readonly Func<IWorldMapTeamAvailabilityService> availabilityFactory;
         private readonly int maximumConcurrency;
         private readonly SemaphoreSlim executionGate;
 
         public MultiDeviceOneShotFarmRunner(Func<IOneShotFarmWorkflow> workflowFactory,
+            int maximumConcurrency = MaximumSupportedConcurrency)
+            : this(workflowFactory, null, maximumConcurrency)
+        {
+        }
+
+        public MultiDeviceOneShotFarmRunner(Func<IOneShotFarmWorkflow> workflowFactory,
+            Func<IWorldMapTeamAvailabilityService> availabilityFactory,
             int maximumConcurrency = MaximumSupportedConcurrency)
         {
             this.workflowFactory = workflowFactory
@@ -23,6 +32,7 @@ namespace ADB_Tool_Automation_Post_FB.Infrastructure.Workflows
             if (maximumConcurrency < 1 || maximumConcurrency > MaximumSupportedConcurrency)
                 throw new ArgumentOutOfRangeException(nameof(maximumConcurrency));
             this.maximumConcurrency = maximumConcurrency;
+            this.availabilityFactory = availabilityFactory;
             executionGate = new SemaphoreSlim(maximumConcurrency, maximumConcurrency);
         }
 
@@ -42,17 +52,149 @@ namespace ADB_Tool_Automation_Post_FB.Infrastructure.Workflows
                 throw new ArgumentException("At least one LDPlayer device must be selected.",
                     nameof(deviceNames));
 
-            Task<MultiDeviceOneShotFarmItemResult>[] tasks = devices
-                .Select(device => Task.Run(() => RunDeviceAsync(device, request,
-                    executionGate, progress, cancellationToken)))
+            PreflightResult[] preflights;
+            if (availabilityFactory == null)
+            {
+                preflights = devices.Select(device => new PreflightResult
+                {
+                    DeviceName = device,
+                    Success = true
+                }).ToArray();
+            }
+            else
+            {
+                Task<PreflightResult>[] preflightTasks = devices.Select(device =>
+                    Task.Run(() => RunPreflightAsync(device, request, progress,
+                        cancellationToken))).ToArray();
+                preflights = await Task.WhenAll(preflightTasks);
+            }
+
+            Task<MultiDeviceOneShotFarmItemResult>[] tasks = preflights
+                .Where(item => item.Success)
+                .Select(item => Task.Run(() => RunDeviceAsync(item.DeviceName,
+                    CreatePreflightRequest(request, item.Availability), executionGate,
+                    progress, cancellationToken)))
                 .ToArray();
-            MultiDeviceOneShotFarmItemResult[] results = await Task.WhenAll(tasks);
+            MultiDeviceOneShotFarmItemResult[] workflowResults = await Task.WhenAll(tasks);
+            MultiDeviceOneShotFarmItemResult[] results = preflights
+                .Where(item => !item.Success)
+                .Select(item => item.ItemResult)
+                .Concat(workflowResults)
+                .OrderBy(item => Array.FindIndex(devices, device =>
+                    string.Equals(device, item.DeviceName, StringComparison.OrdinalIgnoreCase)))
+                .ToArray();
             return new MultiDeviceOneShotFarmResult
             {
                 Devices = results,
                 MaximumConcurrency = maximumConcurrency,
                 WasCancelled = cancellationToken.IsCancellationRequested
             };
+        }
+
+        private async Task<PreflightResult> RunPreflightAsync(string deviceName,
+            OneShotFarmRequest request, IProgress<MultiDeviceOneShotFarmProgress> progress,
+            CancellationToken cancellationToken)
+        {
+            Report(progress, deviceName, MultiDeviceOneShotFarmStage.Preflight,
+                null, "Checking WorldMap, screenshot, roster and eligible teams.");
+            bool entered = false;
+            try
+            {
+                await executionGate.WaitAsync(cancellationToken);
+                entered = true;
+                IWorldMapTeamAvailabilityService service = availabilityFactory();
+                if (service == null)
+                    throw new InvalidOperationException("The preflight factory returned null.");
+                WorldMapTeamAvailabilityResult availability = await service.CheckAsync(
+                    deviceName, cancellationToken);
+                if (availability == null || !availability.Success)
+                {
+                    string message = availability?.Message
+                        ?? "Multi-device preflight returned no result.";
+                    Report(progress, deviceName, MultiDeviceOneShotFarmStage.Failed,
+                        null, message);
+                    return FailedPreflight(deviceName, message,
+                        availability?.ErrorMessage);
+                }
+
+                TeamNumber[] eligible = (availability.ReadyTeams ?? new TeamNumber[0])
+                    .Where(team => (request.AllowedTeams ?? new TeamNumber[0]).Contains(team))
+                    .Distinct().ToArray();
+                MultiDeviceOneShotFarmStage stage = eligible.Length > 0
+                    ? MultiDeviceOneShotFarmStage.Queued
+                    : MultiDeviceOneShotFarmStage.WaitingForReadyTeam;
+                string status = eligible.Length > 0
+                    ? $"Preflight passed; eligible ready teams: {string.Join(", ", eligible)}."
+                    : "Preflight passed; no allowed team is ready, waiting is required.";
+                Report(progress, deviceName, stage, null, status);
+                return new PreflightResult
+                {
+                    DeviceName = deviceName,
+                    Success = true,
+                    Availability = availability
+                };
+            }
+            catch (OperationCanceledException)
+            {
+                Report(progress, deviceName, MultiDeviceOneShotFarmStage.Cancelled,
+                    null, "Multi-device preflight cancelled.");
+                return new PreflightResult
+                {
+                    DeviceName = deviceName,
+                    Success = false,
+                    ItemResult = new MultiDeviceOneShotFarmItemResult
+                    {
+                        DeviceName = deviceName,
+                        Stage = MultiDeviceOneShotFarmStage.Cancelled
+                    }
+                };
+            }
+            catch (Exception exception)
+            {
+                Report(progress, deviceName, MultiDeviceOneShotFarmStage.Failed,
+                    null, exception.Message);
+                return FailedPreflight(deviceName, exception.Message, exception.Message);
+            }
+            finally
+            {
+                if (entered) executionGate.Release();
+            }
+        }
+
+        private static PreflightResult FailedPreflight(string deviceName,
+            string message, string error) => new PreflightResult
+            {
+                DeviceName = deviceName,
+                Success = false,
+                ItemResult = new MultiDeviceOneShotFarmItemResult
+                {
+                    DeviceName = deviceName,
+                    Stage = MultiDeviceOneShotFarmStage.Failed,
+                    ErrorMessage = error ?? message,
+                    Result = new OneShotFarmResult
+                    {
+                        DeviceName = deviceName,
+                        Success = false,
+                        Outcome = OneShotFarmOutcome.TeamAvailabilityCheckFailed,
+                        LastCompletedStep = OneShotFarmStep.Preflight,
+                        Message = message,
+                        ErrorMessage = error ?? message,
+                        AttemptedLevels = new int[0],
+                        AttemptedResources = new ADB_Tool_Automation_Post_FB.Core.ResourceSearch.ResourceType[0],
+                        MissingRuntimeTemplates = new MissingRuntimeTemplate[0],
+                        StorageFullResources = new ADB_Tool_Automation_Post_FB.Core.ResourceSearch.ResourceType[0],
+                        LevelsExhaustedResources = new ADB_Tool_Automation_Post_FB.Core.ResourceSearch.ResourceType[0],
+                        Steps = new OneShotFarmStepResult[0]
+                    }
+                }
+            };
+
+        private static OneShotFarmRequest CreatePreflightRequest(
+            OneShotFarmRequest source, WorldMapTeamAvailabilityResult availability)
+        {
+            OneShotFarmRequest request = CloneRequest(source);
+            request.InitialTeamAvailability = availability;
+            return request;
         }
 
         private async Task<MultiDeviceOneShotFarmItemResult> RunDeviceAsync(
@@ -143,8 +285,17 @@ namespace ADB_Tool_Automation_Post_FB.Infrastructure.Workflows
                     ? null
                     : new ReadyTeamGateRunOptions(source.ReadyTeamOptions.CheckIntervalMs,
                         source.ReadyTeamOptions.MaxWaitMs),
+                InitialTeamAvailability = source.InitialTeamAvailability,
                 RunId = Guid.NewGuid().ToString()
             };
+
+        private sealed class PreflightResult
+        {
+            public string DeviceName { get; set; }
+            public bool Success { get; set; }
+            public WorldMapTeamAvailabilityResult Availability { get; set; }
+            public MultiDeviceOneShotFarmItemResult ItemResult { get; set; }
+        }
 
         private static void Report(IProgress<MultiDeviceOneShotFarmProgress> progress,
             string deviceName, MultiDeviceOneShotFarmStage stage,

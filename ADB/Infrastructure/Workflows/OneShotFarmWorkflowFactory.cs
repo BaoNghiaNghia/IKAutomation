@@ -1,4 +1,5 @@
 using ADB_Tool_Automation_Post_FB.Core.Workflows;
+using ADB_Tool_Automation_Post_FB.Core.TeamSelection;
 using ADB_Tool_Automation_Post_FB.Infrastructure.Concurrency;
 using ADB_Tool_Automation_Post_FB.Infrastructure.Diagnostics;
 using ADB_Tool_Automation_Post_FB.Infrastructure.GameDetection;
@@ -14,6 +15,21 @@ namespace ADB_Tool_Automation_Post_FB.Infrastructure.Workflows
 {
     public static class OneShotFarmWorkflowFactory
     {
+        public static IWorldMapTeamAvailabilityService CreateTeamAvailabilityFromAppConfig()
+        {
+            var client = new AutoLdPlayerClient();
+            var registry = new TemplateRegistry();
+            var matcher = new KAutoImageMatcher();
+            var logger = new ApplicationDiagnosticLogger();
+            var detectionOptions = AppConfigGameDetectionOptionsProvider.Load();
+            var detector = new GameStateDetector(client, registry, matcher, detectionOptions,
+                new UnknownScreenshotStore(detectionOptions.UnknownScreenshotDirectory), logger);
+            return new WorldMapTeamAvailabilityService(
+                WorldMapNavigationServiceFactory.CreateFromAppConfig(), detector,
+                client, registry, matcher, DeviceOperationLock.Shared,
+                AppConfigWorldMapTeamAvailabilityOptionsProvider.Load(), logger);
+        }
+
         public static IOneShotFarmWorkflow CreateFromAppConfig()
         {
             var client = new AutoLdPlayerClient(); var registry = new TemplateRegistry();

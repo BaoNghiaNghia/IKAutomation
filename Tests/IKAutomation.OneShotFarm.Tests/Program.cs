@@ -136,6 +136,9 @@ internal static class Program
         Run("Concurrent retry shares the twenty-device limit", ConcurrentBatchesShareConcurrencyLimit);
         Run("Multi-device runner isolates requests per device", MultiDeviceRequestsAreIsolated);
         Run("One device failure does not stop other devices", MultiDeviceFailureIsIsolated);
+        Run("All device preflights finish before farming starts", MultiDevicePreflightBarrier);
+        Run("Preflight failure does not stop healthy devices", MultiDevicePreflightFailureIsIsolated);
+        Run("Ready gate consumes preflight result without duplicate check", MultiDevicePreflightIsReused);
         Run("One-Shot UI retries only failed devices", MultiDeviceUiRetriesFailures);
         Console.WriteLine($"One-shot farm tests: {pass} passed, {fail} failed."); return fail == 0 ? 0 : 1;
     }
@@ -227,6 +230,54 @@ internal static class Program
                 result.Devices.Single(item => item.DeviceName == "Healthy Device").Stage,
                 "healthy device was stopped");
         }
+    }
+
+    static void MultiDevicePreflightBarrier()
+    {
+        var availability = new MultiDevicePreflightAvailability(2);
+        var workflow = new PreflightAwareWorkflow(availability);
+        var runner = new MultiDeviceOneShotFarmRunner(() => workflow,
+            () => availability, 2);
+        MultiDeviceOneShotFarmResult result = runner.RunAsync(
+            new[] { "May 1", "May 2" }, new H().Request, null,
+            default(CancellationToken)).GetAwaiter().GetResult();
+        Eq(2, availability.Calls, "preflight calls");
+        Is(workflow.AllPreflightsCompleted, "farm started before the preflight barrier");
+        Is(result.Devices.All(item => item.Stage == MultiDeviceOneShotFarmStage.Completed),
+            "healthy devices did not run");
+    }
+
+    static void MultiDevicePreflightFailureIsIsolated()
+    {
+        var availability = new MultiDevicePreflightAvailability(2, "Broken");
+        var workflow = new PreflightAwareWorkflow(availability);
+        var runner = new MultiDeviceOneShotFarmRunner(() => workflow,
+            () => availability, 2);
+        MultiDeviceOneShotFarmResult result = runner.RunAsync(
+            new[] { "Broken", "Healthy" }, new H().Request, null,
+            default(CancellationToken)).GetAwaiter().GetResult();
+        Eq(MultiDeviceOneShotFarmStage.Failed,
+            result.Devices.Single(item => item.DeviceName == "Broken").Stage,
+            "broken device stage");
+        Eq(MultiDeviceOneShotFarmStage.Completed,
+            result.Devices.Single(item => item.DeviceName == "Healthy").Stage,
+            "healthy device was blocked");
+        Is(!workflow.StartedDevices.Contains("Broken"), "failed preflight entered gameplay");
+    }
+
+    static void MultiDevicePreflightIsReused()
+    {
+        var availability = new MultiDevicePreflightAvailability(1);
+        var inner = new FakeInnerWorkflow();
+        var runner = new MultiDeviceOneShotFarmRunner(
+            () => new ReadyTeamOneShotFarmWorkflow(inner, availability,
+                new ReadyTeamGateOptions(1, 1000), new Log()),
+            () => availability, 1);
+        MultiDeviceOneShotFarmResult result = runner.RunAsync(new[] { "May 1" },
+            new H().Request, null, default(CancellationToken)).GetAwaiter().GetResult();
+        Eq(1, availability.Calls, "readiness was checked twice");
+        Eq(MultiDeviceOneShotFarmStage.Completed, result.Devices[0].Stage,
+            "seeded workflow result");
     }
 
     static void MultiDeviceUiRetriesFailures()
@@ -496,6 +547,43 @@ internal static class Program
                 LevelsExhaustedResources=new ResourceType[0],Steps=new OneShotFarmStepResult[0],
                 LastCompletedStep=success?OneShotFarmStep.Completed:OneShotFarmStep.ExecuteSearch,
                 Message=success?"completed":"failed"});
+        }
+    }
+    sealed class MultiDevicePreflightAvailability:IWorldMapTeamAvailabilityService
+    {
+        readonly int expected;readonly string failedDevice;int calls;
+        readonly TaskCompletionSource<bool> allChecked=new TaskCompletionSource<bool>();
+        public int Calls=>Volatile.Read(ref calls);
+        public MultiDevicePreflightAvailability(int expected,string failedDevice=null)
+        {this.expected=expected;this.failedDevice=failedDevice;}
+        public async Task<WorldMapTeamAvailabilityResult> CheckAsync(string d,CancellationToken t)
+        {
+            if(Interlocked.Increment(ref calls)>=expected)allChecked.TrySetResult(true);
+            using(t.Register(()=>allChecked.TrySetCanceled()))await allChecked.Task;
+            t.ThrowIfCancellationRequested();bool success=d!=failedDevice;
+            return new WorldMapTeamAvailabilityResult{Success=success,AnyReadyTeam=success,
+                AvailableTeams=new[]{TeamNumber.Team4,TeamNumber.Team3},
+                ReadyTeams=success?new[]{TeamNumber.Team4}:new TeamNumber[0],
+                ReadyMatches=new ImageMatchResult[0],FinalState=GameState.WorldMap,
+                Message=success?"ready":"preflight failed",ErrorMessage=success?null:"capture failed"};
+        }
+    }
+    sealed class PreflightAwareWorkflow:IOneShotFarmWorkflow
+    {
+        readonly MultiDevicePreflightAvailability availability;
+        public bool AllPreflightsCompleted=true;
+        public readonly List<string> StartedDevices=new List<string>();
+        public PreflightAwareWorkflow(MultiDevicePreflightAvailability availability){this.availability=availability;}
+        public Task<OneShotFarmResult> RunAsync(string d,OneShotFarmRequest r,CancellationToken t)=>RunAsync(d,r,null,t);
+        public Task<OneShotFarmResult> RunAsync(string d,OneShotFarmRequest r,IProgress<OneShotFarmProgress> p,CancellationToken t)
+        {
+            t.ThrowIfCancellationRequested();StartedDevices.Add(d);
+            if(availability.Calls<2)AllPreflightsCompleted=false;
+            return Task.FromResult(new OneShotFarmResult{DeviceName=d,Success=true,
+                Outcome=OneShotFarmOutcome.MarchStarted,LastCompletedStep=OneShotFarmStep.Completed,
+                AttemptedLevels=new int[0],AttemptedResources=new ResourceType[0],
+                StorageFullResources=new ResourceType[0],LevelsExhaustedResources=new ResourceType[0],
+                Steps=new OneShotFarmStepResult[0],Message="completed"});
         }
     }
     sealed class Log:IDiagnosticLogger{public void Info(string m){}public void Error(string m,Exception e){}}
