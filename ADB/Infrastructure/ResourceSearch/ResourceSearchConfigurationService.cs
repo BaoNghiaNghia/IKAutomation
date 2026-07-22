@@ -596,13 +596,14 @@ namespace ADB_Tool_Automation_Post_FB.Infrastructure.ResourceSearch
         {
             if (!HasBounds(search)) return null;
 
-            // The level value and Search button share the fixed 1280x720 panel overlay.
-            // This ROI is used only for matching the already-visible level; it is never
-            // used as an input coordinate fallback.
-            int left = Math.Max(0, search.X - 400);
-            int top = Math.Max(0, search.Y + 65);
-            const int width = 170;
-            const int height = 55;
+            // Keep this ROI on the opaque current-level chip. A broader panel ROI
+            // dilutes the small glyph change (for example 5 -> 6) and can falsely
+            // report that Plus did nothing, which in turn produces a level-1 ceiling.
+            // This region is evidence-only and is never used as an input fallback.
+            int left = Math.Max(0, search.X - 370);
+            int top = Math.Max(0, search.Y + 60);
+            const int width = 70;
+            const int height = 40;
             return new ImageRegion(left, top, width, height);
         }
 
@@ -641,15 +642,15 @@ namespace ADB_Tool_Automation_Post_FB.Infrastructure.ResourceSearch
                         return false;
 
                     int materialPixels = 0;
-                    int requiredPixels = Math.Max(20, roi.Width * roi.Height / 1000);
-                    for (int y = roi.Y; y < roi.Y + roi.Height; y += 2)
-                    for (int x = roi.X; x < roi.X + roi.Width; x += 2)
+                    int requiredPixels = Math.Max(6, roi.Width * roi.Height / 800);
+                    for (int y = roi.Y; y < roi.Y + roi.Height; y++)
+                    for (int x = roi.X; x < roi.X + roi.Width; x++)
                     {
                         Color left = before.GetPixel(x, y);
                         Color right = after.GetPixel(x, y);
                         int leftLuma = (left.R * 299 + left.G * 587 + left.B * 114) / 1000;
                         int rightLuma = (right.R * 299 + right.G * 587 + right.B * 114) / 1000;
-                        if (Math.Abs(leftLuma - rightLuma) < 24) continue;
+                        if (Math.Abs(leftLuma - rightLuma) < 32) continue;
                         if (++materialPixels >= requiredPixels)
                         {
                             changed = true;

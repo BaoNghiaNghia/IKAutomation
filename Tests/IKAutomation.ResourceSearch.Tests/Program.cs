@@ -42,6 +42,7 @@ namespace IKAutomation.ResourceSearch.Tests
             Run("Level seven unavailable reports visible level six", LevelSevenUnavailableReportsLevelSix);
             Run("Level ten is verified by bounded value changes", DynamicLevelTen);
             Run("Dynamic account ceiling below requested level is reported", DynamicAccountCeiling);
+            Run("Compact level glyph changes are not mistaken for the minimum", CompactLevelGlyphChanges);
             Run("Minimum level requires only one bounded confirmation tap", MinimumLevelSingleConfirmation);
             Run("Missing level six template fails before input", MissingLevelSixTemplate);
             Run("Level seven already selected sends no level input", LevelSevenAlreadySelected);
@@ -184,6 +185,7 @@ namespace IKAutomation.ResourceSearch.Tests
         private static void LevelSevenUnavailableReportsLevelSix() { Fixture f = Setup(); f.Ui.MaxLevel = 6; ResourceSearchConfigurationResult r = Execute(f); Assert(!r.Success && !r.LevelVerified, "Unavailable level was accepted."); Equal((int?)6, r.ObservedLevel, "Observed level."); Equal(0, f.Client.SearchTaps, "Search taps."); }
         private static void DynamicLevelTen() { Fixture f = Setup(maximumLevel: 30, resetMinusTapCount: 30); f.Ui.DynamicLevelFrames = true; f.Ui.MaxLevel = 12; var q = Request(); q.TargetLevel = 10; ResourceSearchConfigurationResult r = Execute(f, q); Assert(r.Success && r.LevelVerified, r.ErrorMessage); Equal((int?)10, r.ObservedLevel, "Observed level."); Equal(9, f.Client.PlusTaps, "Plus taps."); }
         private static void DynamicAccountCeiling() { Fixture f = Setup(maximumLevel: 30, resetMinusTapCount: 30); f.Ui.DynamicLevelFrames = true; f.Ui.MaxLevel = 8; var q = Request(); q.TargetLevel = 10; ResourceSearchConfigurationResult r = Execute(f, q); Assert(!r.Success && !r.LevelVerified, "Unavailable dynamic level was accepted."); Equal((int?)8, r.ObservedLevel, "Account ceiling."); Equal(0, f.Client.SearchTaps, "Search taps."); }
+        private static void CompactLevelGlyphChanges() { Fixture f = Setup(maximumLevel: 30, resetMinusTapCount: 30); f.Ui.CompactDynamicLevelFrames = true; f.Ui.MaxLevel = 6; var q = Request(); q.TargetLevel = 6; ResourceSearchConfigurationResult r = Execute(f, q); Assert(r.Success && r.LevelVerified, r.ErrorMessage); Equal(6, f.Ui.Level, "final level"); Equal(5, f.Client.PlusTaps, "plus taps"); }
         private static void MinimumLevelSingleConfirmation() { Fixture f = Setup(maximumLevel: 30, resetMinusTapCount: 30); f.Ui.DynamicLevelFrames = true; f.Ui.Level = 1; f.Ui.MaxLevel = 6; var q = Request(); q.TargetLevel = 6; ResourceSearchConfigurationResult r = Execute(f, q); Assert(r.Success && r.LevelVerified, r.ErrorMessage); Equal(1, f.Client.MinusTaps, "Minimum confirmation taps."); Equal(5, f.Client.PlusTaps, "Plus taps."); }
         private static void MissingLevelSixTemplate() { Fixture f = Setup(); f.Registry.Missing = TemplateId.LevelValue6; ResourceSearchConfigurationRequest q = Request(); q.TargetLevel = 6; ResourceSearchConfigurationResult r = Execute(f, q); Assert(!r.Success && r.ErrorMessage.Contains("LevelValue6"), "missing target template"); Equal(0, f.Client.TotalInput, "input"); }
 
@@ -502,7 +504,7 @@ namespace IKAutomation.ResourceSearch.Tests
                 FilterRequiresStableControl, ResourceRequiresStableIcon, HideUncheckedFilter,
                 ResourceRequiresCompactStableIcon, BinaryLevelFallback,
                 LevelControlsLoseDirectMatchAfterTap, LevelControlDirectMatchDisabled,
-                DynamicLevelFrames;
+                DynamicLevelFrames, CompactDynamicLevelFrames;
             public bool LevelControlsMissing;
             public bool ResourceTabSelected = true;
             public int Level = 3;
@@ -685,7 +687,8 @@ namespace IKAutomation.ResourceSearch.Tests
             public Task<byte[]> CaptureScreenshotPngAsync(string d, CancellationToken t)
             {
                 t.ThrowIfCancellationRequested();
-                if (!ui.BinaryLevelFallback && !ui.DynamicLevelFrames)
+                if (!ui.BinaryLevelFallback && !ui.DynamicLevelFrames
+                    && !ui.CompactDynamicLevelFrames)
                     return Task.FromResult(new byte[] { 1 });
                 using (var bitmap = new Bitmap(1280, 720))
                 using (var graphics = Graphics.FromImage(bitmap))
@@ -696,6 +699,12 @@ namespace IKAutomation.ResourceSearch.Tests
                         graphics.Clear(Color.Black);
                         graphics.FillRectangle(Brushes.White, 25, 475,
                             Math.Max(4, ui.Level * 5), 30);
+                    }
+                    else if (ui.CompactDynamicLevelFrames)
+                    {
+                        graphics.Clear(Color.Black);
+                        graphics.FillRectangle(Brushes.White,
+                            40 + ui.Level * 3, 480, 2, 8);
                     }
                     bitmap.Save(stream, ImageFormat.Png);
                     return Task.FromResult(stream.ToArray());
