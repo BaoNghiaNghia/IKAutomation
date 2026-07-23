@@ -20,6 +20,7 @@ namespace ADB_Tool_Automation_Post_FB.Infrastructure.ResourceSearch
     {
         private const string LegacyMoveAreaVariant = "LegacyMoveArea";
         private const string SearchOtherRegionVariant = "SearchOtherRegion";
+        private const string TargetLevelTooLowVariant = "TargetLevelTooLow";
         private const string VerifiedRetryPanelStayedOpenVariant = "VerifiedRetryPanelStayedOpen";
         private const string PartialToastPanelStayedOpenVariant = "PartialToastPanelStayedOpen";
 
@@ -268,6 +269,10 @@ namespace ADB_Tool_Automation_Post_FB.Infrastructure.ResourceSearch
                 TemplateId.ResourceNotFoundToastShortAnchor, options.ToastRegion);
             ImageMatchResult otherRegionAnchor = MatchOptional(frame,
                 TemplateId.ResourceNotFoundToastOtherRegionAnchor, options.ToastRegion);
+            ImageMatchResult targetLevelTooLowAnchor = MatchOptional(frame,
+                TemplateId.ResourceTargetLevelTooLowToastAnchor, options.ToastRegion);
+            ImageMatchResult seasonMapAnchor = MatchOptional(frame,
+                TemplateId.ResourceTargetLevelSeasonMapToastAnchor, options.ToastRegion);
             bool panelConfirmed = IsPanelConfirmed(detection);
             double? difference = null;
             bool stable = false;
@@ -294,10 +299,14 @@ namespace ADB_Tool_Automation_Post_FB.Infrastructure.ResourceSearch
             result.FinalState = detection.State;
             bool legacyPairClose = AreToastAnchorsClose(toastAnchor, actionAnchor);
             bool alternatePairClose = AreToastAnchorsClose(shortAnchor, otherRegionAnchor);
+            bool targetLevelPairClose = AreToastAnchorsClose(
+                targetLevelTooLowAnchor, seasonMapAnchor);
             bool panelConfirmedNowOrAdjacent = panelConfirmed || context.PreviousPanelConfirmed;
             string matchedVariant = legacyPairClose
                 ? LegacyMoveAreaVariant
-                : alternatePairClose ? SearchOtherRegionVariant : null;
+                : alternatePairClose
+                    ? SearchOtherRegionVariant
+                    : targetLevelPairClose ? TargetLevelTooLowVariant : null;
             bool toastVerified = matchedVariant != null && panelConfirmedNowOrAdjacent;
 
             if (result.CameraMovementObserved && !panelConfirmed
@@ -310,7 +319,10 @@ namespace ADB_Tool_Automation_Post_FB.Infrastructure.ResourceSearch
             bool legacyPairTooFar = HasBounds(toastAnchor) && HasBounds(actionAnchor) && !legacyPairClose;
             bool alternatePairTooFar = HasBounds(shortAnchor)
                 && HasBounds(otherRegionAnchor) && !alternatePairClose;
+            bool targetLevelPairTooFar = HasBounds(targetLevelTooLowAnchor)
+                && HasBounds(seasonMapAnchor) && !targetLevelPairClose;
             string observationMessage = legacyPairTooFar || alternatePairTooFar
+                || targetLevelPairTooFar
                 ? "A not-found toast pair was ambiguous because its vertical distance exceeded the configured maximum."
                 : toastVerified ? $"Not-found toast variant '{matchedVariant}' matched and was latched."
                 : "No conclusive search outcome in this frame.";
@@ -322,6 +334,8 @@ namespace ADB_Tool_Automation_Post_FB.Infrastructure.ResourceSearch
                 ToastActionAnchorFound = HasBounds(actionAnchor),
                 ShortAnchorFound = HasBounds(shortAnchor),
                 OtherRegionAnchorFound = HasBounds(otherRegionAnchor),
+                TargetLevelTooLowAnchorFound = HasBounds(targetLevelTooLowAnchor),
+                SeasonMapAnchorFound = HasBounds(seasonMapAnchor),
                 MatchedNotFoundVariant = toastVerified ? matchedVariant : null,
                 SearchPanelConfirmed = panelConfirmed,
                 FrameDifference = difference,
@@ -338,7 +352,8 @@ namespace ADB_Tool_Automation_Post_FB.Infrastructure.ResourceSearch
                 result.MatchedNotFoundVariant = matchedVariant;
             }
             LogObservation(deviceName, result, context, observation,
-                toastAnchor, actionAnchor, shortAnchor, otherRegionAnchor);
+                toastAnchor, actionAnchor, shortAnchor, otherRegionAnchor,
+                targetLevelTooLowAnchor, seasonMapAnchor);
 
             if (toastVerified)
             {
@@ -569,7 +584,9 @@ namespace ADB_Tool_Automation_Post_FB.Infrastructure.ResourceSearch
                 item.ToastAnchorFound
                 || item.ToastActionAnchorFound
                 || item.ShortAnchorFound
-                || item.OtherRegionAnchorFound);
+                || item.OtherRegionAnchorFound
+                || item.TargetLevelTooLowAnchorFound
+                || item.SeasonMapAnchorFound);
 
         private static ResourceSearchExecutionResult NewResult(List<ResourceSearchObservation> observations) =>
             new ResourceSearchExecutionResult
@@ -606,18 +623,24 @@ namespace ADB_Tool_Automation_Post_FB.Infrastructure.ResourceSearch
         private void LogObservation(string deviceName, ResourceSearchExecutionResult result,
             ObservationContext context, ResourceSearchObservation observation,
             ImageMatchResult toast, ImageMatchResult action,
-            ImageMatchResult shortAnchor, ImageMatchResult otherRegionAnchor)
+            ImageMatchResult shortAnchor, ImageMatchResult otherRegionAnchor,
+            ImageMatchResult targetLevelTooLowAnchor, ImageMatchResult seasonMapAnchor)
         {
             string toastBounds = HasBounds(toast) ? $"({toast.X},{toast.Y},{toast.Width},{toast.Height})" : string.Empty;
             string actionBounds = HasBounds(action) ? $"({action.X},{action.Y},{action.Width},{action.Height})" : string.Empty;
             string shortBounds = HasBounds(shortAnchor) ? $"({shortAnchor.X},{shortAnchor.Y},{shortAnchor.Width},{shortAnchor.Height})" : string.Empty;
             string otherRegionBounds = HasBounds(otherRegionAnchor) ? $"({otherRegionAnchor.X},{otherRegionAnchor.Y},{otherRegionAnchor.Width},{otherRegionAnchor.Height})" : string.Empty;
+            string targetLevelTooLowBounds = HasBounds(targetLevelTooLowAnchor) ? $"({targetLevelTooLowAnchor.X},{targetLevelTooLowAnchor.Y},{targetLevelTooLowAnchor.Width},{targetLevelTooLowAnchor.Height})" : string.Empty;
+            string seasonMapBounds = HasBounds(seasonMapAnchor) ? $"({seasonMapAnchor.X},{seasonMapAnchor.Y},{seasonMapAnchor.Width},{seasonMapAnchor.Height})" : string.Empty;
             logger.Info($"[Resource Search Observation] DeviceName='{deviceName}', Index={result.ObservedFrameCount}, "
                 + $"State='{observation.State}', ToastAnchorFound={observation.ToastAnchorFound}, "
                 + $"ToastActionAnchorFound={observation.ToastActionAnchorFound}, ToastBounds='{toastBounds}', "
                 + $"ActionBounds='{actionBounds}', ShortAnchorFound={observation.ShortAnchorFound}, "
                 + $"OtherRegionAnchorFound={observation.OtherRegionAnchorFound}, ShortBounds='{shortBounds}', "
                 + $"OtherRegionBounds='{otherRegionBounds}', MatchedVariant='{observation.MatchedNotFoundVariant ?? string.Empty}', "
+                + $"TargetLevelTooLowAnchorFound={observation.TargetLevelTooLowAnchorFound}, "
+                + $"SeasonMapAnchorFound={observation.SeasonMapAnchorFound}, "
+                + $"TargetLevelTooLowBounds='{targetLevelTooLowBounds}', SeasonMapBounds='{seasonMapBounds}', "
                 + $"SearchPanelConfirmed={observation.SearchPanelConfirmed}, "
                 + $"FrameDifference={observation.FrameDifference?.ToString("F4") ?? "n/a"}, "
                 + $"Movement={result.CameraMovementObserved}, StableFrameCount={context.StableFrameCount}, "

@@ -15,12 +15,16 @@ namespace ADB_Tool_Automation_Post_FB.Infrastructure.ResourceSearch
 {
     public sealed class ResourceLevelFallbackService : IResourceLevelFallbackService
     {
+        private const string TargetLevelTooLowVariant = "TargetLevelTooLow";
+
         private static readonly TemplateId[] ToastTemplates =
         {
             TemplateId.ResourceNotFoundToastAnchor,
             TemplateId.ResourceNotFoundToastActionAnchor,
             TemplateId.ResourceNotFoundToastShortAnchor,
-            TemplateId.ResourceNotFoundToastOtherRegionAnchor
+            TemplateId.ResourceNotFoundToastOtherRegionAnchor,
+            TemplateId.ResourceTargetLevelTooLowToastAnchor,
+            TemplateId.ResourceTargetLevelSeasonMapToastAnchor
         };
 
         private readonly IResourceSearchConfigurationService configuration;
@@ -211,6 +215,18 @@ namespace ADB_Tool_Automation_Post_FB.Infrastructure.ResourceSearch
                                 searched.Message, searched.ErrorMessage, watch,
                                 $"level-{level}_searchfailed", token, true);
 
+                        if (string.Equals(searched.MatchedNotFoundVariant,
+                            TargetLevelTooLowVariant, StringComparison.Ordinal))
+                        {
+                            attempt.Message = "The target level is below the current season-map range. "
+                                + "Skipping lower levels and switching to the next resource.";
+                            return await CompleteAsync(deviceName, runId, result,
+                                ResourceLevelFallbackOutcome.ResourceLevelsExhausted,
+                                attempt.Message, null, watch,
+                                "target-level-too-low", token,
+                                options.SaveExhaustedScreenshot);
+                        }
+
                         needsToastClear = true;
                     }
                 }
@@ -259,8 +275,15 @@ namespace ADB_Tool_Automation_Post_FB.Infrastructure.ResourceSearch
                 TemplateId.ResourceNotFoundToastShortAnchor, options.ToastRegion);
             ImageMatchResult otherRegion = MatchOptionalResult(screenshot,
                 TemplateId.ResourceNotFoundToastOtherRegionAnchor, options.ToastRegion);
-            return IsToastPair(shortAnchor, otherRegion)
-                ? new NotFoundToastObservation(true, "SearchOtherRegion")
+            if (IsToastPair(shortAnchor, otherRegion))
+                return new NotFoundToastObservation(true, "SearchOtherRegion");
+
+            ImageMatchResult targetLevelTooLow = MatchOptionalResult(screenshot,
+                TemplateId.ResourceTargetLevelTooLowToastAnchor, options.ToastRegion);
+            ImageMatchResult seasonMap = MatchOptionalResult(screenshot,
+                TemplateId.ResourceTargetLevelSeasonMapToastAnchor, options.ToastRegion);
+            return IsToastPair(targetLevelTooLow, seasonMap)
+                ? new NotFoundToastObservation(true, TargetLevelTooLowVariant)
                 : NotFoundToastObservation.NotVerified;
         }
 
