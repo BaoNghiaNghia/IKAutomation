@@ -22,6 +22,7 @@ namespace ADB_Tool_Automation_Post_FB.Infrastructure.Workflows
                 MaxRecoveryTransitions = ReadInt("ResourceFarmFallback.MaxRecoveryTransitions", 3),
                 RecoveryPollIntervalMs = ReadInt("ResourceFarmFallback.RecoveryPollIntervalMs", 250),
                 RecoveryTimeoutSeconds = ReadInt("ResourceFarmFallback.RecoveryTimeoutSeconds", 8),
+                MaxSearchAreaRecoveryAttempts = ReadInt("ResourceFarmFallback.MaxSearchAreaRecoveryAttempts", 1),
                 StopOnFirstMarchStarted = ReadBool("ResourceFarmFallback.StopOnFirstMarchStarted", true),
                 SaveAttemptScreenshots = ReadBool("ResourceFarmFallback.SaveAttemptScreenshots", true),
                 ScreenshotDirectory = ConfigurationManager.AppSettings["ResourceFarmFallback.ScreenshotDirectory"]

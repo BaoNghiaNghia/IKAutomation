@@ -646,6 +646,10 @@ namespace IKAutomation.ResourceSearch.Tests
             private int active;
             public bool Success = true; public int Calls, DelayMs, MaxActive;
             public Task<NavigationResult> EnsureWorldMapAsync(string d, CancellationToken t) => OpenResourceSearchPanelAsync(d, t);
+            public Task<NavigationResult> RepositionToAllianceTerritoryAsync(string d, CancellationToken t) =>
+                Task.FromResult(new NavigationResult { Success = true, InitialState = GameState.WorldMap,
+                    FinalState = GameState.WorldMap, FinalEvidence = new GameDetectionEvidence[0],
+                    Transitions = new NavigationTransition[0], Message = "reposition" });
             public async Task<NavigationResult> OpenResourceSearchPanelAsync(string d, CancellationToken t)
             {
                 Calls++; int now = Interlocked.Increment(ref active); MaxActive = Math.Max(MaxActive, now);

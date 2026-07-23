@@ -65,11 +65,15 @@ namespace ADB_Tool_Automation_Post_FB.Infrastructure.Workflows
                 if (validation != null) return Complete(result, ResourceFarmFallbackOutcome.Failed,
                     watch, "Resource fallback request is invalid.", validation);
 
-                foreach (ResourceType resource in request.ResourcePriority)
+                for (int searchAreaAttempt = 0; ; searchAreaAttempt++)
                 {
+                    var attemptedThisPass = new HashSet<ResourceType>();
+                    foreach (ResourceType resource in request.ResourcePriority)
+                    {
                     cancellationToken.ThrowIfCancellationRequested();
-                    if (attempted.Contains(resource) || storageFull.Contains(resource)) continue;
-                    attempted.Add(resource);
+                    if (attemptedThisPass.Contains(resource) || storageFull.Contains(resource)) continue;
+                    attemptedThisPass.Add(resource);
+                    AddUnique(attempted, resource);
                     var attemptWatch = Stopwatch.StartNew();
                     var attempt = new ResourceFarmAttemptResult
                     {
@@ -120,7 +124,7 @@ namespace ADB_Tool_Automation_Post_FB.Infrastructure.Workflows
                     if (level.Outcome == ResourceLevelFallbackOutcome.ResourceLevelsExhausted)
                     {
                         attempt.SearchLevelsExhausted = true;
-                        exhausted.Add(resource);
+                        AddUnique(exhausted, resource);
                         attempt.Message = level.Message; attempt.Duration = attemptWatch.Elapsed;
                         if (options.SwitchWhenLevelsExhausted) continue;
                         return Complete(result, ResourceFarmFallbackOutcome.ResourcePlanExhausted,
@@ -214,7 +218,7 @@ namespace ADB_Tool_Automation_Post_FB.Infrastructure.Workflows
                                 "ResourceExpiry", dispatched.Outcome.ToString());
                             continue;
                         }
-                        storageFull.Add(resource);
+                        AddUnique(storageFull, resource);
                         Log(runId, deviceName, resource, level.LocatedLevel,
                             "StorageFull", dispatched.Outcome.ToString());
                         if (options.SwitchOnStorageLimit) continue;
@@ -235,14 +239,27 @@ namespace ADB_Tool_Automation_Post_FB.Infrastructure.Workflows
                     result.DispatchedTeam = dispatched.DispatchedTeam ?? selected.SelectedTeam;
                     return Complete(result, ResourceFarmFallbackOutcome.MarchStarted, watch,
                         $"{resource} march start was verified.", null);
-                }
+                    }
 
-                bool allStorageFull = storageFull.Count == request.ResourcePriority.Count;
-                return Complete(result, allStorageFull
-                    ? ResourceFarmFallbackOutcome.AllCandidateStoragesFull
-                    : ResourceFarmFallbackOutcome.ResourcePlanExhausted, watch,
-                    allStorageFull ? "Storage is full for every candidate resource."
-                        : "The four-resource plan was exhausted without a march.", null);
+                    bool allStorageFull = storageFull.Count == request.ResourcePriority.Count;
+                    if (allStorageFull)
+                        return Complete(result, ResourceFarmFallbackOutcome.AllCandidateStoragesFull, watch,
+                            "Storage is full for every candidate resource.", null);
+
+                    if (searchAreaAttempt >= options.MaxSearchAreaRecoveryAttempts)
+                        return Complete(result, ResourceFarmFallbackOutcome.ResourcePlanExhausted, watch,
+                            "The four-resource plan was exhausted without a march.", null);
+
+                    NavigationResult reposition = await navigation.RepositionToAllianceTerritoryAsync(
+                        deviceName, cancellationToken);
+                    result.FinalState = reposition.FinalState;
+                    result.RecoveryTransitions++;
+                    LogRecovery(runId, deviceName, reposition.Success ? "Repositioned" : "Failed");
+                    if (!reposition.Success || reposition.FinalState != GameState.WorldMap)
+                        return Complete(result, ResourceFarmFallbackOutcome.RecoveryFailed, watch,
+                            "Search area recovery failed before retrying the resource plan.",
+                            reposition.ErrorMessage ?? reposition.Message);
+                }
             }
             catch (OperationCanceledException)
             {
@@ -302,8 +319,16 @@ namespace ADB_Tool_Automation_Post_FB.Infrastructure.Workflows
             InitialState = initialState, FinalState = initialState
         };
 
+        private static void AddUnique(IList<ResourceType> items, ResourceType resource)
+        {
+            if (!items.Contains(resource)) items.Add(resource);
+        }
+
         private void Log(string runId, string device, ResourceType resource,
             int? level, string phase, string outcome) => logger.Info(
             $"[Resource Farm Fallback] RunId='{runId}', DeviceName='{device}', Resource='{resource}', Level='{level?.ToString() ?? string.Empty}', Phase='{phase}', Outcome='{outcome ?? string.Empty}', Cancellation=false");
+
+        private void LogRecovery(string runId, string device, string outcome) => logger.Info(
+            $"[Resource Farm Fallback] RunId='{runId}', DeviceName='{device}', Resource='', Level='', Phase='SearchAreaRecovery', Outcome='{outcome ?? string.Empty}', Cancellation=false");
     }
 }

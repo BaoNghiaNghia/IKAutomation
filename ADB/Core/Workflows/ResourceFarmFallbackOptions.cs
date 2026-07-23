@@ -18,6 +18,7 @@ namespace ADB_Tool_Automation_Post_FB.Core.Workflows
         public int MaxRecoveryTransitions { get; set; } = 3;
         public int RecoveryPollIntervalMs { get; set; } = 250;
         public int RecoveryTimeoutSeconds { get; set; } = 8;
+        public int MaxSearchAreaRecoveryAttempts { get; set; } = 1;
         public bool StopOnFirstMarchStarted { get; set; } = true;
         public bool SaveAttemptScreenshots { get; set; } = true;
         public string ScreenshotDirectory { get; set; } = "Diagnostics/ResourceFarmFallback";
@@ -38,6 +39,7 @@ namespace ADB_Tool_Automation_Post_FB.Core.Workflows
             if (MaxRecoveryTransitions < 1 || MaxRecoveryTransitions > 5) throw new ArgumentOutOfRangeException(nameof(MaxRecoveryTransitions));
             if (RecoveryPollIntervalMs < 50 || RecoveryPollIntervalMs > 5000) throw new ArgumentOutOfRangeException(nameof(RecoveryPollIntervalMs));
             if (RecoveryTimeoutSeconds < 1 || RecoveryTimeoutSeconds > 60) throw new ArgumentOutOfRangeException(nameof(RecoveryTimeoutSeconds));
+            if (MaxSearchAreaRecoveryAttempts < 0 || MaxSearchAreaRecoveryAttempts > 3) throw new ArgumentOutOfRangeException(nameof(MaxSearchAreaRecoveryAttempts));
             if (AttemptsPerLevel < 1 || AttemptsPerLevel > 3) throw new ArgumentOutOfRangeException(nameof(AttemptsPerLevel));
             if (string.IsNullOrWhiteSpace(ScreenshotDirectory)) throw new ArgumentException("ScreenshotDirectory is required.");
         }

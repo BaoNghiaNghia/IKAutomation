@@ -33,7 +33,10 @@ namespace ADB_Tool_Automation_Post_FB.Infrastructure.GameDetection
             TemplateId.ResourcePopupIronTitle,
             TemplateId.GatherButtonEnabled,
             TemplateId.ContinentMapTitle,
+            TemplateId.ContinentMapHomeTerritoryAnchor,
+            TemplateId.ContinentMapPinButton,
             TemplateId.CityToWorldMapButton,
+            TemplateId.WorldMapPinButton,
             TemplateId.WorldMapAnchor
         };
 
@@ -342,6 +345,15 @@ namespace ADB_Tool_Automation_Post_FB.Infrastructure.GameDetection
                     : templateId == TemplateId.CityToWorldMapButton
                     ? new ImageRegion(0, screenshotHeight / 2,
                         screenshotWidth / 2, screenshotHeight - screenshotHeight / 2)
+                    : templateId == TemplateId.WorldMapPinButton
+                    ? new ImageRegion(0, screenshotHeight / 2,
+                        screenshotWidth / 2, screenshotHeight - screenshotHeight / 2)
+                    : templateId == TemplateId.ContinentMapHomeTerritoryAnchor
+                    ? new ImageRegion(screenshotWidth / 6, 0,
+                        screenshotWidth - screenshotWidth / 3, screenshotHeight)
+                    : templateId == TemplateId.ContinentMapPinButton
+                    ? new ImageRegion(0, 0,
+                        screenshotWidth / 4, screenshotHeight / 5)
                     : IsSearchPanelTemplate(templateId)
                         ? new ImageRegion(0, screenshotHeight / 2,
                             screenshotWidth, screenshotHeight - screenshotHeight / 2)

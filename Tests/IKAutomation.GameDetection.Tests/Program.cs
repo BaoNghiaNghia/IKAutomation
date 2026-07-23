@@ -348,7 +348,7 @@ namespace IKAutomation.GameDetection.Tests
         private static void EvidenceContainsThreeTemplates()
         {
             GameDetectionResult result = DetectWithMatches();
-            Equal(17, result.Evidence.Count, "Detector must check exactly seventeen templates.");
+            Equal(RequiredIds().Length, result.Evidence.Count, "Detector must check exactly the registered detection templates.");
             foreach (TemplateId id in RequiredIds())
                 Assert(result.Evidence.Any(item => item.TemplateId == id), "Missing evidence for " + id);
         }
@@ -400,8 +400,11 @@ namespace IKAutomation.GameDetection.Tests
         {
             var registry = new TemplateRegistry(DataRoot());
             Equal("Global/world_map_anchor.png", registry.GetDefinition(TemplateId.WorldMapAnchor).RelativePath, "World template path mismatch.");
+            Equal("Global/world_map_pin_button.png", registry.GetDefinition(TemplateId.WorldMapPinButton).RelativePath, "World pin template path mismatch.");
             Equal("Global/city_to_world_map_button.png", registry.GetDefinition(TemplateId.CityToWorldMapButton).RelativePath, "City map button template path mismatch.");
             Equal("Global/continent_map_title.png", registry.GetDefinition(TemplateId.ContinentMapTitle).RelativePath, "Continent template path mismatch.");
+            Equal("Global/continent_map_home_territory_anchor.png", registry.GetDefinition(TemplateId.ContinentMapHomeTerritoryAnchor).RelativePath, "Continent territory template path mismatch.");
+            Equal("Global/continent_map_pin_button.png", registry.GetDefinition(TemplateId.ContinentMapPinButton).RelativePath, "Continent pin template path mismatch.");
             Equal("Search/resource_search_panel_anchor.png", registry.GetDefinition(TemplateId.ResourceSearchPanelAnchor).RelativePath, "Panel template path mismatch.");
             Equal("Search/search_button_enabled.png", registry.GetDefinition(TemplateId.SearchButtonEnabled).RelativePath, "Button template path mismatch.");
             foreach (TemplateId id in RequiredIds())
@@ -456,7 +459,9 @@ namespace IKAutomation.GameDetection.Tests
             TemplateId.ResourceTabSelected, TemplateId.ResourceTabUnselected,
             TemplateId.ResourcePopupInfoAnchor, TemplateId.ResourcePopupIronTitle,
             TemplateId.GatherButtonEnabled, TemplateId.ContinentMapTitle,
-            TemplateId.CityToWorldMapButton, TemplateId.WorldMapAnchor };
+            TemplateId.ContinentMapHomeTerritoryAnchor, TemplateId.ContinentMapPinButton,
+            TemplateId.CityToWorldMapButton, TemplateId.WorldMapPinButton,
+            TemplateId.WorldMapAnchor };
         private static string DataRoot() => Path.Combine(AppContext.BaseDirectory, "Data", "InfinityKingdom", "1280x720", "vi");
         private static string TempDirectory() { string path = Path.Combine(Path.GetTempPath(), "IKGameDetectionTests", Guid.NewGuid().ToString("N")); Directory.CreateDirectory(path); return path; }
 

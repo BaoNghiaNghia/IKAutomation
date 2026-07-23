@@ -50,6 +50,12 @@ namespace ADB_Tool_Automation_Post_FB.Infrastructure.Navigation
                 token => OpenResourceSearchPanelCoreAsync(deviceName, token), cancellationToken);
         }
 
+        public Task<NavigationResult> RepositionToAllianceTerritoryAsync(string deviceName, CancellationToken cancellationToken)
+        {
+            return WithDeviceLockAsync(deviceName, "RepositionToAllianceTerritory",
+                token => RepositionToAllianceTerritoryCoreAsync(deviceName, token), cancellationToken);
+        }
+
         private async Task<NavigationResult> WithDeviceLockAsync(string deviceName, string operation,
             Func<CancellationToken, Task<NavigationResult>> action, CancellationToken cancellationToken)
         {
@@ -162,6 +168,65 @@ namespace ADB_Tool_Automation_Post_FB.Infrastructure.Navigation
                 "Maximum open-search attempts reached without verification.", current.ErrorMessage, transitions);
         }
 
+        private async Task<NavigationResult> RepositionToAllianceTerritoryCoreAsync(
+            string deviceName, CancellationToken cancellationToken)
+        {
+            var watch = Stopwatch.StartNew();
+            var transitions = new List<NavigationTransition>();
+            GameDetectionResult initial = await DetectAsync(deviceName, transitions, cancellationToken);
+            if (!initial.IsSuccessful)
+                return Result(false, initial, initial, 0, watch, "State detection failed.", initial.ErrorMessage, transitions);
+            if (initial.State == GameState.Unknown)
+                return Result(false, initial, initial, 0, watch, "Unknown state; no blind recovery input was sent.", null, transitions);
+
+            NavigationResult ensured = await EnsureWorldMapCoreAsync(deviceName, initial, cancellationToken);
+            foreach (NavigationTransition transition in ensured.Transitions) transitions.Add(transition);
+            if (!ensured.Success)
+                return Result(false, initial, DetectionFrom(ensured), ensured.Attempts, watch,
+                    "Could not ensure WorldMap before territory reposition.", ensured.ErrorMessage, transitions);
+
+            GameDetectionResult current = DetectionFrom(ensured);
+            GameDetectionEvidence mapButton = FindFreshEvidence(current, TemplateId.WorldMapPinButton);
+            if (mapButton == null)
+                return Result(false, initial, current, ensured.Attempts, watch,
+                    "WorldMap pin-map button had no valid fresh bounds; no Tap was sent.", null, transitions);
+
+            await TapEvidenceAsync(deviceName, mapButton, "WorldMapPinButton", transitions, cancellationToken);
+            current = await PollAsync(deviceName, GameState.ContinentMap, transitions, cancellationToken);
+            if (!current.IsSuccessful || current.State != GameState.ContinentMap)
+                return Result(false, initial, current, ensured.Attempts + 1, watch,
+                    "Pin-map button was tapped but ContinentMap was not verified before timeout.",
+                    current.ErrorMessage, transitions);
+
+            GameDetectionEvidence territory = FindFreshEvidence(current, TemplateId.ContinentMapHomeTerritoryAnchor);
+            if (territory == null)
+                return Result(false, initial, current, ensured.Attempts + 1, watch,
+                    "Alliance territory marker had no valid fresh bounds; no Tap was sent.", null, transitions);
+
+            await TapEvidenceAsync(deviceName, territory, "ContinentMapHomeTerritoryAnchor", transitions, cancellationToken);
+            await Task.Delay(options.StatePollIntervalMs, cancellationToken);
+            AddTransition(transitions, "Wait", $"Waited {options.StatePollIntervalMs} ms after selecting territory.");
+            current = await DetectAsync(deviceName, transitions, cancellationToken);
+            if (!current.IsSuccessful || current.State != GameState.ContinentMap)
+                return Result(false, initial, current, ensured.Attempts + 2, watch,
+                    "Territory marker was tapped but ContinentMap was not still verified before pin navigation.",
+                    current.ErrorMessage, transitions);
+
+            GameDetectionEvidence pin = FindFreshEvidence(current, TemplateId.ContinentMapPinButton);
+            if (pin == null)
+                return Result(false, initial, current, ensured.Attempts + 2, watch,
+                    "ContinentMap pin button had no valid fresh bounds; no Tap was sent.", null, transitions);
+
+            await TapEvidenceAsync(deviceName, pin, "ContinentMapPinButton", transitions, cancellationToken);
+            GameDetectionResult final = await PollAsync(deviceName, GameState.WorldMap, transitions, cancellationToken);
+            return final.IsSuccessful && final.State == GameState.WorldMap
+                ? Result(true, initial, final, ensured.Attempts + 3, watch,
+                    "WorldMap verified after selecting alliance territory and tapping the coordinate pin.", null, transitions)
+                : Result(false, initial, final, ensured.Attempts + 3, watch,
+                    "Territory coordinate pin was tapped but WorldMap was not verified before timeout.",
+                    final.ErrorMessage, transitions);
+        }
+
         private async Task<GameDetectionResult> PollAsync(string deviceName, GameState target,
             IList<NavigationTransition> transitions, CancellationToken cancellationToken)
         {
@@ -208,6 +273,25 @@ namespace ADB_Tool_Automation_Post_FB.Infrastructure.Navigation
             AddTransition(transitions, "Detect", $"Detected {result.State}; success={result.IsSuccessful}.");
             return result;
         }
+
+        private async Task TapEvidenceAsync(string deviceName, GameDetectionEvidence evidence, string label,
+            IList<NavigationTransition> transitions, CancellationToken cancellationToken)
+        {
+            int x = evidence.MatchResult.CenterX;
+            int y = evidence.MatchResult.CenterY;
+            await ldPlayerClient.TapAsync(deviceName, x, y, cancellationToken);
+            AddTransition(transitions, "Tap", $"Tapped freshly matched {label} center ({x},{y}).");
+        }
+
+        private static GameDetectionEvidence FindFreshEvidence(GameDetectionResult result, TemplateId templateId)
+        {
+            GameDetectionEvidence evidence = result?.Evidence?.FirstOrDefault(item => item.TemplateId == templateId);
+            return HasValidBounds(evidence) ? evidence : null;
+        }
+
+        private static bool HasValidBounds(GameDetectionEvidence evidence) =>
+            evidence != null && evidence.Found && evidence.MatchResult != null
+            && evidence.MatchResult.Width > 0 && evidence.MatchResult.Height > 0;
 
         private static GameDetectionResult DetectionFrom(NavigationResult result) => new GameDetectionResult
         { State = result.FinalState, Evidence = result.FinalEvidence, IsSuccessful = string.IsNullOrEmpty(result.ErrorMessage), ErrorMessage = result.ErrorMessage };
