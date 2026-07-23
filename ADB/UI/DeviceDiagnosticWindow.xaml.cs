@@ -17,6 +17,7 @@ using System.Threading;
 using System.Threading.Tasks;
 using System.Windows;
 using System.Windows.Controls;
+using System.Windows.Media;
 using System.Windows.Threading;
 
 namespace ADB_Tool_Automation_Post_FB.UI
@@ -35,10 +36,10 @@ namespace ADB_Tool_Automation_Post_FB.UI
         private CancellationTokenSource oneShotFarmCancellation;
         private bool oneShotFarmCancellationRequested;
         private long oneShotFarmRunGeneration;
-        private DateTimeOffset? oneShotFarmNextCheckAt;
-        private DateTimeOffset? oneShotFarmWaitDeadline;
         private readonly ObservableCollection<DeviceSelectionItem> deviceSelections =
             new ObservableCollection<DeviceSelectionItem>();
+        private readonly ObservableCollection<DeviceFarmProgressItem> farmProgressItems =
+            new ObservableCollection<DeviceFarmProgressItem>();
         private readonly HashSet<string> failedDeviceNames =
             new HashSet<string>(StringComparer.OrdinalIgnoreCase);
         private readonly HashSet<string> activeDeviceNames =
@@ -76,6 +77,7 @@ namespace ADB_Tool_Automation_Post_FB.UI
 
             InitializeComponent();
             DeviceSelectionListBox.ItemsSource = deviceSelections;
+            FarmProgressItemsControl.ItemsSource = farmProgressItems;
             oneShotFarmProgressTimer = new DispatcherTimer { Interval = TimeSpan.FromSeconds(1) };
             oneShotFarmProgressTimer.Tick += OneShotFarmProgressTimer_Tick;
             ApplyFarmPreferences(defaultFarmPreferences);
@@ -352,9 +354,7 @@ namespace ADB_Tool_Automation_Post_FB.UI
             if (progress.FarmProgress?.DeviceProgress != null)
             {
                 ApplyOneShotFarmProgress(runGeneration, runCancellation,
-                    progress.FarmProgress.DeviceProgress);
-                ProgressMessageTextBlock.Text = $"[{snapshot.DeviceName}] "
-                    + snapshot.Message;
+                    snapshot.DeviceName, progress.FarmProgress.DeviceProgress);
             }
         }
 
@@ -400,7 +400,9 @@ namespace ADB_Tool_Automation_Post_FB.UI
                 attemptVersions[deviceName] = attemptVersion;
                 deviceAttemptVersions[deviceName] = attemptVersion;
                 activeDeviceNames.Add(deviceName);
+                GetOrCreateFarmProgress(deviceName).SetQueued();
             }
+            ProgressOverviewTextBlock.Text = $"0/{deviceNames.Length} hoàn tất";
             var progress = new Progress<MultiDeviceOneShotFarmProgress>(value =>
                 ApplyMultiDeviceFarmProgress(runGeneration, runCancellation,
                     attemptVersions, value));
@@ -528,10 +530,9 @@ namespace ADB_Tool_Automation_Post_FB.UI
             if (progress.DeviceProgress != null)
             {
                 ApplyOneShotFarmProgress(runGeneration, runCancellation,
-                    progress.DeviceProgress);
-                ProgressMessageTextBlock.Text = $"[{progress.DeviceName}] "
-                    + (progress.DeviceProgress.Message ?? progress.Message ?? "-");
+                    progress.DeviceName, progress.DeviceProgress);
             }
+            UpdateProgressOverview();
         }
 
         private bool IsCurrentDeviceAttempt(string deviceName,
@@ -585,40 +586,27 @@ namespace ADB_Tool_Automation_Post_FB.UI
             oneShotFarmCancellationRequested = true;
             StopOneShotFarmButton.IsEnabled = false;
             RetryFailedDevicesButton.IsEnabled = false;
-            ProgressStageTextBlock.Text = OneShotFarmProgressStage.Stopping.ToString();
-            ProgressMessageTextBlock.Text = "Stopping One-Shot Farm...";
+            ProgressOverviewTextBlock.Text = "Đang dừng";
+            foreach (DeviceFarmProgressItem item in farmProgressItems.Where(item =>
+                activeDeviceNames.Contains(item.DeviceName)))
+                item.SetStopping();
             StopOneShotFarmProgressTimer();
             currentRun.Cancel();
         }
 
         private void ApplyOneShotFarmProgress(long runGeneration,
-            CancellationTokenSource runCancellation, OneShotFarmProgress progress)
+            CancellationTokenSource runCancellation, string deviceName,
+            OneShotFarmProgress progress)
         {
             if (progress == null || !OneShotFarmProgressUtilities.IsCurrentRun(
                 runGeneration, oneShotFarmRunGeneration, runCancellation,
                 oneShotFarmCancellation)) return;
             try
             {
-                ProgressStageTextBlock.Text = progress.Stage.ToString();
-                ProgressMessageTextBlock.Text = progress.Message ?? "-";
-                ProgressChecksTextBlock.Text = progress.TeamAvailabilityChecks.ToString(CultureInfo.InvariantCulture);
-                ProgressAllowedTeamsTextBlock.Text = FormatTeams(progress.AllowedTeams);
-                ProgressReadyTeamsTextBlock.Text = FormatTeams(progress.ReadyTeams);
-                ProgressEligibleTeamsTextBlock.Text = FormatTeams(progress.EligibleReadyTeams);
-                ProgressCurrentStepTextBlock.Text = progress.CurrentStep?.ToString() ?? "-";
-                ProgressCurrentContextTextBlock.Text = $"{progress.CurrentResource?.ToString() ?? "-"} / "
-                    + $"{progress.CurrentLevel?.ToString(CultureInfo.InvariantCulture) ?? "-"} / "
-                    + $"{progress.CurrentTeam?.ToString() ?? "-"}";
-                oneShotFarmNextCheckAt = progress.NextCheckAt;
-                oneShotFarmWaitDeadline = progress.WaitDeadline;
-                ProgressNextCheckTextBlock.Text = progress.NextCheckAt.HasValue
-                    ? progress.NextCheckAt.Value.ToLocalTime().ToString(
-                        "HH:mm:ss", CultureInfo.InvariantCulture)
-                    : "-";
+                GetOrCreateFarmProgress(deviceName).Apply(progress);
 
                 if (progress.Stage == OneShotFarmProgressStage.WaitingForReadyTeam)
                 {
-                    UpdateOneShotFarmCountdown();
                     oneShotFarmProgressTimer.Start();
                 }
                 else if (progress.Stage == OneShotFarmProgressStage.ReadyTeamFound
@@ -626,8 +614,10 @@ namespace ADB_Tool_Automation_Post_FB.UI
                     || progress.Stage == OneShotFarmProgressStage.Failed
                     || progress.Stage == OneShotFarmProgressStage.Cancelled)
                 {
-                    StopOneShotFarmProgressTimer();
+                    if (!farmProgressItems.Any(item => item.IsWaiting))
+                        StopOneShotFarmProgressTimer();
                 }
+                UpdateProgressOverview();
             }
             catch (Exception)
             {
@@ -635,29 +625,48 @@ namespace ADB_Tool_Automation_Post_FB.UI
             }
         }
 
-        private static string FormatTeams(IReadOnlyList<TeamNumber> teams) =>
-            teams == null || teams.Count == 0 ? "-" : string.Join(", ", teams);
-
         private void OneShotFarmProgressTimer_Tick(object sender, EventArgs e) =>
             UpdateOneShotFarmCountdown();
 
         private void UpdateOneShotFarmCountdown()
         {
             DateTimeOffset now = DateTimeOffset.Now;
-            TimeSpan next = OneShotFarmProgressUtilities.Remaining(now, oneShotFarmNextCheckAt);
-            TimeSpan wait = OneShotFarmProgressUtilities.Remaining(now, oneShotFarmWaitDeadline);
-            ProgressCountdownTextBlock.Text = next.ToString(@"mm\:ss", CultureInfo.InvariantCulture);
-            ProgressWaitRemainingTextBlock.Text = wait.ToString(@"hh\:mm\:ss", CultureInfo.InvariantCulture);
+            foreach (DeviceFarmProgressItem item in farmProgressItems)
+                item.UpdateCountdown(now);
         }
 
         private void StopOneShotFarmProgressTimer()
         {
             oneShotFarmProgressTimer.Stop();
-            oneShotFarmNextCheckAt = null;
-            oneShotFarmWaitDeadline = null;
-            ProgressNextCheckTextBlock.Text = "-";
-            ProgressCountdownTextBlock.Text = "00:00";
-            ProgressWaitRemainingTextBlock.Text = "00:00:00";
+        }
+
+        private DeviceFarmProgressItem GetOrCreateFarmProgress(string deviceName)
+        {
+            string normalized = string.IsNullOrWhiteSpace(deviceName)
+                ? "Thiết bị" : deviceName.Trim();
+            DeviceFarmProgressItem item = farmProgressItems.FirstOrDefault(value =>
+                string.Equals(value.DeviceName, normalized,
+                    StringComparison.OrdinalIgnoreCase));
+            if (item != null) return item;
+            item = new DeviceFarmProgressItem(normalized);
+            farmProgressItems.Add(item);
+            return item;
+        }
+
+        private void UpdateProgressOverview()
+        {
+            if (farmProgressItems.Count == 0)
+            {
+                ProgressOverviewTextBlock.Text = "Idle";
+                return;
+            }
+            int active = farmProgressItems.Count(item => item.IsActive);
+            int failed = farmProgressItems.Count(item =>
+                string.Equals(item.Stage, OneShotFarmProgressStage.Failed.ToString(),
+                    StringComparison.Ordinal));
+            ProgressOverviewTextBlock.Text = active > 0
+                ? $"{active} đang chạy"
+                : failed > 0 ? $"{failed} lỗi" : "Hoàn tất";
         }
 
         private void ApplyFarmPreferences(FarmUiPreferences preferences)
@@ -1126,6 +1135,147 @@ namespace ADB_Tool_Automation_Post_FB.UI
                 PropertyChanged?.Invoke(this,
                     new PropertyChangedEventArgs(nameof(Status)));
             }
+        }
+
+        public event PropertyChangedEventHandler PropertyChanged;
+    }
+
+    internal sealed class DeviceFarmProgressItem : INotifyPropertyChanged
+    {
+        private string stage = "Queued";
+        private string message = "Đang chờ thực thi.";
+        private string detail = "-";
+        private string schedule = "-";
+        private DateTimeOffset? nextCheckAt;
+        private DateTimeOffset? waitDeadline;
+
+        public DeviceFarmProgressItem(string deviceName)
+        {
+            DeviceName = deviceName;
+            Teams = new ObservableCollection<TeamFarmProgressItem>(
+                new[] { TeamNumber.Team1, TeamNumber.Team2,
+                    TeamNumber.Team3, TeamNumber.Team4 }
+                .Select(team => new TeamFarmProgressItem(team)));
+        }
+
+        public string DeviceName { get; }
+        public ObservableCollection<TeamFarmProgressItem> Teams { get; }
+        public string Stage { get => stage; private set => Set(ref stage, value, nameof(Stage)); }
+        public string Message { get => message; private set => Set(ref message, value, nameof(Message)); }
+        public string Detail { get => detail; private set => Set(ref detail, value, nameof(Detail)); }
+        public string Schedule { get => schedule; private set => Set(ref schedule, value, nameof(Schedule)); }
+        public bool IsWaiting => string.Equals(Stage,
+            OneShotFarmProgressStage.WaitingForReadyTeam.ToString(), StringComparison.Ordinal);
+        public bool IsActive => Stage == "Queued" || Stage == "Stopping"
+            || string.Equals(Stage, OneShotFarmProgressStage.CheckingTeamAvailability.ToString(), StringComparison.Ordinal)
+            || string.Equals(Stage, OneShotFarmProgressStage.WaitingForReadyTeam.ToString(), StringComparison.Ordinal)
+            || string.Equals(Stage, OneShotFarmProgressStage.ReadyTeamFound.ToString(), StringComparison.Ordinal)
+            || string.Equals(Stage, OneShotFarmProgressStage.PreparingFarm.ToString(), StringComparison.Ordinal)
+            || string.Equals(Stage, OneShotFarmProgressStage.RunningFarmStep.ToString(), StringComparison.Ordinal);
+
+        public void SetQueued()
+        {
+            Stage = "Queued";
+            Message = "Đang chờ thực thi.";
+            Detail = "-";
+            Schedule = "-";
+            foreach (TeamFarmProgressItem team in Teams) team.SetStatus("Chưa kiểm tra", false);
+        }
+
+        public void SetStopping()
+        {
+            Stage = "Stopping";
+            Message = "Đang dừng an toàn...";
+        }
+
+        public void Apply(OneShotFarmProgress progress)
+        {
+            Stage = progress.Stage.ToString();
+            Message = progress.Message ?? "-";
+            Detail = $"Kiểm tra: {progress.TeamAvailabilityChecks}; bước: "
+                + $"{progress.CurrentStep?.ToString() ?? "-"}; tài nguyên/cấp: "
+                + $"{progress.CurrentResource?.ToString() ?? "-"}/"
+                + $"{progress.CurrentLevel?.ToString(CultureInfo.InvariantCulture) ?? "-"}";
+            nextCheckAt = progress.NextCheckAt;
+            waitDeadline = progress.WaitDeadline;
+            IReadOnlyList<TeamNumber> allowed = progress.AllowedTeams ?? new TeamNumber[0];
+            IReadOnlyList<TeamNumber> ready = progress.ReadyTeams ?? new TeamNumber[0];
+            IReadOnlyList<TeamNumber> eligible = progress.EligibleReadyTeams ?? new TeamNumber[0];
+            foreach (TeamFarmProgressItem item in Teams)
+            {
+                bool isAllowed = allowed.Contains(item.Team);
+                bool isReady = ready.Contains(item.Team);
+                bool isEligible = eligible.Contains(item.Team);
+                bool isCurrent = progress.CurrentTeam == item.Team;
+                string status = isCurrent ? "Đang xử lý"
+                    : isEligible ? "Có thể chọn"
+                    : isReady && isAllowed ? "Sẵn sàng"
+                    : isReady ? "Sẵn sàng · không được phép"
+                    : isAllowed ? "Được phép · bận/chưa xác minh"
+                    : "Không được phép";
+                item.SetStatus(status, isCurrent || isEligible || isReady);
+            }
+            UpdateCountdown(DateTimeOffset.Now);
+        }
+
+        public void UpdateCountdown(DateTimeOffset now)
+        {
+            TimeSpan next = OneShotFarmProgressUtilities.Remaining(now, nextCheckAt);
+            TimeSpan wait = OneShotFarmProgressUtilities.Remaining(now, waitDeadline);
+            Schedule = nextCheckAt.HasValue
+                ? $"Kiểm tra tiếp: {nextCheckAt.Value.ToLocalTime():HH:mm:ss} · "
+                    + $"còn {next.ToString(@"mm\:ss", CultureInfo.InvariantCulture)} · "
+                    + $"thời gian chờ {wait.ToString(@"hh\:mm\:ss", CultureInfo.InvariantCulture)}"
+                : "-";
+        }
+
+        private void Set(ref string field, string value, string propertyName)
+        {
+            if (string.Equals(field, value, StringComparison.Ordinal)) return;
+            field = value;
+            PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(propertyName));
+        }
+
+        public event PropertyChangedEventHandler PropertyChanged;
+    }
+
+    internal sealed class TeamFarmProgressItem : INotifyPropertyChanged
+    {
+        private string status = "Chưa kiểm tra";
+        private Brush statusBrush = Brushes.SlateGray;
+
+        public TeamFarmProgressItem(TeamNumber team)
+        {
+            Team = team;
+        }
+
+        public TeamNumber Team { get; }
+        public string TeamName => Team.ToString();
+        public string Status
+        {
+            get => status;
+            private set
+            {
+                if (status == value) return;
+                status = value;
+                PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(nameof(Status)));
+            }
+        }
+        public Brush StatusBrush
+        {
+            get => statusBrush;
+            private set
+            {
+                if (Equals(statusBrush, value)) return;
+                statusBrush = value;
+                PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(nameof(StatusBrush)));
+            }
+        }
+
+        public void SetStatus(string value, bool positive)
+        {
+            Status = value;
+            StatusBrush = positive ? Brushes.SeaGreen : Brushes.SlateGray;
         }
 
         public event PropertyChangedEventHandler PropertyChanged;

@@ -344,25 +344,28 @@
                 <Grid.RowDefinitions>
                     <RowDefinition Height="Auto"/>
                     <RowDefinition Height="12"/>
-                    <RowDefinition Height="*"/>
+                    <RowDefinition Height="3*"/>
                     <RowDefinition Height="12"/>
-                    <RowDefinition Height="180"/>
+                    <RowDefinition Height="2*"/>
                 </Grid.RowDefinitions>
 
                 <Border Style="{StaticResource CardStyle}">
-                    <StackPanel>
-                        <Grid Margin="0,0,0,12">
-                            <Grid.ColumnDefinitions>
-                                <ColumnDefinition Width="*"/>
-                                <ColumnDefinition Width="Auto"/>
-                            </Grid.ColumnDefinitions>
-                            <TextBlock Text="Sức khỏe hệ thống" Style="{StaticResource CardTitleStyle}"/>
-                            <Border Grid.Column="1" Background="#FFEFF6FF" CornerRadius="10" Padding="9,4">
-                                <TextBlock x:Name="HealthOverviewTextBlock" Text="Idle"
-                                           Foreground="#FF1D4ED8" FontWeight="SemiBold"/>
-                            </Border>
-                        </Grid>
-                        <Grid>
+                    <Expander IsExpanded="True">
+                        <Expander.Header>
+                            <Grid>
+                                <Grid.ColumnDefinitions>
+                                    <ColumnDefinition Width="*"/>
+                                    <ColumnDefinition Width="Auto"/>
+                                </Grid.ColumnDefinitions>
+                                <TextBlock Text="Sức khỏe hệ thống" Style="{StaticResource CardTitleStyle}"/>
+                                <Border Grid.Column="1" Background="#FFEFF6FF" CornerRadius="10"
+                                        Padding="9,4" Margin="16,0,0,0">
+                                    <TextBlock x:Name="HealthOverviewTextBlock" Text="Idle"
+                                               Foreground="#FF1D4ED8" FontWeight="SemiBold"/>
+                                </Border>
+                            </Grid>
+                        </Expander.Header>
+                        <Grid Margin="20,12,0,0">
                             <Grid.ColumnDefinitions>
                                 <ColumnDefinition Width="135"/><ColumnDefinition Width="*"/>
                                 <ColumnDefinition Width="125"/><ColumnDefinition Width="*"/>
@@ -388,7 +391,7 @@
                                        Grid.ColumnSpan="3" Text="-" Style="{StaticResource ValueStyle}"
                                        TextWrapping="Wrap"/>
                         </Grid>
-                    </StackPanel>
+                    </Expander>
                 </Border>
 
                 <Border Grid.Row="2" Style="{StaticResource CardStyle}">
@@ -405,66 +408,76 @@
                             </Grid.ColumnDefinitions>
                             <TextBlock Text="Tiến trình farm" Style="{StaticResource CardTitleStyle}"/>
                             <Border Grid.Column="1" Background="#FFEFF6FF" CornerRadius="10" Padding="9,4">
-                                <TextBlock x:Name="ProgressStageTextBlock" Text="Idle"
+                                <TextBlock x:Name="ProgressOverviewTextBlock" Text="Idle"
                                            Foreground="#FF1D4ED8" FontWeight="SemiBold"/>
                             </Border>
                         </Grid>
 
                         <ScrollViewer Grid.Row="2" VerticalScrollBarVisibility="Auto">
-                            <Grid>
-                                <Grid.ColumnDefinitions>
-                                    <ColumnDefinition Width="150"/>
-                                    <ColumnDefinition Width="*"/>
-                                </Grid.ColumnDefinitions>
-                                <Grid.RowDefinitions>
-                                    <RowDefinition Height="Auto"/><RowDefinition Height="30"/>
-                                    <RowDefinition Height="30"/><RowDefinition Height="30"/>
-                                    <RowDefinition Height="30"/><RowDefinition Height="30"/>
-                                    <RowDefinition Height="30"/><RowDefinition Height="30"/>
-                                    <RowDefinition Height="30"/><RowDefinition Height="30"/>
-                                </Grid.RowDefinitions>
-                                <TextBlock Grid.Row="0" Text="Thông báo" Style="{StaticResource CaptionStyle}"/>
-                                <TextBlock x:Name="ProgressMessageTextBlock" Grid.Row="0" Grid.Column="1"
-                                           Text="-" Style="{StaticResource ValueStyle}" TextWrapping="Wrap"
-                                           Margin="0,0,0,8"/>
-                                <TextBlock Grid.Row="1" Text="Số lần kiểm tra" Style="{StaticResource CaptionStyle}"/>
-                                <TextBlock x:Name="ProgressChecksTextBlock" Grid.Row="1" Grid.Column="1" Text="0" Style="{StaticResource ValueStyle}"/>
-                                <TextBlock Grid.Row="2" Text="Đội được phép" Style="{StaticResource CaptionStyle}"/>
-                                <TextBlock x:Name="ProgressAllowedTeamsTextBlock" Grid.Row="2" Grid.Column="1" Text="-" Style="{StaticResource ValueStyle}"/>
-                                <TextBlock Grid.Row="3" Text="Đội sẵn sàng" Style="{StaticResource CaptionStyle}"/>
-                                <TextBlock x:Name="ProgressReadyTeamsTextBlock" Grid.Row="3" Grid.Column="1" Text="-" Style="{StaticResource ValueStyle}"/>
-                                <TextBlock Grid.Row="4" Text="Đội có thể chọn" Style="{StaticResource CaptionStyle}"/>
-                                <TextBlock x:Name="ProgressEligibleTeamsTextBlock" Grid.Row="4" Grid.Column="1" Text="-" Style="{StaticResource ValueStyle}"/>
-                                <TextBlock Grid.Row="5" Text="Lần kiểm tra tiếp theo" Style="{StaticResource CaptionStyle}"/>
-                                <TextBlock x:Name="ProgressNextCheckTextBlock" Grid.Row="5" Grid.Column="1" Text="-" Style="{StaticResource ValueStyle}"/>
-                                <TextBlock Grid.Row="6" Text="Đếm ngược" Style="{StaticResource CaptionStyle}"/>
-                                <TextBlock x:Name="ProgressCountdownTextBlock" Grid.Row="6" Grid.Column="1" Text="00:00" Style="{StaticResource ValueStyle}"/>
-                                <TextBlock Grid.Row="7" Text="Thời gian chờ còn lại" Style="{StaticResource CaptionStyle}"/>
-                                <TextBlock x:Name="ProgressWaitRemainingTextBlock" Grid.Row="7" Grid.Column="1" Text="00:00:00" Style="{StaticResource ValueStyle}"/>
-                                <TextBlock Grid.Row="8" Text="Bước hiện tại" Style="{StaticResource CaptionStyle}"/>
-                                <TextBlock x:Name="ProgressCurrentStepTextBlock" Grid.Row="8" Grid.Column="1" Text="-" Style="{StaticResource ValueStyle}"/>
-                                <TextBlock Grid.Row="9" Text="Tài nguyên / cấp / đội" Style="{StaticResource CaptionStyle}"/>
-                                <TextBlock x:Name="ProgressCurrentContextTextBlock" Grid.Row="9" Grid.Column="1"
-                                           Text="-" Style="{StaticResource ValueStyle}" TextWrapping="Wrap"/>
-                            </Grid>
+                            <ItemsControl x:Name="FarmProgressItemsControl">
+                                <ItemsControl.ItemTemplate>
+                                    <DataTemplate>
+                                        <Expander IsExpanded="True" Margin="0,0,0,8">
+                                            <Expander.Header>
+                                                <Grid>
+                                                    <Grid.ColumnDefinitions>
+                                                        <ColumnDefinition Width="*"/>
+                                                        <ColumnDefinition Width="Auto"/>
+                                                    </Grid.ColumnDefinitions>
+                                                    <TextBlock Text="{Binding DeviceName}" FontWeight="SemiBold"
+                                                               Foreground="{StaticResource TextPrimaryBrush}"/>
+                                                    <TextBlock Grid.Column="1" Text="{Binding Stage}"
+                                                               Foreground="#FF1D4ED8" Margin="18,0,0,0"/>
+                                                </Grid>
+                                            </Expander.Header>
+                                            <Border Background="#FFF8FAFC" BorderBrush="#FFE2E8F0"
+                                                    BorderThickness="1" CornerRadius="7"
+                                                    Padding="10" Margin="20,6,0,0">
+                                                <StackPanel>
+                                                    <TextBlock Text="{Binding Message}" TextWrapping="Wrap"
+                                                               Foreground="{StaticResource TextPrimaryBrush}"/>
+                                                    <TextBlock Text="{Binding Detail}" Margin="0,5,0,8"
+                                                               Foreground="{StaticResource TextSecondaryBrush}"
+                                                               TextWrapping="Wrap"/>
+                                                    <ItemsControl ItemsSource="{Binding Teams}">
+                                                        <ItemsControl.ItemTemplate>
+                                                            <DataTemplate>
+                                                                <Grid Margin="0,2">
+                                                                    <Grid.ColumnDefinitions>
+                                                                        <ColumnDefinition Width="75"/>
+                                                                        <ColumnDefinition Width="*"/>
+                                                                    </Grid.ColumnDefinitions>
+                                                                    <TextBlock Text="{Binding TeamName}"
+                                                                               FontWeight="SemiBold"/>
+                                                                    <TextBlock Grid.Column="1" Text="{Binding Status}"
+                                                                               Foreground="{Binding StatusBrush}"/>
+                                                                </Grid>
+                                                            </DataTemplate>
+                                                        </ItemsControl.ItemTemplate>
+                                                    </ItemsControl>
+                                                    <TextBlock Text="{Binding Schedule}" Margin="0,8,0,0"
+                                                               Foreground="{StaticResource TextSecondaryBrush}"/>
+                                                </StackPanel>
+                                            </Border>
+                                        </Expander>
+                                    </DataTemplate>
+                                </ItemsControl.ItemTemplate>
+                            </ItemsControl>
                         </ScrollViewer>
                     </Grid>
                 </Border>
 
                 <Border Grid.Row="4" Style="{StaticResource CardStyle}">
-                    <Grid>
-                        <Grid.RowDefinitions>
-                            <RowDefinition Height="Auto"/>
-                            <RowDefinition Height="10"/>
-                            <RowDefinition Height="*"/>
-                        </Grid.RowDefinitions>
-                        <TextBlock Text="Chi tiết lần chạy gần nhất" Style="{StaticResource CardTitleStyle}"/>
-                        <ScrollViewer Grid.Row="2" MaxHeight="220" VerticalScrollBarVisibility="Auto">
+                    <Expander Header="Chi tiết lần chạy gần nhất" IsExpanded="True"
+                              Foreground="{StaticResource TextPrimaryBrush}"
+                              FontWeight="SemiBold">
+                        <ScrollViewer Margin="20,10,0,0" VerticalScrollBarVisibility="Auto"
+                                      HorizontalScrollBarVisibility="Auto">
                             <TextBlock x:Name="StatusTextBlock" Text="Sẵn sàng."
                                        Foreground="#FF334155" FontFamily="Consolas" FontSize="12"
                                        TextWrapping="Wrap"/>
                         </ScrollViewer>
-                    </Grid>
+                    </Expander>
                 </Border>
             </Grid>
         </Grid>
