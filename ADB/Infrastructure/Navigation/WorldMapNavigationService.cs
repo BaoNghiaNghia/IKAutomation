@@ -16,6 +16,9 @@ namespace ADB_Tool_Automation_Post_FB.Infrastructure.Navigation
 {
     public sealed class WorldMapNavigationService : IWorldMapNavigationService
     {
+        private const int ExpectedScreenshotWidth = 1280;
+        private const int ExpectedScreenshotHeight = 720;
+        private const int MaxTerritoryMarkerDistanceFromViewportCenterPx = 360;
         private readonly ILdPlayerClient ldPlayerClient;
         private readonly IGameStateDetector detector;
         private readonly WorldMapNavigationOptions options;
@@ -198,10 +201,11 @@ namespace ADB_Tool_Automation_Post_FB.Infrastructure.Navigation
                     "Pin-map button was tapped but ContinentMap was not verified before timeout.",
                     current.ErrorMessage, transitions);
 
-            GameDetectionEvidence territory = FindFreshEvidence(current, TemplateId.ContinentMapHomeTerritoryAnchor);
+            GameDetectionEvidence territory = FindFreshEvidenceNearViewportCenter(current,
+                TemplateId.ContinentMapHomeTerritoryAnchor, MaxTerritoryMarkerDistanceFromViewportCenterPx);
             if (territory == null)
                 return Result(false, initial, current, ensured.Attempts + 1, watch,
-                    "Alliance territory marker had no valid fresh bounds; no Tap was sent.", null, transitions);
+                    "Alliance territory marker had no valid fresh near-current bounds; no Tap was sent.", null, transitions);
 
             await TapEvidenceAsync(deviceName, territory, "ContinentMapHomeTerritoryAnchor", transitions, cancellationToken);
             await Task.Delay(options.StatePollIntervalMs, cancellationToken);
@@ -287,6 +291,18 @@ namespace ADB_Tool_Automation_Post_FB.Infrastructure.Navigation
         {
             GameDetectionEvidence evidence = result?.Evidence?.FirstOrDefault(item => item.TemplateId == templateId);
             return HasValidBounds(evidence) ? evidence : null;
+        }
+
+        private static GameDetectionEvidence FindFreshEvidenceNearViewportCenter(GameDetectionResult result,
+            TemplateId templateId, int maxDistancePx)
+        {
+            GameDetectionEvidence evidence = FindFreshEvidence(result, templateId);
+            if (evidence == null) return null;
+
+            double dx = evidence.MatchResult.CenterX - (ExpectedScreenshotWidth / 2.0);
+            double dy = evidence.MatchResult.CenterY - (ExpectedScreenshotHeight / 2.0);
+            double distance = Math.Sqrt((dx * dx) + (dy * dy));
+            return distance <= maxDistancePx ? evidence : null;
         }
 
         private static bool HasValidBounds(GameDetectionEvidence evidence) =>

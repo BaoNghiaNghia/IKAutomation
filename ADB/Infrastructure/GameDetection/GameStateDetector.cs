@@ -349,8 +349,8 @@ namespace ADB_Tool_Automation_Post_FB.Infrastructure.GameDetection
                     ? new ImageRegion(0, screenshotHeight / 2,
                         screenshotWidth / 2, screenshotHeight - screenshotHeight / 2)
                     : templateId == TemplateId.ContinentMapHomeTerritoryAnchor
-                    ? new ImageRegion(screenshotWidth / 6, 0,
-                        screenshotWidth - screenshotWidth / 3, screenshotHeight)
+                    ? new ImageRegion(screenshotWidth / 4, screenshotHeight / 5,
+                        screenshotWidth / 2, screenshotHeight - (screenshotHeight * 2 / 5))
                     : templateId == TemplateId.ContinentMapPinButton
                     ? new ImageRegion(0, 0,
                         screenshotWidth / 4, screenshotHeight / 5)
