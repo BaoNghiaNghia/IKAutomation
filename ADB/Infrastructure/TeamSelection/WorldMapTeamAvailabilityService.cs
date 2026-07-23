@@ -99,42 +99,61 @@ namespace ADB_Tool_Automation_Post_FB.Infrastructure.TeamSelection
             {
                 TeamNumber.Team1, TeamNumber.Team2, TeamNumber.Team3, TeamNumber.Team4
             };
+            const int firstRowOffset = 8;
+            const int rowHeight = 52;
             var badgeMatches = new Dictionary<TeamNumber, ImageMatchResult>();
-            foreach (TeamNumber team in teams)
+            var readyMatchesByTeam = new Dictionary<TeamNumber, ImageMatchResult>();
+            for (int index = 0; index < teams.Length; index++)
             {
+                TeamNumber team = teams[index];
                 byte[] badgeTemplate = registry.LoadBytes(BadgeTemplate(team));
+                ImageRegion rowRegion = RosterRowRegion(index, firstRowOffset, rowHeight);
                 ImageMatchResult badgeMatch = matcher.Find(screenshot, badgeTemplate,
-                    options.TeamRosterRegion) ?? ImageMatchResult.NotFound();
+                    rowRegion) ?? ImageMatchResult.NotFound();
                 if (badgeMatch.Found && badgeMatch.Width > 0 && badgeMatch.Height > 0)
                     badgeMatches[team] = badgeMatch;
             }
 
-            foreach (TeamNumber team in teams.Where(badgeMatches.ContainsKey))
+            // The WorldMap roster has stable 52 px rows, while hero portraits and
+            // number badges vary between accounts. Scan the ready overlay in each
+            // physical row so a valid roster is not rejected when a badge template
+            // changes. Coordinates remain relative to the configured roster ROI.
+            for (int index = 0; index < teams.Length; index++)
             {
-                ImageMatchResult badgeMatch = badgeMatches[team];
-                int badgeCenterY = badgeMatch.Y + (badgeMatch.Height / 2);
-                int rowTop = Math.Max(options.TeamRosterRegion.Y, badgeCenterY - 32);
-                int rowBottom = Math.Min(options.TeamRosterRegion.Y
-                    + options.TeamRosterRegion.Height, badgeCenterY + 32);
-                var rowRegion = new ImageRegion(options.TeamRosterRegion.X, rowTop,
-                    options.TeamRosterRegion.Width, Math.Max(1, rowBottom - rowTop));
+                TeamNumber team = teams[index];
+                ImageRegion rowRegion = RosterRowRegion(index, firstRowOffset, rowHeight);
                 ImageMatchResult rowMatch = matcher.Find(screenshot, readyTemplate,
                     rowRegion) ?? ImageMatchResult.NotFound();
                 bool readyFound = rowMatch.Found
                     && rowMatch.Width > 0 && rowMatch.Height > 0;
 
-                availableTeams.Add(team);
                 if (readyFound)
                 {
-                    readyTeams.Add(team);
-                    readyMatches.Add(rowMatch);
+                    readyMatchesByTeam[team] = rowMatch;
                 }
             }
 
-            if (availableTeams.Count == 0)
+            int detectedTeamCount = badgeMatches.Keys
+                .Concat(readyMatchesByTeam.Keys)
+                .Select(team => (int)team)
+                .DefaultIfEmpty(0)
+                .Max();
+            if (detectedTeamCount == 0)
             {
                 return Failed("No team rows could be verified in the WorldMap roster; "
                     + "team availability was not inferred.", null, GameState.WorldMap);
+            }
+
+            // Team rows are contiguous from Team1. If Team3 is visible or ready,
+            // Team1 and Team2 also exist even when their badge/ready state differs.
+            foreach (TeamNumber team in teams.Take(detectedTeamCount))
+            {
+                availableTeams.Add(team);
+                if (readyMatchesByTeam.TryGetValue(team, out ImageMatchResult readyMatch))
+                {
+                    readyTeams.Add(team);
+                    readyMatches.Add(readyMatch);
+                }
             }
 
             ImageMatchResult match = readyMatches.FirstOrDefault()
@@ -160,6 +179,16 @@ namespace ADB_Tool_Automation_Post_FB.Infrastructure.TeamSelection
                         + $"{string.Join(", ", readyTeams)}."
                     : $"Detected {availableTeams.Count} team(s); no team is ready."
             };
+        }
+
+        private ImageRegion RosterRowRegion(int index, int firstRowOffset, int rowHeight)
+        {
+            int rowTop = options.TeamRosterRegion.Y + firstRowOffset
+                + (index * rowHeight);
+            int rowBottom = Math.Min(options.TeamRosterRegion.Y
+                + options.TeamRosterRegion.Height, rowTop + rowHeight);
+            return new ImageRegion(options.TeamRosterRegion.X, rowTop,
+                options.TeamRosterRegion.Width, Math.Max(1, rowBottom - rowTop));
         }
 
         private static TemplateId BadgeTemplate(TeamNumber team)
