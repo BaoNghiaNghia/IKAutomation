@@ -11,7 +11,7 @@ namespace ADB_Tool_Automation_Post_FB.Infrastructure.TeamSelection
             new WorldMapTeamAvailabilityOptions(new ImageRegion(
                 Int("TeamRosterRegion.X", 0), Int("TeamRosterRegion.Y", 290),
                 Int("TeamRosterRegion.Width", 150),
-                Int("TeamRosterRegion.Height", 240)));
+            Int("TeamRosterRegion.Height", 280)));
 
         private static string Key(string name) => "WorldMapTeamAvailability." + name;
 

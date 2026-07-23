@@ -10,6 +10,7 @@ namespace ADB_Tool_Automation_Post_FB.Core.Workflows
         public OneShotFarmProgress()
         {
             AllowedTeams = new TeamNumber[0];
+            DetectedTeams = new TeamNumber[0];
             ReadyTeams = new TeamNumber[0];
             EligibleReadyTeams = new TeamNumber[0];
         }
@@ -18,6 +19,7 @@ namespace ADB_Tool_Automation_Post_FB.Core.Workflows
         public DateTimeOffset ReportedAt { get; set; }
         public int TeamAvailabilityChecks { get; set; }
         public IReadOnlyList<TeamNumber> AllowedTeams { get; set; }
+        public IReadOnlyList<TeamNumber> DetectedTeams { get; set; }
         public IReadOnlyList<TeamNumber> ReadyTeams { get; set; }
         public IReadOnlyList<TeamNumber> EligibleReadyTeams { get; set; }
         public DateTimeOffset? NextCheckAt { get; set; }

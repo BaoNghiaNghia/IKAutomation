@@ -99,31 +99,34 @@ namespace ADB_Tool_Automation_Post_FB.Infrastructure.TeamSelection
             {
                 TeamNumber.Team1, TeamNumber.Team2, TeamNumber.Team3, TeamNumber.Team4
             };
-            int rowHeight = options.TeamRosterRegion.Height / teams.Length;
-            for (int index = 0; index < teams.Length; index++)
+            var badgeMatches = new Dictionary<TeamNumber, ImageMatchResult>();
+            foreach (TeamNumber team in teams)
             {
-                int rowY = options.TeamRosterRegion.Y + (index * rowHeight);
-                int height = index == teams.Length - 1
-                    ? options.TeamRosterRegion.Y + options.TeamRosterRegion.Height - rowY
-                    : rowHeight;
-                var rowRegion = new ImageRegion(options.TeamRosterRegion.X, rowY,
-                    options.TeamRosterRegion.Width, height);
-                byte[] badgeTemplate = registry.LoadBytes(BadgeTemplate(teams[index]));
+                byte[] badgeTemplate = registry.LoadBytes(BadgeTemplate(team));
                 ImageMatchResult badgeMatch = matcher.Find(screenshot, badgeTemplate,
-                    rowRegion) ?? ImageMatchResult.NotFound();
+                    options.TeamRosterRegion) ?? ImageMatchResult.NotFound();
+                if (badgeMatch.Found && badgeMatch.Width > 0 && badgeMatch.Height > 0)
+                    badgeMatches[team] = badgeMatch;
+            }
+
+            foreach (TeamNumber team in teams.Where(badgeMatches.ContainsKey))
+            {
+                ImageMatchResult badgeMatch = badgeMatches[team];
+                int badgeCenterY = badgeMatch.Y + (badgeMatch.Height / 2);
+                int rowTop = Math.Max(options.TeamRosterRegion.Y, badgeCenterY - 32);
+                int rowBottom = Math.Min(options.TeamRosterRegion.Y
+                    + options.TeamRosterRegion.Height, badgeCenterY + 32);
+                var rowRegion = new ImageRegion(options.TeamRosterRegion.X, rowTop,
+                    options.TeamRosterRegion.Width, Math.Max(1, rowBottom - rowTop));
                 ImageMatchResult rowMatch = matcher.Find(screenshot, readyTemplate,
                     rowRegion) ?? ImageMatchResult.NotFound();
-                bool badgeFound = badgeMatch.Found
-                    && badgeMatch.Width > 0 && badgeMatch.Height > 0;
                 bool readyFound = rowMatch.Found
                     && rowMatch.Width > 0 && rowMatch.Height > 0;
-                if (!badgeFound && !readyFound)
-                    continue;
 
-                availableTeams.Add(teams[index]);
+                availableTeams.Add(team);
                 if (readyFound)
                 {
-                    readyTeams.Add(teams[index]);
+                    readyTeams.Add(team);
                     readyMatches.Add(rowMatch);
                 }
             }

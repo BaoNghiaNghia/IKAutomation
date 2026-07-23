@@ -118,6 +118,7 @@ namespace ADB_Tool_Automation_Post_FB.Infrastructure.Workflows
                             ReportedAt = DateTimeOffset.UtcNow,
                             TeamAvailabilityChecks = checks,
                             AllowedTeams = effectiveAllowedTeams,
+                            DetectedTeams = detectedTeams,
                             ReadyTeams = check.ReadyTeams ?? new TeamNumber[0],
                             EligibleReadyTeams = eligibleReadyTeams,
                             WaitDeadline = waitDeadline,
@@ -172,6 +173,7 @@ namespace ADB_Tool_Automation_Post_FB.Infrastructure.Workflows
                                 ReportedAt = DateTimeOffset.UtcNow,
                                 TeamAvailabilityChecks = checks,
                                 AllowedTeams = effectiveAllowedTeams,
+                                DetectedTeams = detectedTeams,
                                 ReadyTeams = check.ReadyTeams ?? new TeamNumber[0],
                                 EligibleReadyTeams = new TeamNumber[0],
                                 Message = $"No ready team observed; confirming "
@@ -214,6 +216,7 @@ namespace ADB_Tool_Automation_Post_FB.Infrastructure.Workflows
                         ReportedAt = DateTimeOffset.UtcNow,
                         TeamAvailabilityChecks = checks,
                         AllowedTeams = effectiveAllowedTeams,
+                        DetectedTeams = detectedTeams,
                         ReadyTeams = check.ReadyTeams ?? new TeamNumber[0],
                         EligibleReadyTeams = new TeamNumber[0],
                         NextCheckAt = nextCheckAt,

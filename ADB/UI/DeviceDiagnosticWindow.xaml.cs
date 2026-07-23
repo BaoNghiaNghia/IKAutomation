@@ -682,7 +682,6 @@ namespace ADB_Tool_Automation_Post_FB.UI
                 .ToString(CultureInfo.InvariantCulture);
             ReadyMaxWaitTextBox.Text = preferences.ReadyMaxWaitHours
                 .ToString(CultureInfo.InvariantCulture);
-            UnoccupiedOnlyCheckBox.IsChecked = preferences.UnoccupiedOnly;
         }
 
         private bool TryReadFarmPreferences(out FarmUiPreferences preferences,
@@ -711,7 +710,7 @@ namespace ADB_Tool_Automation_Post_FB.UI
                 AllowTeam1 = teamValues.Contains((int)TeamNumber.Team1),
                 ReadyCheckIntervalMinutes = intervalMinutes,
                 ReadyMaxWaitHours = maxWaitHours,
-                UnoccupiedOnly = UnoccupiedOnlyCheckBox.IsChecked == true
+                UnoccupiedOnly = true
             };
             FarmUiPreferencesValidationResult validation = FarmUiPreferencesMapper.Validate(preferences);
             error = validation.IsValid ? null : validation.Message;
@@ -1152,10 +1151,7 @@ namespace ADB_Tool_Automation_Post_FB.UI
         public DeviceFarmProgressItem(string deviceName)
         {
             DeviceName = deviceName;
-            Teams = new ObservableCollection<TeamFarmProgressItem>(
-                new[] { TeamNumber.Team1, TeamNumber.Team2,
-                    TeamNumber.Team3, TeamNumber.Team4 }
-                .Select(team => new TeamFarmProgressItem(team)));
+            Teams = new ObservableCollection<TeamFarmProgressItem>();
         }
 
         public string DeviceName { get; }
@@ -1179,7 +1175,7 @@ namespace ADB_Tool_Automation_Post_FB.UI
             Message = "Đang chờ thực thi.";
             Detail = "-";
             Schedule = "-";
-            foreach (TeamFarmProgressItem team in Teams) team.SetStatus("Chưa kiểm tra", false);
+            Teams.Clear();
         }
 
         public void SetStopping()
@@ -1199,8 +1195,12 @@ namespace ADB_Tool_Automation_Post_FB.UI
             nextCheckAt = progress.NextCheckAt;
             waitDeadline = progress.WaitDeadline;
             IReadOnlyList<TeamNumber> allowed = progress.AllowedTeams ?? new TeamNumber[0];
+            IReadOnlyList<TeamNumber> detected = progress.DetectedTeams ?? new TeamNumber[0];
             IReadOnlyList<TeamNumber> ready = progress.ReadyTeams ?? new TeamNumber[0];
             IReadOnlyList<TeamNumber> eligible = progress.EligibleReadyTeams ?? new TeamNumber[0];
+            IReadOnlyList<TeamNumber> visibleTeams = detected.Count > 0
+                ? detected : allowed;
+            SynchronizeTeams(visibleTeams);
             foreach (TeamFarmProgressItem item in Teams)
             {
                 bool isAllowed = allowed.Contains(item.Team);
@@ -1216,6 +1216,28 @@ namespace ADB_Tool_Automation_Post_FB.UI
                 item.SetStatus(status, isCurrent || isEligible || isReady);
             }
             UpdateCountdown(DateTimeOffset.Now);
+        }
+
+        private void SynchronizeTeams(IReadOnlyList<TeamNumber> visibleTeams)
+        {
+            TeamNumber[] ordered = visibleTeams.Distinct()
+                .OrderBy(team => (int)team).ToArray();
+            foreach (TeamFarmProgressItem obsolete in Teams
+                .Where(item => !ordered.Contains(item.Team)).ToArray())
+                Teams.Remove(obsolete);
+            for (int index = 0; index < ordered.Length; index++)
+            {
+                TeamFarmProgressItem existing = Teams
+                    .FirstOrDefault(item => item.Team == ordered[index]);
+                if (existing == null)
+                    Teams.Insert(Math.Min(index, Teams.Count),
+                        new TeamFarmProgressItem(ordered[index]));
+                else
+                {
+                    int currentIndex = Teams.IndexOf(existing);
+                    if (currentIndex != index) Teams.Move(currentIndex, index);
+                }
+            }
         }
 
         public void UpdateCountdown(DateTimeOffset now)

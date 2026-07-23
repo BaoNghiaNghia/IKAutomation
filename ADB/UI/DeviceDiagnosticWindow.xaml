@@ -225,9 +225,6 @@
                                 <CheckBox x:Name="WoodResourceCheckBox" Content="Rừng" Margin="0,0,18,8"/>
                                 <CheckBox x:Name="FoodResourceCheckBox" Content="Đất nông nghiệp" Margin="0,0,0,8"/>
                             </WrapPanel>
-                            <CheckBox x:Name="UnoccupiedOnlyCheckBox"
-                                      Content="Chỉ mục tiêu chưa có người khai thác" Margin="0,0,0,10"/>
-
                             <Expander Header="Thiết lập nâng cao" IsExpanded="False"
                                       Foreground="{StaticResource TextPrimaryBrush}">
                                 <StackPanel Margin="0,10,0,0">
@@ -395,25 +392,26 @@
                 </Border>
 
                 <Border Grid.Row="2" Style="{StaticResource CardStyle}">
-                    <Grid>
+                    <Expander IsExpanded="True">
+                        <Expander.Header>
+                            <Grid>
+                                <Grid.ColumnDefinitions>
+                                    <ColumnDefinition Width="*"/>
+                                    <ColumnDefinition Width="Auto"/>
+                                </Grid.ColumnDefinitions>
+                                <TextBlock Text="Tiến trình farm" Style="{StaticResource CardTitleStyle}"/>
+                                <Border Grid.Column="1" Background="#FFEFF6FF" CornerRadius="10"
+                                        Padding="9,4" Margin="16,0,0,0">
+                                    <TextBlock x:Name="ProgressOverviewTextBlock" Text="Idle"
+                                               Foreground="#FF1D4ED8" FontWeight="SemiBold"/>
+                                </Border>
+                            </Grid>
+                        </Expander.Header>
+                    <Grid Margin="0,12,0,0">
                         <Grid.RowDefinitions>
-                            <RowDefinition Height="Auto"/>
-                            <RowDefinition Height="12"/>
                             <RowDefinition Height="*"/>
                         </Grid.RowDefinitions>
-                        <Grid>
-                            <Grid.ColumnDefinitions>
-                                <ColumnDefinition Width="*"/>
-                                <ColumnDefinition Width="Auto"/>
-                            </Grid.ColumnDefinitions>
-                            <TextBlock Text="Tiến trình farm" Style="{StaticResource CardTitleStyle}"/>
-                            <Border Grid.Column="1" Background="#FFEFF6FF" CornerRadius="10" Padding="9,4">
-                                <TextBlock x:Name="ProgressOverviewTextBlock" Text="Idle"
-                                           Foreground="#FF1D4ED8" FontWeight="SemiBold"/>
-                            </Border>
-                        </Grid>
-
-                        <ScrollViewer Grid.Row="2" VerticalScrollBarVisibility="Auto">
+                        <ScrollViewer VerticalScrollBarVisibility="Auto">
                             <ItemsControl x:Name="FarmProgressItemsControl">
                                 <ItemsControl.ItemTemplate>
                                     <DataTemplate>
@@ -433,13 +431,23 @@
                                             <Border Background="#FFF8FAFC" BorderBrush="#FFE2E8F0"
                                                     BorderThickness="1" CornerRadius="7"
                                                     Padding="10" Margin="20,6,0,0">
-                                                <StackPanel>
-                                                    <TextBlock Text="{Binding Message}" TextWrapping="Wrap"
-                                                               Foreground="{StaticResource TextPrimaryBrush}"/>
-                                                    <TextBlock Text="{Binding Detail}" Margin="0,5,0,8"
-                                                               Foreground="{StaticResource TextSecondaryBrush}"
-                                                               TextWrapping="Wrap"/>
-                                                    <ItemsControl ItemsSource="{Binding Teams}">
+                                                <Grid>
+                                                    <Grid.ColumnDefinitions>
+                                                        <ColumnDefinition Width="5*"/>
+                                                        <ColumnDefinition Width="16"/>
+                                                        <ColumnDefinition Width="4*"/>
+                                                    </Grid.ColumnDefinitions>
+                                                    <StackPanel>
+                                                        <TextBlock Text="{Binding Message}" TextWrapping="Wrap"
+                                                                   Foreground="{StaticResource TextPrimaryBrush}"/>
+                                                        <TextBlock Text="{Binding Detail}" Margin="0,6,0,0"
+                                                                   Foreground="{StaticResource TextSecondaryBrush}"
+                                                                   TextWrapping="Wrap"/>
+                                                        <TextBlock Text="{Binding Schedule}" Margin="0,8,0,0"
+                                                                   Foreground="{StaticResource TextSecondaryBrush}"
+                                                                   TextWrapping="Wrap"/>
+                                                    </StackPanel>
+                                                    <ItemsControl Grid.Column="2" ItemsSource="{Binding Teams}">
                                                         <ItemsControl.ItemTemplate>
                                                             <DataTemplate>
                                                                 <Grid Margin="0,2">
@@ -455,9 +463,7 @@
                                                             </DataTemplate>
                                                         </ItemsControl.ItemTemplate>
                                                     </ItemsControl>
-                                                    <TextBlock Text="{Binding Schedule}" Margin="0,8,0,0"
-                                                               Foreground="{StaticResource TextSecondaryBrush}"/>
-                                                </StackPanel>
+                                                </Grid>
                                             </Border>
                                         </Expander>
                                     </DataTemplate>
@@ -465,6 +471,7 @@
                             </ItemsControl>
                         </ScrollViewer>
                     </Grid>
+                    </Expander>
                 </Border>
 
                 <Border Grid.Row="4" Style="{StaticResource CardStyle}">
