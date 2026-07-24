@@ -15,6 +15,8 @@ namespace ADB_Tool_Automation_Post_FB.Infrastructure.TeamSelection
 {
     public sealed class WorldMapTeamAvailabilityService : IWorldMapTeamAvailabilityService
     {
+        private const int ObservationFrameCount = 2;
+        private const int ObservationIntervalMs = 120;
         private readonly IWorldMapNavigationService navigation;
         private readonly IGameStateDetector detector;
         private readonly ILdPlayerClient client;
@@ -82,15 +84,6 @@ namespace ADB_Tool_Automation_Post_FB.Infrastructure.TeamSelection
             CancellationToken cancellationToken)
         {
             cancellationToken.ThrowIfCancellationRequested();
-            byte[] screenshot = await client.CaptureScreenshotPngAsync(
-                deviceName, cancellationToken);
-            GameDetectionResult state = detector.Detect(screenshot);
-            if (state == null || !state.IsSuccessful || state.State != GameState.WorldMap)
-            {
-                return Failed("Fresh screenshot was not verified as WorldMap; readiness was not inferred.",
-                    state?.ErrorMessage, state?.State ?? GameState.Unknown);
-            }
-
             byte[] readyTemplate = registry.LoadBytes(TemplateId.WorldMapTeamReadyAnchor);
             var availableTeams = new List<TeamNumber>();
             var readyTeams = new List<TeamNumber>();
@@ -103,35 +96,55 @@ namespace ADB_Tool_Automation_Post_FB.Infrastructure.TeamSelection
             const int rowHeight = 52;
             var badgeMatches = new Dictionary<TeamNumber, ImageMatchResult>();
             var readyMatchesByTeam = new Dictionary<TeamNumber, ImageMatchResult>();
-            for (int index = 0; index < teams.Length; index++)
+            int verifiedFrameCount = 0;
+            GameDetectionResult lastState = null;
+            for (int frame = 0; frame < ObservationFrameCount; frame++)
             {
-                TeamNumber team = teams[index];
-                byte[] badgeTemplate = registry.LoadBytes(BadgeTemplate(team));
-                ImageRegion rowRegion = RosterRowRegion(index, firstRowOffset, rowHeight);
-                ImageMatchResult badgeMatch = matcher.Find(screenshot, badgeTemplate,
-                    rowRegion) ?? ImageMatchResult.NotFound();
-                if (badgeMatch.Found && badgeMatch.Width > 0 && badgeMatch.Height > 0)
-                    badgeMatches[team] = badgeMatch;
-            }
+                if (frame > 0)
+                    await Task.Delay(ObservationIntervalMs, cancellationToken);
 
-            // The WorldMap roster has stable 52 px rows, while hero portraits and
-            // number badges vary between accounts. Scan the ready overlay in each
-            // physical row so a valid roster is not rejected when a badge template
-            // changes. Coordinates remain relative to the configured roster ROI.
-            for (int index = 0; index < teams.Length; index++)
-            {
-                TeamNumber team = teams[index];
-                ImageRegion rowRegion = RosterRowRegion(index, firstRowOffset, rowHeight);
-                ImageMatchResult rowMatch = matcher.Find(screenshot, readyTemplate,
-                    rowRegion) ?? ImageMatchResult.NotFound();
-                bool readyFound = rowMatch.Found
-                    && rowMatch.Width > 0 && rowMatch.Height > 0;
+                byte[] screenshot = await client.CaptureScreenshotPngAsync(
+                    deviceName, cancellationToken);
+                lastState = detector.Detect(screenshot);
+                if (lastState == null || !lastState.IsSuccessful
+                    || lastState.State != GameState.WorldMap)
+                    continue;
 
-                if (readyFound)
+                verifiedFrameCount++;
+                for (int index = 0; index < teams.Length; index++)
                 {
-                    readyMatchesByTeam[team] = rowMatch;
+                    TeamNumber team = teams[index];
+                    ImageRegion rowRegion = RosterRowRegion(
+                        index, firstRowOffset, rowHeight);
+                    ImageMatchResult badgeMatch = matcher.Find(
+                        screenshot, registry.LoadBytes(BadgeTemplate(team)),
+                        rowRegion) ?? ImageMatchResult.NotFound();
+                    if (badgeMatch.Found && badgeMatch.Width > 0
+                        && badgeMatch.Height > 0)
+                        badgeMatches[team] = badgeMatch;
+                }
+
+                // Merge two close observations. A moving map unit can cover one
+                // "Sẵn sàng" label for a single frame; a positive match is latched
+                // for this check, while no input is sent between observations.
+                for (int index = 0; index < teams.Length; index++)
+                {
+                    TeamNumber team = teams[index];
+                    ImageRegion rowRegion = RosterRowRegion(
+                        index, firstRowOffset, rowHeight);
+                    ImageMatchResult rowMatch = matcher.Find(
+                        screenshot, readyTemplate, rowRegion)
+                        ?? ImageMatchResult.NotFound();
+                    if (rowMatch.Found && rowMatch.Width > 0
+                        && rowMatch.Height > 0)
+                        readyMatchesByTeam[team] = rowMatch;
                 }
             }
+
+            if (verifiedFrameCount == 0)
+                return Failed("Fresh screenshots were not verified as WorldMap; "
+                    + "readiness was not inferred.", lastState?.ErrorMessage,
+                    lastState?.State ?? GameState.Unknown);
 
             int detectedTeamCount = badgeMatches.Keys
                 .Concat(readyMatchesByTeam.Keys)

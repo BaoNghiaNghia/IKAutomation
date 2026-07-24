@@ -185,8 +185,32 @@ namespace ADB_Tool_Automation_Post_FB.Infrastructure.Navigation
             NavigationResult ensured = await EnsureWorldMapCoreAsync(deviceName, initial, cancellationToken);
             foreach (NavigationTransition transition in ensured.Transitions) transitions.Add(transition);
             if (!ensured.Success)
-                return Result(false, initial, DetectionFrom(ensured), ensured.Attempts, watch,
-                    "Could not ensure WorldMap before territory reposition.", ensured.ErrorMessage, transitions);
+            {
+                GameDetectionResult blocked = DetectionFrom(ensured);
+                GameDetectionEvidence cancel = FindFreshEvidence(
+                    blocked, TemplateId.StorageLimitCancelButton);
+                if (cancel == null)
+                    return Result(false, initial, blocked, ensured.Attempts, watch,
+                        "Could not ensure WorldMap before territory reposition.",
+                        ensured.ErrorMessage, transitions);
+
+                // Back can expose the generic exit/leave confirmation used by the
+                // game. Its stable Cancel button is already part of detector
+                // evidence. Cancel only this freshly verified overlay, then resume
+                // recovery after WorldMap itself has been verified.
+                await TapEvidenceAsync(deviceName, cancel,
+                    "BlockingDialogCancelButton", transitions, cancellationToken);
+                GameDetectionResult recovered = await PollAsync(
+                    deviceName, GameState.WorldMap, transitions, cancellationToken);
+                if (!recovered.IsSuccessful || recovered.State != GameState.WorldMap)
+                    return Result(false, initial, recovered, ensured.Attempts + 1, watch,
+                        "Blocking dialog was cancelled but WorldMap was not verified "
+                        + "before territory reposition.", recovered.ErrorMessage, transitions);
+
+                ensured = Result(true, initial, recovered, ensured.Attempts + 1, watch,
+                    "WorldMap verified after cancelling the blocking dialog.",
+                    null, transitions);
+            }
 
             GameDetectionResult current = DetectionFrom(ensured);
             GameDetectionEvidence mapButton = FindFreshEvidence(current, TemplateId.WorldMapPinButton);
@@ -243,7 +267,12 @@ namespace ADB_Tool_Automation_Post_FB.Infrastructure.Navigation
                 last = await DetectAsync(deviceName, transitions, cancellationToken);
                 // Unknown can be a transient render frame after navigation. Waiting is safe
                 // because polling sends no additional input; only a verified target succeeds.
-                if (!last.IsSuccessful || IsVerifiedTarget(last, target)) return last;
+                if (!last.IsSuccessful || IsVerifiedTarget(last, target)
+                    || (target == GameState.WorldMap
+                        && last.State == GameState.Unknown
+                        && FindFreshEvidence(last,
+                            TemplateId.StorageLimitCancelButton) != null))
+                    return last;
             }
             return last ?? await DetectAsync(deviceName, transitions, cancellationToken);
         }
