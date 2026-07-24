@@ -1,3 +1,4 @@
+using System.Collections.Generic;
 using System.Threading;
 using System.Threading.Tasks;
 
@@ -31,6 +32,8 @@ namespace ADB_Tool_Automation_Post_FB.Core.Abstractions
     /// </summary>
     public interface ILdPlayerClient
     {
+        Task<IReadOnlyList<string>> GetDeviceNamesAsync(CancellationToken cancellationToken);
+
         Task<bool> IsRunningAsync(string deviceName, CancellationToken cancellationToken);
 
         Task OpenAsync(string deviceName, CancellationToken cancellationToken);

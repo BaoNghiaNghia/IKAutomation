@@ -1,17 +1,27 @@
 ﻿using ADB_Tool_Automation_Post_FB.Exceptions;
 using ADB_Tool_Automation_Post_FB.Helpers;
 using ADB_Tool_Automation_Post_FB.Models;
+using ADB_Tool_Automation_Post_FB.Core.Workflows;
 using ADB_Tool_Automation_Post_FB.Infrastructure.Diagnostics;
+using ADB_Tool_Automation_Post_FB.Infrastructure.GameDetection;
+using ADB_Tool_Automation_Post_FB.Infrastructure.LDPlayer;
+using ADB_Tool_Automation_Post_FB.Infrastructure.MarchDispatch;
+using ADB_Tool_Automation_Post_FB.Infrastructure.Navigation;
+using ADB_Tool_Automation_Post_FB.Infrastructure.Notifications;
+using ADB_Tool_Automation_Post_FB.Infrastructure.ResourceSearch;
+using ADB_Tool_Automation_Post_FB.Infrastructure.ResourcePopup;
+using ADB_Tool_Automation_Post_FB.Infrastructure.TeamSelection;
+using ADB_Tool_Automation_Post_FB.Infrastructure.Workflows;
 using ADB_Tool_Automation_Post_FB.UI;
 using Auto_LDPlayer;
 using Auto_LDPlayer.Enums;
 using KAutoHelper;
 using System;
 using System.Collections.Generic;
+using System.Configuration;
 using System.Drawing;
 using System.IO;
 using System.Linq;
-using System.Net.Http;
 using System.Threading;
 using System.Threading.Tasks;
 using System.Windows;
@@ -67,19 +77,9 @@ namespace ADB_Tool_Automation_Post_FB
         #endregion
 
 
-        List<string> ldplayerDevicesAvailable = new List<string>();
-        List<int> listDeviceID = new List<int>();
-        List<DailyPostItem> dailyPostAvailable = new List<DailyPostItem>();
-        ApiResponseLDPlayerDevices allLDPlayerDevices = new ApiResponseLDPlayerDevices();
-        List<GameFanpage> listGameFanpage = new List<GameFanpage>();
-        Dictionary<string, List<FriendRequestProfile>> listFriendRequestProfile = new Dictionary<string, List<FriendRequestProfile>>();
-
         // Thêm vào class MainWindow
         private static readonly Dictionary<string, int> commentCountByDevice = new Dictionary<string, int>();
 
-        private readonly int limitDevice = 10;
-
-        bool isStop = false;
         private bool isReactionSelected = true;
         private bool isPostGroupProcess = false;
         private bool isCommentProcess = false;
@@ -88,8 +88,6 @@ namespace ADB_Tool_Automation_Post_FB
         private readonly bool isAccountMantainanceProcess = true;
         private readonly bool isFriendRequestProcess = true;
         private readonly bool isSharePostProcess = true;
-
-        private string pcRunner = "pc_1"; // Default value for pc_runner
 
         private static readonly Random _random = new Random();
 
@@ -100,7 +98,7 @@ namespace ADB_Tool_Automation_Post_FB
         public MainWindow()
         {
             InitializeComponent();
-            LoadDataImage();
+            TryLoadLegacyFacebookImages();
             LoadStaticLDConsole();
 
             emojiButtonsRaw.Add(EMOJI_THICH_BUTTON);
@@ -114,6 +112,22 @@ namespace ADB_Tool_Automation_Post_FB
             this.ContentRendered += MainWindow_ContentRendered;
         }
 
+        private void TryLoadLegacyFacebookImages()
+        {
+            try
+            {
+                LoadDataImage();
+            }
+            catch (Exception ex) when (ex is IOException ||
+                                       ex is UnauthorizedAccessException ||
+                                       ex is ArgumentException)
+            {
+                Logger.LogWarning(
+                    $"Legacy Facebook image data could not be loaded. " +
+                    $"The application will continue without Facebook image automation. {ex.Message}");
+            }
+        }
+
         private void MainWindow_ContentRendered(object sender, EventArgs e)
         {
             var workArea = SystemParameters.WorkArea;
@@ -123,7 +137,16 @@ namespace ADB_Tool_Automation_Post_FB
 
         public static void LoadStaticLDConsole()
         {
-            Auto_LDPlayer.LDPlayer.PathLD = @"D:\LDPlayer\LDPlayer9\ldconsole.exe";
+            try
+            {
+                string configuredPath = ConfigurationManager.AppSettings["LDCONSOLE_PATH"];
+                string resolvedPath = AutoLdPlayerClient.ConfigureLdConsolePath(configuredPath);
+                Logger.LogInfo($"LDPlayer console configured: {resolvedPath}");
+            }
+            catch (Exception exception)
+            {
+                Logger.LogWarning($"LDPlayer console configuration failed: {exception.Message}");
+            }
         }
 
         private void LoadDataImage()
@@ -174,65 +197,7 @@ namespace ADB_Tool_Automation_Post_FB
         }
 
 
-        public async Task FetchResourceForDeviceRunAPI()
-        {
-            try
-            {
-                using (HttpClient client = new HttpClient())
-                {
-                    // 🔁 Gọi API xoay proxy
-                    bool rotated = await ApiHelper.RotateAllProxiesAsync(client);
-                    if (!rotated)
-                    {
-                        Logger.LogWarning("⚠️ Không thể xoay proxy. Dừng 2 phút.");
-                        await Dispatcher.InvokeAsync(() =>
-                        {
-                            deviceStatusLabel.Content = "⚠️ Không thể xoay proxy. Chờ 2 phút.";
-                        }, System.Windows.Threading.DispatcherPriority.Background);
-                        return;
-                    }
-
-                    // ✅ Fetch danh sách thiết bị
-                    allLDPlayerDevices = await ApiHelper.FetchAvailableLDPlayerDevicesAsync(client, limitDevice, pcRunner);
-
-                    if (allLDPlayerDevices != null && allLDPlayerDevices.Items != null && allLDPlayerDevices.Items.Count > 0)
-                    {
-                        // 👉 Lấy danh sách ID
-                        ldplayerDevicesAvailable = allLDPlayerDevices.Items.Select(d => d.DeviceName).ToList();
-                        listDeviceID = allLDPlayerDevices.Items.Select(d => d.ID).ToList();
-
-                        // ✅ Fetch các nguồn liên quan
-                        dailyPostAvailable = await ApiHelper.FetchDailyPostsContentAsync(client, listDeviceID);
-                        listGameFanpage = await ApiHelper.FetchGameFanpagesAsync(client);
-                        listFriendRequestProfile = await ApiHelper.FetchFriendListAsync(client, listDeviceID);
-                    }
-                    else
-                    {
-                        Logger.LogInfo("⚠️ Không có thiết bị khả dụng.");
-                    }
-                }
-            }
-            catch (Exception ex)
-            {
-                Logger.LogError($"❌ Error in FetchResourceForDeviceRunAPI: {ex.Message}");
-            }
-        }
-
-
         // ---------------- UI Event Handlers ---------------- //
-        private void PcRunnerComboBox_SelectionChanged(object sender, SelectionChangedEventArgs e)
-        {
-            UIEventHelper.PcRunnerComboBoxChanged(sender, e);
-            pcRunner = UIEventHelper.PcRunner;
-        }
-
-        private void TaskTypeComboBox_SelectionChanged(object sender, SelectionChangedEventArgs e)
-        {
-            UIEventHelper.TaskTypeComboBoxChanged(sender, e);
-            isReactionSelected = UIEventHelper.IsReactionSelected;
-            isPostGroupProcess = UIEventHelper.IsPostGroupProcess;
-        }
-
         private void Button_Click_ShowLog(object sender, RoutedEventArgs e)
         {
             UIEventHelper.ShowLogFile();
@@ -240,166 +205,38 @@ namespace ADB_Tool_Automation_Post_FB
 
         private void Button_Click_DeviceDiagnostic(object sender, RoutedEventArgs e)
         {
+            var adaptiveConcurrencyGate = new AdaptiveConcurrencyGate(
+                AppConfigAdaptiveConcurrencyOptionsProvider.Load());
+            var multiDeviceRunner = new MultiDeviceOneShotFarmRunner(
+                () => OneShotFarmWorkflowFactory.CreateFromAppConfig(),
+                () => OneShotFarmWorkflowFactory.CreateTeamAvailabilityFromAppConfig(),
+                MultiDeviceOneShotFarmRunner.MaximumSupportedConcurrency,
+                adaptiveConcurrencyGate);
             var diagnosticWindow = new DeviceDiagnosticWindow(
-                DeviceDiagnosticServiceFactory.CreateFromAppConfig())
+                DeviceDiagnosticServiceFactory.CreateFromAppConfig(),
+                multiDeviceRunner,
+                new ContinuousFarmSupervisor(multiDeviceRunner,
+                    LdPlayerDeviceRecoveryServiceFactory.CreateFromAppConfig(),
+                    AppConfigContinuousFarmSupervisorOptionsProvider.Load(),
+                    AppConfigOperationalMaintenanceOptionsProvider.Create(),
+                    new LocalAppDataContinuousFarmCheckpointStore(
+                        new LocalAppDataContinuousFarmCheckpointPathProvider(),
+                        new ApplicationDiagnosticLogger()),
+                    adaptiveConcurrencyGate,
+                    TelegramFailureNotifierFactory.CreateFromEnvironment()),
+                AppConfigOneShotFarmWorkflowOptionsProvider.LoadRequest(),
+                AppConfigReadyTeamGateOptionsProvider.Load(),
+                new LocalAppDataFarmUiPreferencesStore(
+                    new LocalAppDataFarmUiPreferencesPathProvider(),
+                    new ApplicationDiagnosticLogger()),
+                TelegramFailureNotifierFactory.CreateFromEnvironment())
             {
                 Owner = this
             };
             diagnosticWindow.Show();
         }
 
-        private void Button_Click_Start(object sender, RoutedEventArgs e)
-        {
-            UIEventHelper.StartAutomation(Button_Start, Button_Stop, deviceStatusLabel, MainAutoRunFunction);
-            isStop = false;
-        }
-
-        private async void Button_Click_Stop(object sender, RoutedEventArgs e)
-        {
-            await UIEventHelper.StopAutomationAsync(Button_Start, Button_Stop, deviceStatusLabel, () => ldplayerDevicesAvailable);
-            isStop = true;
-        }
         // ---------------- UI Event Handlers ---------------- //
-
-
-        private async Task MainAutoRunFunction()
-        {
-            while (!isStop)
-            {
-                // Bước 1: Fetch dữ liệu thiết bị
-                await FetchResourceForDeviceRunAPI();
-
-                // Bước 2: Hiển thị thống kê
-                DeviceHelper.SafeUpdateUI(countDevices, $"Tổng cộng: {allLDPlayerDevices?.Statistics[pcRunner].TotalCount ?? 0} facebook");
-                var statusBreakdown = allLDPlayerDevices?.Statistics[pcRunner].StatusBreakdown;
-                if (statusBreakdown != null)
-                {
-                    string breakdownText = string.Join("  ·  ", statusBreakdown.Select(s => $"{s.Status}: {s.Count}"));
-                    DeviceHelper.SafeUpdateUI(statusDevices, $"{breakdownText}");
-                }
-
-                // Bước 3: Nếu không có thiết bị → đợi
-                if (ldplayerDevicesAvailable.Count == 0)
-                {
-                    Logger.LogInfo("Không có thiết bị khả dụng. Chờ 10s...");
-                    await DeviceHelper.WaitWithCountdown(deviceStatusLabel, 10);
-                    continue;
-                }
-
-                DeviceHelper.SafeUpdateUI(deviceStatusLabel, $"Đang khởi tạo {ldplayerDevicesAvailable.Count} thiết bị");
-
-                // Bước 4: Mở từng LDPlayer cách nhau 2 giây (tuần tự)
-                foreach (var deviceName in ldplayerDevicesAvailable)
-                {
-                    // Kiểm tra nếu dừng
-                    if (isStop)
-                    {
-                        Logger.LogInfo("⛔ Đã nhận tín hiệu dừng, ngắt khởi tạo LDPlayer.");
-                        break;
-                    }
-
-                    var device = allLDPlayerDevices?.Items?.FirstOrDefault(d => d.DeviceName == deviceName);
-                    if (device == null) continue;
-
-                    var postItem = dailyPostAvailable?.FirstOrDefault(d => d.LDPlayerDevicesId == device.ID);
-                    if (postItem != null)
-                    {
-                        await FileHelper.FetchPostImageSaveIntoSDCard(deviceName, postItem.PostImage);
-                    }
-
-                    if (!Auto_LDPlayer.LDPlayer.IsDeviceRunning(LDType.Name, deviceName))
-                    {
-                        Logger.LogInfo($"🚀 Đang mở LDPlayer: {deviceName}");
-                        Auto_LDPlayer.LDPlayer.Open(LDType.Name, deviceName);
-                        await DelayHelper.DelayAsync(1, 2);
-                    }
-                    else
-                    {
-                        Logger.LogInfo($"✅ {deviceName} đã mở.");
-                    }
-
-                    await Task.Delay(2000); // Chờ 2s trước khi mở thiết bị tiếp theo
-                }
-
-                // Bước 5: Sắp xếp cửa sổ
-                await DelayHelper.DelayAsync(2*ldplayerDevicesAvailable.Count, 3*ldplayerDevicesAvailable.Count);
-                DeviceHelper.SortWnd();
-                await DelayHelper.DelayAsync(5, 2 * ldplayerDevicesAvailable.Count);
-                DeviceHelper.SafeUpdateUI(deviceStatusLabel, $"Đang chạy: {DeviceHelper.CountTotalRunningDevices(LDType.Name, ldplayerDevicesAvailable)} thiết bị.");
-
-                // Bước 6: Xử lý song song từng thiết bị
-                var taskList = new List<Task>();
-                foreach (var deviceName in ldplayerDevicesAvailable)
-                {
-                    // Kiểm tra nếu dừng
-                    if (isStop)
-                    {
-                        Logger.LogInfo("⛔ Đã nhận tín hiệu dừng, ngắt xử lý thiết bị.");
-                        break;
-                    }
-
-                    var device = allLDPlayerDevices?.Items?.FirstOrDefault(d => d.DeviceName == deviceName);
-                    if (device == null) continue;
-
-                    var postItem = dailyPostAvailable?.FirstOrDefault(p => p.LDPlayerDevicesId == device.ID);
-                    if (postItem == null)
-                    {
-                        Logger.LogInfo($"❌ Không có bài viết cho thiết bị {deviceName}, bỏ qua.");
-                        continue;
-                    }
-
-                    listFriendRequestProfile.TryGetValue(device.ID.ToString(), out var friendRequests);
-
-                    taskList.Add(Task.Run(async () =>
-                    {
-                        try
-                        {
-                            // Gán fanpage riêng cho từng thiết bị bên trong Task
-                            GameFanpage fanpage;
-                            if (isPostGroupProcess)
-                            {
-                                fanpage = listGameFanpage?.FirstOrDefault(f => f.Id == postItem.GameFanpageId);
-                            }
-                            else
-                            {
-                                fanpage = listGameFanpage != null && listGameFanpage.Count > 0
-                                    ? listGameFanpage[_random.Next(listGameFanpage.Count)]
-                                    : null;
-                            }
-
-                            Logger.LogInfo($"📌 Device {deviceName} dùng fanpage MyGroup: {fanpage?.MyGroup ?? "null"}");
-
-                            await ProcessDeviceAsync(
-                                deviceName,
-                                device,
-                                postItem,
-                                fanpage,
-                                friendRequests ?? new List<FriendRequestProfile>(),
-                                CancellationToken.None
-                            );
-                        }
-                        catch (Exception ex)
-                        {
-                            Logger.LogError($"[MainAutoRunFunction] Lỗi xử lý {deviceName}: {ex.Message}");
-                            Auto_LDPlayer.LDPlayer.Close(LDType.Name, deviceName);
-                        }
-                    }));
-
-                }
-
-                await Task.WhenAll(taskList);
-                Logger.LogInfo("🎯 Đã xử lý xong toàn bộ thiết bị.");
-
-                // Bước 7: Đóng toàn bộ LDPlayer
-                Auto_LDPlayer.LDPlayer.CloseAll();
-
-                // Bước 8: Đợi ngẫu nhiên trước vòng tiếp theo
-                int randomDelay = new Random().Next(10000, 20000); // 10–20s
-                int countdown = randomDelay / 1000;
-                await DeviceHelper.WaitWithCountdown(deviceStatusLabel, countdown);
-                await Task.Delay(randomDelay - countdown * 1000);
-            }
-        }
 
 
         private static FriendRequestProfile GetRandomProfileDetail(List<FriendRequestProfile> listFriendRequest)
@@ -1194,8 +1031,6 @@ namespace ADB_Tool_Automation_Post_FB
         private async Task ProcessDeviceAsync(string deviceName, LdPlayerDevices deviceFounded, DailyPostItem postSelectedByDevice, GameFanpage fanpage, List<FriendRequestProfile> listFriendRequest, CancellationToken cancellationToken)
         {
             int currentStep = 0;
-            string postID = postSelectedByDevice?.Id;
-            int deviceID = deviceFounded.ID;
             string nameOfGroup = fanpage?.MyGroup;
 
             try
@@ -1466,9 +1301,6 @@ namespace ADB_Tool_Automation_Post_FB
                     await HandleFriendRequestProcessAsync(deviceName, listFriendRequest, cancellationToken);
                 }
 
-                // Final: Complete the task after submitting the post
-                await ApiHelper.CompleteTaskAsync(deviceName, deviceID, postID);
-
                 await DelayHelper.DelayAsync(3, 5);
                 if (cancellationToken.IsCancellationRequested) return;
             }
@@ -1514,18 +1346,7 @@ namespace ADB_Tool_Automation_Post_FB
                 await DelayHelper.DelayAsync(6, 9);
                 if (cancellationToken.IsCancellationRequested) return;
 
-                // Check if either of the two buttons exists in the top half of the screen
-                if (DeviceHelper.CheckImgExistsInTopHalf(LDType.Name, deviceName, FACEBOOK_FRIENDS_FOLLOWER_REQUEST_BUTTON) ||
-                    DeviceHelper.CheckImgExistsInTopHalf(LDType.Name, deviceName, FACEBOOK_FRIEND_VIEW_PROFILE_BUTTON))
-                {
-                    // If found, delete the friend request
-                    await ApiHelper.DeleteFriendRequestAsync(deviceName, profileFriendRequestLink?.Uuid);
-                }
-                else if (DeviceHelper.TapImgHalf(LDType.Name, deviceName, FACEBOOK_ADD_FRIENDS_REQUEST_BUTTON))
-                {
-                    // If neither of the above, complete the friend request
-                    await ApiHelper.CompleteFriendRequestAsync(deviceName, profileFriendRequestLink?.Uuid);
-                }
+                DeviceHelper.TapImgHalf(LDType.Name, deviceName, FACEBOOK_ADD_FRIENDS_REQUEST_BUTTON);
 
 
                 await DelayHelper.DelayAsync(6, 9);

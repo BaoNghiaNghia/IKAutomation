@@ -1,0 +1,39 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <OutputType>Exe</OutputType>
+    <TargetFramework>net481</TargetFramework>
+    <PlatformTarget>x64</PlatformTarget>
+    <AssemblyName>IKAutomation.GameDetection.Tests</AssemblyName>
+    <RootNamespace>IKAutomation.GameDetection.Tests</RootNamespace>
+  </PropertyGroup>
+  <ItemGroup>
+    <Compile Include="..\..\ADB\Core\Abstractions\ILdPlayerClient.cs" Link="Production\ILdPlayerClient.cs" />
+    <Compile Include="..\..\ADB\Core\Diagnostics\IDiagnosticLogger.cs" Link="Production\IDiagnosticLogger.cs" />
+    <Compile Include="..\..\ADB\Core\GameDetection\*.cs" Link="Production\GameDetection\%(Filename)%(Extension)" />
+    <Compile Include="..\..\ADB\Core\Vision\*.cs" Link="Production\Vision\%(Filename)%(Extension)" />
+    <Compile Include="..\..\ADB\Infrastructure\Diagnostics\ScreenshotPathPolicy.cs" Link="Production\ScreenshotPathPolicy.cs" />
+    <Compile Include="..\..\ADB\Infrastructure\GameDetection\GameStateDetector.cs" Link="Production\GameStateDetector.cs" />
+    <Compile Include="..\..\ADB\Infrastructure\GameDetection\UnknownScreenshotStore.cs" Link="Production\UnknownScreenshotStore.cs" />
+    <Compile Include="..\..\ADB\Infrastructure\Vision\KAutoImageMatcher.cs" Link="Production\KAutoImageMatcher.cs" />
+    <Compile Include="..\..\ADB\Infrastructure\Vision\TemplateRegistry.cs" Link="Production\TemplateRegistry.cs" />
+  </ItemGroup>
+  <ItemGroup>
+    <Reference Include="System.Drawing" />
+    <Reference Include="KAutoHelper">
+      <HintPath>..\..\ADB\bin\Debug\KAutoHelper.dll</HintPath>
+      <Private>true</Private>
+    </Reference>
+    <Reference Include="Emgu.CV.World">
+      <HintPath>..\..\ADB\bin\Debug\Emgu.CV.World.dll</HintPath>
+      <Private>true</Private>
+    </Reference>
+  </ItemGroup>
+  <ItemGroup>
+    <Content Include="..\..\ADB\bin\Debug\x64\*.dll" Link="x64\%(Filename)%(Extension)">
+      <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
+    </Content>
+    <Content Include="..\..\ADB\Data\InfinityKingdom\1280x720\vi\**\*.png" Link="Data\InfinityKingdom\1280x720\vi\%(RecursiveDir)%(Filename)%(Extension)">
+      <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
+    </Content>
+  </ItemGroup>
+</Project>

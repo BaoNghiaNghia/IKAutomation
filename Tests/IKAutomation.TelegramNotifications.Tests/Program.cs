@@ -1,0 +1,231 @@
+using ADB_Tool_Automation_Post_FB.Core.Diagnostics;
+using ADB_Tool_Automation_Post_FB.Core.Notifications;
+using ADB_Tool_Automation_Post_FB.Infrastructure.Notifications;
+using ADB_Tool_Automation_Post_FB.Core.Workflows;
+using System;
+using System.Collections.Generic;
+using System.Net;
+using System.Net.Http;
+using System.Threading;
+using System.Threading.Tasks;
+
+namespace IKAutomation.TelegramNotifications.Tests
+{
+    internal static class Program
+    {
+        private static readonly CancellationToken Token = new CancellationToken(false);
+        private static int passed;
+        private static int failed;
+
+        private static int Main()
+        {
+            Run("Missing configuration sends no request", MissingConfiguration);
+            Run("Configured notifier posts failure summary", SendsSummary);
+            Run("Long message is bounded", LongMessageBounded);
+            Run("Transport error does not leak token", TransportErrorDoesNotLeakToken);
+            Run("Cancelled token sends no request", Cancellation);
+            Run("Missing configuration reports actionable status", MissingConfigurationStatus);
+            Run("Successful delivery reports sent status", SuccessfulDeliveryStatus);
+            Run("HTTP failure reports status without token", HttpFailureReportsStatus);
+            Run("HTTP 404 identifies invalid token", NotFoundIdentifiesInvalidToken);
+            Run("Configured notifier posts health heartbeat", SendsHeartbeat);
+            Run("Heartbeat highlights unhealthy devices", HeartbeatHighlightsUnhealthyDevices);
+            Console.WriteLine($"Telegram notification tests: {passed} passed, {failed} failed.");
+            return failed == 0 ? 0 : 1;
+        }
+
+        private static void MissingConfiguration()
+        {
+            var handler = new FakeHandler();
+            var notifier = new TelegramFailureNotifier(new HttpClient(handler), null, null,
+                new FakeLogger());
+            AutomationNotificationDeliveryResult result = notifier.NotifyAsync(
+                Notification(), Token).GetAwaiter().GetResult();
+            Equal(0, handler.Requests);
+            Assert(!notifier.IsConfigured, "Notifier unexpectedly configured.");
+            Assert(!result.Attempted && !result.Success, "Missing configuration status was incorrect.");
+        }
+
+        private static void SendsSummary()
+        {
+            var handler = new FakeHandler();
+            var logger = new FakeLogger();
+            var notifier = new TelegramFailureNotifier(new HttpClient(handler), "test-token",
+                "12345", logger);
+            notifier.NotifyAsync(Notification(), Token).GetAwaiter().GetResult();
+            Equal(1, handler.Requests);
+            Assert(handler.Body.Contains("chat_id=12345"), handler.Body);
+            Assert(handler.Body.Contains("IKAutomation+error"), handler.Body);
+            Assert(!string.Join("\n", logger.Messages).Contains("test-token"),
+                "Token leaked to diagnostic log.");
+        }
+
+        private static void LongMessageBounded()
+        {
+            AutomationFailureNotification notification = Notification();
+            notification.Error = new string('x', 5000);
+            string text = TelegramFailureNotifier.Format(notification);
+            Assert(text.Length <= 4096 && text.EndsWith("...[truncated]"),
+                "Telegram length limit was not enforced.");
+        }
+
+        private static void TransportErrorDoesNotLeakToken()
+        {
+            var handler = new FakeHandler { ThrowOnSend = true };
+            var logger = new FakeLogger();
+            var notifier = new TelegramFailureNotifier(new HttpClient(handler),
+                "secret-test-token", "12345", logger);
+            notifier.NotifyAsync(Notification(), Token).GetAwaiter().GetResult();
+            string log = string.Join("\n", logger.Messages);
+            Assert(!log.Contains("secret-test-token") && log.Contains("HttpRequestException"),
+                "Transport log was not safely sanitized: " + log);
+        }
+
+        private static void Cancellation()
+        {
+            var handler = new FakeHandler();
+            var notifier = new TelegramFailureNotifier(new HttpClient(handler), "test-token",
+                "12345", new FakeLogger());
+            using (var source = new CancellationTokenSource())
+            {
+                source.Cancel();
+                try { notifier.NotifyAsync(Notification(), source.Token).GetAwaiter().GetResult(); }
+                catch (OperationCanceledException) { Equal(0, handler.Requests); return; }
+            }
+            throw new Exception("Expected cancellation.");
+        }
+
+        private static void MissingConfigurationStatus()
+        {
+            var notifier = new TelegramFailureNotifier(new HttpClient(new FakeHandler()),
+                null, null, new FakeLogger());
+            AutomationNotificationDeliveryResult result = notifier.NotifyAsync(
+                Notification(), Token).GetAwaiter().GetResult();
+            Assert(result.Message.Contains(TelegramFailureNotifier.BotTokenEnvironmentVariable)
+                && result.Message.Contains(TelegramFailureNotifier.ChatIdEnvironmentVariable),
+                "Configuration guidance was not actionable.");
+        }
+
+        private static void SuccessfulDeliveryStatus()
+        {
+            var notifier = new TelegramFailureNotifier(new HttpClient(new FakeHandler()),
+                "test-token", "12345", new FakeLogger());
+            AutomationNotificationDeliveryResult result = notifier.NotifyAsync(
+                Notification(), Token).GetAwaiter().GetResult();
+            Assert(result.Attempted && result.Success
+                && result.Message.Contains("sent"), "Success status was not reported.");
+        }
+
+        private static void HttpFailureReportsStatus()
+        {
+            var handler = new FakeHandler { StatusCode = HttpStatusCode.Unauthorized };
+            var notifier = new TelegramFailureNotifier(new HttpClient(handler),
+                "secret-test-token", "12345", new FakeLogger());
+            AutomationNotificationDeliveryResult result = notifier.NotifyAsync(
+                Notification(), Token).GetAwaiter().GetResult();
+            Assert(result.Attempted && !result.Success
+                && result.Message.Contains("HTTP 401")
+                && !result.Message.Contains("secret-test-token"),
+                "HTTP status was not reported safely: " + result.Message);
+        }
+
+        private static void NotFoundIdentifiesInvalidToken()
+        {
+            var handler = new FakeHandler { StatusCode = HttpStatusCode.NotFound };
+            var notifier = new TelegramFailureNotifier(new HttpClient(handler),
+                "secret-test-token", "12345", new FakeLogger());
+            AutomationNotificationDeliveryResult result = notifier.NotifyAsync(
+                Notification(), Token).GetAwaiter().GetResult();
+            Assert(result.Attempted && !result.Success
+                && result.Message.Contains("invalid or revoked")
+                && result.Message.Contains("HTTP 404")
+                && !result.Message.Contains("secret-test-token"),
+                "HTTP 404 guidance was not safe or actionable: " + result.Message);
+        }
+
+        private static void SendsHeartbeat()
+        {
+            var handler = new FakeHandler();
+            var notifier = new TelegramFailureNotifier(new HttpClient(handler),
+                "test-token", "12345", new FakeLogger());
+            ContinuousFarmHeartbeatDeliveryResult result = notifier
+                .NotifyHeartbeatAsync(Health(), Token).GetAwaiter().GetResult();
+            Assert(result.Attempted && result.Success, "Heartbeat was not delivered.");
+            Assert(handler.Body.Contains("IKAutomation+heartbeat")
+                && handler.Body.IndexOf("Devices%3A+1%2F2+healthy",
+                    StringComparison.OrdinalIgnoreCase) >= 0, handler.Body);
+        }
+
+        private static void HeartbeatHighlightsUnhealthyDevices()
+        {
+            string text = TelegramFailureNotifier.FormatHeartbeat(Health());
+            Assert(text.Contains("May 2: Quarantined")
+                && text.Contains("capture failed")
+                && !text.Contains("May 1: Waiting"),
+                "Heartbeat device summary was not focused: " + text);
+        }
+
+        private static ContinuousFarmHealthSnapshot Health()
+        {
+            DateTimeOffset now = DateTimeOffset.UtcNow;
+            return new ContinuousFarmHealthSnapshot
+            {
+                StartedAt = now.AddHours(-7), GeneratedAt = now,
+                TotalDevices = 2, HealthyDevices = 1, WaitingDevices = 1,
+                QuarantinedDevices = 1, DevicesWithFailures = 1,
+                ActiveExecutions = 1, ConcurrencyLimit = 6,
+                Devices = new[]
+                {
+                    new ContinuousFarmDeviceHealth { DeviceName = "May 1",
+                        State = "Waiting" },
+                    new ContinuousFarmDeviceHealth { DeviceName = "May 2",
+                        State = "Quarantined", ConsecutiveFailures = 3,
+                        LastError = "capture failed" }
+                }
+            };
+        }
+
+        private static AutomationFailureNotification Notification() =>
+            new AutomationFailureNotification
+            {
+                DeviceName = "LDPlayer", Outcome = "Failed", Step = "ExecuteSearch",
+                Resource = "Stone", Level = "6", Message = "Search failed",
+                DiagnosticPath = "Diagnostics/failure.png"
+            };
+
+        private static void Run(string name, Action test)
+        {
+            try { test(); passed++; Console.WriteLine("PASS: " + name); }
+            catch (Exception exception) { failed++; Console.Error.WriteLine("FAIL: " + name + " - " + exception); }
+        }
+        private static void Assert(bool value, string message) { if (!value) throw new Exception(message); }
+        private static void Equal<T>(T expected, T actual) { if (!EqualityComparer<T>.Default.Equals(expected, actual)) throw new Exception($"Expected {expected}, actual {actual}."); }
+
+        private sealed class FakeHandler : HttpMessageHandler
+        {
+            public int Requests;
+            public string Body = string.Empty;
+            public bool ThrowOnSend;
+            public HttpStatusCode StatusCode = HttpStatusCode.OK;
+            protected override async Task<HttpResponseMessage> SendAsync(
+                HttpRequestMessage request, CancellationToken cancellationToken)
+            {
+                cancellationToken.ThrowIfCancellationRequested();
+                Requests++;
+                if (ThrowOnSend)
+                    throw new HttpRequestException(
+                        "Request failed for https://api.telegram.org/botsecret-test-token/sendMessage");
+                Body = await request.Content.ReadAsStringAsync();
+                return new HttpResponseMessage(StatusCode);
+            }
+        }
+
+        private sealed class FakeLogger : IDiagnosticLogger
+        {
+            public readonly List<string> Messages = new List<string>();
+            public void Info(string message) => Messages.Add(message);
+            public void Error(string message, Exception exception) =>
+                Messages.Add(message + exception.Message);
+        }
+    }
+}

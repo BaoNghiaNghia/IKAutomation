@@ -12,10 +12,12 @@
     <FileAlignment>512</FileAlignment>
     <ProjectTypeGuids>{60dc8134-eba5-43b8-bcc9-bb4bc16c2548};{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}</ProjectTypeGuids>
     <WarningLevel>4</WarningLevel>
-    <AutoGenerateBindingRedirects>true</AutoGenerateBindingRedirects>
+    <AutoGenerateBindingRedirects>false</AutoGenerateBindingRedirects>
     <Deterministic>true</Deterministic>
     <TargetFrameworkProfile />
     <ApplicationIcon>logo_1.ico</ApplicationIcon>
+    <AppConfig>App.config</AppConfig>
+    <RuntimeIdentifiers>win</RuntimeIdentifiers>
   </PropertyGroup>
   <PropertyGroup Condition=" '$(Configuration)|$(Platform)' == 'Debug|AnyCPU' ">
     <PlatformTarget>AnyCPU</PlatformTarget>
@@ -43,13 +45,13 @@
     <Reference Include="System.Configuration" />
     <Reference Include="System.Data" />
     <Reference Include="System.Drawing" />
+    <Reference Include="System.Net.Http" />
     <Reference Include="System.Runtime.Serialization" />
     <Reference Include="System.Xml" />
     <Reference Include="Microsoft.CSharp" />
     <Reference Include="System.Core" />
     <Reference Include="System.Xml.Linq" />
     <Reference Include="System.Data.DataSetExtensions" />
-    <Reference Include="System.Net.Http" />
     <Reference Include="System.Xaml">
       <RequiredTargetFramework>4.0</RequiredTargetFramework>
     </Reference>
@@ -76,24 +78,132 @@
       <SubType>Code</SubType>
     </Compile>
     <Compile Include="Core\Abstractions\ILdPlayerClient.cs" />
+    <Compile Include="Core\Concurrency\IDeviceOperationLock.cs" />
     <Compile Include="Core\Diagnostics\DeviceDiagnosticOptions.cs" />
     <Compile Include="Core\Diagnostics\DeviceDiagnosticResult.cs" />
     <Compile Include="Core\Diagnostics\IDeviceDiagnosticService.cs" />
     <Compile Include="Core\Diagnostics\IDiagnosticLogger.cs" />
     <Compile Include="Core\Diagnostics\ScreenshotCaptureResult.cs" />
+    <Compile Include="Core\GameDetection\GameDetectionEvidence.cs" />
+    <Compile Include="Core\GameDetection\GameDetectionOptions.cs" />
+    <Compile Include="Core\GameDetection\GameDetectionResult.cs" />
+    <Compile Include="Core\GameDetection\GameState.cs" />
+    <Compile Include="Core\GameDetection\IGameStateDetector.cs" />
+    <Compile Include="Core\GameDetection\IUnknownScreenshotStore.cs" />
+    <Compile Include="Core\Navigation\IWorldMapNavigationService.cs" />
+    <Compile Include="Core\Navigation\NavigationResult.cs" />
+    <Compile Include="Core\Navigation\NavigationTransition.cs" />
+    <Compile Include="Core\Navigation\WorldMapNavigationOptions.cs" />
+    <Compile Include="Core\Notifications\AutomationFailureNotification.cs" />
+    <Compile Include="Core\Notifications\AutomationNotificationDeliveryResult.cs" />
+    <Compile Include="Core\Notifications\IAutomationFailureNotifier.cs" />
+    <Compile Include="Core\ResourcePopup\IResourcePopupDiagnosticStore.cs" />
+    <Compile Include="Core\ResourcePopup\IResourcePopupVerificationService.cs" />
+    <Compile Include="Core\ResourcePopup\ResourcePopupOutcome.cs" />
+    <Compile Include="Core\ResourcePopup\ResourcePopupVerificationOptions.cs" />
+    <Compile Include="Core\ResourcePopup\ResourcePopupVerificationResult.cs" />
+    <Compile Include="Core\ResourceSearch\ConfigurationStepResult.cs" />
+    <Compile Include="Core\ResourceSearch\ConfigurationTemplateEvidence.cs" />
+    <Compile Include="Core\ResourceSearch\IResourceSearchConfigurationService.cs" />
+    <Compile Include="Core\ResourceSearch\IResourceSearchDiagnosticStore.cs" />
+    <Compile Include="Core\ResourceSearch\IResourceSearchExecutionService.cs" />
+    <Compile Include="Core\ResourceSearch\IResourceLevelFallbackService.cs" />
+    <Compile Include="Core\ResourceSearch\IResourceLevelFallbackDiagnosticStore.cs" />
+    <Compile Include="Core\ResourceSearch\ResourceLevelAttemptResult.cs" />
+    <Compile Include="Core\ResourceSearch\ResourceLevelFallbackOptions.cs" />
+    <Compile Include="Core\ResourceSearch\ResourceLevelFallbackOutcome.cs" />
+    <Compile Include="Core\ResourceSearch\ResourceLevelFallbackPolicy.cs" />
+    <Compile Include="Core\ResourceSearch\ResourceLevelFallbackResult.cs" />
+    <Compile Include="Core\ResourceSearch\ToastClearResult.cs" />
+    <Compile Include="Core\ResourceSearch\ResourceSearchConfigurationOptions.cs" />
+    <Compile Include="Core\ResourceSearch\ResourceSearchConfigurationRequest.cs" />
+    <Compile Include="Core\ResourceSearch\ResourceSearchConfigurationResult.cs" />
+    <Compile Include="Core\ResourceSearch\ResourceSearchExecutionOptions.cs" />
+    <Compile Include="Core\ResourceSearch\ResourceSearchExecutionRequest.cs" />
+    <Compile Include="Core\ResourceSearch\ResourceSearchExecutionResult.cs" />
+    <Compile Include="Core\ResourceSearch\ResourceSearchObservation.cs" />
+    <Compile Include="Core\ResourceSearch\ResourceSearchOutcome.cs" />
+    <Compile Include="Core\ResourceSearch\ResourceType.cs" />
+    <Compile Include="Core\ResourceSearch\ResourceTemplateMap.cs" />
+    <Compile Include="Core\ResourceSearch\ResourceTemplateProfile.cs" />
+    <Compile Include="Core\ResourceSearch\IResourceTemplateProfileProvider.cs" />
+    <Compile Include="Core\ResourcePopup\IResourceAwarePopupVerificationService.cs" />
+    <Compile Include="Core\StorageLimit\IStorageLimitDialogService.cs" />
+    <Compile Include="Core\StorageLimit\StorageLimitDialogOptions.cs" />
+    <Compile Include="Core\StorageLimit\StorageLimitDialogOutcome.cs" />
+    <Compile Include="Core\StorageLimit\StorageLimitDialogResult.cs" />
+    <Compile Include="Core\StorageLimit\StorageLimitPolicy.cs" />
+    <Compile Include="Core\MarchDispatch\DispatchMarchOutcome.cs" />
+    <Compile Include="Core\MarchDispatch\DispatchMarchRequest.cs" />
+    <Compile Include="Core\MarchDispatch\DispatchMarchResult.cs" />
+    <Compile Include="Core\MarchDispatch\DispatchSelectedTeamOptions.cs" />
+    <Compile Include="Core\MarchDispatch\ITeamMarchTimerDetector.cs" />
+    <Compile Include="Core\MarchDispatch\MarchVerificationMode.cs" />
+    <Compile Include="Core\MarchDispatch\TeamMarchTimerDetectionResult.cs" />
+    <Compile Include="Core\MarchDispatch\TeamMarchTimerProgressionResult.cs" />
+    <Compile Include="Core\MarchDispatch\IDispatchMarchDiagnosticStore.cs" />
+    <Compile Include="Core\MarchDispatch\IDispatchSelectedTeamService.cs" />
+    <Compile Include="Core\MarchDispatch\MarchDispatchObservation.cs" />
+    <Compile Include="Core\TeamSelection\IOpenTeamSelectionDiagnosticStore.cs" />
+    <Compile Include="Core\TeamSelection\IOpenTeamSelectionService.cs" />
+    <Compile Include="Core\TeamSelection\IResourceAwareOpenTeamSelectionService.cs" />
+    <Compile Include="Core\TeamSelection\ISelectFarmTeamDiagnosticStore.cs" />
+    <Compile Include="Core\TeamSelection\ISelectFarmTeamService.cs" />
+    <Compile Include="Core\TeamSelection\IWorldMapTeamAvailabilityService.cs" />
+    <Compile Include="Core\TeamSelection\FarmTeamSelectionOptions.cs" />
+    <Compile Include="Core\TeamSelection\OpenTeamSelectionOptions.cs" />
+    <Compile Include="Core\TeamSelection\OpenTeamSelectionOutcome.cs" />
+    <Compile Include="Core\TeamSelection\OpenTeamSelectionResult.cs" />
+    <Compile Include="Core\TeamSelection\SelectFarmTeamOutcome.cs" />
+    <Compile Include="Core\TeamSelection\SelectFarmTeamResult.cs" />
+    <Compile Include="Core\TeamSelection\TeamNumber.cs" />
+    <Compile Include="Core\TeamSelection\TeamSelectionAttempt.cs" />
+    <Compile Include="Core\TeamSelection\TeamSelectionRequest.cs" />
+    <Compile Include="Core\TeamSelection\TeamSelectionObservation.cs" />
+    <Compile Include="Core\TeamSelection\WorldMapTeamAvailabilityOptions.cs" />
+    <Compile Include="Core\TeamSelection\WorldMapTeamAvailabilityResult.cs" />
     <Compile Include="Core\Vision\IImageMatcher.cs" />
+    <Compile Include="Core\Vision\IFrameStabilityDetector.cs" />
+    <Compile Include="Core\Vision\FrameComparisonResult.cs" />
     <Compile Include="Core\Vision\ImageMatchResult.cs" />
     <Compile Include="Core\Vision\ImageRegion.cs" />
     <Compile Include="Core\Vision\ITemplateRegistry.cs" />
     <Compile Include="Core\Vision\TemplateDefinition.cs" />
     <Compile Include="Core\Vision\TemplateId.cs" />
+    <Compile Include="Core\Workflows\IOneShotFarmDiagnosticService.cs" />
+    <Compile Include="Core\Workflows\IContinuousFarmSupervisor.cs" />
+    <Compile Include="Core\Workflows\IContinuousFarmHeartbeatNotifier.cs" />
+    <Compile Include="Core\Workflows\IAdaptiveConcurrencyGate.cs" />
+    <Compile Include="Core\Workflows\IContinuousFarmCheckpointStore.cs" />
+    <Compile Include="Core\Workflows\IDeviceRecoveryService.cs" />
+    <Compile Include="Core\Workflows\IOperationalMaintenanceService.cs" />
+    <Compile Include="Core\Workflows\FarmUiPreferences.cs" />
+    <Compile Include="Core\Workflows\IOneShotFarmWorkflow.cs" />
+    <Compile Include="Core\Workflows\IMultiDeviceOneShotFarmRunner.cs" />
+    <Compile Include="Core\Workflows\IRandomProvider.cs" />
+    <Compile Include="Core\Workflows\MissingRuntimeTemplate.cs" />
+    <Compile Include="Core\Workflows\OneShotFarmOutcome.cs" />
+    <Compile Include="Core\Workflows\OneShotFarmProgress.cs" />
+    <Compile Include="Core\Workflows\OneShotFarmProgressStage.cs" />
+    <Compile Include="Core\Workflows\OneShotFarmRequest.cs" />
+    <Compile Include="Core\Workflows\OneShotFarmResourceSelection.cs" />
+    <Compile Include="Core\Workflows\OneShotFarmResult.cs" />
+    <Compile Include="Core\Workflows\OneShotFarmStep.cs" />
+    <Compile Include="Core\Workflows\OneShotFarmStepResult.cs" />
+    <Compile Include="Core\Workflows\OneShotFarmWorkflowOptions.cs" />
+    <Compile Include="Core\Workflows\ReadyTeamGateOptions.cs" />
+    <Compile Include="Core\Workflows\ReadyTeamGateRunOptions.cs" />
+    <Compile Include="Core\Workflows\ResourceFarmFallbackResult.cs" />
+    <Compile Include="Core\Workflows\ResourceFarmFallbackOptions.cs" />
+    <Compile Include="Core\Workflows\ResourceFarmFallbackOutcome.cs" />
+    <Compile Include="Core\Workflows\ResourceFarmFallbackPolicy.cs" />
+    <Compile Include="Core\Workflows\ResourceFarmAttemptResult.cs" />
+    <Compile Include="Core\Workflows\IResourceFarmFallbackService.cs" />
     <Compile Include="Exceptions\TaskExepction.cs" />
-    <Compile Include="Helpers\ApiHelper.cs" />
     <Compile Include="Helpers\BitmapHelper.cs" />
     <Compile Include="Helpers\Delay.cs" />
     <Compile Include="Helpers\DeviceHelper.cs" />
     <Compile Include="Helpers\FacebookLiteHelper.cs" />
-    <Compile Include="Helpers\FileHelper.cs" />
     <Compile Include="Helpers\Logger.cs" />
     <Compile Include="Helpers\RealisticCommentGenerator.cs" />
     <Compile Include="Helpers\UIInteractionHelper.cs" />
@@ -107,9 +217,74 @@
     <Compile Include="Infrastructure\Diagnostics\ScreenshotMetadata.cs" />
     <Compile Include="Infrastructure\Diagnostics\ScreenshotMetadataJson.cs" />
     <Compile Include="Infrastructure\Diagnostics\ScreenshotPathPolicy.cs" />
+    <Compile Include="Infrastructure\Concurrency\DeviceOperationLock.cs" />
+    <Compile Include="Infrastructure\GameDetection\AppConfigGameDetectionOptionsProvider.cs" />
+    <Compile Include="Infrastructure\GameDetection\GameStateDetector.cs" />
+    <Compile Include="Infrastructure\GameDetection\GameStateDetectorFactory.cs" />
+    <Compile Include="Infrastructure\GameDetection\UnknownScreenshotStore.cs" />
+    <Compile Include="Infrastructure\Navigation\AppConfigWorldMapNavigationOptionsProvider.cs" />
+    <Compile Include="Infrastructure\Navigation\WorldMapNavigationService.cs" />
+    <Compile Include="Infrastructure\Navigation\WorldMapNavigationServiceFactory.cs" />
+    <Compile Include="Infrastructure\Notifications\TelegramFailureNotifier.cs" />
+    <Compile Include="Infrastructure\Notifications\TelegramFailureNotifierFactory.cs" />
+    <Compile Include="Infrastructure\ResourcePopup\AppConfigResourcePopupVerificationOptionsProvider.cs" />
+    <Compile Include="Infrastructure\ResourcePopup\ResourcePopupDiagnosticStore.cs" />
+    <Compile Include="Infrastructure\ResourcePopup\ResourcePopupTitleTemplateCropper.cs" />
+    <Compile Include="Infrastructure\ResourcePopup\ResourcePopupVerificationService.cs" />
+    <Compile Include="Infrastructure\ResourcePopup\ResourcePopupVerificationServiceFactory.cs" />
+    <Compile Include="Infrastructure\ResourceSearch\AppConfigResourceSearchConfigurationOptionsProvider.cs" />
+    <Compile Include="Infrastructure\ResourceSearch\AppConfigResourceSearchExecutionOptionsProvider.cs" />
+    <Compile Include="Infrastructure\ResourceSearch\AppConfigResourceLevelFallbackOptionsProvider.cs" />
+    <Compile Include="Infrastructure\ResourceSearch\ResourceLevelFallbackDiagnosticStore.cs" />
+    <Compile Include="Infrastructure\ResourceSearch\ResourceLevelFallbackService.cs" />
+    <Compile Include="Infrastructure\ResourceSearch\ResourceLevelFallbackServiceFactory.cs" />
+    <Compile Include="Infrastructure\ResourceSearch\ResourceSearchDiagnosticStore.cs" />
+    <Compile Include="Infrastructure\ResourceSearch\ResourceSearchConfigurationService.cs" />
+    <Compile Include="Infrastructure\ResourceSearch\ResourceSearchConfigurationServiceFactory.cs" />
+    <Compile Include="Infrastructure\ResourceSearch\ResourceSearchExecutionService.cs" />
+    <Compile Include="Infrastructure\ResourceSearch\ResourceSearchExecutionServiceFactory.cs" />
+    <Compile Include="Infrastructure\ResourceSearch\ResourceTemplateProfileProvider.cs" />
+    <Compile Include="Infrastructure\MarchDispatch\AppConfigDispatchSelectedTeamOptionsProvider.cs" />
+    <Compile Include="Infrastructure\MarchDispatch\DispatchMarchDiagnosticStore.cs" />
+    <Compile Include="Infrastructure\MarchDispatch\DispatchSelectedTeamService.cs" />
+    <Compile Include="Infrastructure\MarchDispatch\DispatchSelectedTeamServiceFactory.cs" />
+    <Compile Include="Infrastructure\MarchDispatch\TeamMarchTimerDetector.cs" />
+    <Compile Include="Infrastructure\StorageLimit\AppConfigStorageLimitDialogOptionsProvider.cs" />
+    <Compile Include="Infrastructure\StorageLimit\StorageLimitDialogService.cs" />
+    <Compile Include="Infrastructure\TeamSelection\AppConfigOpenTeamSelectionOptionsProvider.cs" />
+    <Compile Include="Infrastructure\TeamSelection\AppConfigFarmTeamSelectionOptionsProvider.cs" />
+    <Compile Include="Infrastructure\TeamSelection\AppConfigWorldMapTeamAvailabilityOptionsProvider.cs" />
+    <Compile Include="Infrastructure\TeamSelection\OpenTeamSelectionDiagnosticStore.cs" />
+    <Compile Include="Infrastructure\TeamSelection\OpenTeamSelectionService.cs" />
+    <Compile Include="Infrastructure\TeamSelection\OpenTeamSelectionServiceFactory.cs" />
+    <Compile Include="Infrastructure\TeamSelection\SelectFarmTeamDiagnosticStore.cs" />
+    <Compile Include="Infrastructure\TeamSelection\SelectFarmTeamService.cs" />
+    <Compile Include="Infrastructure\TeamSelection\SelectFarmTeamServiceFactory.cs" />
+    <Compile Include="Infrastructure\TeamSelection\WorldMapTeamAvailabilityService.cs" />
+    <Compile Include="Infrastructure\Vision\FrameStabilityDetector.cs" />
     <Compile Include="Infrastructure\Vision\KAutoImageMatcher.cs" />
     <Compile Include="Infrastructure\Vision\TemplateMatchDiagnosticService.cs" />
     <Compile Include="Infrastructure\Vision\TemplateRegistry.cs" />
+    <Compile Include="Infrastructure\Workflows\AppConfigOneShotFarmWorkflowOptionsProvider.cs" />
+    <Compile Include="Infrastructure\Workflows\ContinuousFarmSupervisor.cs" />
+    <Compile Include="Infrastructure\Workflows\AppConfigContinuousFarmSupervisorOptionsProvider.cs" />
+    <Compile Include="Infrastructure\Workflows\AdaptiveConcurrencyGate.cs" />
+    <Compile Include="Infrastructure\Workflows\AppConfigAdaptiveConcurrencyOptionsProvider.cs" />
+    <Compile Include="Infrastructure\Workflows\LocalAppDataContinuousFarmCheckpointStore.cs" />
+    <Compile Include="Infrastructure\Workflows\AppConfigOperationalMaintenanceOptionsProvider.cs" />
+    <Compile Include="Infrastructure\Workflows\FileSystemOperationalMaintenanceService.cs" />
+    <Compile Include="Infrastructure\Workflows\LdPlayerDeviceRecoveryService.cs" />
+    <Compile Include="Infrastructure\Workflows\LdPlayerDeviceRecoveryServiceFactory.cs" />
+    <Compile Include="Infrastructure\Workflows\AppConfigReadyTeamGateOptionsProvider.cs" />
+    <Compile Include="Infrastructure\Workflows\LocalAppDataFarmUiPreferencesStore.cs" />
+    <Compile Include="Infrastructure\Workflows\MultiDeviceOneShotFarmRunner.cs" />
+    <Compile Include="Infrastructure\Workflows\AppConfigResourceFarmFallbackOptionsProvider.cs" />
+    <Compile Include="Infrastructure\Workflows\OneShotFarmDiagnosticService.cs" />
+    <Compile Include="Infrastructure\Workflows\OneShotFarmWorkflow.cs" />
+    <Compile Include="Infrastructure\Workflows\OneShotFarmWorkflowFactory.cs" />
+    <Compile Include="Infrastructure\Workflows\ReadyTeamOneShotFarmWorkflow.cs" />
+    <Compile Include="Infrastructure\Workflows\ResourceFarmFallbackService.cs" />
+    <Compile Include="Infrastructure\Workflows\SystemRandomProvider.cs" />
     <Compile Include="MainWindow.xaml.cs">
       <DependentUpon>MainWindow.xaml</DependentUpon>
       <SubType>Code</SubType>
@@ -121,10 +296,7 @@
     </Compile>
   </ItemGroup>
   <ItemGroup>
-    <Compile Include="Models\ApiResponseLDPlayerDevices.cs" />
-    <Compile Include="Models\DailyPostItem.cs" />
-    <Compile Include="Models\FriendRequest.cs" />
-    <Compile Include="Models\GameFanpage.cs" />
+    <Compile Include="Models\LegacyFacebookModels.cs" />
     <Compile Include="Properties\AssemblyInfo.cs">
       <SubType>Code</SubType>
     </Compile>
@@ -164,12 +336,25 @@
     <PackageReference Include="KAutoHelper_Kteam">
       <Version>1.0.1.2</Version>
     </PackageReference>
-    <PackageReference Include="System.Text.Json">
-      <Version>9.0.4</Version>
-    </PackageReference>
     <PackageReference Include="Tesseract">
       <Version>4.1.1</Version>
     </PackageReference>
+  </ItemGroup>
+  <ItemGroup>
+    <!-- Keep stable compile-time references for both Visual Studio and dotnet MSBuild.
+         PackageReference remains responsible for restore and native/build assets. -->
+    <Reference Include="Auto_LDPlayer">
+      <HintPath>$(NuGetPackageRoot)auto_ldplayer\1.1.0\lib\net471\Auto_LDPlayer.dll</HintPath>
+      <Private>True</Private>
+    </Reference>
+    <Reference Include="KAutoHelper">
+      <HintPath>$(NuGetPackageRoot)kautohelper_kteam\1.0.1.2\lib\net471\KAutoHelper.dll</HintPath>
+      <Private>True</Private>
+    </Reference>
+    <Reference Include="Tesseract">
+      <HintPath>$(NuGetPackageRoot)tesseract\4.1.1\lib\net45\Tesseract.dll</HintPath>
+      <Private>True</Private>
+    </Reference>
   </ItemGroup>
   <ItemGroup>
     <Resource Include="logo_1.ico" />
@@ -177,6 +362,7 @@
   <ItemGroup>
     <Content Include="Data\InfinityKingdom\**\*.png">
       <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
+      <CopyToPublishDirectory>PreserveNewest</CopyToPublishDirectory>
     </Content>
     <None Include="Data\InfinityKingdom\1280x720\vi\Errors\.gitkeep" />
     <None Include="Data\InfinityKingdom\1280x720\vi\Global\.gitkeep" />
@@ -186,4 +372,7 @@
   </ItemGroup>
   <ItemGroup />
   <Import Project="$(MSBuildToolsPath)\Microsoft.CSharp.targets" />
+  <!-- The .NET CLI does not automatically import WPF targets for non-SDK-style projects. -->
+  <Import Project="$(MSBuildSDKsPath)\Microsoft.NET.Sdk.WindowsDesktop\targets\Microsoft.WinFX.targets"
+          Condition="'$(MSBuildRuntimeType)' == 'Core'" />
 </Project>

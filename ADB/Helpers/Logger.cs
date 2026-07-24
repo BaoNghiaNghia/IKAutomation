@@ -7,13 +7,12 @@ namespace ADB_Tool_Automation_Post_FB.Helpers
 {
     public static class Logger
     {
-        // Log file path
         public static readonly string LogFilePath = "log.txt";
-
-        // Lock for thread safety
         private static readonly object LockObject = new object();
-
-        // Inline initialization for logWriter (after clearing file)
+        private static readonly string ArchiveDirectory = "Logs";
+        private static long rotationBytes = 20971520L;
+        private static int retentionDays = 30;
+        private static DateTime openedDate = DateTime.Today;
         private static StreamWriter logWriter = InitializeLogWriter();
 
         // Inline initialization method
@@ -21,10 +20,7 @@ namespace ADB_Tool_Automation_Post_FB.Helpers
         {
             try
             {
-                // Xóa toàn bộ log khi khởi động
-                File.WriteAllText(LogFilePath, string.Empty);
-
-                // Tạo StreamWriter mới
+                CleanupArchives();
                 return new StreamWriter(LogFilePath, true, Encoding.UTF8)
                 {
                     AutoFlush = true
@@ -34,6 +30,21 @@ namespace ADB_Tool_Automation_Post_FB.Helpers
             {
                 Console.WriteLine($"[Logger] Error initializing log writer: {ex.Message}");
                 return null;
+            }
+        }
+
+        public static void Configure(long maximumLogBytes, int archiveRetentionDays)
+        {
+            if (maximumLogBytes < 1)
+                throw new ArgumentOutOfRangeException(nameof(maximumLogBytes));
+            if (archiveRetentionDays < 1)
+                throw new ArgumentOutOfRangeException(nameof(archiveRetentionDays));
+            lock (LockObject)
+            {
+                rotationBytes = maximumLogBytes;
+                retentionDays = archiveRetentionDays;
+                RotateIfRequired();
+                CleanupArchives();
             }
         }
 
@@ -64,6 +75,7 @@ namespace ADB_Tool_Automation_Post_FB.Helpers
             {
                 lock (LockObject)
                 {
+                    RotateIfRequired();
                     if (logWriter == null || logWriter.BaseStream == null || !logWriter.BaseStream.CanWrite)
                     {
                         logWriter?.Dispose();
@@ -82,14 +94,50 @@ namespace ADB_Tool_Automation_Post_FB.Helpers
             }
         }
 
+        private static void RotateIfRequired()
+        {
+            bool dayChanged = openedDate != DateTime.Today;
+            bool tooLarge = File.Exists(LogFilePath)
+                && new FileInfo(LogFilePath).Length >= rotationBytes;
+            if (!dayChanged && !tooLarge) return;
+
+            logWriter?.Dispose();
+            logWriter = null;
+            if (File.Exists(LogFilePath) && new FileInfo(LogFilePath).Length > 0)
+            {
+                Directory.CreateDirectory(ArchiveDirectory);
+                string archive = Path.Combine(ArchiveDirectory,
+                    $"log-{DateTime.Now:yyyyMMdd-HHmmss-fff}.txt");
+                File.Move(LogFilePath, archive);
+            }
+            openedDate = DateTime.Today;
+            CleanupArchives();
+        }
+
+        private static void CleanupArchives()
+        {
+            if (!Directory.Exists(ArchiveDirectory)) return;
+            DateTime cutoff = DateTime.Now.AddDays(-retentionDays);
+            foreach (string path in Directory.EnumerateFiles(ArchiveDirectory, "log-*.txt"))
+            {
+                try
+                {
+                    if (File.GetLastWriteTime(path) < cutoff) File.Delete(path);
+                }
+                catch (IOException) { }
+                catch (UnauthorizedAccessException) { }
+            }
+        }
+
         public static void ClearLog()
         {
             try
             {
                 lock (LockObject)
                 {
-                    logWriter?.Close(); // close first
+                    logWriter?.Close();
                     File.WriteAllText(LogFilePath, string.Empty);
+                    openedDate = DateTime.Today;
                     logWriter = new StreamWriter(LogFilePath, true, Encoding.UTF8)
                     {
                         AutoFlush = true

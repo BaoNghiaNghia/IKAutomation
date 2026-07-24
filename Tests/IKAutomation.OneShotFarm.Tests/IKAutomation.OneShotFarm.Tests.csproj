@@ -1,0 +1,29 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup><OutputType>Exe</OutputType><TargetFramework>net481</TargetFramework><AssemblyName>IKAutomation.OneShotFarm.Tests</AssemblyName></PropertyGroup>
+  <ItemGroup>
+    <Compile Include="..\..\ADB\Core\Abstractions\ILdPlayerClient.cs" Link="Production\ILdPlayerClient.cs" />
+    <Compile Include="..\..\ADB\Core\Concurrency\IDeviceOperationLock.cs" Link="Production\IDeviceOperationLock.cs" />
+    <Compile Include="..\..\ADB\Core\Diagnostics\IDiagnosticLogger.cs" Link="Production\IDiagnosticLogger.cs" />
+    <Compile Include="..\..\ADB\Core\GameDetection\*.cs" Link="Production\GameDetection\%(Filename)%(Extension)" />
+    <Compile Include="..\..\ADB\Core\MarchDispatch\*.cs" Link="Production\MarchDispatch\%(Filename)%(Extension)" />
+    <Compile Include="..\..\ADB\Core\Navigation\*.cs" Link="Production\Navigation\%(Filename)%(Extension)" />
+    <Compile Include="..\..\ADB\Core\ResourcePopup\*.cs" Link="Production\ResourcePopup\%(Filename)%(Extension)" />
+    <Compile Include="..\..\ADB\Core\ResourceSearch\*.cs" Link="Production\ResourceSearch\%(Filename)%(Extension)" />
+    <Compile Include="..\..\ADB\Core\StorageLimit\*.cs" Link="Production\StorageLimit\%(Filename)%(Extension)" />
+    <Compile Include="..\..\ADB\Core\TeamSelection\*.cs" Link="Production\TeamSelection\%(Filename)%(Extension)" />
+    <Compile Include="..\..\ADB\Core\Vision\*.cs" Link="Production\Vision\%(Filename)%(Extension)" />
+    <Compile Include="..\..\ADB\Core\Workflows\*.cs" Link="Production\Workflows\%(Filename)%(Extension)" />
+    <Compile Include="..\..\ADB\Infrastructure\Concurrency\DeviceOperationLock.cs" Link="Production\DeviceOperationLock.cs" />
+    <Compile Include="..\..\ADB\Infrastructure\Workflows\OneShotFarmWorkflow.cs" Link="Production\OneShotFarmWorkflow.cs" />
+    <Compile Include="..\..\ADB\Infrastructure\Workflows\ResourceFarmFallbackService.cs" Link="Production\ResourceFarmFallbackService.cs" />
+    <Compile Include="..\..\ADB\Infrastructure\Workflows\ReadyTeamOneShotFarmWorkflow.cs" Link="Production\ReadyTeamOneShotFarmWorkflow.cs" />
+    <Compile Include="..\..\ADB\Infrastructure\Workflows\LocalAppDataFarmUiPreferencesStore.cs" Link="Production\LocalAppDataFarmUiPreferencesStore.cs" />
+    <Compile Include="..\..\ADB\Infrastructure\Workflows\MultiDeviceOneShotFarmRunner.cs" Link="Production\MultiDeviceOneShotFarmRunner.cs" />
+    <Compile Include="..\..\ADB\Infrastructure\Workflows\AdaptiveConcurrencyGate.cs" Link="Production\AdaptiveConcurrencyGate.cs" />
+    <Compile Include="..\..\ADB\Infrastructure\Workflows\ContinuousFarmSupervisor.cs" Link="Production\ContinuousFarmSupervisor.cs" />
+    <Compile Include="..\..\ADB\Infrastructure\Workflows\LocalAppDataContinuousFarmCheckpointStore.cs" Link="Production\LocalAppDataContinuousFarmCheckpointStore.cs" />
+    <Compile Include="..\..\ADB\Infrastructure\Workflows\FileSystemOperationalMaintenanceService.cs" Link="Production\FileSystemOperationalMaintenanceService.cs" />
+    <Compile Include="..\..\ADB\Infrastructure\Workflows\LdPlayerDeviceRecoveryService.cs" Link="Production\LdPlayerDeviceRecoveryService.cs" />
+    <Compile Include="..\..\ADB\Infrastructure\TeamSelection\WorldMapTeamAvailabilityService.cs" Link="Production\WorldMapTeamAvailabilityService.cs" />
+  </ItemGroup>
+</Project>

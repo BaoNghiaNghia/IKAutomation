@@ -1,221 +1,57 @@
-﻿<Window x:Class="ADB_Tool_Automation_Post_FB.MainWindow"
+<Window x:Class="ADB_Tool_Automation_Post_FB.MainWindow"
         xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
         xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
-        Title="Tool_Automation"
-        Width="500" Height="330"
+        Title="IKAutomation"
+        Width="500" Height="250"
+        MinWidth="440" MinHeight="220"
         WindowStartupLocation="Manual"
         Icon="logo_1.ico">
-    <Grid Margin="20">
-        <!-- Define rows -->
+    <Grid Margin="24">
         <Grid.RowDefinitions>
             <RowDefinition Height="Auto"/>
-            <!-- Row 0: Device Status -->
             <RowDefinition Height="Auto"/>
-            <!-- Row 1: Count Devices -->
-            <RowDefinition Height="Auto"/>
-            <!-- Row 2: Environment + PC Runner -->
-            <RowDefinition Height="Auto"/>
-            <!-- Row 3: Spacer -->
             <RowDefinition Height="*"/>
-            <!-- Row 4: Buttons -->
+            <RowDefinition Height="Auto"/>
         </Grid.RowDefinitions>
 
-        <!-- Count Devices Label in Row 1 -->
-        <Label x:Name="countDevices"
-               Grid.Row="0"
-               Content="..."
-               FontSize="18"
-               FontWeight="Bold"
-               VerticalAlignment="Top"
-               Margin="0,0,0,0"/>
+        <TextBlock Grid.Row="0"
+                   Text="IKAutomation"
+                   FontSize="24"
+                   FontWeight="Bold"/>
 
-        <Label x:Name="statusDevices"
-               Grid.Row="1"
-               Content="..."
-               FontSize="13"
-               VerticalAlignment="Top"
-               Margin="0,0,0,20"/>
+        <TextBlock Grid.Row="1"
+                   Margin="0,8,0,0"
+                   Text="Legacy server workflows have been removed. Use Device Diagnostic to verify LDPlayer, capture screenshots, detect game state, and test navigation."
+                   TextWrapping="Wrap"
+                   Foreground="#FF616161"/>
 
-        <!-- Device Status Label in Row 0 -->
-        <Label x:Name="deviceStatusLabel"
-               Grid.Row="2"
-               Content="Đang chờ..."
-               FontSize="15"
-               VerticalAlignment="Center" 
-               Foreground="#FF7F7F7F"/>
-
-        <!-- Environment and PC Runner Selection in Row 2 -->
-        <StackPanel Orientation="Horizontal"
-                    Grid.Row="3"
-                    Margin="0,10,0,0"
-                    VerticalAlignment="Center">
-
-            <!-- PC Runner Selection -->
-            <StackPanel Orientation="Vertical" Margin="0,0,15,0">
-                <Label x:Name="pcRunnerLabel"
-                       Content="Máy tính:"
-                       FontSize="13"
-                       VerticalAlignment="Center"
-                       Margin="0,0,0,0"/>
-                <ComboBox x:Name="pcRunnerComboBox"
-                          Width="100" Height="25"
-                          SelectedIndex="0"
-                          SelectionChanged="PcRunnerComboBox_SelectionChanged">
-                    <ComboBoxItem Content="Máy ngoài 1"/>
-                    <ComboBoxItem Content="Máy ngoài 2"/>
-                    <ComboBoxItem Content="Máy trong 1"/>
-                </ComboBox>
-            </StackPanel>
-            <!-- PC Runner Selection -->
-            <StackPanel Orientation="Vertical">
-                <Label x:Name="taskTypeLabel"
-                        Content="Nhiệm vụ:"
-                        FontSize="13"
-                        VerticalAlignment="Center"
-                        Margin="0,0,0,0"/>
-                <ComboBox x:Name="taskTypeComboBox"
-                        Width="100" Height="25"
-                        SelectedIndex="0"
-                        SelectionChanged="TaskTypeComboBox_SelectionChanged">
-                    <ComboBoxItem Content="Tương tác"/>
-                    <ComboBoxItem Content="Tương tác + Đăng bài"/>
-                </ComboBox>
-            </StackPanel>
-        </StackPanel>
-
-        <!-- Buttons in Row 4 -->
-        <Grid Grid.Row="4" Margin="0,20,0,0"  VerticalAlignment="Bottom">
+        <Grid Grid.Row="3" Margin="0,24,0,0">
             <Grid.ColumnDefinitions>
                 <ColumnDefinition Width="*"/>
                 <ColumnDefinition Width="*"/>
-                <ColumnDefinition Width="*"/>
-                <ColumnDefinition Width="*"/>
-                <!-- New column for Show Log -->
             </Grid.ColumnDefinitions>
 
-            <!-- Start Button -->
-            <Button x:Name="Button_Start" 
-                    Grid.Column="0"
-                    Content="Bắt đầu"
-                    Click="Button_Click_Start"
-                    Height="50"
-                    Margin="0,0,0,0"
-                    FontSize="16"
-                    FontWeight="Bold"
-                    Background="#4CAF50"
-                    BorderBrush="#4CAF50"
-                    BorderThickness="1"
-                    HorizontalAlignment="Stretch">
-                <Button.Template>
-                    <ControlTemplate TargetType="Button">
-                        <Border x:Name="Border"
-                                Background="{TemplateBinding Background}"
-                                BorderBrush="{TemplateBinding BorderBrush}"
-                                BorderThickness="{TemplateBinding BorderThickness}"
-                                CornerRadius="10">
-                            <ContentPresenter HorizontalAlignment="Center" VerticalAlignment="Center"/>
-                        </Border>
-                        <ControlTemplate.Triggers>
-                            <Trigger Property="IsMouseOver" Value="True">
-                                <Setter TargetName="Border" Property="Background" Value="#66BB6A"/>
-                            </Trigger>
-                            <Trigger Property="IsPressed" Value="True">
-                                <Setter TargetName="Border" Property="Background" Value="#388E3C"/>
-                            </Trigger>
-                            <Trigger Property="IsEnabled" Value="False">
-                                <Setter Property="Background" Value="#B0B0B0"/>
-                                <Setter Property="BorderBrush" Value="#B0B0B0"/>
-                                <Setter Property="Foreground" Value="#707070"/>
-                            </Trigger>
-                        </ControlTemplate.Triggers>
-                    </ControlTemplate>
-                </Button.Template>
-            </Button>
-
-            <!-- Stop Button -->
-            <Button x:Name="Button_Stop" 
-                    Grid.Column="1"
-                    Content="Kết thúc"
-                    Click="Button_Click_Stop"
-                    Height="50"
-                    Margin="10,0,0,0"
-                    FontSize="16"
-                    Foreground="#FF0000"
-                    Background="White"
-                    BorderBrush="#FF0000"
-                    FontWeight="Bold"
-                    BorderThickness="1"
-                    HorizontalAlignment="Stretch">
-                <Button.Template>
-                    <ControlTemplate TargetType="Button">
-                        <Border x:Name="Border"
-                                Background="{TemplateBinding Background}"
-                                BorderBrush="{TemplateBinding BorderBrush}"
-                                BorderThickness="{TemplateBinding BorderThickness}"
-                                CornerRadius="10">
-                            <ContentPresenter HorizontalAlignment="Center" VerticalAlignment="Center"/>
-                        </Border>
-                        <ControlTemplate.Triggers>
-                            <Trigger Property="IsMouseOver" Value="True">
-                                <Setter TargetName="Border" Property="Background" Value="#FFEBEE"/>
-                            </Trigger>
-                            <Trigger Property="IsPressed" Value="True">
-                                <Setter TargetName="Border" Property="Background" Value="#FFCDD2"/>
-                            </Trigger>
-                            <Trigger Property="IsEnabled" Value="False">
-                                <Setter Property="Background" Value="#E0E0E0"/>
-                                <Setter Property="BorderBrush" Value="#E0E0E0"/>
-                                <Setter Property="Foreground" Value="#A0A0A0"/>
-                            </Trigger>
-                        </ControlTemplate.Triggers>
-                    </ControlTemplate>
-                </Button.Template>
-            </Button>
-
-            <!-- Show Log Button -->
-            <Button Grid.Column="2"
+            <Button Grid.Column="0"
                     Content="Show Log"
                     Click="Button_Click_ShowLog"
                     Height="50"
-                    Margin="10,0,0,0"
-                    FontSize="16"
+                    Margin="0,0,6,0"
+                    FontSize="15"
                     FontWeight="Bold"
                     Background="#2196F3"
-                    BorderBrush="#2196F3"
-                    BorderThickness="1"
-                    HorizontalAlignment="Stretch">
-                <Button.Template>
-                    <ControlTemplate TargetType="Button">
-                        <Border x:Name="Border"
-                                Background="{TemplateBinding Background}"
-                                BorderBrush="{TemplateBinding BorderBrush}"
-                                BorderThickness="{TemplateBinding BorderThickness}"
-                                CornerRadius="10">
-                            <ContentPresenter HorizontalAlignment="Center" VerticalAlignment="Center"/>
-                        </Border>
-                        <ControlTemplate.Triggers>
-                            <Trigger Property="IsMouseOver" Value="True">
-                                <Setter TargetName="Border" Property="Background" Value="#64B5F6"/>
-                            </Trigger>
-                            <Trigger Property="IsPressed" Value="True">
-                                <Setter TargetName="Border" Property="Background" Value="#1976D2"/>
-                            </Trigger>
-                        </ControlTemplate.Triggers>
-                    </ControlTemplate>
-                </Button.Template>
-            </Button>
+                    Foreground="White"
+                    BorderBrush="#2196F3"/>
 
-            <Button Grid.Column="3"
-                    Content="IK Diagnostic"
+            <Button Grid.Column="1"
+                    Content="IK Device Diagnostic"
                     Click="Button_Click_DeviceDiagnostic"
                     Height="50"
-                    Margin="10,0,0,0"
-                    FontSize="14"
+                    Margin="6,0,0,0"
+                    FontSize="15"
                     FontWeight="Bold"
                     Background="#7E57C2"
                     Foreground="White"
-                    BorderBrush="#7E57C2"
-                    BorderThickness="1"/>
+                    BorderBrush="#7E57C2"/>
         </Grid>
     </Grid>
 </Window>

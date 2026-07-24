@@ -2,9 +2,12 @@ using ADB_Tool_Automation_Post_FB.Core.Abstractions;
 using Auto_LDPlayer;
 using Auto_LDPlayer.Enums;
 using System;
+using System.Collections.Concurrent;
+using System.Collections.Generic;
 using System.Drawing;
 using System.Drawing.Imaging;
 using System.IO;
+using System.Linq;
 using System.Threading;
 using System.Threading.Tasks;
 
@@ -17,6 +20,68 @@ namespace ADB_Tool_Automation_Post_FB.Infrastructure.LDPlayer
     /// </summary>
     public sealed class AutoLdPlayerClient : ILdPlayerClient
     {
+        private const int InputCommandTimeoutMilliseconds = 3000;
+
+        private const int ScreenshotReadyAttempts = 3;
+        private const int ScreenshotCaptureAttempts = 4;
+        private const int ScreenshotCaptureRetryDelayMilliseconds = 500;
+        private static readonly ConcurrentDictionary<string, SemaphoreSlim> ScreenshotLocks =
+            new ConcurrentDictionary<string, SemaphoreSlim>(StringComparer.OrdinalIgnoreCase);
+
+        public static string ConfigureLdConsolePath(string configuredPath)
+        {
+            string expandedPath = string.IsNullOrWhiteSpace(configuredPath)
+                ? null
+                : Environment.ExpandEnvironmentVariables(configuredPath.Trim());
+            string[] candidates =
+            {
+                expandedPath,
+                @"C:\LDPlayer\LDPlayer9\ldconsole.exe",
+                @"D:\LDPlayer\LDPlayer9\ldconsole.exe"
+            };
+
+            string resolvedPath = candidates.FirstOrDefault(path =>
+                !string.IsNullOrWhiteSpace(path) && File.Exists(path));
+            if (resolvedPath == null)
+            {
+                throw new FileNotFoundException(
+                    "LDPlayer console was not found. Configure 'LDCONSOLE_PATH' in App.config.",
+                    expandedPath);
+            }
+
+            string ldPlayerDirectory = Path.GetDirectoryName(resolvedPath);
+            string adbPath = Path.Combine(ldPlayerDirectory, "adb.exe");
+            if (!File.Exists(adbPath))
+            {
+                throw new FileNotFoundException(
+                    $"LDPlayer ADB was not found beside '{resolvedPath}'.",
+                    adbPath);
+            }
+
+            Auto_LDPlayer.LDPlayer.PathLD = resolvedPath;
+            KAutoHelper.ADBHelper.SetADBFolderPath(ldPlayerDirectory);
+            return resolvedPath;
+        }
+
+        public Task<IReadOnlyList<string>> GetDeviceNamesAsync(CancellationToken cancellationToken)
+        {
+            cancellationToken.ThrowIfCancellationRequested();
+
+            var runningDevices = Auto_LDPlayer.LDPlayer.GetDevicesRunning()
+                ?? new List<string>();
+            var allDevices = Auto_LDPlayer.LDPlayer.GetDevices()
+                ?? new List<string>();
+
+            cancellationToken.ThrowIfCancellationRequested();
+            IReadOnlyList<string> deviceNames = runningDevices
+                .Concat(allDevices)
+                .Where(name => !string.IsNullOrWhiteSpace(name))
+                .Select(name => name.Trim())
+                .Distinct(StringComparer.OrdinalIgnoreCase)
+                .ToArray();
+            return Task.FromResult(deviceNames);
+        }
+
         public Task<bool> IsRunningAsync(string deviceName, CancellationToken cancellationToken)
         {
             cancellationToken.ThrowIfCancellationRequested();
@@ -56,26 +121,89 @@ namespace ADB_Tool_Automation_Post_FB.Infrastructure.LDPlayer
             return Task.CompletedTask;
         }
 
-        public Task<byte[]> CaptureScreenshotPngAsync(string deviceName, CancellationToken cancellationToken)
+        public async Task<byte[]> CaptureScreenshotPngAsync(string deviceName, CancellationToken cancellationToken)
         {
             cancellationToken.ThrowIfCancellationRequested();
             ValidateDeviceName(deviceName);
 
+            string normalizedDeviceName = deviceName.Trim();
+            SemaphoreSlim screenshotLock = ScreenshotLocks.GetOrAdd(
+                normalizedDeviceName,
+                _ => new SemaphoreSlim(1, 1));
+
+            await screenshotLock.WaitAsync(cancellationToken);
             try
             {
-                using (Bitmap screenshot = Auto_LDPlayer.LDPlayer.ScreenShoot(LDType.Name, deviceName))
+                string adbState = null;
+                for (int attempt = 1; attempt <= ScreenshotReadyAttempts; attempt++)
                 {
-                    if (screenshot == null)
-                        throw new InvalidOperationException($"Screenshot returned null for LDPlayer device '{deviceName}'.");
-
                     cancellationToken.ThrowIfCancellationRequested();
+                    adbState = Auto_LDPlayer.LDPlayer.Adb(
+                        LDType.Name,
+                        normalizedDeviceName,
+                        "get-state",
+                        3000,
+                        1);
 
-                    using (var stream = new MemoryStream())
-                    {
-                        screenshot.Save(stream, ImageFormat.Png);
-                        return Task.FromResult(stream.ToArray());
-                    }
+                    if (string.Equals(adbState?.Trim(), "device", StringComparison.OrdinalIgnoreCase))
+                        break;
+
+                    if (attempt < ScreenshotReadyAttempts)
+                        await Task.Delay(300, cancellationToken);
                 }
+
+                if (!string.Equals(adbState?.Trim(), "device", StringComparison.OrdinalIgnoreCase))
+                {
+                    string response = string.IsNullOrWhiteSpace(adbState)
+                        ? "no response"
+                        : adbState.Trim();
+                    throw new InvalidOperationException(
+                        $"LDPlayer device '{normalizedDeviceName}' is not available through ADB. "
+                        + "In LDPlayer, open Settings > Other settings, set ADB debugging to "
+                        + $"Open local connection, save, and restart the emulator. ADB response: {response}");
+                }
+
+                for (int attempt = 1; attempt <= ScreenshotCaptureAttempts; attempt++)
+                {
+                    cancellationToken.ThrowIfCancellationRequested();
+                    string screenshotFileName = $"ikautomation_{Guid.NewGuid():N}.png";
+                    string generatedFilePrefix = Path.GetFileNameWithoutExtension(
+                        screenshotFileName);
+                    try
+                    {
+                        using (Bitmap screenshot = Auto_LDPlayer.LDPlayer.ScreenShoot(
+                            LDType.Name,
+                            normalizedDeviceName,
+                            true,
+                            screenshotFileName))
+                        {
+                            if (screenshot != null)
+                                return EncodePng(screenshot, cancellationToken);
+                        }
+
+                        // Auto_LDPlayer 1.1.0 can pull a valid PNG but return null when
+                        // an LDPlayer instance name contains spaces (for example "May 1").
+                        // Its unquoted local path is truncated to a file such as
+                        // "ikautomation_<id>Name_May". Recover only the uniquely prefixed
+                        // artifact produced by this capture call, then remove it.
+                        byte[] recovered = TryRecoverGeneratedScreenshot(
+                            generatedFilePrefix, cancellationToken);
+                        if (recovered != null)
+                            return recovered;
+                    }
+                    finally
+                    {
+                        DeleteGeneratedScreenshotArtifacts(generatedFilePrefix);
+                    }
+
+                    if (attempt < ScreenshotCaptureAttempts)
+                        await Task.Delay(ScreenshotCaptureRetryDelayMilliseconds,
+                            cancellationToken);
+                }
+
+                throw new InvalidOperationException(
+                    $"Auto_LDPlayer returned no screenshot for LDPlayer device '{normalizedDeviceName}' "
+                    + $"after ADB reported ready and {ScreenshotCaptureAttempts} capture attempts.");
             }
             catch (OperationCanceledException)
             {
@@ -84,9 +212,68 @@ namespace ADB_Tool_Automation_Post_FB.Infrastructure.LDPlayer
             catch (Exception ex)
             {
                 throw new InvalidOperationException(
-                    $"Failed to capture PNG screenshot from LDPlayer device '{deviceName}'.",
+                    $"Failed to capture PNG screenshot from LDPlayer device '{deviceName}': {ex.Message}",
                     ex);
             }
+            finally
+            {
+                screenshotLock.Release();
+            }
+        }
+
+        private static byte[] EncodePng(Bitmap screenshot,
+            CancellationToken cancellationToken)
+        {
+            cancellationToken.ThrowIfCancellationRequested();
+            using (var stream = new MemoryStream())
+            {
+                screenshot.Save(stream, ImageFormat.Png);
+                return stream.ToArray();
+            }
+        }
+
+        private static byte[] TryRecoverGeneratedScreenshot(string filePrefix,
+            CancellationToken cancellationToken)
+        {
+            cancellationToken.ThrowIfCancellationRequested();
+            string currentDirectory = Environment.CurrentDirectory;
+            string[] matches;
+            try
+            {
+                matches = Directory.GetFiles(currentDirectory, filePrefix + "*");
+            }
+            catch (IOException) { return null; }
+            catch (UnauthorizedAccessException) { return null; }
+
+            foreach (string path in matches.OrderByDescending(File.GetLastWriteTimeUtc))
+            {
+                cancellationToken.ThrowIfCancellationRequested();
+                try
+                {
+                    using (var screenshot = new Bitmap(path))
+                        return EncodePng(screenshot, cancellationToken);
+                }
+                catch (ArgumentException) { }
+                catch (IOException) { }
+                catch (UnauthorizedAccessException) { }
+            }
+            return null;
+        }
+
+        private static void DeleteGeneratedScreenshotArtifacts(string filePrefix)
+        {
+            try
+            {
+                foreach (string path in Directory.GetFiles(
+                    Environment.CurrentDirectory, filePrefix + "*"))
+                {
+                    try { File.Delete(path); }
+                    catch (IOException) { }
+                    catch (UnauthorizedAccessException) { }
+                }
+            }
+            catch (IOException) { }
+            catch (UnauthorizedAccessException) { }
         }
 
         public Task TapAsync(string deviceName, int x, int y, CancellationToken cancellationToken)
@@ -94,7 +281,20 @@ namespace ADB_Tool_Automation_Post_FB.Infrastructure.LDPlayer
             cancellationToken.ThrowIfCancellationRequested();
             ValidateDeviceName(deviceName);
 
-            Auto_LDPlayer.LDPlayer.Tap(LDType.Name, deviceName, x, y);
+            // LDPlayer.Tap uses a 200 ms process timeout and retries once. The first
+            // command can reach Android even when ldnconsole has not exited yet, so
+            // its retry may become a delayed second tap after the current panel has
+            // closed. Input commands have side effects and must never be retried.
+            string output = Auto_LDPlayer.LDPlayer.Adb(
+                LDType.Name,
+                deviceName,
+                $"shell input tap {x} {y}",
+                InputCommandTimeoutMilliseconds,
+                0);
+            if (output == null)
+                throw new InvalidOperationException(
+                    $"Failed to send a single tap to LDPlayer device '{deviceName}' at ({x}, {y}).");
+
             return Task.CompletedTask;
         }
 
