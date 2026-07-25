@@ -587,7 +587,9 @@ namespace ADB_Tool_Automation_Post_FB.Infrastructure.Workflows
                     AllowedTeams = request?.AllowedTeams ?? new TeamNumber[0],
                     CurrentStep = step,
                     CurrentResource = request == null ? (ResourceType?)null : request.ResourceType,
-                    CurrentLevel = request == null ? (int?)null : request.TargetLevel,
+                    // TargetLevel is only a preference. The account-specific level is
+                    // not known until the Resource Search Panel has been verified.
+                    CurrentLevel = null,
                     CurrentTeam = team,
                     Message = message
                 });
@@ -612,7 +614,10 @@ namespace ADB_Tool_Automation_Post_FB.Infrastructure.Workflows
                     AllowedTeams = request?.AllowedTeams ?? new TeamNumber[0],
                     CurrentStep = step,
                     CurrentResource = resource ?? (request == null ? (ResourceType?)null : request.ResourceType),
-                    CurrentLevel = level ?? (request == null ? (int?)null : request.TargetLevel),
+                    // Only publish a level returned by the verified search workflow.
+                    // Falling back to TargetLevel would present a preference as an
+                    // observed maximum for accounts whose actual ceiling is lower.
+                    CurrentLevel = level,
                     CurrentTeam = team,
                     Message = message
                 });
