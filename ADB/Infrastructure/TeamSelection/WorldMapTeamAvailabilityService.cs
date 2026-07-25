@@ -92,7 +92,6 @@ namespace ADB_Tool_Automation_Post_FB.Infrastructure.TeamSelection
             {
                 TeamNumber.Team1, TeamNumber.Team2, TeamNumber.Team3, TeamNumber.Team4
             };
-            const int firstRowOffset = 8;
             const int rowHeight = 52;
             var badgeMatches = new Dictionary<TeamNumber, ImageMatchResult>();
             var readyMatchesByTeam = new Dictionary<TeamNumber, ImageMatchResult>();
@@ -111,18 +110,21 @@ namespace ADB_Tool_Automation_Post_FB.Infrastructure.TeamSelection
                     continue;
 
                 verifiedFrameCount++;
-                for (int index = 0; index < teams.Length; index++)
+                var badgesInFrame = new Dictionary<TeamNumber, ImageMatchResult>();
+                foreach (TeamNumber team in teams)
                 {
-                    TeamNumber team = teams[index];
-                    ImageRegion rowRegion = RosterRowRegion(
-                        index, firstRowOffset, rowHeight);
                     ImageMatchResult badgeMatch = matcher.Find(
                         screenshot, registry.LoadBytes(BadgeTemplate(team)),
-                        rowRegion) ?? ImageMatchResult.NotFound();
+                        options.TeamRosterRegion) ?? ImageMatchResult.NotFound();
                     if (badgeMatch.Found && badgeMatch.Width > 0
                         && badgeMatch.Height > 0)
+                    {
                         badgeMatches[team] = badgeMatch;
+                        badgesInFrame[team] = badgeMatch;
+                    }
                 }
+
+                int rosterTop = EstimateRosterTop(badgesInFrame, rowHeight);
 
                 // Merge two close observations. A moving map unit can cover one
                 // "Sẵn sàng" label for a single frame; a positive match is latched
@@ -131,7 +133,7 @@ namespace ADB_Tool_Automation_Post_FB.Infrastructure.TeamSelection
                 {
                     TeamNumber team = teams[index];
                     ImageRegion rowRegion = RosterRowRegion(
-                        index, firstRowOffset, rowHeight);
+                        rosterTop + (index * rowHeight), rowHeight);
                     ImageMatchResult rowMatch = matcher.Find(
                         screenshot, readyTemplate, rowRegion)
                         ?? ImageMatchResult.NotFound();
@@ -157,8 +159,9 @@ namespace ADB_Tool_Automation_Post_FB.Infrastructure.TeamSelection
                     + "team availability was not inferred.", null, GameState.WorldMap);
             }
 
-            // Team rows are contiguous from Team1. If Team3 is visible or ready,
-            // Team1 and Team2 also exist even when their badge/ready state differs.
+            // Team rows are contiguous from Team1. The highest freshly verified
+            // badge or ready row establishes the roster size, including accounts
+            // with fewer than four teams and frames where one badge is obscured.
             foreach (TeamNumber team in teams.Take(detectedTeamCount))
             {
                 availableTeams.Add(team);
@@ -194,12 +197,33 @@ namespace ADB_Tool_Automation_Post_FB.Infrastructure.TeamSelection
             };
         }
 
-        private ImageRegion RosterRowRegion(int index, int firstRowOffset, int rowHeight)
+        private int EstimateRosterTop(
+            IReadOnlyDictionary<TeamNumber, ImageMatchResult> badges,
+            int rowHeight)
         {
-            int rowTop = options.TeamRosterRegion.Y + firstRowOffset
-                + (index * rowHeight);
+            const int badgeTopPadding = 8;
+            if (badges == null || badges.Count == 0)
+                return options.TeamRosterRegion.Y + badgeTopPadding;
+
+            int[] candidates = badges
+                .Select(item => item.Value.Y - badgeTopPadding
+                    - (((int)item.Key - 1) * rowHeight))
+                .OrderBy(value => value)
+                .ToArray();
+            int estimated = candidates[candidates.Length / 2];
+            int maximum = options.TeamRosterRegion.Y
+                + options.TeamRosterRegion.Height - rowHeight;
+            return Math.Max(options.TeamRosterRegion.Y,
+                Math.Min(maximum, estimated));
+        }
+
+        private ImageRegion RosterRowRegion(int requestedTop, int rowHeight)
+        {
+            int rowTop = Math.Max(options.TeamRosterRegion.Y, requestedTop);
             int rowBottom = Math.Min(options.TeamRosterRegion.Y
                 + options.TeamRosterRegion.Height, rowTop + rowHeight);
+            if (rowBottom - rowTop < rowHeight)
+                rowTop = Math.Max(options.TeamRosterRegion.Y, rowBottom - rowHeight);
             return new ImageRegion(options.TeamRosterRegion.X, rowTop,
                 options.TeamRosterRegion.Width, Math.Max(1, rowBottom - rowTop));
         }

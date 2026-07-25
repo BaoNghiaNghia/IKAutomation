@@ -361,6 +361,7 @@ namespace ADB_Tool_Automation_Post_FB.Infrastructure.GameDetection
                 ImageMatchResult match = imageMatcher.Find(screenshotPng, template, searchRegion);
                 bool usedStableWorldMapAnchor = false;
                 bool usedStableCityMapButton = false;
+                bool usedStableWorldMapPinButton = false;
                 if (templateId == TemplateId.WorldMapAnchor && (match == null || !match.Found))
                 {
                     byte[] stableTemplate = TryCreateStableCenterTemplate(template) ?? template;
@@ -377,6 +378,13 @@ namespace ADB_Tool_Automation_Post_FB.Infrastructure.GameDetection
                     match = imageMatcher.Find(screenshotPng, stableTemplate, searchRegion);
                     usedStableCityMapButton = match != null && match.Found;
                 }
+                if (templateId == TemplateId.WorldMapPinButton
+                    && (match == null || !match.Found))
+                {
+                    byte[] stableTemplate = TryCreateStableCenterTemplate(template) ?? template;
+                    match = imageMatcher.Find(screenshotPng, stableTemplate, searchRegion);
+                    usedStableWorldMapPinButton = match != null && match.Found;
+                }
                 return new GameDetectionEvidence
                 {
                     TemplateId = templateId,
@@ -390,6 +398,8 @@ namespace ADB_Tool_Automation_Post_FB.Infrastructure.GameDetection
                             ? "Template 'WorldMapAnchor' matched by its stable icon center in the lower-left region."
                             : usedStableCityMapButton
                                 ? "Template 'CityToWorldMapButton' matched by its stable icon center in the lower-left region."
+                            : usedStableWorldMapPinButton
+                                ? "Template 'WorldMapPinButton' matched by its stable icon center in the lower-left region."
                             : searchRegion.HasValue
                                 ? $"Template '{templateId}' matched inside its configured ROI."
                                 : $"Template '{templateId}' matched."
