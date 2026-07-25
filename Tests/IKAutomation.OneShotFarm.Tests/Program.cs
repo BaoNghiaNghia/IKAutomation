@@ -149,6 +149,7 @@ internal static class Program
         Run("One-Shot UI retries only failed devices", MultiDeviceUiRetriesFailures);
         Run("Continuous supervisor keeps device states independent", ContinuousSupervisorIsolatesDevices);
         Run("Continuous supervisor cancellation stops waiting devices", ContinuousSupervisorCancellationStopsWaiting);
+        Run("Continuous supervisor waits after inconclusive march verification", ContinuousSupervisorWaitsAfterDispatchTimeout);
         Run("Continuous supervisor publishes aggregated health", ContinuousSupervisorPublishesHealth);
         Run("Heartbeat failure does not stop device workflows", HeartbeatFailureIsIsolated);
         Run("Watchdog recovers a cancellable stalled device", ContinuousWatchdogRecoversStalledDevice);
@@ -257,6 +258,37 @@ internal static class Program
                 "cancellation did not interrupt the supervisor delay promptly");
             Eq(ContinuousFarmDeviceState.Stopped, result.Devices[0].State,
                 "final device state");
+        }
+    }
+
+    static void ContinuousSupervisorWaitsAfterDispatchTimeout()
+    {
+        using (var cancellation = new CancellationTokenSource(TimeSpan.FromSeconds(5)))
+        {
+            var runner = new DispatchTransitionTimeoutRunner();
+            var recovery = new FakeDeviceRecovery(true);
+            var snapshots = new List<ContinuousFarmDeviceSnapshot>();
+            var supervisor = new ContinuousFarmSupervisor(runner, recovery,
+                new ContinuousFarmSupervisorOptions(60000, 1));
+            var progress = new InlineProgress<ContinuousFarmSupervisorProgress>(value =>
+            {
+                lock (snapshots) snapshots.Add(value.Device);
+                if (value.Device.State == ContinuousFarmDeviceState.Waiting
+                    && value.Device.Message.Contains("next team availability check"))
+                    cancellation.Cancel();
+            });
+
+            ContinuousFarmSupervisorResult result = supervisor.RunAsync(
+                new[] { "May 3" }, new H().Request, progress, cancellation.Token)
+                .GetAwaiter().GetResult();
+
+            Eq(1, runner.Calls, "runner calls before scheduled availability check");
+            Eq(0, recovery.Calls, "recovery calls");
+            Eq(0, result.Devices[0].ConsecutiveFailures, "consecutive failures");
+            lock (snapshots)
+                Is(snapshots.Any(value => value.State == ContinuousFarmDeviceState.Waiting
+                    && value.NextAttemptAt.HasValue),
+                    "dispatch timeout was not scheduled as a readiness wait");
         }
     }
 
@@ -1194,6 +1226,37 @@ internal static class Program
         {
             token.ThrowIfCancellationRequested();Calls++;if(Calls>=cancelOnCall)cancellation.Cancel();
             throw new InvalidOperationException("technical failure " + Calls);
+        }
+    }
+    sealed class DispatchTransitionTimeoutRunner:IMultiDeviceOneShotFarmRunner
+    {
+        public int Calls;
+        public Task<MultiDeviceOneShotFarmResult> RunAsync(
+            IReadOnlyList<string> devices,OneShotFarmRequest request,
+            IProgress<MultiDeviceOneShotFarmProgress> progress,CancellationToken token)
+        {
+            token.ThrowIfCancellationRequested();Calls++;string device=devices.Single();
+            var farmResult=new OneShotFarmResult
+            {
+                DeviceName=device,Success=false,
+                Outcome=OneShotFarmOutcome.TeamDispatchFailed,
+                SelectedTeam=TeamNumber.Team1,
+                Message="March start was not verified before the transition timeout.",
+                DispatchResult=new DispatchMarchResult
+                {
+                    Success=false,
+                    Outcome=DispatchMarchOutcome.TransitionTimeout,
+                    ExpectedTeam=TeamNumber.Team1
+                }
+            };
+            return Task.FromResult(new MultiDeviceOneShotFarmResult
+            {
+                Devices=new[]{new MultiDeviceOneShotFarmItemResult
+                {
+                    DeviceName=device,Stage=MultiDeviceOneShotFarmStage.Failed,
+                    Result=farmResult,ErrorMessage=farmResult.Message
+                }}
+            });
         }
     }
     sealed class ContinuousSupervisorRunner:IMultiDeviceOneShotFarmRunner

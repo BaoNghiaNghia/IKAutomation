@@ -1,3 +1,4 @@
+using ADB_Tool_Automation_Post_FB.Core.MarchDispatch;
 using ADB_Tool_Automation_Post_FB.Core.Workflows;
 using System;
 using System.Collections.Concurrent;
@@ -193,6 +194,19 @@ namespace ADB_Tool_Automation_Post_FB.Infrastructure.Workflows
                         continue;
                     }
 
+                    if (attempt.WaitForNextCycle)
+                    {
+                        snapshot.ConsecutiveFailures = 0;
+                        DateTimeOffset next = DateTimeOffset.UtcNow
+                            .AddMilliseconds(options.CycleIntervalMs);
+                        Transition(snapshot, ContinuousFarmDeviceState.Waiting,
+                            "March verification was inconclusive; waiting for the next team availability check.",
+                            null, next);
+                        Publish(snapshot, progress, null, cancellationToken);
+                        await Task.Delay(options.CycleIntervalMs, cancellationToken);
+                        continue;
+                    }
+
                     snapshot.ConsecutiveFailures++;
                     snapshot.LastFailureAt = DateTimeOffset.UtcNow;
                     if (!attempt.NeedsRecovery)
@@ -379,7 +393,12 @@ namespace ADB_Tool_Automation_Post_FB.Infrastructure.Workflows
                     && item.Result != null && item.Result.Success;
                 string error = item?.ErrorMessage ?? item?.Result?.ErrorMessage
                     ?? item?.Result?.Message ?? "Supervised cycle returned no result.";
-                return succeeded ? AttemptResult.Completed() : AttemptResult.Failed(error);
+                if (succeeded) return AttemptResult.Completed();
+                if (item?.Result?.Outcome == OneShotFarmOutcome.TeamDispatchFailed
+                    && item.Result.DispatchResult?.Outcome
+                        == DispatchMarchOutcome.TransitionTimeout)
+                    return AttemptResult.WaitingForAvailability();
+                return AttemptResult.Failed(error);
             }
         }
 
@@ -797,8 +816,11 @@ namespace ADB_Tool_Automation_Post_FB.Infrastructure.Workflows
             public bool WatchdogTimedOut { get; private set; }
             public bool RunnerDidNotStop { get; private set; }
             public bool NeedsRecovery { get; private set; }
+            public bool WaitForNextCycle { get; private set; }
             public string Error { get; private set; }
             public static AttemptResult Completed() => new AttemptResult { Success = true };
+            public static AttemptResult WaitingForAvailability() => new AttemptResult
+                { WaitForNextCycle = true };
             public static AttemptResult Failed(string error) => new AttemptResult { Error = error };
             public static AttemptResult TechnicalFailure(string error) => new AttemptResult
                 { Error = error, NeedsRecovery = true };
