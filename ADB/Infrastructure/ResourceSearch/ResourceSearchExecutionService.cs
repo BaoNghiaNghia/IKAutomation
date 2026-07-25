@@ -191,13 +191,13 @@ namespace ADB_Tool_Automation_Post_FB.Infrastructure.ResourceSearch
                                 null, watch, cancellationToken);
                         }
                         if (result.SearchTapCount >= 2
-                            && context.OpenPanelObservationCount >= result.SearchTapCount)
+                            && context.OpenPanelObservationCount > 0)
                         {
                             result.NotFoundObserved = true;
                             result.MatchedNotFoundVariant = VerifiedRetryPanelStayedOpenVariant;
                             return await CompleteAsync(deviceName, result, context,
                                 ResourceSearchOutcome.ResourceNotFound,
-                                "ResourceNotFound was inferred after two bounded verified Search taps: the panel remained confirmed and no popup or camera transition occurred; no toast match was claimed.",
+                                "ResourceNotFound was inferred after two bounded verified Search taps: the panel remained confirmed in a post-Tap observation and no popup or camera transition occurred; no toast match was claimed.",
                                 null, watch, cancellationToken);
                         }
                         return await CompleteAsync(deviceName, result, context, ResourceSearchOutcome.Timeout,

@@ -200,7 +200,7 @@ namespace ADB_Tool_Automation_Post_FB.Infrastructure.Workflows
                         DateTimeOffset next = DateTimeOffset.UtcNow
                             .AddMilliseconds(options.CycleIntervalMs);
                         Transition(snapshot, ContinuousFarmDeviceState.Waiting,
-                            "March verification was inconclusive; waiting for the next team availability check.",
+                            attempt.WaitMessage,
                             null, next);
                         Publish(snapshot, progress, null, cancellationToken);
                         await Task.Delay(options.CycleIntervalMs, cancellationToken);
@@ -397,7 +397,11 @@ namespace ADB_Tool_Automation_Post_FB.Infrastructure.Workflows
                 if (item?.Result?.Outcome == OneShotFarmOutcome.TeamDispatchFailed
                     && item.Result.DispatchResult?.Outcome
                         == DispatchMarchOutcome.TransitionTimeout)
-                    return AttemptResult.WaitingForAvailability();
+                    return AttemptResult.WaitingForNextCycle(
+                        "March verification was inconclusive; waiting for the next team availability check.");
+                if (item?.Result?.Outcome == OneShotFarmOutcome.AllCandidateStoragesFull)
+                    return AttemptResult.WaitingForNextCycle(
+                        "All selected resource storages are full; waiting for the next scheduled check.");
                 return AttemptResult.Failed(error);
             }
         }
@@ -817,10 +821,11 @@ namespace ADB_Tool_Automation_Post_FB.Infrastructure.Workflows
             public bool RunnerDidNotStop { get; private set; }
             public bool NeedsRecovery { get; private set; }
             public bool WaitForNextCycle { get; private set; }
+            public string WaitMessage { get; private set; }
             public string Error { get; private set; }
             public static AttemptResult Completed() => new AttemptResult { Success = true };
-            public static AttemptResult WaitingForAvailability() => new AttemptResult
-                { WaitForNextCycle = true };
+            public static AttemptResult WaitingForNextCycle(string message) => new AttemptResult
+                { WaitForNextCycle = true, WaitMessage = message };
             public static AttemptResult Failed(string error) => new AttemptResult { Error = error };
             public static AttemptResult TechnicalFailure(string error) => new AttemptResult
                 { Error = error, NeedsRecovery = true };

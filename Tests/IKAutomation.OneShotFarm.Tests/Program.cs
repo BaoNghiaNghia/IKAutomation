@@ -150,6 +150,7 @@ internal static class Program
         Run("Continuous supervisor keeps device states independent", ContinuousSupervisorIsolatesDevices);
         Run("Continuous supervisor cancellation stops waiting devices", ContinuousSupervisorCancellationStopsWaiting);
         Run("Continuous supervisor waits after inconclusive march verification", ContinuousSupervisorWaitsAfterDispatchTimeout);
+        Run("Continuous supervisor waits when all candidate storages are full", ContinuousSupervisorWaitsWhenStoragesAreFull);
         Run("Continuous supervisor publishes aggregated health", ContinuousSupervisorPublishesHealth);
         Run("Heartbeat failure does not stop device workflows", HeartbeatFailureIsIsolated);
         Run("Watchdog recovers a cancellable stalled device", ContinuousWatchdogRecoversStalledDevice);
@@ -289,6 +290,37 @@ internal static class Program
                 Is(snapshots.Any(value => value.State == ContinuousFarmDeviceState.Waiting
                     && value.NextAttemptAt.HasValue),
                     "dispatch timeout was not scheduled as a readiness wait");
+        }
+    }
+
+    static void ContinuousSupervisorWaitsWhenStoragesAreFull()
+    {
+        using (var cancellation = new CancellationTokenSource(TimeSpan.FromSeconds(5)))
+        {
+            var runner = new BusinessWaitRunner(OneShotFarmOutcome.AllCandidateStoragesFull,
+                "Storage is full for every candidate resource.");
+            var recovery = new FakeDeviceRecovery(true);
+            var snapshots = new List<ContinuousFarmDeviceSnapshot>();
+            var supervisor = new ContinuousFarmSupervisor(runner, recovery,
+                new ContinuousFarmSupervisorOptions(60000, 1));
+            var progress = new InlineProgress<ContinuousFarmSupervisorProgress>(value =>
+            {
+                lock (snapshots) snapshots.Add(value.Device);
+                if (value.Device.State == ContinuousFarmDeviceState.Waiting
+                    && value.Device.Message.Contains("storages are full"))
+                    cancellation.Cancel();
+            });
+
+            ContinuousFarmSupervisorResult result = supervisor.RunAsync(
+                new[] { "May 1" }, new H().Request, progress, cancellation.Token)
+                .GetAwaiter().GetResult();
+
+            Eq(1, runner.Calls, "runner calls before scheduled retry");
+            Eq(0, recovery.Calls, "recovery calls");
+            Eq(0, result.Devices[0].ConsecutiveFailures, "consecutive failures");
+            lock (snapshots)
+                Is(snapshots.Any(value => value.State == ContinuousFarmDeviceState.Waiting
+                    && value.NextAttemptAt.HasValue), "storage-full result was not scheduled");
         }
     }
 
@@ -1255,6 +1287,30 @@ internal static class Program
                 {
                     DeviceName=device,Stage=MultiDeviceOneShotFarmStage.Failed,
                     Result=farmResult,ErrorMessage=farmResult.Message
+                }}
+            });
+        }
+    }
+    sealed class BusinessWaitRunner:IMultiDeviceOneShotFarmRunner
+    {
+        readonly OneShotFarmOutcome outcome;readonly string message;public int Calls;
+        public BusinessWaitRunner(OneShotFarmOutcome outcome,string message)
+        {this.outcome=outcome;this.message=message;}
+        public Task<MultiDeviceOneShotFarmResult> RunAsync(
+            IReadOnlyList<string> devices,OneShotFarmRequest request,
+            IProgress<MultiDeviceOneShotFarmProgress> progress,CancellationToken token)
+        {
+            token.ThrowIfCancellationRequested();Calls++;string device=devices.Single();
+            var farmResult=new OneShotFarmResult
+            {
+                DeviceName=device,Success=false,Outcome=outcome,Message=message
+            };
+            return Task.FromResult(new MultiDeviceOneShotFarmResult
+            {
+                Devices=new[]{new MultiDeviceOneShotFarmItemResult
+                {
+                    DeviceName=device,Stage=MultiDeviceOneShotFarmStage.Failed,
+                    Result=farmResult,ErrorMessage=message
                 }}
             });
         }
