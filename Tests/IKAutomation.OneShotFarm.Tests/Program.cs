@@ -151,6 +151,7 @@ internal static class Program
         Run("Continuous supervisor cancellation stops waiting devices", ContinuousSupervisorCancellationStopsWaiting);
         Run("Continuous supervisor waits after inconclusive march verification", ContinuousSupervisorWaitsAfterDispatchTimeout);
         Run("Continuous supervisor waits when all candidate storages are full", ContinuousSupervisorWaitsWhenStoragesAreFull);
+        Run("Continuous supervisor recovers dropped LDPlayer ADB connection", ContinuousSupervisorRecoversDroppedAdb);
         Run("Continuous supervisor publishes aggregated health", ContinuousSupervisorPublishesHealth);
         Run("Heartbeat failure does not stop device workflows", HeartbeatFailureIsIsolated);
         Run("Watchdog recovers a cancellable stalled device", ContinuousWatchdogRecoversStalledDevice);
@@ -321,6 +322,27 @@ internal static class Program
             lock (snapshots)
                 Is(snapshots.Any(value => value.State == ContinuousFarmDeviceState.Waiting
                     && value.NextAttemptAt.HasValue), "storage-full result was not scheduled");
+        }
+    }
+
+    static void ContinuousSupervisorRecoversDroppedAdb()
+    {
+        using (var cancellation = new CancellationTokenSource(TimeSpan.FromSeconds(5)))
+        {
+            var runner = new DroppedAdbRunner(cancellation);
+            var recovery = new FakeDeviceRecovery(true);
+            var supervisor = new ContinuousFarmSupervisor(runner, recovery,
+                new ContinuousFarmSupervisorOptions(cycleIntervalMs: 60000,
+                    failureRetryDelayMs: 1, technicalRetryDelaysMs: new[] { 1 },
+                    retryJitterMaxMs: 0, circuitFailureThreshold: 99));
+
+            ContinuousFarmSupervisorResult result = supervisor.RunAsync(
+                new[] { "May 3" }, new H().Request, null, cancellation.Token)
+                .GetAwaiter().GetResult();
+
+            Is(result.WasCancelled, "successful post-recovery retry did not finish the test");
+            Eq(1, recovery.Calls, "ADB screenshot failure did not invoke recovery ladder");
+            Eq(2, runner.Calls, "device was not retried after recovery");
         }
     }
 
@@ -1311,6 +1333,44 @@ internal static class Program
                 {
                     DeviceName=device,Stage=MultiDeviceOneShotFarmStage.Failed,
                     Result=farmResult,ErrorMessage=message
+                }}
+            });
+        }
+    }
+    sealed class DroppedAdbRunner:IMultiDeviceOneShotFarmRunner
+    {
+        readonly CancellationTokenSource cancellation;public int Calls;
+        public DroppedAdbRunner(CancellationTokenSource cancellation){this.cancellation=cancellation;}
+        public Task<MultiDeviceOneShotFarmResult> RunAsync(
+            IReadOnlyList<string> devices,OneShotFarmRequest request,
+            IProgress<MultiDeviceOneShotFarmProgress> progress,CancellationToken token)
+        {
+            token.ThrowIfCancellationRequested();Calls++;string device=devices.Single();
+            if(Calls>1)
+            {
+                cancellation.Cancel();
+                return Task.FromResult(new MultiDeviceOneShotFarmResult
+                {
+                    Devices=new[]{new MultiDeviceOneShotFarmItemResult
+                    {
+                        DeviceName=device,Stage=MultiDeviceOneShotFarmStage.Completed,
+                        Result=new OneShotFarmResult{DeviceName=device,Success=true,
+                            Outcome=OneShotFarmOutcome.MarchStarted,Message="completed"}
+                    }}
+                });
+            }
+            const string error="Failed to capture PNG screenshot from LDPlayer device 'May 3': "
+                +"LDPlayer device 'May 3' is not available through ADB. "
+                +"ADB response: error: device 'emulator-5558' not found";
+            return Task.FromResult(new MultiDeviceOneShotFarmResult
+            {
+                Devices=new[]{new MultiDeviceOneShotFarmItemResult
+                {
+                    DeviceName=device,Stage=MultiDeviceOneShotFarmStage.Failed,
+                    Result=new OneShotFarmResult{DeviceName=device,Success=false,
+                        Outcome=OneShotFarmOutcome.SearchExecutionFailed,
+                        Message="Resource search execution failed.",ErrorMessage=error},
+                    ErrorMessage=error
                 }}
             });
         }

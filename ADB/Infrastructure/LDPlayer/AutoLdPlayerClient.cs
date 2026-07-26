@@ -166,6 +166,26 @@ namespace ADB_Tool_Automation_Post_FB.Infrastructure.LDPlayer
                 for (int attempt = 1; attempt <= ScreenshotCaptureAttempts; attempt++)
                 {
                     cancellationToken.ThrowIfCancellationRequested();
+                    if (attempt > 1)
+                    {
+                        string retryAdbState = Auto_LDPlayer.LDPlayer.Adb(
+                            LDType.Name,
+                            normalizedDeviceName,
+                            "get-state",
+                            InputCommandTimeoutMilliseconds,
+                            1);
+                        if (!string.Equals(retryAdbState?.Trim(), "device",
+                            StringComparison.OrdinalIgnoreCase))
+                        {
+                            string response = string.IsNullOrWhiteSpace(retryAdbState)
+                                ? "no response"
+                                : retryAdbState.Trim();
+                            throw new InvalidOperationException(
+                                $"LDPlayer device '{normalizedDeviceName}' is not available through ADB "
+                                + $"after screenshot attempt {attempt - 1}. ADB response: {response}");
+                        }
+                    }
+
                     string screenshotFileName = $"ikautomation_{Guid.NewGuid():N}.png";
                     string generatedFilePrefix = Path.GetFileNameWithoutExtension(
                         screenshotFileName);

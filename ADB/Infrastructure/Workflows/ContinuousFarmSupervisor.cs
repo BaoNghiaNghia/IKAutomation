@@ -402,8 +402,27 @@ namespace ADB_Tool_Automation_Post_FB.Infrastructure.Workflows
                 if (item?.Result?.Outcome == OneShotFarmOutcome.AllCandidateStoragesFull)
                     return AttemptResult.WaitingForNextCycle(
                         "All selected resource storages are full; waiting for the next scheduled check.");
+                if (IsDeviceConnectivityFailure(error))
+                    return AttemptResult.TechnicalFailure(error);
                 return AttemptResult.Failed(error);
             }
+        }
+
+        private static bool IsDeviceConnectivityFailure(string error)
+        {
+            if (string.IsNullOrWhiteSpace(error))
+                return false;
+
+            string[] indicators =
+            {
+                "Failed to capture PNG screenshot from LDPlayer device",
+                "Auto_LDPlayer returned no screenshot",
+                "is not available through ADB",
+                "device 'emulator-",
+                "after ADB reported ready"
+            };
+            return indicators.Any(indicator => error.IndexOf(indicator,
+                StringComparison.OrdinalIgnoreCase) >= 0);
         }
 
         private void Quarantine(ContinuousFarmDeviceSnapshot snapshot,
