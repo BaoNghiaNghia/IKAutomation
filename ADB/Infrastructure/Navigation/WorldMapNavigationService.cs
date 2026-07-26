@@ -20,7 +20,7 @@ namespace ADB_Tool_Automation_Post_FB.Infrastructure.Navigation
         private const int ExpectedScreenshotHeight = 720;
         private const int MaxTerritoryMarkerDistanceFromViewportCenterPx = 360;
         private const int MaxSearchTargetDistanceFromHomePinPx = 260;
-        private const int NearbyPinObservationAttempts = 4;
+        private const int NearbyPinObservationAttempts = 8;
         private readonly ILdPlayerClient ldPlayerClient;
         private readonly IGameStateDetector detector;
         private readonly WorldMapNavigationOptions options;
@@ -287,28 +287,43 @@ namespace ADB_Tool_Automation_Post_FB.Infrastructure.Navigation
         {
             GameDetectionResult current = initial;
             bool detectorSupportsPins = ContainsPinEvidence(current);
+            GameDetectionEvidence latestHome = FindFreshEvidence(
+                current, TemplateId.ContinentMapHomeLocationPin);
             for (int attempt = 1; attempt <= NearbyPinObservationAttempts; attempt++)
             {
-                PinPair pair = FindNearbyPinPair(current);
+                GameDetectionEvidence currentHome = FindFreshEvidence(
+                    current, TemplateId.ContinentMapHomeLocationPin);
+                if (currentHome != null)
+                    latestHome = currentHome;
+
+                PinPair pair = FindNearbyPinPair(current, latestHome);
                 if (pair != null)
                 {
-                    // The icons bounce. Re-detect both pins immediately before the
-                    // production Tap so the target bounds come from the latest frame.
+                    // The icons bounce and can obscure one another. Re-detect the
+                    // yellow target immediately before the production Tap, while
+                    // allowing the cyan home pin to be latched from the adjacent frame.
                     GameDetectionResult fresh = await DetectAsync(
                         deviceName, transitions, cancellationToken);
-                    PinPair freshPair = FindNearbyPinPair(fresh);
+                    GameDetectionEvidence freshHome = FindFreshEvidence(
+                        fresh, TemplateId.ContinentMapHomeLocationPin);
+                    if (freshHome != null)
+                        latestHome = freshHome;
+
+                    PinPair freshPair = FindNearbyPinPair(fresh, latestHome);
                     if (freshPair != null)
                     {
                         AddTransition(transitions, "Match",
                             $"Matched cyan home pin ({freshPair.Home.MatchResult.CenterX},"
                             + $"{freshPair.Home.MatchResult.CenterY}) and nearby yellow search pin "
                             + $"({freshPair.SearchTarget.MatchResult.CenterX},"
-                            + $"{freshPair.SearchTarget.MatchResult.CenterY}) in the same fresh frame.");
+                            + $"{freshPair.SearchTarget.MatchResult.CenterY}); "
+                            + "the yellow target bounds were refreshed immediately before Tap.");
                         return freshPair;
                     }
 
                     current = fresh;
-                    detectorSupportsPins = detectorSupportsPins || ContainsPinEvidence(fresh);
+                    detectorSupportsPins = detectorSupportsPins
+                        || ContainsPinEvidence(fresh);
                 }
 
                 if (!detectorSupportsPins)
@@ -320,16 +335,20 @@ namespace ADB_Tool_Automation_Post_FB.Infrastructure.Navigation
                     AddTransition(transitions, "Wait",
                         $"Waited {options.StatePollIntervalMs} ms for animated ContinentMap pins.");
                     current = await DetectAsync(deviceName, transitions, cancellationToken);
+                    detectorSupportsPins = detectorSupportsPins
+                        || ContainsPinEvidence(current);
                 }
             }
 
             return null;
         }
 
-        private static PinPair FindNearbyPinPair(GameDetectionResult result)
+        private static PinPair FindNearbyPinPair(
+            GameDetectionResult result,
+            GameDetectionEvidence fallbackHome)
         {
             GameDetectionEvidence home = FindFreshEvidence(
-                result, TemplateId.ContinentMapHomeLocationPin);
+                result, TemplateId.ContinentMapHomeLocationPin) ?? fallbackHome;
             GameDetectionEvidence target = FindFreshEvidence(
                 result, TemplateId.ContinentMapSearchTargetPin);
             if (home == null || target == null) return null;
@@ -403,6 +422,8 @@ namespace ADB_Tool_Automation_Post_FB.Infrastructure.Navigation
                 return false;
 
             return FindFreshEvidence(result, TemplateId.ContinentMapTitle) != null
+                || FindFreshEvidence(result,
+                    TemplateId.ContinentMapPinButton) != null
                 || FindFreshEvidence(result,
                     TemplateId.ContinentMapHomeLocationPin) != null
                 || FindFreshEvidence(result,

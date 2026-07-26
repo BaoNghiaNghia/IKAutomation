@@ -42,6 +42,9 @@ namespace IKAutomation.GameDetection.Tests
             Run("City map button uses lower-left ROI", CityMapButtonUsesLowerLeftRoi);
             Run("WorldMap pin uses stable icon-center fallback", WorldMapPinStableCenterFallback);
             Run("ContinentMap from ContinentMapTitle", ContinentMapFromTitle);
+            Run("ContinentMap from bounded coordinate pin", ContinentMapFromCoordinatePin);
+            Run("ContinentMap pin uses stable icon-center fallback", ContinentMapPinStableCenterFallback);
+            Run("ContinentMap from animated location pins", ContinentMapFromAnimatedPins);
             Run("Unknown when no template matches", UnknownWhenNoMatches);
             Run("Unknown is not an exception", UnknownIsSuccessful);
             Run("Capture failure returns ErrorMessage", CaptureFailureReturnsError);
@@ -256,6 +259,40 @@ namespace IKAutomation.GameDetection.Tests
         private static void ContinentMapFromTitle()
         {
             Equal(GameState.ContinentMap, DetectWithMatches(TemplateId.ContinentMapTitle).State, "Continent map rule failed.");
+        }
+
+        private static void ContinentMapFromCoordinatePin()
+        {
+            Equal(GameState.ContinentMap,
+                DetectWithMatches(TemplateId.ContinentMapPinButton).State,
+                "The coordinate pin in its bounded ROI should confirm ContinentMap.");
+        }
+
+        private static void ContinentMapPinStableCenterFallback()
+        {
+            var matcher = new FakeImageMatcher { ContinentMapPinStableOnly = true };
+            matcher.Matches.Add(TemplateId.ContinentMapPinButton);
+            GameDetectionResult result = CreateDetector(
+                new FakeLdPlayerClient(), matcher: matcher)
+                .DetectAsync("IK-1", TestToken).GetAwaiter().GetResult();
+            Equal(GameState.ContinentMap, result.State,
+                "Stable ContinentMap coordinate-pin fallback failed.");
+            GameDetectionEvidence evidence = result.Evidence.Single(item =>
+                item.TemplateId == TemplateId.ContinentMapPinButton);
+            Assert(evidence.Found,
+                "Stable ContinentMap coordinate-pin center was not matched.");
+            Contains(evidence.Message, "stable icon center",
+                "Stable ContinentMap pin evidence was not reported.");
+        }
+
+        private static void ContinentMapFromAnimatedPins()
+        {
+            Equal(GameState.ContinentMap,
+                DetectWithMatches(TemplateId.ContinentMapHomeLocationPin).State,
+                "Cyan home pin should confirm ContinentMap.");
+            Equal(GameState.ContinentMap,
+                DetectWithMatches(TemplateId.ContinentMapSearchTargetPin).State,
+                "Yellow search pin should confirm ContinentMap.");
         }
 
         private static void CityFromMapButton()
@@ -511,6 +548,7 @@ namespace IKAutomation.GameDetection.Tests
             public bool WorldMapStableOnly { get; set; }
             public bool CityStableOnly { get; set; }
             public bool WorldMapPinStableOnly { get; set; }
+            public bool ContinentMapPinStableOnly { get; set; }
             public Dictionary<TemplateId, ImageRegion?> Regions { get; } = new Dictionary<TemplateId, ImageRegion?>();
             private readonly Dictionary<TemplateId, int> callsByTemplate = new Dictionary<TemplateId, int>();
             public int FindCalls { get; private set; }
@@ -525,6 +563,9 @@ namespace IKAutomation.GameDetection.Tests
                     && (id != TemplateId.CityToWorldMapButton || !CityStableOnly
                         || callsByTemplate[id] > 1)
                     && (id != TemplateId.WorldMapPinButton || !WorldMapPinStableOnly
+                        || callsByTemplate[id] > 1)
+                    && (id != TemplateId.ContinentMapPinButton
+                        || !ContinentMapPinStableOnly
                         || callsByTemplate[id] > 1);
                 return found ? ImageMatchResult.FoundAt(10, 20, 30, 40) : ImageMatchResult.NotFound();
             }

@@ -199,6 +199,12 @@ namespace ADB_Tool_Automation_Post_FB.Infrastructure.GameDetection
             GameDetectionEvidence gatherButton = FindEvidence(evidence, TemplateId.GatherButtonEnabled);
             GameDetectionEvidence worldAnchor = FindEvidence(evidence, TemplateId.WorldMapAnchor);
             GameDetectionEvidence continentTitle = FindEvidence(evidence, TemplateId.ContinentMapTitle);
+            GameDetectionEvidence continentPinButton = FindEvidence(
+                evidence, TemplateId.ContinentMapPinButton);
+            GameDetectionEvidence continentHomePin = FindEvidence(
+                evidence, TemplateId.ContinentMapHomeLocationPin);
+            GameDetectionEvidence continentSearchPin = FindEvidence(
+                evidence, TemplateId.ContinentMapSearchTargetPin);
             GameDetectionEvidence cityMapButton = FindEvidence(evidence, TemplateId.CityToWorldMapButton);
             bool panelChromeFound = panelAnchor.Found || levelMinusButton.Found
                 || resourceTabSelected.Found || resourceTabUnselected.Found;
@@ -209,6 +215,10 @@ namespace ADB_Tool_Automation_Post_FB.Infrastructure.GameDetection
             bool teamSelectionConfirmed = teamPanel.Found && (teamAdjust.Found || teamAction.Found);
             bool storageLimitConfirmed = storageDialog.Found && storageCancel.Found;
             bool resourceExpiryConfirmed = resourceExpiryDialog.Found && storageCancel.Found;
+            bool continentMapConfirmed = continentTitle.Found
+                || continentPinButton.Found
+                || continentHomePin.Found
+                || continentSearchPin.Found;
             GameState state = resourceExpiryConfirmed
                 ? GameState.ResourceExpiryDialog
                 : storageLimitConfirmed
@@ -217,7 +227,7 @@ namespace ADB_Tool_Automation_Post_FB.Infrastructure.GameDetection
                 ? GameState.TeamSelection
                 : panelConfirmed ? GameState.ResourceSearchPanel
                 : popupConfirmed ? GameState.ResourcePopup
-                    : continentTitle.Found ? GameState.ContinentMap
+                    : continentMapConfirmed ? GameState.ContinentMap
                         : worldAnchor.Found ? GameState.WorldMap
                             : cityMapButton.Found ? GameState.City : GameState.Unknown;
 
@@ -281,7 +291,7 @@ namespace ADB_Tool_Automation_Post_FB.Infrastructure.GameDetection
                     ? " ResourceSearchPanel has priority over WorldMap."
                     : popupConfirmed
                         ? " ResourcePopup has priority over WorldMap."
-                    : continentTitle.Found
+                    : continentMapConfirmed
                         ? " ContinentMap has priority over WorldMap."
                         : " Rule WorldMap not satisfied.";
             continentTitle.Message += state == GameState.ContinentMap
@@ -291,6 +301,15 @@ namespace ADB_Tool_Automation_Post_FB.Infrastructure.GameDetection
                     : popupConfirmed
                         ? " ResourcePopup has priority over ContinentMap."
                     : " Rule ContinentMap not satisfied.";
+            continentPinButton.Message += state == GameState.ContinentMap
+                ? " Coordinate pin in the bounded top-left ROI confirmed ContinentMap."
+                : " Coordinate pin was checked as ContinentMap evidence.";
+            continentHomePin.Message += state == GameState.ContinentMap
+                ? " Cyan home pin confirmed ContinentMap."
+                : " Cyan home pin was checked as ContinentMap evidence.";
+            continentSearchPin.Message += state == GameState.ContinentMap
+                ? " Yellow search pin confirmed ContinentMap."
+                : " Yellow search pin was checked as ContinentMap evidence.";
             cityMapButton.Message += state == GameState.City
                 ? " Rule City selected from the lower-left World Map navigation button."
                 : worldAnchor.Found
@@ -369,6 +388,7 @@ namespace ADB_Tool_Automation_Post_FB.Infrastructure.GameDetection
                 bool usedStableWorldMapAnchor = false;
                 bool usedStableCityMapButton = false;
                 bool usedStableWorldMapPinButton = false;
+                bool usedStableContinentMapAnchor = false;
                 if (templateId == TemplateId.WorldMapAnchor && (match == null || !match.Found))
                 {
                     byte[] stableTemplate = TryCreateStableCenterTemplate(template) ?? template;
@@ -392,6 +412,15 @@ namespace ADB_Tool_Automation_Post_FB.Infrastructure.GameDetection
                     match = imageMatcher.Find(screenshotPng, stableTemplate, searchRegion);
                     usedStableWorldMapPinButton = match != null && match.Found;
                 }
+                if ((templateId == TemplateId.ContinentMapPinButton
+                        || templateId == TemplateId.ContinentMapHomeLocationPin
+                        || templateId == TemplateId.ContinentMapSearchTargetPin)
+                    && (match == null || !match.Found))
+                {
+                    byte[] stableTemplate = TryCreateStableCenterTemplate(template) ?? template;
+                    match = imageMatcher.Find(screenshotPng, stableTemplate, searchRegion);
+                    usedStableContinentMapAnchor = match != null && match.Found;
+                }
                 return new GameDetectionEvidence
                 {
                     TemplateId = templateId,
@@ -407,6 +436,8 @@ namespace ADB_Tool_Automation_Post_FB.Infrastructure.GameDetection
                                 ? "Template 'CityToWorldMapButton' matched by its stable icon center in the lower-left region."
                             : usedStableWorldMapPinButton
                                 ? "Template 'WorldMapPinButton' matched by its stable icon center in the lower-left region."
+                            : usedStableContinentMapAnchor
+                                ? $"Template '{templateId}' matched by its stable icon center inside its configured ROI."
                             : searchRegion.HasValue
                                 ? $"Template '{templateId}' matched inside its configured ROI."
                                 : $"Template '{templateId}' matched."
