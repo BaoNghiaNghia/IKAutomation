@@ -1198,9 +1198,8 @@ namespace ADB_Tool_Automation_Post_FB.UI
             IReadOnlyList<TeamNumber> detected = progress.DetectedTeams ?? new TeamNumber[0];
             IReadOnlyList<TeamNumber> ready = progress.ReadyTeams ?? new TeamNumber[0];
             IReadOnlyList<TeamNumber> eligible = progress.EligibleReadyTeams ?? new TeamNumber[0];
-            IReadOnlyList<TeamNumber> visibleTeams = detected.Count > 0
-                ? detected : allowed;
-            SynchronizeTeams(visibleTeams);
+            if (detected.Count > 0)
+                SynchronizeTeams(detected);
             foreach (TeamFarmProgressItem item in Teams)
             {
                 bool isAllowed = allowed.Contains(item.Team);

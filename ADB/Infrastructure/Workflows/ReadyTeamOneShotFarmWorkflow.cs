@@ -77,6 +77,7 @@ namespace ADB_Tool_Automation_Post_FB.Infrastructure.Workflows
                         ReportedAt = DateTimeOffset.UtcNow,
                         TeamAvailabilityChecks = checks + 1,
                         AllowedTeams = request.AllowedTeams,
+                        DetectedTeams = detectedTeams,
                         WaitDeadline = waitDeadline,
                         Message = $"Checking allowed teams (attempt {checks + 1})."
                     });
