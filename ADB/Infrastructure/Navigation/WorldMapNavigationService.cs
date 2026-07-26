@@ -19,6 +19,8 @@ namespace ADB_Tool_Automation_Post_FB.Infrastructure.Navigation
         private const int ExpectedScreenshotWidth = 1280;
         private const int ExpectedScreenshotHeight = 720;
         private const int MaxTerritoryMarkerDistanceFromViewportCenterPx = 360;
+        private const int MaxSearchTargetDistanceFromHomePinPx = 260;
+        private const int NearbyPinObservationAttempts = 4;
         private readonly ILdPlayerClient ldPlayerClient;
         private readonly IGameStateDetector detector;
         private readonly WorldMapNavigationOptions options;
@@ -225,6 +227,28 @@ namespace ADB_Tool_Automation_Post_FB.Infrastructure.Navigation
                     "Pin-map button was tapped but ContinentMap was not verified before timeout.",
                     current.ErrorMessage, transitions);
 
+            PinPair nearbyPins = await ObserveNearbyPinPairAsync(
+                deviceName, current, transitions, cancellationToken);
+            if (nearbyPins != null)
+            {
+                await TapEvidenceAsync(deviceName, nearbyPins.SearchTarget,
+                    "ContinentMapSearchTargetPin", transitions, cancellationToken);
+                GameDetectionResult nearbyFinal = await PollAsync(
+                    deviceName, GameState.WorldMap, transitions, cancellationToken);
+                return nearbyFinal.IsSuccessful && nearbyFinal.State == GameState.WorldMap
+                    ? Result(true, initial, nearbyFinal, ensured.Attempts + 2, watch,
+                        "WorldMap verified after selecting the nearby yellow search pin.",
+                        null, transitions)
+                    : Result(false, initial, nearbyFinal, ensured.Attempts + 2, watch,
+                        "Nearby yellow search pin was tapped but WorldMap was not verified before timeout.",
+                        nearbyFinal.ErrorMessage, transitions);
+            }
+
+            if (ContainsPinEvidence(current))
+                return Result(false, initial, current, ensured.Attempts + 1, watch,
+                    "No fresh yellow search pin was verified near "
+                    + "the cyan home-location pin; no Tap was sent.", null, transitions);
+
             GameDetectionEvidence territory = FindFreshEvidenceNearViewportCenter(current,
                 TemplateId.ContinentMapHomeTerritoryAnchor, MaxTerritoryMarkerDistanceFromViewportCenterPx);
             if (territory == null)
@@ -253,6 +277,86 @@ namespace ADB_Tool_Automation_Post_FB.Infrastructure.Navigation
                 : Result(false, initial, final, ensured.Attempts + 3, watch,
                     "Territory coordinate pin was tapped but WorldMap was not verified before timeout.",
                     final.ErrorMessage, transitions);
+        }
+
+        private async Task<PinPair> ObserveNearbyPinPairAsync(
+            string deviceName,
+            GameDetectionResult initial,
+            IList<NavigationTransition> transitions,
+            CancellationToken cancellationToken)
+        {
+            GameDetectionResult current = initial;
+            bool detectorSupportsPins = ContainsPinEvidence(current);
+            for (int attempt = 1; attempt <= NearbyPinObservationAttempts; attempt++)
+            {
+                PinPair pair = FindNearbyPinPair(current);
+                if (pair != null)
+                {
+                    // The icons bounce. Re-detect both pins immediately before the
+                    // production Tap so the target bounds come from the latest frame.
+                    GameDetectionResult fresh = await DetectAsync(
+                        deviceName, transitions, cancellationToken);
+                    PinPair freshPair = FindNearbyPinPair(fresh);
+                    if (freshPair != null)
+                    {
+                        AddTransition(transitions, "Match",
+                            $"Matched cyan home pin ({freshPair.Home.MatchResult.CenterX},"
+                            + $"{freshPair.Home.MatchResult.CenterY}) and nearby yellow search pin "
+                            + $"({freshPair.SearchTarget.MatchResult.CenterX},"
+                            + $"{freshPair.SearchTarget.MatchResult.CenterY}) in the same fresh frame.");
+                        return freshPair;
+                    }
+
+                    current = fresh;
+                    detectorSupportsPins = detectorSupportsPins || ContainsPinEvidence(fresh);
+                }
+
+                if (!detectorSupportsPins)
+                    return null;
+
+                if (attempt < NearbyPinObservationAttempts)
+                {
+                    await Task.Delay(options.StatePollIntervalMs, cancellationToken);
+                    AddTransition(transitions, "Wait",
+                        $"Waited {options.StatePollIntervalMs} ms for animated ContinentMap pins.");
+                    current = await DetectAsync(deviceName, transitions, cancellationToken);
+                }
+            }
+
+            return null;
+        }
+
+        private static PinPair FindNearbyPinPair(GameDetectionResult result)
+        {
+            GameDetectionEvidence home = FindFreshEvidence(
+                result, TemplateId.ContinentMapHomeLocationPin);
+            GameDetectionEvidence target = FindFreshEvidence(
+                result, TemplateId.ContinentMapSearchTargetPin);
+            if (home == null || target == null) return null;
+
+            double dx = target.MatchResult.CenterX - home.MatchResult.CenterX;
+            double dy = target.MatchResult.CenterY - home.MatchResult.CenterY;
+            double distance = Math.Sqrt((dx * dx) + (dy * dy));
+            return distance <= MaxSearchTargetDistanceFromHomePinPx
+                ? new PinPair(home, target)
+                : null;
+        }
+
+        private static bool ContainsPinEvidence(GameDetectionResult result) =>
+            result?.Evidence != null && result.Evidence.Any(item =>
+                item.TemplateId == TemplateId.ContinentMapHomeLocationPin
+                || item.TemplateId == TemplateId.ContinentMapSearchTargetPin);
+
+        private sealed class PinPair
+        {
+            public PinPair(GameDetectionEvidence home, GameDetectionEvidence searchTarget)
+            {
+                Home = home;
+                SearchTarget = searchTarget;
+            }
+
+            public GameDetectionEvidence Home { get; }
+            public GameDetectionEvidence SearchTarget { get; }
         }
 
         private async Task<GameDetectionResult> PollAsync(string deviceName, GameState target,

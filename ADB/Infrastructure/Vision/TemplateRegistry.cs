@@ -18,6 +18,8 @@ namespace ADB_Tool_Automation_Post_FB.Infrastructure.Vision
                 { TemplateId.ContinentMapTitle, Define(TemplateId.ContinentMapTitle, "Global/continent_map_title.png") },
                 { TemplateId.ContinentMapHomeTerritoryAnchor, Define(TemplateId.ContinentMapHomeTerritoryAnchor, "Global/continent_map_home_territory_anchor.png") },
                 { TemplateId.ContinentMapPinButton, Define(TemplateId.ContinentMapPinButton, "Global/continent_map_pin_button.png") },
+                { TemplateId.ContinentMapHomeLocationPin, Define(TemplateId.ContinentMapHomeLocationPin, "Global/continent_map_home_location_pin.png") },
+                { TemplateId.ContinentMapSearchTargetPin, Define(TemplateId.ContinentMapSearchTargetPin, "Global/continent_map_search_target_pin.png") },
                 { TemplateId.ResourceSearchPanelAnchor, Define(TemplateId.ResourceSearchPanelAnchor, "Search/resource_search_panel_anchor.png") },
                 { TemplateId.SearchButtonEnabled, Define(TemplateId.SearchButtonEnabled, "Search/search_button_enabled.png") },
                 { TemplateId.ResourceTabSelected, Define(TemplateId.ResourceTabSelected, "Search/resource_tab_selected.png") },

@@ -7,6 +7,8 @@ namespace ADB_Tool_Automation_Post_FB.Core.Vision
         ContinentMapTitle,
         ContinentMapHomeTerritoryAnchor,
         ContinentMapPinButton,
+        ContinentMapHomeLocationPin,
+        ContinentMapSearchTargetPin,
         ResourceSearchPanelAnchor,
         SearchButtonEnabled,
         ResourceTabSelected,

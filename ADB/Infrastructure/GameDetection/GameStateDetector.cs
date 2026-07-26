@@ -35,6 +35,8 @@ namespace ADB_Tool_Automation_Post_FB.Infrastructure.GameDetection
             TemplateId.ContinentMapTitle,
             TemplateId.ContinentMapHomeTerritoryAnchor,
             TemplateId.ContinentMapPinButton,
+            TemplateId.ContinentMapHomeLocationPin,
+            TemplateId.ContinentMapSearchTargetPin,
             TemplateId.CityToWorldMapButton,
             TemplateId.WorldMapPinButton,
             TemplateId.WorldMapAnchor
@@ -354,6 +356,11 @@ namespace ADB_Tool_Automation_Post_FB.Infrastructure.GameDetection
                     : templateId == TemplateId.ContinentMapPinButton
                     ? new ImageRegion(0, 0,
                         screenshotWidth / 4, screenshotHeight / 5)
+                    : templateId == TemplateId.ContinentMapHomeLocationPin
+                        || templateId == TemplateId.ContinentMapSearchTargetPin
+                    ? new ImageRegion(screenshotWidth / 6, screenshotHeight / 10,
+                        screenshotWidth - (screenshotWidth / 6),
+                        screenshotHeight - (screenshotHeight / 10))
                     : IsSearchPanelTemplate(templateId)
                         ? new ImageRegion(0, screenshotHeight / 2,
                             screenshotWidth, screenshotHeight - screenshotHeight / 2)

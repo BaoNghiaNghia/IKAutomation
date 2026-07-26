@@ -479,6 +479,7 @@ namespace IKAutomation.GameDetection.Tests
             TemplateId.ResourcePopupInfoAnchor, TemplateId.ResourcePopupIronTitle,
             TemplateId.GatherButtonEnabled, TemplateId.ContinentMapTitle,
             TemplateId.ContinentMapHomeTerritoryAnchor, TemplateId.ContinentMapPinButton,
+            TemplateId.ContinentMapHomeLocationPin, TemplateId.ContinentMapSearchTargetPin,
             TemplateId.CityToWorldMapButton, TemplateId.WorldMapPinButton,
             TemplateId.WorldMapAnchor };
         private static string DataRoot() => Path.Combine(AppContext.BaseDirectory, "Data", "InfinityKingdom", "1280x720", "vi");
