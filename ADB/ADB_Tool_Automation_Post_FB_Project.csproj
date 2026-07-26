@@ -227,6 +227,7 @@
     <Compile Include="Infrastructure\Navigation\WorldMapNavigationServiceFactory.cs" />
     <Compile Include="Infrastructure\Notifications\TelegramFailureNotifier.cs" />
     <Compile Include="Infrastructure\Notifications\TelegramFailureNotifierFactory.cs" />
+    <Compile Include="Infrastructure\Notifications\TelegramLocalSettings.cs" />
     <Compile Include="Infrastructure\ResourcePopup\AppConfigResourcePopupVerificationOptionsProvider.cs" />
     <Compile Include="Infrastructure\ResourcePopup\ResourcePopupDiagnosticStore.cs" />
     <Compile Include="Infrastructure\ResourcePopup\ResourcePopupTitleTemplateCropper.cs" />

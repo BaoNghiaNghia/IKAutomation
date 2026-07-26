@@ -10,5 +10,6 @@
     <Compile Include="..\..\ADB\Core\Notifications\*.cs" Link="Production\Notifications\%(Filename)%(Extension)" />
     <Compile Include="..\..\ADB\Core\Workflows\IContinuousFarmHeartbeatNotifier.cs" Link="Production\IContinuousFarmHeartbeatNotifier.cs" />
     <Compile Include="..\..\ADB\Infrastructure\Notifications\TelegramFailureNotifier.cs" Link="Production\TelegramFailureNotifier.cs" />
+    <Compile Include="..\..\ADB\Infrastructure\Notifications\TelegramLocalSettings.cs" Link="Production\TelegramLocalSettings.cs" />
   </ItemGroup>
 </Project>

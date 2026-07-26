@@ -371,6 +371,14 @@ namespace ADB_Tool_Automation_Post_FB.Infrastructure.Navigation
                 last = await DetectAsync(deviceName, transitions, cancellationToken);
                 // Unknown can be a transient render frame after navigation. Waiting is safe
                 // because polling sends no additional input; only a verified target succeeds.
+                if (target == GameState.ContinentMap
+                    && IsVerifiedContinentMapEvidence(last))
+                {
+                    last.State = GameState.ContinentMap;
+                    AddTransition(transitions, "Detect",
+                        "Normalized Unknown to ContinentMap from fresh continent-specific evidence.");
+                    return last;
+                }
                 if (!last.IsSuccessful || IsVerifiedTarget(last, target)
                     || (target == GameState.WorldMap
                         && last.State == GameState.Unknown
@@ -386,6 +394,19 @@ namespace ADB_Tool_Automation_Post_FB.Infrastructure.Navigation
             return target == GameState.ResourceSearchPanel
                 ? IsVerifiedResourceSearchPanel(result)
                 : result.State == target;
+        }
+
+        private static bool IsVerifiedContinentMapEvidence(GameDetectionResult result)
+        {
+            if (result == null || !result.IsSuccessful
+                || result.State != GameState.Unknown)
+                return false;
+
+            return FindFreshEvidence(result, TemplateId.ContinentMapTitle) != null
+                || FindFreshEvidence(result,
+                    TemplateId.ContinentMapHomeLocationPin) != null
+                || FindFreshEvidence(result,
+                    TemplateId.ContinentMapSearchTargetPin) != null;
         }
 
         private static bool IsVerifiedResourceSearchPanel(GameDetectionResult result)

@@ -4,6 +4,7 @@ using ADB_Tool_Automation_Post_FB.Infrastructure.Notifications;
 using ADB_Tool_Automation_Post_FB.Core.Workflows;
 using System;
 using System.Collections.Generic;
+using System.IO;
 using System.Net;
 using System.Net.Http;
 using System.Threading;
@@ -30,6 +31,7 @@ namespace IKAutomation.TelegramNotifications.Tests
             Run("HTTP 404 identifies invalid token", NotFoundIdentifiesInvalidToken);
             Run("Configured notifier posts health heartbeat", SendsHeartbeat);
             Run("Heartbeat highlights unhealthy devices", HeartbeatHighlightsUnhealthyDevices);
+            Run("Local settings parse token and chat ID", LocalSettingsParseCredentials);
             Console.WriteLine($"Telegram notification tests: {passed} passed, {failed} failed.");
             return failed == 0 ? 0 : 1;
         }
@@ -163,6 +165,28 @@ namespace IKAutomation.TelegramNotifications.Tests
                 && text.Contains("capture failed")
                 && !text.Contains("May 1: Waiting"),
                 "Heartbeat device summary was not focused: " + text);
+        }
+
+        private static void LocalSettingsParseCredentials()
+        {
+            string path = Path.Combine(Path.GetTempPath(),
+                "ikautomation-telegram-" + Guid.NewGuid().ToString("N") + ".settings");
+            try
+            {
+                File.WriteAllLines(path, new[]
+                {
+                    "# local credentials",
+                    "BotToken=test-local-token",
+                    "ChatId=123456"
+                });
+                TelegramLocalSettings settings = TelegramLocalSettings.Load(path);
+                Equal("test-local-token", settings.BotToken);
+                Equal("123456", settings.ChatId);
+            }
+            finally
+            {
+                if (File.Exists(path)) File.Delete(path);
+            }
         }
 
         private static ContinuousFarmHealthSnapshot Health()

@@ -45,7 +45,8 @@ namespace ADB_Tool_Automation_Post_FB.Infrastructure.Notifications
             {
                 logger.Info("[Telegram Notification] Sent=False, Reason=NotConfigured");
                 return Result(false, false,
-                    $"Telegram is not configured. Set {BotTokenEnvironmentVariable} and {ChatIdEnvironmentVariable}, then restart IKAutomation.");
+                    $"Telegram is not configured. Set {BotTokenEnvironmentVariable} and {ChatIdEnvironmentVariable}, "
+                    + $"or create {TelegramLocalSettings.DefaultPath}, then restart IKAutomation.");
             }
             try
             {
@@ -109,7 +110,8 @@ namespace ADB_Tool_Automation_Post_FB.Infrastructure.Notifications
             {
                 logger.Info("[Telegram Heartbeat] Sent=False, Reason=NotConfigured");
                 return HeartbeatResult(false, false,
-                    $"Telegram is not configured. Set {BotTokenEnvironmentVariable} and {ChatIdEnvironmentVariable}, then restart IKAutomation.");
+                    $"Telegram is not configured. Set {BotTokenEnvironmentVariable} and {ChatIdEnvironmentVariable}, "
+                    + $"or create {TelegramLocalSettings.DefaultPath}, then restart IKAutomation.");
             }
             try
             {

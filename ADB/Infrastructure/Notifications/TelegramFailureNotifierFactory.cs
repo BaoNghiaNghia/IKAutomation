@@ -8,12 +8,17 @@ namespace ADB_Tool_Automation_Post_FB.Infrastructure.Notifications
     {
         public static TelegramFailureNotifier CreateFromEnvironment()
         {
+            TelegramLocalSettings local = TelegramLocalSettings.Load(
+                TelegramLocalSettings.DefaultPath);
+            string botToken = Environment.GetEnvironmentVariable(
+                TelegramFailureNotifier.BotTokenEnvironmentVariable);
+            string chatId = Environment.GetEnvironmentVariable(
+                TelegramFailureNotifier.ChatIdEnvironmentVariable);
+
             var client = new HttpClient { Timeout = TimeSpan.FromSeconds(15) };
             return new TelegramFailureNotifier(client,
-                Environment.GetEnvironmentVariable(
-                    TelegramFailureNotifier.BotTokenEnvironmentVariable),
-                Environment.GetEnvironmentVariable(
-                    TelegramFailureNotifier.ChatIdEnvironmentVariable),
+                string.IsNullOrWhiteSpace(botToken) ? local.BotToken : botToken,
+                string.IsNullOrWhiteSpace(chatId) ? local.ChatId : chatId,
                 new ApplicationDiagnosticLogger());
         }
     }

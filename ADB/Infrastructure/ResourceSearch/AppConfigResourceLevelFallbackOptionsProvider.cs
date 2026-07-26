@@ -15,7 +15,7 @@ namespace ADB_Tool_Automation_Post_FB.Infrastructure.ResourceSearch
             return new ResourceLevelFallbackOptions(
                 ReadLevels("ResourceLevelFallback.Levels", new[] { 7, 6, 5 }),
                 ReadInt("ResourceLevelFallback.AttemptsPerLevel", 1),
-                ReadInt("ResourceLevelFallback.RequiredConsecutiveToastClearFrames", 2),
+                ReadInt("ResourceLevelFallback.RequiredConsecutiveToastClearFrames", 1),
                 ReadInt("ResourceLevelFallback.ToastClearPollIntervalMs", 150),
                 ReadInt("ResourceLevelFallback.ToastClearTimeoutSeconds", 5),
                 ReadBool("ResourceLevelFallback.StopOnFirstLocated", true),

@@ -146,6 +146,21 @@ setx IKAUTOMATION_TELEGRAM_CHAT_ID "YOUR_CHAT_ID"
 
 4. Restart Visual Studio and IKAutomation so the new environment is loaded.
 
+If Visual Studio does not inherit the environment variables, create this local,
+untracked file instead:
+
+```text
+%LOCALAPPDATA%\IKAutomation\telegram.local.settings
+```
+
+```text
+BotToken=YOUR_NEW_BOT_TOKEN
+ChatId=YOUR_CHAT_ID
+```
+
+Environment variables take precedence when both sources are present. The local
+file stays outside the repository and must never be committed.
+
 The application reports notification failures separately from the farm result. HTTP 401 or 404 normally means the token is invalid or revoked; recreate the token in BotFather, update the environment variable, and restart the application.
 
 ## Tests
