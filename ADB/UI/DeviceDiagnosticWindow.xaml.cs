@@ -549,41 +549,6 @@ namespace ADB_Tool_Automation_Post_FB.UI
                 && attemptVersion == currentVersion;
         }
 
-        private async void SaveFarmSettings_Click(object sender, RoutedEventArgs e)
-        {
-            if (!TryReadFarmPreferences(out FarmUiPreferences preferences, out string error))
-            {
-                StatusTextBlock.Text = error;
-                return;
-            }
-            try
-            {
-                FarmUiPreferencesSaveResult result = await farmPreferencesStore.SaveAsync(
-                    preferences, lifetimeCancellation.Token);
-                StatusTextBlock.Text = result.Success ? "Đã lưu cấu hình farm." : result.Message;
-            }
-            catch (OperationCanceledException) { }
-            catch (Exception exception)
-            {
-                StatusTextBlock.Text = "Không thể lưu cấu hình farm: " + exception.Message;
-            }
-        }
-
-        private async void RestoreFarmDefaults_Click(object sender, RoutedEventArgs e)
-        {
-            try
-            {
-                await farmPreferencesStore.ResetAsync(lifetimeCancellation.Token);
-                ApplyFarmPreferences(defaultFarmPreferences);
-                StatusTextBlock.Text = "Đã khôi phục cấu hình mặc định.";
-            }
-            catch (OperationCanceledException) { }
-            catch (Exception exception)
-            {
-                StatusTextBlock.Text = "Không thể khôi phục cấu hình mặc định: " + exception.Message;
-            }
-        }
-
         private void StopOneShotFarm_Click(object sender, RoutedEventArgs e)
         {
             CancellationTokenSource currentRun = oneShotFarmCancellation;
@@ -680,62 +645,28 @@ namespace ADB_Tool_Automation_Post_FB.UI
             StoneResourceCheckBox.IsChecked = preferences.Stone;
             WoodResourceCheckBox.IsChecked = preferences.Wood;
             FoodResourceCheckBox.IsChecked = preferences.Food;
-            LevelPriorityTextBox.Text = string.Join(",", preferences.LevelPriority ?? new int[0]);
-            TeamPriorityTextBox.Text = string.Join(",", (preferences.TeamPriority
-                ?? new TeamNumber[0]).Select(team => (int)team));
-            ReadyCheckIntervalTextBox.Text = preferences.ReadyCheckIntervalMinutes
-                .ToString(CultureInfo.InvariantCulture);
-            ReadyMaxWaitTextBox.Text = preferences.ReadyMaxWaitHours
-                .ToString(CultureInfo.InvariantCulture);
         }
 
         private bool TryReadFarmPreferences(out FarmUiPreferences preferences,
             out string error)
         {
-            preferences = null;
             error = null;
-            if (!TryParseIntegerList(LevelPriorityTextBox.Text, out int[] levels)
-                || !TryParseIntegerList(TeamPriorityTextBox.Text, out int[] teamValues)
-                || !int.TryParse(ReadyCheckIntervalTextBox.Text, NumberStyles.Integer,
-                    CultureInfo.InvariantCulture, out int intervalMinutes)
-                || !int.TryParse(ReadyMaxWaitTextBox.Text, NumberStyles.Integer,
-                    CultureInfo.InvariantCulture, out int maxWaitHours))
-            {
-                error = "Level, team và thời gian chờ phải là số nguyên hợp lệ.";
-                return false;
-            }
             preferences = new FarmUiPreferences
             {
                 Iron = IronResourceCheckBox.IsChecked == true,
                 Stone = StoneResourceCheckBox.IsChecked == true,
                 Wood = WoodResourceCheckBox.IsChecked == true,
                 Food = FoodResourceCheckBox.IsChecked == true,
-                LevelPriority = levels,
-                TeamPriority = teamValues.Select(value => (TeamNumber)value).ToArray(),
-                AllowTeam1 = teamValues.Contains((int)TeamNumber.Team1),
-                ReadyCheckIntervalMinutes = intervalMinutes,
-                ReadyMaxWaitHours = maxWaitHours,
+                LevelPriority = defaultFarmPreferences.LevelPriority.ToArray(),
+                TeamPriority = defaultFarmPreferences.TeamPriority.ToArray(),
+                AllowTeam1 = defaultFarmPreferences.AllowTeam1,
+                ReadyCheckIntervalMinutes = defaultFarmPreferences.ReadyCheckIntervalMinutes,
+                ReadyMaxWaitHours = defaultFarmPreferences.ReadyMaxWaitHours,
                 UnoccupiedOnly = true
             };
             FarmUiPreferencesValidationResult validation = FarmUiPreferencesMapper.Validate(preferences);
             error = validation.IsValid ? null : validation.Message;
             return validation.IsValid;
-        }
-
-        private static bool TryParseIntegerList(string text, out int[] values)
-        {
-            values = new int[0];
-            if (string.IsNullOrWhiteSpace(text)) return false;
-            string[] parts = text.Split(',');
-            var parsed = new List<int>();
-            foreach (string part in parts)
-            {
-                if (!int.TryParse(part.Trim(), NumberStyles.Integer,
-                    CultureInfo.InvariantCulture, out int value)) return false;
-                parsed.Add(value);
-            }
-            values = parsed.ToArray();
-            return values.Length > 0;
         }
 
 
