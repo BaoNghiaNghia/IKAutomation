@@ -227,8 +227,10 @@ namespace ADB_Tool_Automation_Post_FB.Infrastructure.Navigation
                     "Pin-map button was tapped but ContinentMap was not verified before timeout.",
                     current.ErrorMessage, transitions);
 
-            PinPair nearbyPins = await ObserveNearbyPinPairAsync(
+            PinObservation pinObservation = await ObserveNearbyPinPairAsync(
                 deviceName, current, transitions, cancellationToken);
+            current = pinObservation.Latest;
+            PinPair nearbyPins = pinObservation.Pair;
             if (nearbyPins != null)
             {
                 await TapEvidenceAsync(deviceName, nearbyPins.SearchTarget,
@@ -244,16 +246,15 @@ namespace ADB_Tool_Automation_Post_FB.Infrastructure.Navigation
                         nearbyFinal.ErrorMessage, transitions);
             }
 
-            if (ContainsPinEvidence(current))
-                return Result(false, initial, current, ensured.Attempts + 1, watch,
-                    "No fresh yellow search pin was verified near "
-                    + "the cyan home-location pin; no Tap was sent.", null, transitions);
-
-            GameDetectionEvidence territory = FindFreshEvidenceNearViewportCenter(current,
-                TemplateId.ContinentMapHomeTerritoryAnchor, MaxTerritoryMarkerDistanceFromViewportCenterPx);
+            TerritoryObservation territoryObservation =
+                await ObserveTerritoryMarkerAsync(deviceName, current, transitions,
+                    cancellationToken);
+            current = territoryObservation.Latest;
+            GameDetectionEvidence territory = territoryObservation.Marker;
             if (territory == null)
                 return Result(false, initial, current, ensured.Attempts + 1, watch,
-                    "Alliance territory marker had no valid fresh near-current bounds; no Tap was sent.", null, transitions);
+                    "Neither a nearby yellow search pin nor an alliance territory marker "
+                    + "had valid fresh bounds; no Tap was sent.", null, transitions);
 
             await TapEvidenceAsync(deviceName, territory, "ContinentMapHomeTerritoryAnchor", transitions, cancellationToken);
             await Task.Delay(options.StatePollIntervalMs, cancellationToken);
@@ -279,7 +280,7 @@ namespace ADB_Tool_Automation_Post_FB.Infrastructure.Navigation
                     final.ErrorMessage, transitions);
         }
 
-        private async Task<PinPair> ObserveNearbyPinPairAsync(
+        private async Task<PinObservation> ObserveNearbyPinPairAsync(
             string deviceName,
             GameDetectionResult initial,
             IList<NavigationTransition> transitions,
@@ -318,7 +319,7 @@ namespace ADB_Tool_Automation_Post_FB.Infrastructure.Navigation
                             + $"({freshPair.SearchTarget.MatchResult.CenterX},"
                             + $"{freshPair.SearchTarget.MatchResult.CenterY}); "
                             + "the yellow target bounds were refreshed immediately before Tap.");
-                        return freshPair;
+                        return new PinObservation(fresh, freshPair);
                     }
 
                     current = fresh;
@@ -326,8 +327,19 @@ namespace ADB_Tool_Automation_Post_FB.Infrastructure.Navigation
                         || ContainsPinEvidence(fresh);
                 }
 
+                if (FindFreshEvidenceNearViewportCenter(current,
+                        TemplateId.ContinentMapHomeTerritoryAnchor,
+                        MaxTerritoryMarkerDistanceFromViewportCenterPx) != null
+                    && !HasFreshPinEvidence(current))
+                {
+                    AddTransition(transitions, "Detect",
+                        "No animated location pin was visible, but a fresh alliance "
+                        + "territory marker is available; using the bounded territory fallback.");
+                    return new PinObservation(current, null);
+                }
+
                 if (!detectorSupportsPins)
-                    return null;
+                    return new PinObservation(current, null);
 
                 if (attempt < NearbyPinObservationAttempts)
                 {
@@ -340,7 +352,39 @@ namespace ADB_Tool_Automation_Post_FB.Infrastructure.Navigation
                 }
             }
 
-            return null;
+            return new PinObservation(current, null);
+        }
+
+        private async Task<TerritoryObservation> ObserveTerritoryMarkerAsync(
+            string deviceName,
+            GameDetectionResult initial,
+            IList<NavigationTransition> transitions,
+            CancellationToken cancellationToken)
+        {
+            GameDetectionResult current = initial;
+            for (int attempt = 1; attempt <= NearbyPinObservationAttempts; attempt++)
+            {
+                GameDetectionEvidence marker = FindFreshEvidenceNearViewportCenter(
+                    current, TemplateId.ContinentMapHomeTerritoryAnchor,
+                    MaxTerritoryMarkerDistanceFromViewportCenterPx);
+                if (marker != null)
+                    return new TerritoryObservation(current, marker);
+
+                if (attempt < NearbyPinObservationAttempts)
+                {
+                    await Task.Delay(options.StatePollIntervalMs, cancellationToken);
+                    AddTransition(transitions, "Wait",
+                        $"Waited {options.StatePollIntervalMs} ms for the animated "
+                        + "alliance territory marker.");
+                    current = await DetectAsync(deviceName, transitions, cancellationToken);
+                    if (!current.IsSuccessful
+                        || (current.State != GameState.ContinentMap
+                            && !IsVerifiedContinentMapEvidence(current)))
+                        break;
+                }
+            }
+
+            return new TerritoryObservation(current, null);
         }
 
         private static PinPair FindNearbyPinPair(
@@ -365,6 +409,35 @@ namespace ADB_Tool_Automation_Post_FB.Infrastructure.Navigation
             result?.Evidence != null && result.Evidence.Any(item =>
                 item.TemplateId == TemplateId.ContinentMapHomeLocationPin
                 || item.TemplateId == TemplateId.ContinentMapSearchTargetPin);
+
+        private static bool HasFreshPinEvidence(GameDetectionResult result) =>
+            FindFreshEvidence(result, TemplateId.ContinentMapHomeLocationPin) != null
+            || FindFreshEvidence(result, TemplateId.ContinentMapSearchTargetPin) != null;
+
+        private sealed class PinObservation
+        {
+            public PinObservation(GameDetectionResult latest, PinPair pair)
+            {
+                Latest = latest;
+                Pair = pair;
+            }
+
+            public GameDetectionResult Latest { get; }
+            public PinPair Pair { get; }
+        }
+
+        private sealed class TerritoryObservation
+        {
+            public TerritoryObservation(GameDetectionResult latest,
+                GameDetectionEvidence marker)
+            {
+                Latest = latest;
+                Marker = marker;
+            }
+
+            public GameDetectionResult Latest { get; }
+            public GameDetectionEvidence Marker { get; }
+        }
 
         private sealed class PinPair
         {

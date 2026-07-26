@@ -356,6 +356,11 @@ namespace ADB_Tool_Automation_Post_FB.UI
                 ApplyOneShotFarmProgress(runGeneration, runCancellation,
                     snapshot.DeviceName, progress.FarmProgress.DeviceProgress);
             }
+            else
+            {
+                GetOrCreateFarmProgress(snapshot.DeviceName)
+                    .ApplySupervisorSnapshot(snapshot);
+            }
         }
 
         private void ApplyHealthDashboard(ContinuousFarmHealthSnapshot health)
@@ -1214,6 +1219,24 @@ namespace ADB_Tool_Automation_Post_FB.UI
                     : "Không được phép";
                 item.SetStatus(status, isCurrent || isEligible || isReady);
             }
+            UpdateCountdown(DateTimeOffset.Now);
+        }
+
+        public void ApplySupervisorSnapshot(ContinuousFarmDeviceSnapshot snapshot)
+        {
+            if (snapshot == null) return;
+
+            Stage = snapshot.State == ContinuousFarmDeviceState.Waiting
+                ? OneShotFarmProgressStage.WaitingForReadyTeam.ToString()
+                : snapshot.State.ToString();
+            Message = snapshot.Message ?? "-";
+            Detail = $"Chu kỳ: {snapshot.CycleCount}; bước: "
+                + $"{snapshot.CurrentOperation ?? "-"}; tài nguyên/cấp/đội: "
+                + $"{snapshot.CurrentResource ?? "-"}/"
+                + $"{snapshot.CurrentLevel?.ToString(CultureInfo.InvariantCulture) ?? "-"}/"
+                + $"{snapshot.CurrentTeam ?? "-"}";
+            nextCheckAt = snapshot.NextAttemptAt;
+            waitDeadline = snapshot.NextAttemptAt;
             UpdateCountdown(DateTimeOffset.Now);
         }
 

@@ -821,7 +821,8 @@ internal static class Program
         Is(xaml.Contains("RunOneShotFarmButton") && xaml.Contains("RunContinuousFarmButton"),
             "bounded or continuous run control is missing");
         Is(code.Contains("continuousFarmSupervisor.RunAsync")
-            && code.Contains("RunContinuousSupervisorAsync"),
+            && code.Contains("RunContinuousSupervisorAsync")
+            && code.Contains("ApplySupervisorSnapshot(snapshot)"),
             "continuous supervisor is not called by the UI");
         Is(main.Contains("new ContinuousFarmSupervisor("),
             "continuous supervisor is not composed in MainWindow");
