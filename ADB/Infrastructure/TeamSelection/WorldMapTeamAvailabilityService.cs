@@ -155,8 +155,14 @@ namespace ADB_Tool_Automation_Post_FB.Infrastructure.TeamSelection
                 .Max();
             if (detectedTeamCount == 0)
             {
-                return Failed("No team rows could be verified in the WorldMap roster; "
-                    + "team availability was not inferred.", null, GameState.WorldMap);
+                // Every account has at least Team1. On a one-team account the
+                // only row contains a timer while it is gathering, so neither
+                // a ready label nor a stable numbered badge may match. A fresh,
+                // verified WorldMap frame is therefore sufficient to classify
+                // this as a valid one-team roster with no ready team. Returning
+                // a technical failure here would bypass the bounded readiness
+                // wait and incorrectly stop continuous farming.
+                detectedTeamCount = 1;
             }
 
             // Team rows are contiguous from Team1. The highest freshly verified
