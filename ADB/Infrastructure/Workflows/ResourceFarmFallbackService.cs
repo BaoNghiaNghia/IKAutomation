@@ -68,6 +68,7 @@ namespace ADB_Tool_Automation_Post_FB.Infrastructure.Workflows
                 for (int searchAreaAttempt = 0; ; searchAreaAttempt++)
                 {
                     var attemptedThisPass = new HashSet<ResourceType>();
+                    bool searchAreaRecoveryRequested = false;
                     foreach (ResourceType resource in request.ResourcePriority)
                     {
                     cancellationToken.ThrowIfCancellationRequested();
@@ -126,6 +127,13 @@ namespace ADB_Tool_Automation_Post_FB.Infrastructure.Workflows
                         attempt.SearchLevelsExhausted = true;
                         AddUnique(exhausted, resource);
                         attempt.Message = level.Message; attempt.Duration = attemptWatch.Elapsed;
+                        if (RequiresSearchAreaRecovery(level))
+                        {
+                            searchAreaRecoveryRequested = true;
+                            Log(runId, deviceName, resource, level.LocatedLevel,
+                                "SearchAreaRecovery", "TargetLevelTooLow");
+                            break;
+                        }
                         if (options.SwitchWhenLevelsExhausted) continue;
                         return Complete(result, ResourceFarmFallbackOutcome.ResourcePlanExhausted,
                             watch, "Resource level plan was exhausted.", null);
@@ -248,7 +256,10 @@ namespace ADB_Tool_Automation_Post_FB.Infrastructure.Workflows
 
                     if (searchAreaAttempt >= options.MaxSearchAreaRecoveryAttempts)
                         return Complete(result, ResourceFarmFallbackOutcome.ResourcePlanExhausted, watch,
-                            "The four-resource plan was exhausted without a march.", null);
+                            searchAreaRecoveryRequested
+                                ? "The target level is unavailable in the current season-map area, "
+                                    + "and the bounded search-area recovery plan was exhausted."
+                                : "The four-resource plan was exhausted without a march.", null);
 
                     NavigationResult reposition = await navigation.RepositionToAllianceTerritoryAsync(
                         deviceName, cancellationToken);
@@ -322,6 +333,15 @@ namespace ADB_Tool_Automation_Post_FB.Infrastructure.Workflows
         private static void AddUnique(IList<ResourceType> items, ResourceType resource)
         {
             if (!items.Contains(resource)) items.Add(resource);
+        }
+
+        private static bool RequiresSearchAreaRecovery(ResourceLevelFallbackResult result)
+        {
+            return result?.Attempts != null
+                && result.Attempts.Any(attempt => string.Equals(
+                    attempt.MatchedNotFoundVariant,
+                    "TargetLevelTooLow",
+                    StringComparison.Ordinal));
         }
 
         private void Log(string runId, string device, ResourceType resource,
