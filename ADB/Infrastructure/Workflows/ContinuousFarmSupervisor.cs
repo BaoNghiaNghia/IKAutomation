@@ -197,13 +197,15 @@ namespace ADB_Tool_Automation_Post_FB.Infrastructure.Workflows
                     if (attempt.WaitForNextCycle)
                     {
                         snapshot.ConsecutiveFailures = 0;
+                        int nextCycleDelayMs = attempt.NextCycleDelayMs
+                            ?? options.CycleIntervalMs;
                         DateTimeOffset next = DateTimeOffset.UtcNow
-                            .AddMilliseconds(options.CycleIntervalMs);
+                            .AddMilliseconds(nextCycleDelayMs);
                         Transition(snapshot, ContinuousFarmDeviceState.Waiting,
                             attempt.WaitMessage,
                             null, next);
                         Publish(snapshot, progress, null, cancellationToken);
-                        await Task.Delay(options.CycleIntervalMs, cancellationToken);
+                        await Task.Delay(nextCycleDelayMs, cancellationToken);
                         continue;
                     }
 
@@ -401,7 +403,8 @@ namespace ADB_Tool_Automation_Post_FB.Infrastructure.Workflows
                         "March verification was inconclusive; waiting for the next team availability check.");
                 if (item?.Result?.Outcome == OneShotFarmOutcome.AllCandidateStoragesFull)
                     return AttemptResult.WaitingForNextCycle(
-                        "All selected resource storages are full; waiting for the next scheduled check.");
+                        "All selected resource storages are full; waiting 12 hours before checking again.",
+                        options.AllCandidateStoragesFullDelayMs);
                 if (IsDeviceConnectivityFailure(error))
                     return AttemptResult.TechnicalFailure(error);
                 return AttemptResult.Failed(error);
@@ -841,10 +844,16 @@ namespace ADB_Tool_Automation_Post_FB.Infrastructure.Workflows
             public bool NeedsRecovery { get; private set; }
             public bool WaitForNextCycle { get; private set; }
             public string WaitMessage { get; private set; }
+            public int? NextCycleDelayMs { get; private set; }
             public string Error { get; private set; }
             public static AttemptResult Completed() => new AttemptResult { Success = true };
-            public static AttemptResult WaitingForNextCycle(string message) => new AttemptResult
-                { WaitForNextCycle = true, WaitMessage = message };
+            public static AttemptResult WaitingForNextCycle(string message,
+                int? nextCycleDelayMs = null) => new AttemptResult
+                {
+                    WaitForNextCycle = true,
+                    WaitMessage = message,
+                    NextCycleDelayMs = nextCycleDelayMs
+                };
             public static AttemptResult Failed(string error) => new AttemptResult { Error = error };
             public static AttemptResult TechnicalFailure(string error) => new AttemptResult
                 { Error = error, NeedsRecovery = true };

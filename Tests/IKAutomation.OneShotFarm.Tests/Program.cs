@@ -322,8 +322,16 @@ internal static class Program
             Eq(0, recovery.Calls, "recovery calls");
             Eq(0, result.Devices[0].ConsecutiveFailures, "consecutive failures");
             lock (snapshots)
-                Is(snapshots.Any(value => value.State == ContinuousFarmDeviceState.Waiting
-                    && value.NextAttemptAt.HasValue), "storage-full result was not scheduled");
+            {
+                ContinuousFarmDeviceSnapshot waiting = snapshots.LastOrDefault(value =>
+                    value.State == ContinuousFarmDeviceState.Waiting
+                    && value.NextAttemptAt.HasValue);
+                Is(waiting != null, "storage-full result was not scheduled");
+                TimeSpan remaining = waiting.NextAttemptAt.Value - DateTimeOffset.UtcNow;
+                Is(remaining > TimeSpan.FromHours(11.9)
+                    && remaining <= TimeSpan.FromHours(12),
+                    "storage-full retry was not scheduled for 12 hours");
+            }
         }
     }
 

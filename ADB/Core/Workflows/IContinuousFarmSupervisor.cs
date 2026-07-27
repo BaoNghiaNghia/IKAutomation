@@ -81,7 +81,8 @@ namespace ADB_Tool_Automation_Post_FB.Core.Workflows
             int retryJitterMaxMs = 15000, int circuitFailureThreshold = 5,
             int circuitWindowMs = 1800000, int quarantineCooldownMs = 1800000,
             int checkpointIntervalMs = 30000,
-            int heartbeatIntervalMs = 21600000)
+            int heartbeatIntervalMs = 21600000,
+            int allCandidateStoragesFullDelayMs = 43200000)
         {
             if (cycleIntervalMs < 1)
                 throw new ArgumentOutOfRangeException(nameof(cycleIntervalMs));
@@ -112,6 +113,8 @@ namespace ADB_Tool_Automation_Post_FB.Core.Workflows
                 throw new ArgumentOutOfRangeException(nameof(checkpointIntervalMs));
             if (heartbeatIntervalMs < 1)
                 throw new ArgumentOutOfRangeException(nameof(heartbeatIntervalMs));
+            if (allCandidateStoragesFullDelayMs < 1)
+                throw new ArgumentOutOfRangeException(nameof(allCandidateStoragesFullDelayMs));
             CycleIntervalMs = cycleIntervalMs;
             FailureRetryDelayMs = failureRetryDelayMs;
             NoProgressTimeoutMs = noProgressTimeoutMs;
@@ -125,6 +128,7 @@ namespace ADB_Tool_Automation_Post_FB.Core.Workflows
             QuarantineCooldownMs = quarantineCooldownMs;
             CheckpointIntervalMs = checkpointIntervalMs;
             HeartbeatIntervalMs = heartbeatIntervalMs;
+            AllCandidateStoragesFullDelayMs = allCandidateStoragesFullDelayMs;
         }
 
         public int CycleIntervalMs { get; }
@@ -140,5 +144,6 @@ namespace ADB_Tool_Automation_Post_FB.Core.Workflows
         public int QuarantineCooldownMs { get; }
         public int CheckpointIntervalMs { get; }
         public int HeartbeatIntervalMs { get; }
+        public int AllCandidateStoragesFullDelayMs { get; }
     }
 }
