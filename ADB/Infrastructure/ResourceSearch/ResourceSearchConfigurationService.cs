@@ -453,40 +453,69 @@ namespace ADB_Tool_Automation_Post_FB.Infrastructure.ResourceSearch
             ResourceSearchConfigurationRequest request, ResourceSearchConfigurationResult result,
             IList<ConfigurationStepResult> steps, CancellationToken cancellationToken)
         {
-            GameDetectionResult state = await detector.DetectAsync(deviceName, cancellationToken);
-            result.FinalState = state.State;
-            byte[] screenshot = await ldPlayerClient.CaptureScreenshotPngAsync(deviceName, cancellationToken);
-            ConfigurationTemplateEvidence search = Match(screenshot, TemplateId.SearchButtonEnabled);
-            ConfigurationTemplateEvidence minus = MatchLevelControl(
-                screenshot, TemplateId.LevelMinusButton, search);
-            ConfigurationTemplateEvidence plus = MatchLevelControl(
-                screenshot, TemplateId.LevelPlusButton, search);
-            TemplateId levelTemplateId;
-            bool hasLevelTemplate = TryGetLevelTemplateId(request.TargetLevel, out levelTemplateId);
-            ConfigurationTemplateEvidence finalLevel = hasLevelTemplate
-                ? MatchLevel(screenshot, levelTemplateId, minus, plus, search)
-                : Evidence(TemplateId.LevelPlusButton,
-                    result.LevelVerified && HasBounds(plus) ? ImageMatchResult.FoundAt(
-                        plus.X, plus.Y, plus.Width, plus.Height) : ImageMatchResult.NotFound(),
-                    result.LevelVerified
-                        ? $"Level {request.TargetLevel} retained the verified bounded sequence."
-                        : $"Level {request.TargetLevel} was not verified by the bounded sequence.");
-            var evidence = new List<ConfigurationTemplateEvidence>
+            var watch = Stopwatch.StartNew();
+            var attempt = 0;
+            GameDetectionResult state = null;
+            List<ConfigurationTemplateEvidence> evidence = null;
+            bool success = false;
+
+            do
             {
-                Match(screenshot, TemplateId.ResourceTabSelected),
-                MatchResourceState(screenshot, profileProvider.Get(request.ResourceType).SelectedTemplate, search),
-                finalLevel,
-                MatchFilterState(screenshot, request.UnoccupiedOnly
-                    ? TemplateId.UnoccupiedFilterChecked : TemplateId.UnoccupiedFilterUnchecked, search),
-                search
-            };
-            bool success = IsVerifiedPanel(state) && evidence.All(item => item.Found);
+                cancellationToken.ThrowIfCancellationRequested();
+                attempt++;
+                state = await detector.DetectAsync(deviceName, cancellationToken);
+                result.FinalState = state.State;
+
+                byte[] screenshot = await ldPlayerClient.CaptureScreenshotPngAsync(
+                    deviceName, cancellationToken);
+                ConfigurationTemplateEvidence search = Match(
+                    screenshot, TemplateId.SearchButtonEnabled);
+                ConfigurationTemplateEvidence minus = MatchLevelControl(
+                    screenshot, TemplateId.LevelMinusButton, search);
+                ConfigurationTemplateEvidence plus = MatchLevelControl(
+                    screenshot, TemplateId.LevelPlusButton, search);
+                TemplateId levelTemplateId;
+                bool hasLevelTemplate = TryGetLevelTemplateId(
+                    request.TargetLevel, out levelTemplateId);
+                ConfigurationTemplateEvidence finalLevel = hasLevelTemplate
+                    ? MatchLevel(screenshot, levelTemplateId, minus, plus, search)
+                    : Evidence(TemplateId.LevelPlusButton,
+                        result.LevelVerified && HasBounds(plus) ? ImageMatchResult.FoundAt(
+                            plus.X, plus.Y, plus.Width, plus.Height) : ImageMatchResult.NotFound(),
+                        result.LevelVerified
+                            ? $"Level {request.TargetLevel} retained the verified bounded sequence."
+                            : $"Level {request.TargetLevel} was not verified by the bounded sequence.");
+                evidence = new List<ConfigurationTemplateEvidence>
+                {
+                    Match(screenshot, TemplateId.ResourceTabSelected),
+                    MatchResourceState(screenshot,
+                        profileProvider.Get(request.ResourceType).SelectedTemplate, search),
+                    finalLevel,
+                    MatchFilterState(screenshot, request.UnoccupiedOnly
+                        ? TemplateId.UnoccupiedFilterChecked
+                        : TemplateId.UnoccupiedFilterUnchecked, search),
+                    search
+                };
+                success = IsVerifiedPanel(state) && evidence.All(item => item.Found);
+                if (success)
+                    break;
+
+                await Task.Delay(options.StatePollIntervalMs, cancellationToken);
+            }
+            while (watch.Elapsed < TimeSpan.FromSeconds(
+                options.ActionVerificationTimeoutSeconds));
+
             result.ResourceVerified = evidence[1].Found;
             result.LevelVerified = evidence[2].Found;
             result.FilterVerified = evidence[3].Found;
-            AddStep(steps, "FinalVerification", success, 1, evidence,
+            string missingEvidence = string.Join(", ", evidence
+                .Where(item => !item.Found)
+                .Select(item => item.TemplateId.ToString()));
+            AddStep(steps, "FinalVerification", success, attempt, evidence,
                 success ? "Panel and all requested criteria were verified; Search was not pressed."
-                    : "Panel or one or more requested criteria could not be verified.", state.ErrorMessage);
+                    : $"Final verification timed out. State='{state?.State}'; "
+                        + $"missing evidence='{missingEvidence}'.",
+                state?.ErrorMessage);
             return success;
         }
 

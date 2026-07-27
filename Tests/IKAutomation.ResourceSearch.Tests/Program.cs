@@ -42,6 +42,7 @@ namespace IKAutomation.ResourceSearch.Tests
             Run("Level seven unavailable reports visible level six", LevelSevenUnavailableReportsLevelSix);
             Run("Level ten is verified by bounded value changes", DynamicLevelTen);
             Run("Dynamic account ceiling below requested level is reported", DynamicAccountCeiling);
+            Run("Low account level is retained by bounded verification", LowAccountLevelRetained);
             Run("Compact level glyph changes are not mistaken for the minimum", CompactLevelGlyphChanges);
             Run("Minimum level requires only one bounded confirmation tap", MinimumLevelSingleConfirmation);
             Run("Missing level six template fails before input", MissingLevelSixTemplate);
@@ -61,6 +62,7 @@ namespace IKAutomation.ResourceSearch.Tests
             Run("Unchecked filter uses Search-relative fallback", UncheckedFilterSearchRelativeFallback);
             Run("UnoccupiedOnly false is supported", FalseFilterSupported);
             Run("Final success requires all evidence", FinalEvidenceRequired);
+            Run("Final verification retries a transient frame", FinalVerificationRetriesTransientFrame);
             Run("Search button is never tapped", SearchNeverTapped);
             Run("Polling timeout returns failure", TimeoutFailure);
             Run("Polling cancellation is respected", PollCancellation);
@@ -185,6 +187,7 @@ namespace IKAutomation.ResourceSearch.Tests
         private static void LevelSevenUnavailableReportsLevelSix() { Fixture f = Setup(); f.Ui.MaxLevel = 6; ResourceSearchConfigurationResult r = Execute(f); Assert(!r.Success && !r.LevelVerified, "Unavailable level was accepted."); Equal((int?)6, r.ObservedLevel, "Observed level."); Equal(0, f.Client.SearchTaps, "Search taps."); }
         private static void DynamicLevelTen() { Fixture f = Setup(maximumLevel: 30, resetMinusTapCount: 30); f.Ui.DynamicLevelFrames = true; f.Ui.MaxLevel = 12; var q = Request(); q.TargetLevel = 10; ResourceSearchConfigurationResult r = Execute(f, q); Assert(r.Success && r.LevelVerified, r.ErrorMessage); Equal((int?)10, r.ObservedLevel, "Observed level."); Equal(9, f.Client.PlusTaps, "Plus taps."); }
         private static void DynamicAccountCeiling() { Fixture f = Setup(maximumLevel: 30, resetMinusTapCount: 30); f.Ui.DynamicLevelFrames = true; f.Ui.MaxLevel = 8; var q = Request(); q.TargetLevel = 10; ResourceSearchConfigurationResult r = Execute(f, q); Assert(!r.Success && !r.LevelVerified, "Unavailable dynamic level was accepted."); Equal((int?)8, r.ObservedLevel, "Account ceiling."); Equal(0, f.Client.SearchTaps, "Search taps."); }
+        private static void LowAccountLevelRetained() { Fixture f = Setup(maximumLevel: 30, resetMinusTapCount: 30); f.Ui.DynamicLevelFrames = true; f.Ui.MaxLevel = 2; var q = Request(); q.TargetLevel = 2; ResourceSearchConfigurationResult r = Execute(f, q); Assert(r.Success && r.LevelVerified, r.ErrorMessage); Equal((int?)2, r.ObservedLevel, "Observed level."); Equal(1, f.Client.PlusTaps, "Plus taps."); }
         private static void CompactLevelGlyphChanges() { Fixture f = Setup(maximumLevel: 30, resetMinusTapCount: 30); f.Ui.CompactDynamicLevelFrames = true; f.Ui.MaxLevel = 6; var q = Request(); q.TargetLevel = 6; ResourceSearchConfigurationResult r = Execute(f, q); Assert(r.Success && r.LevelVerified, r.ErrorMessage); Equal(6, f.Ui.Level, "final level"); Equal(5, f.Client.PlusTaps, "plus taps"); }
         private static void MinimumLevelSingleConfirmation() { Fixture f = Setup(maximumLevel: 30, resetMinusTapCount: 30); f.Ui.DynamicLevelFrames = true; f.Ui.Level = 1; f.Ui.MaxLevel = 6; var q = Request(); q.TargetLevel = 6; ResourceSearchConfigurationResult r = Execute(f, q); Assert(r.Success && r.LevelVerified, r.ErrorMessage); Equal(1, f.Client.MinusTaps, "Minimum confirmation taps."); Equal(5, f.Client.PlusTaps, "Plus taps."); }
         private static void MissingLevelSixTemplate() { Fixture f = Setup(); f.Registry.Missing = TemplateId.LevelValue6; ResourceSearchConfigurationRequest q = Request(); q.TargetLevel = 6; ResourceSearchConfigurationResult r = Execute(f, q); Assert(!r.Success && r.ErrorMessage.Contains("LevelValue6"), "missing target template"); Equal(0, f.Client.TotalInput, "input"); }
@@ -311,6 +314,16 @@ namespace IKAutomation.ResourceSearch.Tests
             Fixture f = Setup(); f.Detector.FailOnSecondCall = true;
             ResourceSearchConfigurationResult r = Execute(f);
             Assert(!r.Success, "Final state evidence was ignored.");
+        }
+
+        private static void FinalVerificationRetriesTransientFrame()
+        {
+            Fixture f = Setup();
+            f.Detector.FailOnceOnSecondCall = true;
+            ResourceSearchConfigurationResult result = Execute(f);
+            Assert(result.Success, result.ErrorMessage);
+            Assert(f.Detector.Calls >= 3, "Final verification did not retry.");
+            Equal(0, f.Client.SearchTaps, "Search taps.");
         }
 
         private static void SearchNeverTapped()
@@ -662,10 +675,16 @@ namespace IKAutomation.ResourceSearch.Tests
 
         private sealed class FakeDetector : IGameStateDetector
         {
-            private int calls; public bool FailOnSecondCall, UseResourceTabEvidence;
+            public int Calls;
+            public bool FailOnSecondCall, FailOnceOnSecondCall, UseResourceTabEvidence;
             public Task<GameDetectionResult> DetectAsync(string d, CancellationToken t)
-            { calls++; return Task.FromResult(UseResourceTabEvidence
-                ? PanelFromResourceTab() : Panel(!(FailOnSecondCall && calls >= 2))); }
+            {
+                Calls++;
+                bool fail = FailOnSecondCall && Calls >= 2
+                    || FailOnceOnSecondCall && Calls == 2;
+                return Task.FromResult(UseResourceTabEvidence
+                    ? PanelFromResourceTab() : Panel(!fail));
+            }
             public GameDetectionResult Detect(byte[] p) => Panel();
         }
 
