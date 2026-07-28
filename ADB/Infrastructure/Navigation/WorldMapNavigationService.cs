@@ -258,7 +258,7 @@ namespace ADB_Tool_Automation_Post_FB.Infrastructure.Navigation
                         nearbyFinal.ErrorMessage, transitions);
             }
 
-            if (BothAnimatedPinsWereCheckedButUnmatched(current))
+            if (AnimatedPinPairWasCheckedButUnavailable(current))
             {
                 NavigationResult coordinateFallback = await TryCoordinateFallbackAsync(
                     deviceName, initial, current, ensured.Attempts, watch, transitions,
@@ -566,17 +566,20 @@ namespace ADB_Tool_Automation_Post_FB.Infrastructure.Navigation
             FindFreshEvidence(result, TemplateId.ContinentMapHomeLocationPin) != null
             || FindFreshEvidence(result, TemplateId.ContinentMapSearchTargetPin) != null;
 
-        private static bool BothAnimatedPinsWereCheckedButUnmatched(
+        private static bool AnimatedPinPairWasCheckedButUnavailable(
             GameDetectionResult result)
         {
             if (result?.Evidence == null) return false;
-            bool homeUnmatched = result.Evidence.Any(item =>
+            bool homeChecked = result.Evidence.Any(item =>
                 item.TemplateId == TemplateId.ContinentMapHomeLocationPin
-                && item.TemplateExists && !item.Found);
-            bool targetUnmatched = result.Evidence.Any(item =>
+                && item.TemplateExists);
+            bool targetChecked = result.Evidence.Any(item =>
                 item.TemplateId == TemplateId.ContinentMapSearchTargetPin
-                && item.TemplateExists && !item.Found);
-            return homeUnmatched && targetUnmatched;
+                && item.TemplateExists);
+            bool pairAvailable =
+                FindFreshEvidence(result, TemplateId.ContinentMapHomeLocationPin) != null
+                && FindFreshEvidence(result, TemplateId.ContinentMapSearchTargetPin) != null;
+            return homeChecked && targetChecked && !pairAvailable;
         }
 
         private sealed class PinObservation

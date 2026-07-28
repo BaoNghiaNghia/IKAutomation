@@ -252,12 +252,16 @@ namespace ADB_Tool_Automation_Post_FB.Infrastructure.MarchDispatch
                         consecutiveMode = observation.VerificationMode;
                         result.ConsecutiveSuccessFrames = 1;
                     }
+                    int requiredSuccessFrames =
+                        IsStrongTimerVerification(observation.VerificationMode)
+                            ? 1
+                            : options.RequiredConsecutiveSuccessFrames;
                     observation.Message = success
-                        ? $"March-start rule matched ({result.ConsecutiveSuccessFrames}/{options.RequiredConsecutiveSuccessFrames})."
+                        ? $"March-start rule matched ({result.ConsecutiveSuccessFrames}/{requiredSuccessFrames})."
                         : "March-start rule was not yet satisfied.";
                     LogObservation(deviceName, result, observation);
 
-                    if (result.ConsecutiveSuccessFrames >= options.RequiredConsecutiveSuccessFrames)
+                    if (result.ConsecutiveSuccessFrames >= requiredSuccessFrames)
                     {
                         result.DispatchedTeam = request.ExpectedTeam;
                         result.MarchStartedVerified = true;
@@ -490,6 +494,11 @@ namespace ADB_Tool_Automation_Post_FB.Infrastructure.MarchDispatch
                 default: return 0;
             }
         }
+
+        private static bool IsStrongTimerVerification(MarchVerificationMode mode) =>
+            mode == MarchVerificationMode.ReadyDisappearedAndTimerProgression
+            || mode == MarchVerificationMode.TimerProgressionPlusStructural
+            || mode == MarchVerificationMode.WorldMapTimerProgression;
 
         private async Task<byte[]> TryCaptureAsync(string deviceName, CancellationToken token)
         {

@@ -51,6 +51,7 @@ internal static class Program
         Run("Team3 timer does not verify Team4", WrongTeamTimerIgnored);
         Run("Timer progression plus structural has distinct mode", TimerPlusStructuralMode);
         Run("WorldMap timer progression succeeds without ready baseline", WorldMapTimerProgression);
+        Run("Strong timer progression succeeds in one frame", StrongTimerProgressionSingleFrame);
         Run("Fallback requires selected border disappearance", FallbackNeedsBorderGone);
         Run("Fallback requires team ROI change", FallbackNeedsChange);
         Run("Missing ROI change cannot succeed", MissingChange);
@@ -137,6 +138,7 @@ internal static class Program
     private static void WrongTeamTimerIgnored() { var h=DirectHarness(); h.Timer.TimerTeam=TeamNumber.Team3; var r=Execute(h); Is(!r.DirectMarchVerified,"wrong team timer"); }
     private static void TimerPlusStructuralMode() { var h=DirectHarness(); h.Matcher.ReadyBefore=false; h.Comparer.Ratio=0.2; var r=Execute(h); Eq(DispatchMarchOutcome.MarchStarted,r.Outcome,"outcome"); Eq(MarchVerificationMode.TimerProgressionPlusStructural,r.VerificationMode,"mode"); Is(!r.DirectMarchVerified&&r.StructuralMarchVerified,"verification flags"); }
     private static void WorldMapTimerProgression() { var h=DirectHarness(); h.Matcher.ReadyBefore=false; h.Matcher.SelectedAfter=true; h.Comparer.Ratio=0; var r=Execute(h); Eq(DispatchMarchOutcome.MarchStarted,r.Outcome,"outcome"); Eq(MarchVerificationMode.WorldMapTimerProgression,r.VerificationMode,"mode"); Is(r.DirectMarchVerified&&r.ExpectedTeamTimerVerified&&!r.StructuralMarchVerified,"verification flags"); }
+    private static void StrongTimerProgressionSingleFrame() { var h=DirectHarness(); h.Options=Harness.OptionsFor(1,1,900); h.Rebuild(); var r=Execute(h); Eq(DispatchMarchOutcome.MarchStarted,r.Outcome,"outcome"); Eq(1,r.ConsecutiveSuccessFrames,"strong timer frame count"); }
     private static void FallbackNeedsBorderGone() { var h=NoSuccessHarness(); h.Comparer.Ratio=0.2; h.Matcher.SelectedAfter=true; var r=Execute(h); Eq(DispatchMarchOutcome.TransitionTimeout,r.Outcome,"outcome"); }
     private static void FallbackNeedsChange() { var h=NoSuccessHarness(); h.Comparer.Ratio=0; var r=Execute(h); Eq(DispatchMarchOutcome.TransitionTimeout,r.Outcome,"outcome"); }
     private static void MissingChange() { FallbackNeedsChange(); }

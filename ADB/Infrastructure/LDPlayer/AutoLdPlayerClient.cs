@@ -413,6 +413,24 @@ namespace ADB_Tool_Automation_Post_FB.Infrastructure.LDPlayer
                 if (TryReadFocusedInteger(hierarchy, out value))
                     return value;
 
+                cancellationToken.ThrowIfCancellationRequested();
+                Auto_LDPlayer.LDPlayer.Adb(
+                    LDType.Name,
+                    deviceName,
+                    "shell uiautomator dump /sdcard/ikautomation_focused_input.xml",
+                    InputCommandTimeoutMilliseconds,
+                    0);
+                cancellationToken.ThrowIfCancellationRequested();
+                hierarchy = Auto_LDPlayer.LDPlayer.Adb(
+                    LDType.Name,
+                    deviceName,
+                    "shell cat /sdcard/ikautomation_focused_input.xml",
+                    InputCommandTimeoutMilliseconds,
+                    0);
+                cancellationToken.ThrowIfCancellationRequested();
+                if (TryReadFocusedInteger(hierarchy, out value))
+                    return value;
+
                 if (attempt < FocusedInputReadAttempts)
                     await Task.Delay(
                         FocusedInputRetryDelayMilliseconds,
