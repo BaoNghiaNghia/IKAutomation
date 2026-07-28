@@ -35,16 +35,15 @@ namespace IKAutomation.ResourceSearch.Tests
             Run("Iron verification uses stable icon fallback", IronStableIconFallback);
             Run("Food selection uses compact stable icon fallback", FoodCompactStableIconFallback);
             Run("Missing Iron bounds prevents fallback", MissingIronBounds);
-            Run("Level reset taps minus eight times", MinusEight);
-            Run("Level seven taps plus six times", PlusSix);
-            Run("Level six taps plus five times and verifies", LevelSix);
-            Run("Level five taps plus four times and verifies", LevelFive);
+            Run("Level adjustment does not reset to minimum", NoMinimumReset);
+            Run("Level seven adjusts directly from current level", LevelSevenDirectAdjustment);
+            Run("Level six adjusts directly from current level", LevelSix);
+            Run("Level six adjusts downward directly from level seven", LevelSixDirectDecrease);
+            Run("Level five adjusts directly from current level", LevelFive);
             Run("Level seven unavailable reports visible level six", LevelSevenUnavailableReportsLevelSix);
-            Run("Level ten is verified by bounded value changes", DynamicLevelTen);
-            Run("Dynamic account ceiling below requested level is reported", DynamicAccountCeiling);
-            Run("Low account level is retained by bounded verification", LowAccountLevelRetained);
-            Run("Compact level glyph changes are not mistaken for the minimum", CompactLevelGlyphChanges);
-            Run("Minimum level requires only one bounded confirmation tap", MinimumLevelSingleConfirmation);
+            Run("Untemplated level fails without resetting the slider", UntemplatedLevelNoInput);
+            Run("Compact level glyph adjusts directly without minimum reset", CompactLevelGlyphChanges);
+            Run("Minimum level increases directly to target", MinimumLevelDirectAdjustment);
             Run("Missing level six template fails before input", MissingLevelSixTemplate);
             Run("Level seven already selected sends no level input", LevelSevenAlreadySelected);
             Run("Level seven already selected does not require level controls", LevelSevenAlreadySelectedWithoutControls);
@@ -138,7 +137,7 @@ namespace IKAutomation.ResourceSearch.Tests
             Fixture f = Setup(); f.Ui.LevelControlsLoseDirectMatchAfterTap = true;
             ResourceSearchConfigurationResult result = Execute(f);
             Assert(result.Success && result.LevelVerified, result.ErrorMessage);
-            Equal(8, f.Client.MinusTaps, "minus taps"); Equal(6, f.Client.PlusTaps, "plus taps");
+            Equal(0, f.Client.MinusTaps, "minus taps"); Equal(4, f.Client.PlusTaps, "plus taps");
         }
 
         private static void LevelControlSearchRelativeFallback()
@@ -149,8 +148,8 @@ namespace IKAutomation.ResourceSearch.Tests
             request.TargetLevel = 6;
             ResourceSearchConfigurationResult result = Execute(f, request);
             Assert(result.Success && result.LevelVerified, result.ErrorMessage);
-            Equal(8, f.Client.MinusTaps, "minus taps");
-            Equal(5, f.Client.PlusTaps, "plus taps");
+            Equal(0, f.Client.MinusTaps, "minus taps");
+            Equal(3, f.Client.PlusTaps, "plus taps");
         }
 
         private static void IronStableIconFallback()
@@ -180,16 +179,15 @@ namespace IKAutomation.ResourceSearch.Tests
             Assert(!r.Success, "Unexpected success."); Equal(0, f.Client.TotalInput, "Fallback input sent.");
         }
 
-        private static void MinusEight() { Fixture f = Setup(); Execute(f); Equal(8, f.Client.MinusTaps, "Minus taps."); }
-        private static void PlusSix() { Fixture f = Setup(); Execute(f); Equal(6, f.Client.PlusTaps, "Plus taps."); }
-        private static void LevelSix() { Fixture f = Setup(); ResourceSearchConfigurationRequest q = Request(); q.TargetLevel = 6; ResourceSearchConfigurationResult r = Execute(f, q); Assert(r.Success && r.LevelVerified, r.ErrorMessage); Equal(5, f.Client.PlusTaps, "Plus taps."); }
-        private static void LevelFive() { Fixture f = Setup(); ResourceSearchConfigurationRequest q = Request(); q.TargetLevel = 5; ResourceSearchConfigurationResult r = Execute(f, q); Assert(r.Success && r.LevelVerified, r.ErrorMessage); Equal(4, f.Client.PlusTaps, "Plus taps."); }
-        private static void LevelSevenUnavailableReportsLevelSix() { Fixture f = Setup(); f.Ui.MaxLevel = 6; ResourceSearchConfigurationResult r = Execute(f); Assert(!r.Success && !r.LevelVerified, "Unavailable level was accepted."); Equal((int?)6, r.ObservedLevel, "Observed level."); Equal(0, f.Client.SearchTaps, "Search taps."); }
-        private static void DynamicLevelTen() { Fixture f = Setup(maximumLevel: 30, resetMinusTapCount: 30); f.Ui.DynamicLevelFrames = true; f.Ui.MaxLevel = 12; var q = Request(); q.TargetLevel = 10; ResourceSearchConfigurationResult r = Execute(f, q); Assert(r.Success && r.LevelVerified, r.ErrorMessage); Equal((int?)10, r.ObservedLevel, "Observed level."); Equal(9, f.Client.PlusTaps, "Plus taps."); }
-        private static void DynamicAccountCeiling() { Fixture f = Setup(maximumLevel: 30, resetMinusTapCount: 30); f.Ui.DynamicLevelFrames = true; f.Ui.MaxLevel = 8; var q = Request(); q.TargetLevel = 10; ResourceSearchConfigurationResult r = Execute(f, q); Assert(!r.Success && !r.LevelVerified, "Unavailable dynamic level was accepted."); Equal((int?)8, r.ObservedLevel, "Account ceiling."); Equal(0, f.Client.SearchTaps, "Search taps."); }
-        private static void LowAccountLevelRetained() { Fixture f = Setup(maximumLevel: 30, resetMinusTapCount: 30); f.Ui.DynamicLevelFrames = true; f.Ui.MaxLevel = 2; var q = Request(); q.TargetLevel = 2; ResourceSearchConfigurationResult r = Execute(f, q); Assert(r.Success && r.LevelVerified, r.ErrorMessage); Equal((int?)2, r.ObservedLevel, "Observed level."); Equal(1, f.Client.PlusTaps, "Plus taps."); }
-        private static void CompactLevelGlyphChanges() { Fixture f = Setup(maximumLevel: 30, resetMinusTapCount: 30); f.Ui.CompactDynamicLevelFrames = true; f.Ui.MaxLevel = 6; var q = Request(); q.TargetLevel = 6; ResourceSearchConfigurationResult r = Execute(f, q); Assert(r.Success && r.LevelVerified, r.ErrorMessage); Equal(6, f.Ui.Level, "final level"); Equal(5, f.Client.PlusTaps, "plus taps"); }
-        private static void MinimumLevelSingleConfirmation() { Fixture f = Setup(maximumLevel: 30, resetMinusTapCount: 30); f.Ui.DynamicLevelFrames = true; f.Ui.Level = 1; f.Ui.MaxLevel = 6; var q = Request(); q.TargetLevel = 6; ResourceSearchConfigurationResult r = Execute(f, q); Assert(r.Success && r.LevelVerified, r.ErrorMessage); Equal(1, f.Client.MinusTaps, "Minimum confirmation taps."); Equal(5, f.Client.PlusTaps, "Plus taps."); }
+        private static void NoMinimumReset() { Fixture f = Setup(); ResourceSearchConfigurationResult r = Execute(f); Assert(r.Success, r.ErrorMessage); Equal(0, f.Client.MinusTaps, "Minus taps."); }
+        private static void LevelSevenDirectAdjustment() { Fixture f = Setup(); Execute(f); Equal(4, f.Client.PlusTaps, "Plus taps."); }
+        private static void LevelSix() { Fixture f = Setup(); ResourceSearchConfigurationRequest q = Request(); q.TargetLevel = 6; ResourceSearchConfigurationResult r = Execute(f, q); Assert(r.Success && r.LevelVerified, r.ErrorMessage); Equal(0, f.Client.MinusTaps, "Minus taps."); Equal(3, f.Client.PlusTaps, "Plus taps."); }
+        private static void LevelSixDirectDecrease() { Fixture f = Setup(); f.Ui.Level = 7; ResourceSearchConfigurationRequest q = Request(); q.TargetLevel = 6; ResourceSearchConfigurationResult r = Execute(f, q); Assert(r.Success && r.LevelVerified, r.ErrorMessage); Equal(1, f.Client.MinusTaps, "Minus taps."); Equal(0, f.Client.PlusTaps, "Plus taps."); Equal(6, f.Ui.Level, "Configured level."); }
+        private static void LevelFive() { Fixture f = Setup(); ResourceSearchConfigurationRequest q = Request(); q.TargetLevel = 5; ResourceSearchConfigurationResult r = Execute(f, q); Assert(r.Success && r.LevelVerified, r.ErrorMessage); Equal(0, f.Client.MinusTaps, "Minus taps."); Equal(2, f.Client.PlusTaps, "Plus taps."); }
+        private static void LevelSevenUnavailableReportsLevelSix() { Fixture f = Setup(); f.Ui.MaxLevel = 6; ResourceSearchConfigurationResult r = Execute(f); Assert(!r.Success && !r.LevelVerified, "Unavailable level was accepted."); Equal((int?)6, r.ObservedLevel, "Observed level."); Equal(0, f.Client.MinusTaps, "Minus taps."); Equal(0, f.Client.SearchTaps, "Search taps."); }
+        private static void UntemplatedLevelNoInput() { Fixture f = Setup(maximumLevel: 30, resetMinusTapCount: 30); f.Ui.DynamicLevelFrames = true; var q = Request(); q.TargetLevel = 10; ResourceSearchConfigurationResult r = Execute(f, q); Assert(!r.Success && !r.LevelVerified, "Untemplated level was accepted."); Equal(0, f.Client.MinusTaps, "Minus taps."); Equal(0, f.Client.PlusTaps, "Plus taps."); Equal(0, f.Client.SearchTaps, "Search taps."); }
+        private static void CompactLevelGlyphChanges() { Fixture f = Setup(maximumLevel: 30, resetMinusTapCount: 30); f.Ui.CompactDynamicLevelFrames = true; f.Ui.MaxLevel = 6; var q = Request(); q.TargetLevel = 6; ResourceSearchConfigurationResult r = Execute(f, q); Assert(r.Success && r.LevelVerified, r.ErrorMessage); Equal(6, f.Ui.Level, "final level"); Equal(0, f.Client.MinusTaps, "minus taps"); Equal(3, f.Client.PlusTaps, "plus taps"); }
+        private static void MinimumLevelDirectAdjustment() { Fixture f = Setup(maximumLevel: 30, resetMinusTapCount: 30); f.Ui.DynamicLevelFrames = true; f.Ui.Level = 1; f.Ui.MaxLevel = 6; var q = Request(); q.TargetLevel = 6; ResourceSearchConfigurationResult r = Execute(f, q); Assert(r.Success && r.LevelVerified, r.ErrorMessage); Equal(0, f.Client.MinusTaps, "Minimum reset taps."); Equal(5, f.Client.PlusTaps, "Plus taps."); }
         private static void MissingLevelSixTemplate() { Fixture f = Setup(); f.Registry.Missing = TemplateId.LevelValue6; ResourceSearchConfigurationRequest q = Request(); q.TargetLevel = 6; ResourceSearchConfigurationResult r = Execute(f, q); Assert(!r.Success && r.ErrorMessage.Contains("LevelValue6"), "missing target template"); Equal(0, f.Client.TotalInput, "input"); }
 
         private static void LevelSevenAlreadySelected()
@@ -350,7 +348,8 @@ namespace IKAutomation.ResourceSearch.Tests
             Fixture f = Setup(10, 2, 30); f.Ui.ResourceSelected = true;
             using (var source = new CancellationTokenSource(70))
                 Throws<OperationCanceledException>(() => Execute(f, Request(), source.Token));
-            Assert(f.Client.MinusTaps < 8, "Level sequence ignored cancellation.");
+            Assert(f.Client.MinusTaps == 0, "Level sequence reset to minimum during cancellation.");
+            Assert(f.Client.PlusTaps < 4, "Level sequence ignored cancellation.");
         }
 
         private static void SameDeviceSerialized()

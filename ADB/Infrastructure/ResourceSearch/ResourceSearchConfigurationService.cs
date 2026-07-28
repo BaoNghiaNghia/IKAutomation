@@ -259,72 +259,98 @@ namespace ADB_Tool_Automation_Post_FB.Infrastructure.ResourceSearch
                 return false;
             }
 
-            bool minimumLevelVerified = false;
-            for (int index = 0; index < options.ResetMinusTapCount; index++)
+            int visibleLevel;
+            ConfigurationTemplateEvidence visibleLevelEvidence;
+            bool hasVisibleLevel = TryMatchVisibleLevel(screenshot, minus, plus, search,
+                out visibleLevel, out visibleLevelEvidence);
+            if (hasVisibleLevel)
             {
-                byte[] before = await ldPlayerClient.CaptureScreenshotPngAsync(
-                    deviceName, cancellationToken);
-                if (!await TapFreshAsync(deviceName, TemplateId.LevelMinusButton,
-                    minus, "ResetLevel", result, cancellationToken))
-                {
-                    AddStep(steps, "SetLevel", false, 1, evidence,
-                        "Fresh LevelMinusButton bounds were unavailable; level sequence stopped.", null);
-                    return false;
-                }
-                await Task.Delay(options.TapIntervalMs, cancellationToken);
-                byte[] after = await ldPlayerClient.CaptureScreenshotPngAsync(
-                    deviceName, cancellationToken);
-                bool changed;
-                if (TryCompareLevelValue(before, after, minus, plus, search, out changed))
-                {
-                    if (!changed)
-                    {
-                        minimumLevelVerified = true;
-                        break;
-                    }
-                }
-            }
-            int plusTapCount = result.RequestedLevel - options.MinimumLevel;
-            int verifiedPlusChanges = 0;
-            bool levelCeilingObserved = false;
-            for (int index = 0; index < plusTapCount; index++)
-            {
-                byte[] before = await ldPlayerClient.CaptureScreenshotPngAsync(
-                    deviceName, cancellationToken);
-                if (!await TapFreshAsync(deviceName, TemplateId.LevelPlusButton,
-                    plus, "IncreaseLevel", result, cancellationToken))
-                {
-                    AddStep(steps, "SetLevel", false, 1, evidence,
-                        "Fresh LevelPlusButton bounds were unavailable; level sequence stopped.", null);
-                    return false;
-                }
-                await Task.Delay(options.TapIntervalMs, cancellationToken);
-                byte[] after = await ldPlayerClient.CaptureScreenshotPngAsync(
-                    deviceName, cancellationToken);
-                bool changed;
-                if (minimumLevelVerified
-                    && TryCompareLevelValue(before, after, minus, plus, search, out changed))
-                {
-                    if (!changed)
-                    {
-                        result.ObservedLevel = options.MinimumLevel + verifiedPlusChanges;
-                        levelCeilingObserved = true;
-                        break;
-                    }
-                    verifiedPlusChanges++;
-                }
+                result.ObservedLevel = visibleLevel;
+                evidence.Add(visibleLevelEvidence);
             }
 
-            ConfigurationTemplateEvidence level = hasLevelTemplate
-                ? await PollForLevelAsync(deviceName, levelTemplateId, minus, plus, cancellationToken)
-                : null;
-            if (level != null) evidence.Add(level);
-            bool sequenceVerified = minimumLevelVerified && !levelCeilingObserved
-                && verifiedPlusChanges == plusTapCount;
-            result.LevelVerified = (level != null && level.Found) || sequenceVerified;
+            if (!hasLevelTemplate)
+            {
+                AddStep(steps, "SetLevel", false, 1, evidence,
+                    $"Level {result.RequestedLevel} has no verification template; "
+                        + "the level was not reset and no level input was sent.", null);
+                return false;
+            }
+
+            TemplateId direction = hasVisibleLevel && visibleLevel > result.RequestedLevel
+                ? TemplateId.LevelMinusButton
+                : TemplateId.LevelPlusButton;
+            ConfigurationTemplateEvidence directionEvidence = direction == TemplateId.LevelMinusButton
+                ? minus : plus;
+            int tapLimit = hasVisibleLevel
+                ? Math.Abs(result.RequestedLevel - visibleLevel)
+                : Math.Max(1, result.RequestedLevel - options.MinimumLevel);
+            int tapsSent = 0;
+
+            for (int index = 0; index < tapLimit; index++)
+            {
+                cancellationToken.ThrowIfCancellationRequested();
+                byte[] before = await ldPlayerClient.CaptureScreenshotPngAsync(
+                    deviceName, cancellationToken);
+                if (!await TapFreshAsync(deviceName, direction,
+                    directionEvidence, "AdjustLevel", result, cancellationToken))
+                {
+                    AddStep(steps, "SetLevel", false, 1, evidence,
+                        $"Fresh {direction} bounds were unavailable; level adjustment stopped.", null);
+                    return false;
+                }
+                tapsSent++;
+                await Task.Delay(options.TapIntervalMs, cancellationToken);
+                byte[] after = await ldPlayerClient.CaptureScreenshotPngAsync(
+                    deviceName, cancellationToken);
+
+                ConfigurationTemplateEvidence currentSearch = Match(
+                    after, TemplateId.SearchButtonEnabled);
+                ConfigurationTemplateEvidence currentMinus = MatchLevelControl(
+                    after, TemplateId.LevelMinusButton, currentSearch);
+                ConfigurationTemplateEvidence currentPlus = MatchLevelControl(
+                    after, TemplateId.LevelPlusButton, currentSearch);
+                ConfigurationTemplateEvidence target = MatchLevel(
+                    after, levelTemplateId, currentMinus, currentPlus, currentSearch);
+                if (target.Found)
+                {
+                    evidence.Add(target);
+                    result.LevelVerified = true;
+                    result.ObservedLevel = result.RequestedLevel;
+                    AddStep(steps, "SetLevel", true, 1, evidence,
+                        $"Level {result.RequestedLevel} verified after {tapsSent} "
+                            + $"{(direction == TemplateId.LevelPlusButton ? "plus" : "minus")} Tap(s); "
+                            + "no minimum-level reset was used.", null);
+                    return true;
+                }
+
+                int observedAfter;
+                ConfigurationTemplateEvidence observedEvidence;
+                if (TryMatchVisibleLevel(after, currentMinus, currentPlus, currentSearch,
+                    out observedAfter, out observedEvidence))
+                {
+                    if (result.ObservedLevel == observedAfter)
+                    {
+                        evidence.Add(observedEvidence);
+                        break;
+                    }
+                    result.ObservedLevel = observedAfter;
+                    evidence.Add(observedEvidence);
+                }
+
+                bool changed;
+                if (TryCompareLevelValue(before, after,
+                    currentMinus, currentPlus, currentSearch, out changed) && !changed)
+                    break;
+            }
+
+            ConfigurationTemplateEvidence level = await PollForLevelAsync(
+                deviceName, levelTemplateId, minus, plus, cancellationToken);
+            evidence.Add(level);
+            result.LevelVerified = level.Found;
             if (result.LevelVerified)
                 result.ObservedLevel = result.RequestedLevel;
-            else if (!result.ObservedLevel.HasValue && hasLevelTemplate)
+            else if (!result.ObservedLevel.HasValue)
             {
                 byte[] finalScreenshot = await ldPlayerClient.CaptureScreenshotPngAsync(
                     deviceName, cancellationToken);
@@ -345,13 +371,41 @@ namespace ADB_Tool_Automation_Post_FB.Infrastructure.ResourceSearch
             }
             AddStep(steps, "SetLevel", result.LevelVerified, 1, evidence,
                 result.LevelVerified
-                    ? $"Level {result.RequestedLevel} verified after a bounded reset and {plusTapCount} plus Taps"
-                        + (sequenceVerified ? " using current-value changes." : ".")
+                    ? $"Level {result.RequestedLevel} verified after {tapsSent} direct Tap(s); "
+                        + "no minimum-level reset was used."
                     : result.ObservedLevel.HasValue
                         ? $"Level {result.RequestedLevel} is unavailable; the verified account ceiling is "
                             + $"level {result.ObservedLevel.Value}."
-                        : $"Level {result.RequestedLevel} was not verified after the bounded Tap sequence.", null);
+                        : $"Level {result.RequestedLevel} was not verified after the direct adjustment sequence; "
+                            + "the level was not reset to minimum.", null);
             return result.LevelVerified;
+        }
+
+        private bool TryMatchVisibleLevel(byte[] screenshot,
+            ConfigurationTemplateEvidence minus, ConfigurationTemplateEvidence plus,
+            ConfigurationTemplateEvidence search, out int level,
+            out ConfigurationTemplateEvidence evidence)
+        {
+            int[] candidates = { 5, 6, 7 };
+            foreach (int candidate in candidates)
+            {
+                if (candidate < options.MinimumLevel || candidate > options.MaximumLevel)
+                    continue;
+                TemplateId templateId;
+                if (!TryGetLevelTemplateId(candidate, out templateId)
+                    || !templateRegistry.Exists(templateId))
+                    continue;
+                ConfigurationTemplateEvidence match = MatchLevel(
+                    screenshot, templateId, minus, plus, search);
+                if (!match.Found) continue;
+                level = candidate;
+                evidence = match;
+                return true;
+            }
+
+            level = 0;
+            evidence = null;
+            return false;
         }
 
         private bool TryMatchLowerVisibleLevel(byte[] screenshot, int requestedLevel,
