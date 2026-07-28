@@ -21,6 +21,15 @@ namespace ADB_Tool_Automation_Post_FB.Infrastructure.Navigation
         private const int MaxTerritoryMarkerDistanceFromViewportCenterPx = 360;
         private const int MaxSearchTargetDistanceFromHomePinPx = 260;
         private const int NearbyPinObservationAttempts = 8;
+        // The coordinate fields are stable members of the same top-left toolbar as
+        // ContinentMapPinButton. Deriving their centers from that freshly matched
+        // button keeps the fallback resolution-independent within the supported
+        // 1280x720 layout and avoids blind absolute taps.
+        private const int CoordinateXOffsetFromPinCenterPx = -134;
+        private const int CoordinateYOffsetFromPinCenterPx = -54;
+        private const int CoordinateDigitsToReplace = 2;
+        private const string CoordinateXReplacementSuffix = "37";
+        private const string CoordinateYReplacementSuffix = "73";
         private readonly ILdPlayerClient ldPlayerClient;
         private readonly IGameStateDetector detector;
         private readonly WorldMapNavigationOptions options;
@@ -246,6 +255,15 @@ namespace ADB_Tool_Automation_Post_FB.Infrastructure.Navigation
                         nearbyFinal.ErrorMessage, transitions);
             }
 
+            if (BothAnimatedPinsWereCheckedButUnmatched(current))
+            {
+                NavigationResult coordinateFallback = await TryCoordinateFallbackAsync(
+                    deviceName, initial, current, ensured.Attempts, watch, transitions,
+                    cancellationToken);
+                if (coordinateFallback != null)
+                    return coordinateFallback;
+            }
+
             TerritoryObservation territoryObservation =
                 await ObserveTerritoryMarkerAsync(deviceName, current, transitions,
                     cancellationToken);
@@ -278,6 +296,122 @@ namespace ADB_Tool_Automation_Post_FB.Infrastructure.Navigation
                 : Result(false, initial, final, ensured.Attempts + 3, watch,
                     "Territory coordinate pin was tapped but WorldMap was not verified before timeout.",
                     final.ErrorMessage, transitions);
+        }
+
+        private async Task<NavigationResult> TryCoordinateFallbackAsync(
+            string deviceName,
+            GameDetectionResult initial,
+            GameDetectionResult current,
+            int priorAttempts,
+            Stopwatch watch,
+            IList<NavigationTransition> transitions,
+            CancellationToken cancellationToken)
+        {
+            GameDetectionEvidence initialPin = FindFreshEvidence(
+                current, TemplateId.ContinentMapPinButton);
+            if (initialPin == null)
+                return null;
+
+            await ReplaceCoordinateSuffixAsync(
+                deviceName,
+                initialPin.MatchResult.CenterX + CoordinateXOffsetFromPinCenterPx,
+                initialPin.MatchResult.CenterY,
+                CoordinateXReplacementSuffix,
+                "X",
+                transitions,
+                cancellationToken);
+
+            current = await DetectContinentMapAfterCoordinateEditAsync(
+                deviceName, "X", transitions, cancellationToken);
+            GameDetectionEvidence pinAfterX = FindFreshEvidence(
+                current, TemplateId.ContinentMapPinButton);
+            if (pinAfterX == null)
+                return Result(false, initial, current, priorAttempts + 2, watch,
+                    "Coordinate X was changed, but ContinentMap pin bounds could not "
+                    + "be refreshed before editing Y.", current?.ErrorMessage, transitions);
+
+            await ReplaceCoordinateSuffixAsync(
+                deviceName,
+                pinAfterX.MatchResult.CenterX + CoordinateYOffsetFromPinCenterPx,
+                pinAfterX.MatchResult.CenterY,
+                CoordinateYReplacementSuffix,
+                "Y",
+                transitions,
+                cancellationToken);
+
+            current = await DetectContinentMapAfterCoordinateEditAsync(
+                deviceName, "Y", transitions, cancellationToken);
+            GameDetectionEvidence movePin = FindFreshEvidence(
+                current, TemplateId.ContinentMapPinButton);
+            if (movePin == null)
+                return Result(false, initial, current, priorAttempts + 3, watch,
+                    "Coordinate Y was changed, but the move-to-coordinate pin had no "
+                    + "valid fresh bounds; no move Tap was sent.",
+                    current?.ErrorMessage, transitions);
+
+            await TapEvidenceAsync(deviceName, movePin,
+                "ContinentMapPinButtonAfterCoordinateChange", transitions,
+                cancellationToken);
+            GameDetectionResult final = await PollAsync(
+                deviceName, GameState.WorldMap, transitions, cancellationToken);
+            return final.IsSuccessful && final.State == GameState.WorldMap
+                ? Result(true, initial, final, priorAttempts + 4, watch,
+                    "WorldMap verified after replacing the last two X/Y digits "
+                    + "(maximum coordinate delta 99) and tapping the fresh move pin.",
+                    null, transitions)
+                : Result(false, initial, final, priorAttempts + 4, watch,
+                    "Coordinate fallback was submitted, but WorldMap was not verified "
+                    + "before timeout.", final.ErrorMessage, transitions);
+        }
+
+        private async Task ReplaceCoordinateSuffixAsync(
+            string deviceName,
+            int x,
+            int y,
+            string replacementSuffix,
+            string axis,
+            IList<NavigationTransition> transitions,
+            CancellationToken cancellationToken)
+        {
+            if (x < 0 || x >= ExpectedScreenshotWidth
+                || y < 0 || y >= ExpectedScreenshotHeight)
+                throw new InvalidOperationException(
+                    $"Derived ContinentMap coordinate {axis} field is outside the supported viewport.");
+
+            await ldPlayerClient.TapAsync(deviceName, x, y, cancellationToken);
+            AddTransition(transitions, "Tap",
+                $"Tapped coordinate {axis} field derived from fresh coordinate-pin bounds ({x},{y}).");
+            for (int index = 0; index < CoordinateDigitsToReplace; index++)
+                await ldPlayerClient.PressKeyAsync(
+                    deviceName, AndroidKeyCode.Delete, cancellationToken);
+            await ldPlayerClient.InputTextAsync(
+                deviceName, replacementSuffix, cancellationToken);
+            await ldPlayerClient.PressKeyAsync(
+                deviceName, AndroidKeyCode.Enter, cancellationToken);
+            AddTransition(transitions, "Input",
+                $"Replaced the last two coordinate {axis} digits and confirmed with Enter.");
+            await Task.Delay(options.StatePollIntervalMs, cancellationToken);
+            AddTransition(transitions, "Wait",
+                $"Waited {options.StatePollIntervalMs} ms after confirming coordinate {axis}.");
+        }
+
+        private async Task<GameDetectionResult> DetectContinentMapAfterCoordinateEditAsync(
+            string deviceName,
+            string axis,
+            IList<NavigationTransition> transitions,
+            CancellationToken cancellationToken)
+        {
+            GameDetectionResult result = await DetectAsync(
+                deviceName, transitions, cancellationToken);
+            if (result != null && result.IsSuccessful
+                && result.State == GameState.Unknown
+                && IsVerifiedContinentMapEvidence(result))
+            {
+                result.State = GameState.ContinentMap;
+                AddTransition(transitions, "Detect",
+                    $"Normalized Unknown to ContinentMap after coordinate {axis} edit.");
+            }
+            return result;
         }
 
         private async Task<PinObservation> ObserveNearbyPinPairAsync(
@@ -413,6 +547,19 @@ namespace ADB_Tool_Automation_Post_FB.Infrastructure.Navigation
         private static bool HasFreshPinEvidence(GameDetectionResult result) =>
             FindFreshEvidence(result, TemplateId.ContinentMapHomeLocationPin) != null
             || FindFreshEvidence(result, TemplateId.ContinentMapSearchTargetPin) != null;
+
+        private static bool BothAnimatedPinsWereCheckedButUnmatched(
+            GameDetectionResult result)
+        {
+            if (result?.Evidence == null) return false;
+            bool homeUnmatched = result.Evidence.Any(item =>
+                item.TemplateId == TemplateId.ContinentMapHomeLocationPin
+                && item.TemplateExists && !item.Found);
+            bool targetUnmatched = result.Evidence.Any(item =>
+                item.TemplateId == TemplateId.ContinentMapSearchTargetPin
+                && item.TemplateExists && !item.Found);
+            return homeUnmatched && targetUnmatched;
+        }
 
         private sealed class PinObservation
         {
