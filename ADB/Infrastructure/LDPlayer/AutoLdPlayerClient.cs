@@ -6,8 +6,11 @@ using System.Collections.Concurrent;
 using System.Collections.Generic;
 using System.Drawing;
 using System.Drawing.Imaging;
+using System.Globalization;
 using System.IO;
 using System.Linq;
+using System.Net;
+using System.Text.RegularExpressions;
 using System.Threading;
 using System.Threading.Tasks;
 
@@ -18,9 +21,11 @@ namespace ADB_Tool_Automation_Post_FB.Infrastructure.LDPlayer
     /// New automation code must depend on ILdPlayerClient instead of calling
     /// Auto_LDPlayer.LDPlayer directly.
     /// </summary>
-    public sealed class AutoLdPlayerClient : ILdPlayerClient
+    public sealed class AutoLdPlayerClient : ILdPlayerClient, IFocusedInputValueReader
     {
         private const int InputCommandTimeoutMilliseconds = 3000;
+        private const int FocusedInputReadAttempts = 3;
+        private const int FocusedInputRetryDelayMilliseconds = 150;
 
         private const int ScreenshotReadyAttempts = 3;
         private const int ScreenshotCaptureAttempts = 4;
@@ -384,6 +389,80 @@ namespace ADB_Tool_Automation_Post_FB.Infrastructure.LDPlayer
 
             Auto_LDPlayer.LDPlayer.InputText(LDType.Name, deviceName, text);
             return Task.CompletedTask;
+        }
+
+        public async Task<int> ReadFocusedIntegerAsync(
+            string deviceName,
+            CancellationToken cancellationToken)
+        {
+            cancellationToken.ThrowIfCancellationRequested();
+            ValidateDeviceName(deviceName);
+
+            for (int attempt = 1; attempt <= FocusedInputReadAttempts; attempt++)
+            {
+                cancellationToken.ThrowIfCancellationRequested();
+                string hierarchy = Auto_LDPlayer.LDPlayer.Adb(
+                    LDType.Name,
+                    deviceName,
+                    "shell uiautomator dump /dev/tty",
+                    InputCommandTimeoutMilliseconds,
+                    0);
+                cancellationToken.ThrowIfCancellationRequested();
+
+                int value;
+                if (TryReadFocusedInteger(hierarchy, out value))
+                    return value;
+
+                if (attempt < FocusedInputReadAttempts)
+                    await Task.Delay(
+                        FocusedInputRetryDelayMilliseconds,
+                        cancellationToken);
+            }
+
+            throw new InvalidOperationException(
+                $"Focused numeric coordinate input could not be read from "
+                + $"LDPlayer device '{deviceName}'.");
+        }
+
+        private static bool TryReadFocusedInteger(string hierarchy, out int value)
+        {
+            value = 0;
+            if (string.IsNullOrWhiteSpace(hierarchy))
+                return false;
+
+            foreach (Match nodeMatch in Regex.Matches(
+                hierarchy,
+                @"<node\b[^>]*>",
+                RegexOptions.IgnoreCase))
+            {
+                string node = nodeMatch.Value;
+                if (!Regex.IsMatch(
+                        node,
+                        @"\bclass=""android\.widget\.EditText""",
+                        RegexOptions.IgnoreCase)
+                    || !Regex.IsMatch(
+                        node,
+                        @"\bfocused=""true""",
+                        RegexOptions.IgnoreCase))
+                    continue;
+
+                Match textMatch = Regex.Match(
+                    node,
+                    @"\btext=""([^""]*)""",
+                    RegexOptions.IgnoreCase);
+                if (!textMatch.Success)
+                    continue;
+
+                string text = WebUtility.HtmlDecode(textMatch.Groups[1].Value);
+                if (int.TryParse(
+                    text,
+                    NumberStyles.Integer,
+                    CultureInfo.InvariantCulture,
+                    out value))
+                    return true;
+            }
+
+            return false;
         }
 
         public Task PressKeyAsync(

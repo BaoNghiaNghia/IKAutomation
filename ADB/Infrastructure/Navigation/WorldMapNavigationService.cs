@@ -7,6 +7,7 @@ using ADB_Tool_Automation_Post_FB.Core.Vision;
 using System;
 using System.Collections.Generic;
 using System.Diagnostics;
+using System.Globalization;
 using System.Linq;
 using System.Threading;
 using System.Threading.Tasks;
@@ -27,10 +28,11 @@ namespace ADB_Tool_Automation_Post_FB.Infrastructure.Navigation
         // 1280x720 layout and avoids blind absolute taps.
         private const int CoordinateXOffsetFromPinCenterPx = -134;
         private const int CoordinateYOffsetFromPinCenterPx = -54;
-        private const int CoordinateDigitsToReplace = 2;
-        private const string CoordinateXReplacementSuffix = "37";
-        private const string CoordinateYReplacementSuffix = "73";
+        private const int MaximumCoordinateOffset = 100;
+        private static readonly object CoordinateOffsetRandomLock = new object();
+        private static readonly Random CoordinateOffsetRandom = new Random();
         private readonly ILdPlayerClient ldPlayerClient;
+        private readonly IFocusedInputValueReader focusedInputValueReader;
         private readonly IGameStateDetector detector;
         private readonly WorldMapNavigationOptions options;
         private readonly IDiagnosticLogger logger;
@@ -46,6 +48,7 @@ namespace ADB_Tool_Automation_Post_FB.Infrastructure.Navigation
             WorldMapNavigationOptions options, IDiagnosticLogger logger, IDeviceOperationLock operationLock)
         {
             this.ldPlayerClient = ldPlayerClient ?? throw new ArgumentNullException(nameof(ldPlayerClient));
+            focusedInputValueReader = ldPlayerClient as IFocusedInputValueReader;
             this.detector = detector ?? throw new ArgumentNullException(nameof(detector));
             this.options = options ?? throw new ArgumentNullException(nameof(options));
             this.logger = logger ?? throw new ArgumentNullException(nameof(logger));
@@ -311,12 +314,15 @@ namespace ADB_Tool_Automation_Post_FB.Infrastructure.Navigation
                 current, TemplateId.ContinentMapPinButton);
             if (initialPin == null)
                 return null;
+            if (focusedInputValueReader == null)
+                return Result(false, initial, current, priorAttempts + 1, watch,
+                    "Coordinate fallback requires a focused numeric input reader; "
+                    + "no coordinate input was sent.", null, transitions);
 
-            await ReplaceCoordinateSuffixAsync(
+            await AddCoordinateOffsetAsync(
                 deviceName,
                 initialPin.MatchResult.CenterX + CoordinateXOffsetFromPinCenterPx,
                 initialPin.MatchResult.CenterY,
-                CoordinateXReplacementSuffix,
                 "X",
                 transitions,
                 cancellationToken);
@@ -330,11 +336,10 @@ namespace ADB_Tool_Automation_Post_FB.Infrastructure.Navigation
                     "Coordinate X was changed, but ContinentMap pin bounds could not "
                     + "be refreshed before editing Y.", current?.ErrorMessage, transitions);
 
-            await ReplaceCoordinateSuffixAsync(
+            await AddCoordinateOffsetAsync(
                 deviceName,
                 pinAfterX.MatchResult.CenterX + CoordinateYOffsetFromPinCenterPx,
                 pinAfterX.MatchResult.CenterY,
-                CoordinateYReplacementSuffix,
                 "Y",
                 transitions,
                 cancellationToken);
@@ -356,19 +361,18 @@ namespace ADB_Tool_Automation_Post_FB.Infrastructure.Navigation
                 deviceName, GameState.WorldMap, transitions, cancellationToken);
             return final.IsSuccessful && final.State == GameState.WorldMap
                 ? Result(true, initial, final, priorAttempts + 4, watch,
-                    "WorldMap verified after replacing the last two X/Y digits "
-                    + "(maximum coordinate delta 99) and tapping the fresh move pin.",
+                    "WorldMap verified after adding a bounded 1-100 offset to the "
+                    + "current X/Y coordinates and tapping the fresh move pin.",
                     null, transitions)
                 : Result(false, initial, final, priorAttempts + 4, watch,
                     "Coordinate fallback was submitted, but WorldMap was not verified "
                     + "before timeout.", final.ErrorMessage, transitions);
         }
 
-        private async Task ReplaceCoordinateSuffixAsync(
+        private async Task AddCoordinateOffsetAsync(
             string deviceName,
             int x,
             int y,
-            string replacementSuffix,
             string axis,
             IList<NavigationTransition> transitions,
             CancellationToken cancellationToken)
@@ -381,18 +385,32 @@ namespace ADB_Tool_Automation_Post_FB.Infrastructure.Navigation
             await ldPlayerClient.TapAsync(deviceName, x, y, cancellationToken);
             AddTransition(transitions, "Tap",
                 $"Tapped coordinate {axis} field derived from fresh coordinate-pin bounds ({x},{y}).");
-            for (int index = 0; index < CoordinateDigitsToReplace; index++)
+            int currentValue = await focusedInputValueReader.ReadFocusedIntegerAsync(
+                deviceName, cancellationToken);
+            int offset = NextCoordinateOffset();
+            int targetValue = checked(currentValue + offset);
+            string currentText = currentValue.ToString(CultureInfo.InvariantCulture);
+            string targetText = targetValue.ToString(CultureInfo.InvariantCulture);
+
+            for (int index = 0; index < currentText.Length; index++)
                 await ldPlayerClient.PressKeyAsync(
                     deviceName, AndroidKeyCode.Delete, cancellationToken);
             await ldPlayerClient.InputTextAsync(
-                deviceName, replacementSuffix, cancellationToken);
+                deviceName, targetText, cancellationToken);
             await ldPlayerClient.PressKeyAsync(
                 deviceName, AndroidKeyCode.Enter, cancellationToken);
             AddTransition(transitions, "Input",
-                $"Replaced the last two coordinate {axis} digits and confirmed with Enter.");
+                $"Set coordinate {axis}: {currentValue} + {offset} = {targetValue}, "
+                + "then confirmed with Enter.");
             await Task.Delay(options.StatePollIntervalMs, cancellationToken);
             AddTransition(transitions, "Wait",
                 $"Waited {options.StatePollIntervalMs} ms after confirming coordinate {axis}.");
+        }
+
+        private static int NextCoordinateOffset()
+        {
+            lock (CoordinateOffsetRandomLock)
+                return CoordinateOffsetRandom.Next(1, MaximumCoordinateOffset + 1);
         }
 
         private async Task<GameDetectionResult> DetectContinentMapAfterCoordinateEditAsync(
