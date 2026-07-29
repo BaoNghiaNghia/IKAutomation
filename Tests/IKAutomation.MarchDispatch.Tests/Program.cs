@@ -44,6 +44,7 @@ internal static class Program
         Run("Expected team ready is captured before Tap", ReadyBaseline);
         Run("Stale timer pixels do not block a fresh enabled action", StaleTimerPixelsDoNotBlock);
         Run("Ready disappearance and timer progression verify directly", DirectTimerSuccess);
+        Run("New team timer verifies dispatch without timer progression", TimerAppearedWithoutProgression);
         Run("Ready remaining does not verify directly", ReadyStillPresentNotDirect);
         Run("Static timer does not verify directly", StaticTimerNotDirect);
         Run("Generated timer change is detected", GeneratedTimerProgression);
@@ -131,8 +132,9 @@ internal static class Program
     private static void ReadyBaseline() { var h=new Harness(); Execute(h); Is(h.Matcher.Calls.Any(x=>x.id==TemplateId.WorldMapTeamReadyAnchor&&x.frame==2&&x.roi.Value.Y==520),"ready baseline"); }
     private static void StaleTimerPixelsDoNotBlock() { var h=new Harness(); h.Timer.ContentBefore=true; var r=Execute(h); Eq(DispatchMarchOutcome.MarchStarted,r.Outcome,"outcome"); Eq(1,r.ActionTapCount,"tap count"); Is(r.ActionButtonVerified,"fresh action button"); }
     private static void DirectTimerSuccess() { var h=DirectHarness(); var r=Execute(h); Eq(DispatchMarchOutcome.MarchStarted,r.Outcome,"outcome"); Is(r.DirectMarchVerified&&r.ReadyAnchorDisappeared&&r.ExpectedTeamTimerVerified,"direct evidence"); Eq(MarchVerificationMode.ReadyDisappearedAndTimerProgression,r.VerificationMode,"mode"); Eq(1,r.ActionTapCount,"tap count"); }
+    private static void TimerAppearedWithoutProgression() { var h=DirectHarness(); h.Timer.Progression=false; var r=Execute(h); Eq(DispatchMarchOutcome.MarchStarted,r.Outcome,"outcome"); Eq(MarchVerificationMode.WorldMapTimerAppeared,r.VerificationMode,"mode"); Is(r.DirectMarchVerified&&r.ExpectedTeamTimerVerified,"timer appeared evidence"); }
     private static void ReadyStillPresentNotDirect() { var h=DirectHarness(); h.Matcher.ReadyAfter=true; var r=Execute(h); Is(!r.DirectMarchVerified,"direct result"); }
-    private static void StaticTimerNotDirect() { var h=DirectHarness(); h.Timer.Progression=false; var r=Execute(h); Is(!r.DirectMarchVerified,"direct result"); }
+    private static void StaticTimerNotDirect() { var h=DirectHarness(); h.Timer.ContentBefore=true; h.Timer.Progression=false; var r=Execute(h); Is(!r.DirectMarchVerified,"direct result"); }
     private static void GeneratedTimerProgression() { var options=Harness.OptionsFor(1,1); var detector=new TeamMarchTimerDetector(options); ImageRegion region=options.TeamTimerRegions[TeamNumber.Team4]; byte[] a=TimerImage(region,"12:34"); byte[] b=TimerImage(region,"12:33"); var r=detector.Compare(a,b,region); Is(r.ProgressionDetected,"progression"); }
     private static void ExcessiveTimerChangeRejected() { var options=Harness.OptionsFor(1,1); var detector=new TeamMarchTimerDetector(options); ImageRegion region=options.TeamTimerRegions[TeamNumber.Team4]; byte[] a=TimerImage(region,"12:34"); byte[] b=SolidTimerImage(region,Color.White); var r=detector.Compare(a,b,region); Is(!r.ProgressionDetected,"large change accepted"); }
     private static void WrongTeamTimerIgnored() { var h=DirectHarness(); h.Timer.TimerTeam=TeamNumber.Team3; var r=Execute(h); Is(!r.DirectMarchVerified,"wrong team timer"); }

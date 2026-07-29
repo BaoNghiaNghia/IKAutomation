@@ -231,7 +231,8 @@ namespace ADB_Tool_Automation_Post_FB.Infrastructure.MarchDispatch
                     }
                     MarchDispatchObservation observation = Observe(lastFrame, beforeDispatch,
                         state, request, badgeId, teamRegion, timerRegion,
-                        result.ExpectedTeamReadyBeforeDispatch, timerContent, timerProgression);
+                        result.ExpectedTeamReadyBeforeDispatch, result.TimerContentBeforeDispatch,
+                        timerContent, timerProgression);
                     observations.Add(observation);
                     result.ObservedFrameCount = observations.Count;
                     Apply(result, observation);
@@ -306,6 +307,7 @@ namespace ADB_Tool_Automation_Post_FB.Infrastructure.MarchDispatch
         private MarchDispatchObservation Observe(byte[] frame, byte[] before,
             GameDetectionResult state, DispatchMarchRequest request, TemplateId badgeId,
             ImageRegion teamRegion, ImageRegion timerRegion, bool readyBeforeDispatch,
+            bool timerBeforeDispatch,
             TeamMarchTimerDetectionResult timerContent,
             TeamMarchTimerProgressionResult timerProgression)
         {
@@ -336,10 +338,14 @@ namespace ADB_Tool_Automation_Post_FB.Infrastructure.MarchDispatch
                 && timerFound && timerChanged;
             bool worldMapTimer = !panel && world && !readyBeforeDispatch
                 && timerFound && timerChanged;
+            bool worldMapTimerAppeared = !panel && world && !selected
+                && !timerBeforeDispatch && timerFound
+                && (!readyBeforeDispatch || readyDisappeared);
             bool timerPlusStructural = worldMapTimer && structural;
             MarchVerificationMode mode = direct
                 ? MarchVerificationMode.ReadyDisappearedAndTimerProgression
                 : timerPlusStructural ? MarchVerificationMode.TimerProgressionPlusStructural
+                : worldMapTimerAppeared ? MarchVerificationMode.WorldMapTimerAppeared
                 : worldMapTimer ? MarchVerificationMode.WorldMapTimerProgression
                 : structural ? MarchVerificationMode.StructuralFallback
                 : MarchVerificationMode.None;
@@ -362,11 +368,12 @@ namespace ADB_Tool_Automation_Post_FB.Infrastructure.MarchDispatch
                 TimerDifferenceRatio = timerDifference,
                 TimerRegion = timerRegion,
                 VerificationMode = mode,
-                DirectSuccessRuleMatched = direct || (worldMapTimer && !structural),
+                DirectSuccessRuleMatched = direct || (worldMapTimerAppeared && !structural)
+                    || (worldMapTimer && !structural),
                 StructuralSuccessRuleMatched = structural,
                 TeamRegionDifference = comparison.DifferenceRatio,
                 TeamRegionChanged = changed,
-                SuccessRuleMatched = direct || worldMapTimer || structural
+                SuccessRuleMatched = direct || worldMapTimerAppeared || worldMapTimer || structural
             };
         }
 
@@ -473,7 +480,8 @@ namespace ADB_Tool_Automation_Post_FB.Infrastructure.MarchDispatch
             result.ExpectedTeamReadyBeforeDispatch |= item.ExpectedTeamReadyBeforeDispatch;
             result.ExpectedTeamReadyAfterDispatch = item.ExpectedTeamReadyAfterDispatch;
             result.ReadyAnchorDisappeared |= item.ReadyAnchorDisappeared;
-            result.ExpectedTeamTimerVerified |= item.TimerProgressionDetected;
+            result.ExpectedTeamTimerVerified |= item.TimerProgressionDetected
+                || item.VerificationMode == MarchVerificationMode.WorldMapTimerAppeared;
             result.FinalTimerForegroundRatio = item.TimerForegroundRatio;
             result.FinalTimerDifferenceRatio = item.TimerDifferenceRatio;
             result.DirectMarchVerified |= item.DirectSuccessRuleMatched;
@@ -487,8 +495,9 @@ namespace ADB_Tool_Automation_Post_FB.Infrastructure.MarchDispatch
         {
             switch (mode)
             {
-                case MarchVerificationMode.ReadyDisappearedAndTimerProgression: return 4;
-                case MarchVerificationMode.TimerProgressionPlusStructural: return 3;
+                case MarchVerificationMode.ReadyDisappearedAndTimerProgression: return 5;
+                case MarchVerificationMode.TimerProgressionPlusStructural: return 4;
+                case MarchVerificationMode.WorldMapTimerAppeared: return 3;
                 case MarchVerificationMode.WorldMapTimerProgression: return 2;
                 case MarchVerificationMode.StructuralFallback: return 1;
                 default: return 0;
@@ -498,6 +507,7 @@ namespace ADB_Tool_Automation_Post_FB.Infrastructure.MarchDispatch
         private static bool IsStrongTimerVerification(MarchVerificationMode mode) =>
             mode == MarchVerificationMode.ReadyDisappearedAndTimerProgression
             || mode == MarchVerificationMode.TimerProgressionPlusStructural
+            || mode == MarchVerificationMode.WorldMapTimerAppeared
             || mode == MarchVerificationMode.WorldMapTimerProgression;
 
         private async Task<byte[]> TryCaptureAsync(string deviceName, CancellationToken token)
