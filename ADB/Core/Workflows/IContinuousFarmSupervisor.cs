@@ -82,7 +82,7 @@ namespace ADB_Tool_Automation_Post_FB.Core.Workflows
             int circuitWindowMs = 1800000, int quarantineCooldownMs = 1800000,
             int checkpointIntervalMs = 30000,
             int heartbeatIntervalMs = 21600000,
-            int allCandidateStoragesFullDelayMs = 43200000)
+            int allCandidateStoragesFullDelayMs = 21600000)
         {
             if (cycleIntervalMs < 1)
                 throw new ArgumentOutOfRangeException(nameof(cycleIntervalMs));

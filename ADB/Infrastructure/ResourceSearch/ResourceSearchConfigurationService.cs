@@ -324,23 +324,36 @@ namespace ADB_Tool_Automation_Post_FB.Infrastructure.ResourceSearch
                     return true;
                 }
 
+                bool unchangedObservedLevel = false;
                 int observedAfter;
                 ConfigurationTemplateEvidence observedEvidence;
                 if (TryMatchVisibleLevel(after, currentMinus, currentPlus, currentSearch,
                     out observedAfter, out observedEvidence))
                 {
-                    if (result.ObservedLevel == observedAfter)
-                    {
-                        evidence.Add(observedEvidence);
-                        break;
-                    }
+                    unchangedObservedLevel = result.ObservedLevel == observedAfter;
                     result.ObservedLevel = observedAfter;
                     evidence.Add(observedEvidence);
                 }
 
                 bool changed;
-                if (TryCompareLevelValue(before, after,
-                    currentMinus, currentPlus, currentSearch, out changed) && !changed)
+                bool unchangedLevelValue = TryCompareLevelValue(before, after,
+                    currentMinus, currentPlus, currentSearch, out changed) && !changed;
+                if (direction == TemplateId.LevelPlusButton
+                    && (unchangedObservedLevel || unchangedLevelValue))
+                {
+                    result.LevelVerified = true;
+                    result.AccountCeilingAccepted = true;
+                    AddStep(steps, "SetLevel", true, 1, evidence,
+                        result.ObservedLevel.HasValue
+                            ? $"Requested level {result.RequestedLevel} exceeds the account ceiling; "
+                                + $"verified level {result.ObservedLevel.Value} was accepted."
+                            : $"Requested level {result.RequestedLevel} exceeds the account ceiling; "
+                                + "the highest available level was verified after Plus stopped changing "
+                                + "the bounded level value.",
+                        null);
+                    return true;
+                }
+                if (unchangedObservedLevel || unchangedLevelValue)
                     break;
             }
 
@@ -531,9 +544,16 @@ namespace ADB_Tool_Automation_Post_FB.Infrastructure.ResourceSearch
                 TemplateId levelTemplateId;
                 bool hasLevelTemplate = TryGetLevelTemplateId(
                     request.TargetLevel, out levelTemplateId);
-                ConfigurationTemplateEvidence finalLevel = hasLevelTemplate
-                    ? MatchLevel(screenshot, levelTemplateId, minus, plus, search)
-                    : Evidence(TemplateId.LevelPlusButton,
+                ConfigurationTemplateEvidence finalLevel = result.AccountCeilingAccepted
+                    ? Evidence(TemplateId.LevelPlusButton,
+                        HasBounds(plus) ? ImageMatchResult.FoundAt(
+                            plus.X, plus.Y, plus.Width, plus.Height) : ImageMatchResult.NotFound(),
+                        HasBounds(plus)
+                            ? "Verified account ceiling retained valid bounded level controls."
+                            : "Verified account ceiling lost its bounded level controls.")
+                    : hasLevelTemplate
+                        ? MatchLevel(screenshot, levelTemplateId, minus, plus, search)
+                        : Evidence(TemplateId.LevelPlusButton,
                         result.LevelVerified && HasBounds(plus) ? ImageMatchResult.FoundAt(
                             plus.X, plus.Y, plus.Width, plus.Height) : ImageMatchResult.NotFound(),
                         result.LevelVerified

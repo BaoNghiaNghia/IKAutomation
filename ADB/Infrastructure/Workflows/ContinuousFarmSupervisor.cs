@@ -403,8 +403,11 @@ namespace ADB_Tool_Automation_Post_FB.Infrastructure.Workflows
                         "March verification was inconclusive; waiting for the next team availability check.");
                 if (item?.Result?.Outcome == OneShotFarmOutcome.AllCandidateStoragesFull)
                     return AttemptResult.WaitingForNextCycle(
-                        "All selected resource storages are full; waiting 12 hours before checking again.",
+                        "All selected resource storages are full; waiting 6 hours before checking again.",
                         options.AllCandidateStoragesFullDelayMs);
+                if (item?.Result?.Outcome == OneShotFarmOutcome.ResourcePlanExhausted)
+                    return AttemptResult.WaitingForNextCycle(
+                        "Search areas were exhausted; waiting for the next cycle before selecting a new area.");
                 if (IsDeviceConnectivityFailure(error))
                     return AttemptResult.TechnicalFailure(error);
                 return AttemptResult.Failed(error);

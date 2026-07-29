@@ -18,7 +18,7 @@ namespace ADB_Tool_Automation_Post_FB.Core.Workflows
         public int MaxRecoveryTransitions { get; set; } = 3;
         public int RecoveryPollIntervalMs { get; set; } = 250;
         public int RecoveryTimeoutSeconds { get; set; } = 8;
-        public int MaxSearchAreaRecoveryAttempts { get; set; } = 1;
+        public int MaxSearchAreaRecoveryAttempts { get; set; } = 3;
         public bool StopOnFirstMarchStarted { get; set; } = true;
         public bool SaveAttemptScreenshots { get; set; } = true;
         public string ScreenshotDirectory { get; set; } = "Diagnostics/ResourceFarmFallback";

@@ -154,6 +154,7 @@ internal static class Program
         Run("Continuous supervisor cancellation stops waiting devices", ContinuousSupervisorCancellationStopsWaiting);
         Run("Continuous supervisor waits after inconclusive march verification", ContinuousSupervisorWaitsAfterDispatchTimeout);
         Run("Continuous supervisor waits when all candidate storages are full", ContinuousSupervisorWaitsWhenStoragesAreFull);
+        Run("Continuous supervisor waits when search areas are exhausted", ContinuousSupervisorWaitsWhenSearchAreasAreExhausted);
         Run("Continuous supervisor recovers dropped LDPlayer ADB connection", ContinuousSupervisorRecoversDroppedAdb);
         Run("Continuous supervisor publishes aggregated health", ContinuousSupervisorPublishesHealth);
         Run("Heartbeat failure does not stop device workflows", HeartbeatFailureIsIsolated);
@@ -329,10 +330,42 @@ internal static class Program
                     && value.NextAttemptAt.HasValue);
                 Is(waiting != null, "storage-full result was not scheduled");
                 TimeSpan remaining = waiting.NextAttemptAt.Value - DateTimeOffset.UtcNow;
-                Is(remaining > TimeSpan.FromHours(11.9)
-                    && remaining <= TimeSpan.FromHours(12),
-                    "storage-full retry was not scheduled for 12 hours");
+                Is(remaining > TimeSpan.FromHours(5.9)
+                    && remaining <= TimeSpan.FromHours(6),
+                    "storage-full retry was not scheduled for 6 hours");
             }
+        }
+    }
+
+    static void ContinuousSupervisorWaitsWhenSearchAreasAreExhausted()
+    {
+        using (var cancellation = new CancellationTokenSource(TimeSpan.FromSeconds(5)))
+        {
+            var runner = new BusinessWaitRunner(OneShotFarmOutcome.ResourcePlanExhausted,
+                "The target level is unavailable in the current season-map area.");
+            var recovery = new FakeDeviceRecovery(true);
+            var snapshots = new List<ContinuousFarmDeviceSnapshot>();
+            var supervisor = new ContinuousFarmSupervisor(runner, recovery,
+                new ContinuousFarmSupervisorOptions(60000, 1));
+            var progress = new InlineProgress<ContinuousFarmSupervisorProgress>(value =>
+            {
+                lock (snapshots) snapshots.Add(value.Device);
+                if (value.Device.State == ContinuousFarmDeviceState.Waiting
+                    && value.Device.Message.Contains("Search areas were exhausted"))
+                    cancellation.Cancel();
+            });
+
+            ContinuousFarmSupervisorResult result = supervisor.RunAsync(
+                new[] { "May 2" }, new H().Request, progress, cancellation.Token)
+                .GetAwaiter().GetResult();
+
+            Eq(1, runner.Calls, "runner calls before the next bounded area cycle");
+            Eq(0, recovery.Calls, "recovery calls");
+            Eq(0, result.Devices[0].ConsecutiveFailures, "consecutive failures");
+            lock (snapshots)
+                Is(snapshots.Any(value => value.State == ContinuousFarmDeviceState.Waiting
+                    && value.NextAttemptAt.HasValue),
+                    "exhausted search areas were not scheduled for the next cycle");
         }
     }
 

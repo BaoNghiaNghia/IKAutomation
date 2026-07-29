@@ -13,6 +13,7 @@ namespace ADB_Tool_Automation_Post_FB.Core.ResourceSearch
         public bool RequestedUnoccupiedOnly { get; set; }
         public bool ResourceVerified { get; set; }
         public bool LevelVerified { get; set; }
+        public bool AccountCeilingAccepted { get; set; }
         public bool FilterVerified { get; set; }
         public GameState InitialState { get; set; }
         public GameState FinalState { get; set; }
