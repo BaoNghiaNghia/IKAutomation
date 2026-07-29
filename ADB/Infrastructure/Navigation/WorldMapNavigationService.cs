@@ -247,14 +247,49 @@ namespace ADB_Tool_Automation_Post_FB.Infrastructure.Navigation
             {
                 await TapEvidenceAsync(deviceName, nearbyPins.SearchTarget,
                     "ContinentMapSearchTargetPin", transitions, cancellationToken);
+                await Task.Delay(options.StatePollIntervalMs, cancellationToken);
+                AddTransition(transitions, "Wait",
+                    $"Waited {options.StatePollIntervalMs} ms after selecting the nearby yellow search pin.");
+                current = await DetectAsync(deviceName, transitions, cancellationToken);
+                if (current.IsSuccessful && current.State == GameState.WorldMap)
+                    return Result(true, initial, current, ensured.Attempts + 2, watch,
+                        "WorldMap verified immediately after selecting the nearby yellow search pin.",
+                        null, transitions);
+
+                if (current.IsSuccessful && current.State == GameState.Unknown
+                    && IsVerifiedContinentMapEvidence(current))
+                {
+                    current.State = GameState.ContinentMap;
+                    AddTransition(transitions, "Detect",
+                        "Normalized Unknown to ContinentMap after selecting the nearby yellow search pin.");
+                }
+
+                if (!current.IsSuccessful || current.State != GameState.ContinentMap)
+                    return Result(false, initial, current, ensured.Attempts + 2, watch,
+                        "Nearby yellow search pin was selected, but ContinentMap was not "
+                        + "verified before confirming the move.",
+                        current?.ErrorMessage, transitions);
+
+                GameDetectionEvidence movePin = FindFreshEvidence(
+                    current, TemplateId.ContinentMapPinButton);
+                if (movePin == null)
+                    return Result(false, initial, current, ensured.Attempts + 2, watch,
+                        "Nearby yellow search pin was selected, but the fresh move-to-coordinate "
+                        + "pin had no valid bounds; no move Tap was sent.",
+                        current.ErrorMessage, transitions);
+
+                await TapEvidenceAsync(deviceName, movePin,
+                    "ContinentMapPinButtonAfterNearbyTargetSelection", transitions,
+                    cancellationToken);
                 GameDetectionResult nearbyFinal = await PollAsync(
                     deviceName, GameState.WorldMap, transitions, cancellationToken);
                 return nearbyFinal.IsSuccessful && nearbyFinal.State == GameState.WorldMap
-                    ? Result(true, initial, nearbyFinal, ensured.Attempts + 2, watch,
-                        "WorldMap verified after selecting the nearby yellow search pin.",
+                    ? Result(true, initial, nearbyFinal, ensured.Attempts + 3, watch,
+                        "WorldMap verified after selecting the nearby yellow search pin "
+                        + "and tapping the fresh move-to-coordinate pin.",
                         null, transitions)
-                    : Result(false, initial, nearbyFinal, ensured.Attempts + 2, watch,
-                        "Nearby yellow search pin was tapped but WorldMap was not verified before timeout.",
+                    : Result(false, initial, nearbyFinal, ensured.Attempts + 3, watch,
+                        "Nearby target move was confirmed, but WorldMap was not verified before timeout.",
                         nearbyFinal.ErrorMessage, transitions);
             }
 
@@ -387,7 +422,7 @@ namespace ADB_Tool_Automation_Post_FB.Infrastructure.Navigation
                 $"Tapped coordinate {axis} field derived from fresh coordinate-pin bounds ({x},{y}).");
             int currentValue = await focusedInputValueReader.ReadFocusedIntegerAsync(
                 deviceName, cancellationToken);
-            int offset = NextCoordinateOffset();
+            int offset = NextCoordinateOffset(currentValue);
             int targetValue = checked(currentValue + offset);
             string currentText = currentValue.ToString(CultureInfo.InvariantCulture);
             string targetText = targetValue.ToString(CultureInfo.InvariantCulture);
@@ -407,10 +442,16 @@ namespace ADB_Tool_Automation_Post_FB.Infrastructure.Navigation
                 $"Waited {options.StatePollIntervalMs} ms after confirming coordinate {axis}.");
         }
 
-        private static int NextCoordinateOffset()
+        private static int NextCoordinateOffset(int currentValue)
         {
             lock (CoordinateOffsetRandomLock)
-                return CoordinateOffsetRandom.Next(1, MaximumCoordinateOffset + 1);
+            {
+                int magnitude = CoordinateOffsetRandom.Next(
+                    1, MaximumCoordinateOffset + 1);
+                bool canSubtract = currentValue > magnitude;
+                bool subtract = canSubtract && CoordinateOffsetRandom.Next(0, 2) == 0;
+                return subtract ? -magnitude : magnitude;
+            }
         }
 
         private async Task<GameDetectionResult> DetectContinentMapAfterCoordinateEditAsync(
