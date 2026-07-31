@@ -51,6 +51,8 @@ namespace IKAutomation.GameDetection.Tests
             Run("Empty device name is rejected", EmptyDeviceRejected);
             Run("Cancellation is respected and propagated", CancellationRespected);
             Run("Detector prefers direct frame capture when available", DetectorPrefersDirectFrameCapture);
+            Run("Expected state uses a fast profile", ExpectedStateUsesFastProfile);
+            Run("Incorrect expected state falls back to full detection", IncorrectExpectedStateFallsBack);
             Run("Wrong resolution stops matching", WrongResolutionStopsMatching);
             Run("Evidence contains all detection templates", EvidenceContainsThreeTemplates);
             Run("Level minus is a stable panel anchor fallback", LevelMinusPanelFallback);
@@ -402,6 +404,43 @@ namespace IKAutomation.GameDetection.Tests
             Equal(GameState.ResourceSearchPanel, result.State, "State from direct frame capture.");
             Equal(1, client.FrameCaptureCalls, "Direct frame capture count.");
             Equal(0, client.CaptureCalls, "Legacy PNG capture should not be used.");
+        }
+
+        private static void ExpectedStateUsesFastProfile()
+        {
+            var matcher = new FakeImageMatcher();
+            matcher.Matches.Add(TemplateId.ResourceSearchPanelAnchor);
+            matcher.Matches.Add(TemplateId.SearchButtonEnabled);
+            var detector = CreateDetector(new FakeLdPlayerClient(), matcher: matcher);
+            using (CapturedFrame frame = Frame())
+            {
+                GameDetectionResult result = ((IFrameGameStateDetector)detector).Detect(frame, "IK-fast",
+                    new GameStateDetectionContext(GameState.ResourceSearchPanel, null));
+                Equal(GameState.ResourceSearchPanel, result.State, "Expected state.");
+                Equal(5, result.Evidence.Count, "Expected profile template count.");
+            }
+        }
+
+        private static void IncorrectExpectedStateFallsBack()
+        {
+            var matcher = new FakeImageMatcher();
+            matcher.Matches.Add(TemplateId.ResourceSearchPanelAnchor);
+            matcher.Matches.Add(TemplateId.SearchButtonEnabled);
+            var detector = CreateDetector(new FakeLdPlayerClient(), matcher: matcher);
+            using (CapturedFrame frame = Frame())
+            {
+                GameDetectionResult result = ((IFrameGameStateDetector)detector).Detect(frame, "IK-fallback",
+                    new GameStateDetectionContext(GameState.WorldMap, null));
+                Equal(GameState.ResourceSearchPanel, result.State, "Full fallback state.");
+                Equal(22, result.Evidence.Count, "Full detector evidence count.");
+            }
+        }
+
+        private static CapturedFrame Frame()
+        {
+            using (var stream = new MemoryStream(CreatePng(1280, 720), writable: false))
+            using (var source = new Bitmap(stream))
+                return new CapturedFrame(new Bitmap(source), DateTimeOffset.UtcNow);
         }
 
         private static void WrongResolutionStopsMatching()

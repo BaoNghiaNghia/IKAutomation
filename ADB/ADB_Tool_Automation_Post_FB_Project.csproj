@@ -89,6 +89,8 @@
     <Compile Include="Core\GameDetection\GameDetectionEvidence.cs" />
     <Compile Include="Core\GameDetection\GameDetectionOptions.cs" />
     <Compile Include="Core\GameDetection\GameDetectionResult.cs" />
+    <Compile Include="Core\GameDetection\GameStateDetectionContext.cs" />
+    <Compile Include="Core\GameDetection\DetectionProfile.cs" />
     <Compile Include="Core\GameDetection\GameState.cs" />
     <Compile Include="Core\GameDetection\IGameStateDetector.cs" />
     <Compile Include="Core\GameDetection\IUnknownScreenshotStore.cs" />

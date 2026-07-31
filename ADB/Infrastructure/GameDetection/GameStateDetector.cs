@@ -4,6 +4,7 @@ using ADB_Tool_Automation_Post_FB.Core.GameDetection;
 using ADB_Tool_Automation_Post_FB.Core.Vision;
 using System;
 using System.Collections.Generic;
+using System.Collections.Concurrent;
 using System.Diagnostics;
 using System.Drawing;
 using System.Drawing.Imaging;
@@ -14,7 +15,7 @@ using System.Threading.Tasks;
 
 namespace ADB_Tool_Automation_Post_FB.Infrastructure.GameDetection
 {
-    public sealed class GameStateDetector : IGameStateDetector
+    public sealed class GameStateDetector : IGameStateDetector, IFrameGameStateDetector
     {
         private static readonly TemplateId[] DetectionTemplates =
         {
@@ -42,12 +43,49 @@ namespace ADB_Tool_Automation_Post_FB.Infrastructure.GameDetection
             TemplateId.WorldMapAnchor
         };
 
+        private static readonly IReadOnlyDictionary<GameState, DetectionProfile> DetectionProfiles =
+            new Dictionary<GameState, DetectionProfile>
+            {
+                { GameState.ResourceSearchPanel, Profile2(
+                    TemplateId.ResourceSearchPanelAnchor, TemplateId.SearchButtonEnabled,
+                    TemplateId.ResourcePopupInfoAnchor, TemplateId.TeamSelectionPanelAnchor,
+                    TemplateId.StorageLimitDialogAnchor) },
+                { GameState.ResourcePopup, Profile2(
+                    TemplateId.ResourcePopupInfoAnchor, TemplateId.GatherButtonEnabled,
+                    TemplateId.ResourceSearchPanelAnchor, TemplateId.TeamSelectionPanelAnchor,
+                    TemplateId.StorageLimitDialogAnchor) },
+                { GameState.TeamSelection, Profile2(
+                    TemplateId.TeamSelectionPanelAnchor, TemplateId.TeamActionButtonEnabled,
+                    TemplateId.ResourceSearchPanelAnchor, TemplateId.ResourcePopupInfoAnchor,
+                    TemplateId.StorageLimitDialogAnchor) },
+                { GameState.WorldMap, Profile1(
+                    TemplateId.WorldMapAnchor,
+                    TemplateId.ResourceSearchPanelAnchor, TemplateId.ResourcePopupInfoAnchor,
+                    TemplateId.TeamSelectionPanelAnchor, TemplateId.StorageLimitDialogAnchor) },
+                { GameState.ContinentMap, Profile1(
+                    TemplateId.ContinentMapTitle,
+                    TemplateId.ResourceSearchPanelAnchor, TemplateId.ResourcePopupInfoAnchor,
+                    TemplateId.TeamSelectionPanelAnchor) },
+                { GameState.City, Profile1(
+                    TemplateId.CityToWorldMapButton,
+                    TemplateId.ResourceSearchPanelAnchor, TemplateId.ResourcePopupInfoAnchor,
+                    TemplateId.TeamSelectionPanelAnchor) },
+                { GameState.StorageLimitDialog, Profile1(
+                    TemplateId.StorageLimitDialogAnchor,
+                    TemplateId.ResourceSearchPanelAnchor, TemplateId.TeamSelectionPanelAnchor) },
+                { GameState.ResourceExpiryDialog, Profile1(
+                    TemplateId.ResourceExpiryDialogAnchor,
+                    TemplateId.ResourceSearchPanelAnchor, TemplateId.TeamSelectionPanelAnchor) }
+            };
+
         private readonly ILdPlayerClient ldPlayerClient;
         private readonly ITemplateRegistry templateRegistry;
         private readonly IImageMatcher imageMatcher;
         private readonly GameDetectionOptions options;
         private readonly IUnknownScreenshotStore unknownScreenshotStore;
         private readonly IDiagnosticLogger logger;
+        private readonly ConcurrentDictionary<string, GameState> lastKnownStates =
+            new ConcurrentDictionary<string, GameState>(StringComparer.OrdinalIgnoreCase);
 
         public GameStateDetector(
             ILdPlayerClient ldPlayerClient,
@@ -97,7 +135,12 @@ namespace ADB_Tool_Automation_Post_FB.Infrastructure.GameDetection
 
             using (frame)
             {
-                GameDetectionResult result = DetectCore(frame, deviceName);
+                GameState lastKnown;
+                GameState? lastKnownState = lastKnownStates.TryGetValue(deviceName, out lastKnown)
+                    ? (GameState?)lastKnown : null;
+                GameDetectionResult result = DetectCore(frame, deviceName,
+                    new GameStateDetectionContext(null, lastKnownState));
+                RememberState(deviceName, result);
                 if (result.IsSuccessful
                     && result.State == GameState.Unknown
                     && options.SaveUnknownScreenshots)
@@ -130,10 +173,19 @@ namespace ADB_Tool_Automation_Post_FB.Infrastructure.GameDetection
         public GameDetectionResult Detect(byte[] screenshotPng)
         {
             using (CapturedFrame frame = DecodeFrame(screenshotPng))
-                return DetectCore(frame, "offline-screenshot");
+                return DetectCore(frame, "offline-screenshot", null);
         }
 
-        private GameDetectionResult DetectCore(CapturedFrame frame, string deviceName)
+        public GameDetectionResult Detect(CapturedFrame frame, string deviceName,
+            GameStateDetectionContext context)
+        {
+            GameDetectionResult result = DetectCore(frame, deviceName, context);
+            RememberState(deviceName, result);
+            return result;
+        }
+
+        private GameDetectionResult DetectCore(CapturedFrame frame, string deviceName,
+            GameStateDetectionContext context)
         {
             DateTimeOffset detectedAt = DateTimeOffset.Now;
             if (frame == null)
@@ -157,6 +209,17 @@ namespace ADB_Tool_Automation_Post_FB.Infrastructure.GameDetection
                         + $"Expected {options.ExpectedWidth}x{options.ExpectedHeight}, actual {width}x{height}."
                 };
             }
+
+            GameDetectionResult fastPath;
+            if (context != null && context.ExpectedState.HasValue
+                && TryDetectProfile(frame, deviceName, width, height,
+                    context.ExpectedState.Value, "expected", out fastPath))
+                return fastPath;
+            if (context != null && context.LastKnownState.HasValue
+                && context.LastKnownState != context.ExpectedState
+                && TryDetectProfile(frame, deviceName, width, height,
+                    context.LastKnownState.Value, "last-known", out fastPath))
+                return fastPath;
 
             var configurationErrors = new List<string>();
             var templateIds = DetectionTemplates;
@@ -628,6 +691,84 @@ namespace ADB_Tool_Automation_Post_FB.Infrastructure.GameDetection
             return frameMatcher != null
                 ? frameMatcher.Find(frame, template, searchRegion)
                 : imageMatcher.Find(frame.GetPngBytes(), template, searchRegion);
+        }
+
+        private bool TryDetectProfile(CapturedFrame frame, string deviceName, int width, int height,
+            GameState state, string source, out GameDetectionResult result)
+        {
+            result = null;
+            DetectionProfile profile;
+            if (!DetectionProfiles.TryGetValue(state, out profile)) return false;
+
+            var ids = profile.PrimaryTemplates.Concat(profile.TransitionTemplates).ToArray();
+            var requests = new List<ImageMatchRequest>(ids.Length);
+            try
+            {
+                foreach (TemplateId id in ids)
+                {
+                    if (!templateRegistry.Exists(id)) return false;
+                    requests.Add(new ImageMatchRequest(templateRegistry.LoadBytes(id),
+                        GetSearchRegion(id, width, height)));
+                }
+            }
+            catch { return false; }
+
+            IReadOnlyList<ImageMatchResult> matches;
+            var frameMatcher = imageMatcher as IFrameImageMatcher;
+            var batchMatcher = imageMatcher as IBatchImageMatcher;
+            if (frameMatcher != null) matches = frameMatcher.FindMany(frame, requests);
+            else if (batchMatcher != null) matches = batchMatcher.FindMany(frame.GetPngBytes(), requests);
+            else
+            {
+                var sequential = new List<ImageMatchResult>(requests.Count);
+                foreach (ImageMatchRequest request in requests)
+                    sequential.Add(Find(frame, request.TemplatePng, request.SearchRegion));
+                matches = sequential.AsReadOnly();
+            }
+
+            var evidence = new List<GameDetectionEvidence>(ids.Length);
+            bool primaryMatched = true;
+            bool transitionMatched = false;
+            for (int index = 0; index < ids.Length; index++)
+            {
+                ImageMatchResult match = matches[index];
+                evidence.Add(EvidenceFromMatch(ids[index], match, requests[index].SearchRegion));
+                if (index < profile.PrimaryTemplates.Count)
+                    primaryMatched &= match != null && match.Found;
+                else
+                    transitionMatched |= match != null && match.Found;
+            }
+
+            if (!primaryMatched || transitionMatched) return false;
+            result = new GameDetectionResult
+            {
+                State = state,
+                Evidence = evidence.AsReadOnly(),
+                DetectedAt = DateTimeOffset.Now,
+                ScreenshotWidth = width,
+                ScreenshotHeight = height,
+                IsSuccessful = true,
+                ErrorMessage = null
+            };
+            return true;
+        }
+
+        private static DetectionProfile Profile1(TemplateId primary, params TemplateId[] transitions)
+        {
+            return new DetectionProfile(new[] { primary }, transitions);
+        }
+
+        private static DetectionProfile Profile2(TemplateId primaryA, TemplateId primaryB,
+            params TemplateId[] transitions)
+        {
+            return new DetectionProfile(new[] { primaryA, primaryB }, transitions);
+        }
+
+        private void RememberState(string deviceName, GameDetectionResult result)
+        {
+            if (result != null && result.IsSuccessful && result.State != GameState.Unknown
+                && !string.IsNullOrWhiteSpace(deviceName))
+                lastKnownStates[deviceName.Trim()] = result.State;
         }
 
         private static CapturedFrame DecodeFrame(byte[] screenshotPng)
