@@ -5,6 +5,7 @@ using System.Collections.Generic;
 using System.Drawing;
 using System.Drawing.Imaging;
 using System.IO;
+using System.Threading.Tasks;
 
 namespace IKAutomation.Vision.Tests
 {
@@ -17,7 +18,9 @@ namespace IKAutomation.Vision.Tests
                 Test("Registry returns relative path", RegistryReturnsRelativePath),
                 Test("Registry maps level 5 and 6 templates", RegistryMapsFallbackLevels),
                 Test("Registry reports missing file", RegistryReportsMissingFile),
+                Test("Registry shares one template byte instance", RegistrySharesTemplateBytes),
                 Test("Matcher finds generated template", MatcherFindsGeneratedTemplate),
+                Test("Frame matcher reuses decoded screenshot", FrameMatcherReusesDecodedScreenshot),
                 Test("Matcher translates ROI coordinates", MatcherTranslatesRoiCoordinates),
                 Test("Matcher returns not found", MatcherReturnsNotFound),
                 Test("Matcher rejects empty bytes", MatcherRejectsEmptyBytes),
@@ -105,6 +108,25 @@ namespace IKAutomation.Vision.Tests
             finally { Directory.Delete(root, true); }
         }
 
+        private static void RegistrySharesTemplateBytes()
+        {
+            string root = CreateTemporaryDirectory();
+            try
+            {
+                string global = Path.Combine(root, "Global");
+                Directory.CreateDirectory(global);
+                File.WriteAllBytes(Path.Combine(global, "world_map_anchor.png"), new byte[] { 1, 2, 3 });
+                var registry = new TemplateRegistry(root);
+                var results = new byte[16][];
+                Parallel.For(0, results.Length,
+                    index => results[index] = registry.LoadBytes(TemplateId.WorldMapAnchor));
+                for (int index = 1; index < results.Length; index++)
+                    AssertTrue(ReferenceEquals(results[0], results[index]),
+                        "Concurrent callers must share the cached template bytes.");
+            }
+            finally { Directory.Delete(root, true); }
+        }
+
         private static void MatcherFindsGeneratedTemplate()
         {
             GeneratedImages images = CreateGeneratedImages(47, 31);
@@ -118,6 +140,24 @@ namespace IKAutomation.Vision.Tests
             AssertEqual(images.TemplateWidth, result.Width, "Unexpected match width.");
             AssertEqual(images.TemplateHeight, result.Height, "Unexpected match height.");
             AssertTrue(!result.Confidence.HasValue, "KAutoHelper confidence should be unavailable.");
+        }
+
+        private static void FrameMatcherReusesDecodedScreenshot()
+        {
+            GeneratedImages images = CreateGeneratedImages(47, 31);
+            var matcher = new KAutoImageMatcher();
+            using (var stream = new MemoryStream(images.ScreenshotPng, writable: false))
+            using (var source = new Bitmap(stream))
+            using (var frame = new CapturedFrame(new Bitmap(source), DateTimeOffset.UtcNow))
+            {
+                AssertTrue(!frame.HasEncodedPng, "Frame construction must not encode PNG.");
+                ImageMatchResult result = ((IFrameImageMatcher)matcher).Find(
+                    frame, images.TemplatePng, new ImageRegion(40, 25, 90, 70));
+                AssertTrue(result.Found, "Expected direct frame match.");
+                AssertNear(47, result.X, 1, "Direct frame ROI X offset was not applied.");
+                AssertNear(31, result.Y, 1, "Direct frame ROI Y offset was not applied.");
+                AssertTrue(!frame.HasEncodedPng, "Direct matching must not encode PNG.");
+            }
         }
 
         private static void MatcherTranslatesRoiCoordinates()

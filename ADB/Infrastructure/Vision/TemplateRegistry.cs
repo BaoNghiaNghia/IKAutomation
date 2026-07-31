@@ -9,8 +9,8 @@ namespace ADB_Tool_Automation_Post_FB.Infrastructure.Vision
     public sealed class TemplateRegistry : ITemplateRegistry
     {
         private const double DefaultThreshold = 0.80;
-        private readonly ConcurrentDictionary<TemplateId, byte[]> byteCache =
-            new ConcurrentDictionary<TemplateId, byte[]>();
+        private readonly ConcurrentDictionary<TemplateId, Lazy<byte[]>> byteCache =
+            new ConcurrentDictionary<TemplateId, Lazy<byte[]>>();
 
         private static readonly IReadOnlyDictionary<TemplateId, TemplateDefinition> Definitions =
             new Dictionary<TemplateId, TemplateDefinition>
@@ -120,12 +120,12 @@ namespace ADB_Tool_Automation_Post_FB.Infrastructure.Vision
 
         public byte[] LoadBytes(TemplateId id)
         {
-            byte[] cached;
-            if (byteCache.TryGetValue(id, out cached)) return cached;
             string path = GetPath(id);
             if (!File.Exists(path))
                 throw new FileNotFoundException($"Template file for '{id}' was not found at '{path}'.", path);
-            return byteCache.GetOrAdd(id, _ => File.ReadAllBytes(path));
+            Lazy<byte[]> cached = byteCache.GetOrAdd(id, _ => new Lazy<byte[]>(
+                () => File.ReadAllBytes(path), true));
+            return cached.Value;
         }
 
         public bool Exists(TemplateId id)

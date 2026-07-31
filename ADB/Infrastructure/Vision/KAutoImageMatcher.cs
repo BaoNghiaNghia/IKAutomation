@@ -4,14 +4,21 @@ using System.Collections.Generic;
 using System.Reflection;
 using System.Drawing;
 using System.IO;
+using System.Runtime.CompilerServices;
 
 namespace ADB_Tool_Automation_Post_FB.Infrastructure.Vision
 {
-    public sealed class KAutoImageMatcher : IImageMatcher, IBatchImageMatcher
+    public sealed class KAutoImageMatcher : IImageMatcher, IBatchImageMatcher, IFrameImageMatcher
     {
         private static readonly System.Threading.SemaphoreSlim VisionGate =
             new System.Threading.SemaphoreSlim(ReadPositiveSetting(
                 "Operations.MaxConcurrentVisionOperations", 6));
+
+        // TemplateRegistry returns stable byte-array instances.  Keeping the decoded
+        // bitmap alongside that instance removes a decode from every match while the
+        // ConditionalWeakTable still releases dynamically-created fallback templates.
+        private static readonly ConditionalWeakTable<byte[], Bitmap> DecodedTemplates =
+            new ConditionalWeakTable<byte[], Bitmap>();
 
         private static int ReadPositiveSetting(string key, int fallback)
         {
@@ -54,6 +61,28 @@ namespace ADB_Tool_Automation_Post_FB.Infrastructure.Vision
             finally { VisionGate.Release(); }
         }
 
+        public IReadOnlyList<ImageMatchResult> FindMany(
+            CapturedFrame frame,
+            IReadOnlyList<ImageMatchRequest> requests)
+        {
+            if (frame == null) throw new ArgumentNullException(nameof(frame));
+            if (requests == null) throw new ArgumentNullException(nameof(requests));
+
+            VisionGate.Wait();
+            try
+            {
+                var results = new List<ImageMatchResult>(requests.Count);
+                foreach (ImageMatchRequest request in requests)
+                {
+                    if (request == null)
+                        throw new ArgumentException("A match request cannot be null.", nameof(requests));
+                    results.Add(FindOnBitmap(frame.Bitmap, request.TemplatePng, request.SearchRegion));
+                }
+                return results.AsReadOnly();
+            }
+            finally { VisionGate.Release(); }
+        }
+
         public ImageMatchResult Find(byte[] screenshotPng, byte[] templatePng, ImageRegion? searchRegion = null)
         {
             ValidateImageBytes(screenshotPng, nameof(screenshotPng));
@@ -68,11 +97,22 @@ namespace ADB_Tool_Automation_Post_FB.Infrastructure.Vision
             finally { VisionGate.Release(); }
         }
 
+        public ImageMatchResult Find(CapturedFrame frame, byte[] templatePng,
+            ImageRegion? searchRegion = null)
+        {
+            if (frame == null) throw new ArgumentNullException(nameof(frame));
+            ValidateImageBytes(templatePng, nameof(templatePng));
+
+            VisionGate.Wait();
+            try { return FindOnBitmap(frame.Bitmap, templatePng, searchRegion); }
+            finally { VisionGate.Release(); }
+        }
+
         private static ImageMatchResult FindOnBitmap(
             Bitmap screenshot, byte[] templatePng, ImageRegion? searchRegion)
         {
             ValidateImageBytes(templatePng, nameof(templatePng));
-            using (Bitmap template = DecodeBitmap(templatePng, nameof(templatePng)))
+            Bitmap template = GetDecodedTemplate(templatePng);
             {
                 int offsetX = 0;
                 int offsetY = 0;
@@ -91,10 +131,7 @@ namespace ADB_Tool_Automation_Post_FB.Infrastructure.Vision
                             new Rectangle(region.X, region.Y, region.Width, region.Height),
                             screenshot.PixelFormat);
                     }
-                    else
-                    {
-                        searchImage = (Bitmap)screenshot.Clone();
-                    }
+                    else searchImage = screenshot;
 
                     if (template.Width > searchImage.Width || template.Height > searchImage.Height)
                     {
@@ -115,9 +152,16 @@ namespace ADB_Tool_Automation_Post_FB.Infrastructure.Vision
                 }
                 finally
                 {
-                    searchImage?.Dispose();
+                    if (!ReferenceEquals(searchImage, screenshot)) searchImage?.Dispose();
                 }
             }
+        }
+
+        private static Bitmap GetDecodedTemplate(byte[] templatePng)
+        {
+            ValidateImageBytes(templatePng, nameof(templatePng));
+            return DecodedTemplates.GetValue(templatePng,
+                bytes => DecodeBitmap(bytes, nameof(templatePng)));
         }
 
         private static Bitmap DecodeBitmap(byte[] imageBytes, string parameterName)

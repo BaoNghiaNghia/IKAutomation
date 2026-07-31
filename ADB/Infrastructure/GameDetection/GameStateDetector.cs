@@ -73,11 +73,14 @@ namespace ADB_Tool_Automation_Post_FB.Infrastructure.GameDetection
             cancellationToken.ThrowIfCancellationRequested();
             ValidateDeviceName(deviceName);
             var stopwatch = Stopwatch.StartNew();
-            byte[] screenshot;
+            CapturedFrame frame = null;
 
             try
             {
-                screenshot = await ldPlayerClient.CaptureScreenshotPngAsync(deviceName, cancellationToken);
+                var frameClient = ldPlayerClient as IFrameCapturingLdPlayerClient;
+                frame = frameClient != null
+                    ? await frameClient.CaptureFrameAsync(deviceName, cancellationToken)
+                    : DecodeFrame(await ldPlayerClient.CaptureScreenshotPngAsync(deviceName, cancellationToken));
                 cancellationToken.ThrowIfCancellationRequested();
             }
             catch (OperationCanceledException)
@@ -92,58 +95,52 @@ namespace ADB_Tool_Automation_Post_FB.Infrastructure.GameDetection
                 return failure;
             }
 
-            GameDetectionResult result = DetectCore(screenshot, deviceName);
-            if (result.IsSuccessful
-                && result.State == GameState.Unknown
-                && options.SaveUnknownScreenshots)
+            using (frame)
             {
-                try
+                GameDetectionResult result = DetectCore(frame, deviceName);
+                if (result.IsSuccessful
+                    && result.State == GameState.Unknown
+                    && options.SaveUnknownScreenshots)
                 {
-                    result.ScreenshotPath = await unknownScreenshotStore.SaveAsync(
-                        deviceName,
-                        screenshot,
-                        cancellationToken);
+                    try
+                    {
+                        result.ScreenshotPath = await unknownScreenshotStore.SaveAsync(
+                            deviceName,
+                            frame.GetPngBytes(),
+                            cancellationToken);
+                    }
+                    catch (OperationCanceledException)
+                    {
+                        throw;
+                    }
+                    catch (Exception exception)
+                    {
+                        logger.Error(
+                            $"[Game State Detection] DeviceName='{deviceName}', "
+                            + $"Failed to save Unknown screenshot: {exception.Message}",
+                            exception);
+                    }
                 }
-                catch (OperationCanceledException)
-                {
-                    throw;
-                }
-                catch (Exception exception)
-                {
-                    logger.Error(
-                        $"[Game State Detection] DeviceName='{deviceName}', "
-                        + $"Failed to save Unknown screenshot: {exception.Message}",
-                        exception);
-                }
-            }
 
-            LogResult(deviceName, result, stopwatch.Elapsed, null);
-            return result;
+                LogResult(deviceName, result, stopwatch.Elapsed, null);
+                return result;
+            }
         }
 
         public GameDetectionResult Detect(byte[] screenshotPng)
         {
-            return DetectCore(screenshotPng, "offline-screenshot");
+            using (CapturedFrame frame = DecodeFrame(screenshotPng))
+                return DetectCore(frame, "offline-screenshot");
         }
 
-        private GameDetectionResult DetectCore(byte[] screenshotPng, string deviceName)
+        private GameDetectionResult DetectCore(CapturedFrame frame, string deviceName)
         {
             DateTimeOffset detectedAt = DateTimeOffset.Now;
-            if (screenshotPng == null || screenshotPng.Length == 0)
-                return Failure($"Screenshot PNG for '{deviceName}' is null or empty.", detectedAt);
+            if (frame == null)
+                return Failure($"Screenshot frame for '{deviceName}' is null.", detectedAt);
 
-            int width;
-            int height;
-            try
-            {
-                ReadDimensions(screenshotPng, out width, out height);
-            }
-            catch (Exception exception)
-            {
-                return Failure(
-                    $"Screenshot PNG for '{deviceName}' could not be decoded: {exception.Message}",
-                    detectedAt);
-            }
+            int width = frame.Width;
+            int height = frame.Height;
 
             if (options.RequireExpectedResolution
                 && (width != options.ExpectedWidth || height != options.ExpectedHeight))
@@ -187,27 +184,29 @@ namespace ADB_Tool_Automation_Post_FB.Infrastructure.GameDetection
 
             var evidence = new List<GameDetectionEvidence>(DetectionTemplates.Length);
             IReadOnlyList<ImageMatchResult> matches = null;
-            if (configurationErrors.Count == 0 && imageMatcher is IBatchImageMatcher batchMatcher)
-                matches = batchMatcher.FindMany(screenshotPng, requests);
+            if (configurationErrors.Count == 0 && imageMatcher is IFrameImageMatcher frameMatcher)
+                matches = frameMatcher.FindMany(frame, requests);
+            else if (configurationErrors.Count == 0 && imageMatcher is IBatchImageMatcher batchMatcher)
+                matches = batchMatcher.FindMany(frame.GetPngBytes(), requests);
             int matchIndex = 0;
             foreach (TemplateId templateId in templateIds)
             {
                 if (configurationErrors.Count > 0)
                 {
-                    evidence.Add(MatchTemplate(screenshotPng, templateId, width, height, configurationErrors));
+                    evidence.Add(MatchTemplate(frame, templateId, width, height, configurationErrors));
                     continue;
                 }
                 ImageMatchRequest request = requests[matchIndex];
                 if (matches == null && RequiresStableFallback(templateId))
                 {
                     evidence.Add(MatchTemplate(
-                        screenshotPng, templateId, width, height, configurationErrors));
+                        frame, templateId, width, height, configurationErrors));
                     matchIndex++;
                     continue;
                 }
                 ImageMatchResult match = matches != null
                     ? matches[matchIndex]
-                    : imageMatcher.Find(screenshotPng, request.TemplatePng, request.SearchRegion);
+                    : Find(frame, request.TemplatePng, request.SearchRegion);
                 matchIndex++;
                 if ((match == null || !match.Found) && RequiresStableFallback(templateId))
                 {
@@ -215,7 +214,7 @@ namespace ADB_Tool_Automation_Post_FB.Infrastructure.GameDetection
                     // dynamic map anchors; the common path remains one screenshot
                     // decode for all templates.
                     evidence.Add(MatchTemplate(
-                        screenshotPng, templateId, width, height, configurationErrors));
+                        frame, templateId, width, height, configurationErrors));
                 }
                 else
                 {
@@ -430,7 +429,7 @@ namespace ADB_Tool_Automation_Post_FB.Infrastructure.GameDetection
         }
 
         private GameDetectionEvidence MatchTemplate(
-            byte[] screenshotPng,
+            CapturedFrame frame,
             TemplateId templateId,
             int screenshotWidth,
             int screenshotHeight,
@@ -486,7 +485,7 @@ namespace ADB_Tool_Automation_Post_FB.Infrastructure.GameDetection
                         ? new ImageRegion(0, screenshotHeight / 2,
                             screenshotWidth, screenshotHeight - screenshotHeight / 2)
                         : (ImageRegion?)null;
-                ImageMatchResult match = imageMatcher.Find(screenshotPng, template, searchRegion);
+                ImageMatchResult match = Find(frame, template, searchRegion);
                 bool usedStableWorldMapAnchor = false;
                 bool usedStableCityMapButton = false;
                 bool usedStableWorldMapPinButton = false;
@@ -497,21 +496,21 @@ namespace ADB_Tool_Automation_Post_FB.Infrastructure.GameDetection
                     var lowerLeftRegion = new ImageRegion(
                         0, screenshotHeight / 2,
                         screenshotWidth / 2, screenshotHeight - screenshotHeight / 2);
-                    match = imageMatcher.Find(screenshotPng, stableTemplate, lowerLeftRegion);
+                    match = Find(frame, stableTemplate, lowerLeftRegion);
                     usedStableWorldMapAnchor = match != null && match.Found;
                 }
                 if (templateId == TemplateId.CityToWorldMapButton
                     && (match == null || !match.Found))
                 {
                     byte[] stableTemplate = TryCreateStableCenterTemplate(template) ?? template;
-                    match = imageMatcher.Find(screenshotPng, stableTemplate, searchRegion);
+                    match = Find(frame, stableTemplate, searchRegion);
                     usedStableCityMapButton = match != null && match.Found;
                 }
                 if (templateId == TemplateId.WorldMapPinButton
                     && (match == null || !match.Found))
                 {
                     byte[] stableTemplate = TryCreateStableCenterTemplate(template) ?? template;
-                    match = imageMatcher.Find(screenshotPng, stableTemplate, searchRegion);
+                    match = Find(frame, stableTemplate, searchRegion);
                     usedStableWorldMapPinButton = match != null && match.Found;
                 }
                 if ((templateId == TemplateId.ContinentMapPinButton
@@ -520,7 +519,7 @@ namespace ADB_Tool_Automation_Post_FB.Infrastructure.GameDetection
                     && (match == null || !match.Found))
                 {
                     byte[] stableTemplate = TryCreateStableCenterTemplate(template) ?? template;
-                    match = imageMatcher.Find(screenshotPng, stableTemplate, searchRegion);
+                    match = Find(frame, stableTemplate, searchRegion);
                     usedStableContinentMapAnchor = match != null && match.Found;
                 }
                 return new GameDetectionEvidence
@@ -622,21 +621,30 @@ namespace ADB_Tool_Automation_Post_FB.Infrastructure.GameDetection
             };
         }
 
+        private ImageMatchResult Find(CapturedFrame frame, byte[] template,
+            ImageRegion? searchRegion)
+        {
+            var frameMatcher = imageMatcher as IFrameImageMatcher;
+            return frameMatcher != null
+                ? frameMatcher.Find(frame, template, searchRegion)
+                : imageMatcher.Find(frame.GetPngBytes(), template, searchRegion);
+        }
+
+        private static CapturedFrame DecodeFrame(byte[] screenshotPng)
+        {
+            if (screenshotPng == null || screenshotPng.Length == 0)
+                throw new ArgumentException("Screenshot PNG data is required.", nameof(screenshotPng));
+
+            using (var stream = new MemoryStream(screenshotPng, writable: false))
+            using (var source = new Bitmap(stream))
+                return new CapturedFrame(new Bitmap(source), DateTimeOffset.UtcNow);
+        }
+
         private static GameDetectionEvidence FindEvidence(
             IEnumerable<GameDetectionEvidence> evidence,
             TemplateId templateId)
         {
             return evidence.First(item => item.TemplateId == templateId);
-        }
-
-        private static void ReadDimensions(byte[] screenshotPng, out int width, out int height)
-        {
-            using (var stream = new MemoryStream(screenshotPng, writable: false))
-            using (Image image = Image.FromStream(stream, false, true))
-            {
-                width = image.Width;
-                height = image.Height;
-            }
         }
 
         private static GameDetectionResult Failure(string message, DateTimeOffset? detectedAt = null)

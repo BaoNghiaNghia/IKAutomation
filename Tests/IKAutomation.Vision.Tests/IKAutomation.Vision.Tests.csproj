@@ -9,6 +9,7 @@
 
   <ItemGroup>
     <Compile Include="..\..\ADB\Core\Vision\IImageMatcher.cs" Link="Production\IImageMatcher.cs" />
+    <Compile Include="..\..\ADB\Core\Vision\CapturedFrame.cs" Link="Production\CapturedFrame.cs" />
     <Compile Include="..\..\ADB\Core\Vision\ImageMatchResult.cs" Link="Production\ImageMatchResult.cs" />
     <Compile Include="..\..\ADB\Core\Vision\ImageRegion.cs" Link="Production\ImageRegion.cs" />
     <Compile Include="..\..\ADB\Core\Vision\ITemplateRegistry.cs" Link="Production\ITemplateRegistry.cs" />

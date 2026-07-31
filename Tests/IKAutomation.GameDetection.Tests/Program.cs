@@ -50,6 +50,7 @@ namespace IKAutomation.GameDetection.Tests
             Run("Capture failure returns ErrorMessage", CaptureFailureReturnsError);
             Run("Empty device name is rejected", EmptyDeviceRejected);
             Run("Cancellation is respected and propagated", CancellationRespected);
+            Run("Detector prefers direct frame capture when available", DetectorPrefersDirectFrameCapture);
             Run("Wrong resolution stops matching", WrongResolutionStopsMatching);
             Run("Evidence contains all detection templates", EvidenceContainsThreeTemplates);
             Run("Level minus is a stable panel anchor fallback", LevelMinusPanelFallback);
@@ -388,6 +389,21 @@ namespace IKAutomation.GameDetection.Tests
             }
         }
 
+        private static void DetectorPrefersDirectFrameCapture()
+        {
+            var client = new FrameFakeLdPlayerClient();
+            var matcher = new FakeImageMatcher();
+            matcher.Matches.Add(TemplateId.ResourceSearchPanelAnchor);
+            matcher.Matches.Add(TemplateId.SearchButtonEnabled);
+
+            GameDetectionResult result = CreateDetector(client, matcher: matcher)
+                .DetectAsync("IK-1", TestToken).GetAwaiter().GetResult();
+
+            Equal(GameState.ResourceSearchPanel, result.State, "State from direct frame capture.");
+            Equal(1, client.FrameCaptureCalls, "Direct frame capture count.");
+            Equal(0, client.CaptureCalls, "Legacy PNG capture should not be used.");
+        }
+
         private static void WrongResolutionStopsMatching()
         {
             var matcher = new FakeImageMatcher();
@@ -578,7 +594,7 @@ namespace IKAutomation.GameDetection.Tests
         private sealed class FakeLogger : IDiagnosticLogger
         { public void Info(string message) { } public void Error(string message, Exception exception) { } }
 
-        private sealed class FakeLdPlayerClient : ILdPlayerClient
+        private class FakeLdPlayerClient : ILdPlayerClient
         {
             public byte[] Screenshot { get; set; } = CreatePng(1280, 720);
             public Exception CaptureException { get; set; }
@@ -598,6 +614,20 @@ namespace IKAutomation.GameDetection.Tests
             public Task BackAsync(string d, CancellationToken t) { InputCalls++; return Task.CompletedTask; }
             public Task InputTextAsync(string d, string text, CancellationToken t) { InputCalls++; return Task.CompletedTask; }
             public Task PressKeyAsync(string d, AndroidKeyCode key, CancellationToken t) { InputCalls++; return Task.CompletedTask; }
+        }
+
+        private sealed class FrameFakeLdPlayerClient : FakeLdPlayerClient,
+            IFrameCapturingLdPlayerClient
+        {
+            public int FrameCaptureCalls { get; private set; }
+
+            public Task<CapturedFrame> CaptureFrameAsync(string deviceName, CancellationToken token)
+            {
+                FrameCaptureCalls++;
+                using (var stream = new MemoryStream(Screenshot, writable: false))
+                using (var source = new Bitmap(stream))
+                    return Task.FromResult(new CapturedFrame(new Bitmap(source), DateTimeOffset.UtcNow));
+            }
         }
     }
 }

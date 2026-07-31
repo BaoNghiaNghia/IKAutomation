@@ -1,4 +1,5 @@
 using ADB_Tool_Automation_Post_FB.Core.Abstractions;
+using ADB_Tool_Automation_Post_FB.Core.Vision;
 using Auto_LDPlayer;
 using Auto_LDPlayer.Enums;
 using System;
@@ -22,7 +23,8 @@ namespace ADB_Tool_Automation_Post_FB.Infrastructure.LDPlayer
     /// New automation code must depend on ILdPlayerClient instead of calling
     /// Auto_LDPlayer.LDPlayer directly.
     /// </summary>
-    public sealed class AutoLdPlayerClient : ILdPlayerClient, IFocusedInputValueReader
+    public sealed class AutoLdPlayerClient : ILdPlayerClient, IFocusedInputValueReader,
+        IFrameCapturingLdPlayerClient
     {
         private const int InputCommandTimeoutMilliseconds = 3000;
         private const int FocusedInputReadAttempts = 3;
@@ -143,6 +145,12 @@ namespace ADB_Tool_Automation_Post_FB.Infrastructure.LDPlayer
 
         public async Task<byte[]> CaptureScreenshotPngAsync(string deviceName, CancellationToken cancellationToken)
         {
+            using (CapturedFrame frame = await CaptureFrameAsync(deviceName, cancellationToken))
+                return frame.GetPngBytes();
+        }
+
+        public async Task<CapturedFrame> CaptureFrameAsync(string deviceName, CancellationToken cancellationToken)
+        {
             cancellationToken.ThrowIfCancellationRequested();
             ValidateDeviceName(deviceName);
 
@@ -151,7 +159,6 @@ namespace ADB_Tool_Automation_Post_FB.Infrastructure.LDPlayer
                 normalizedDeviceName,
                 _ => new SemaphoreSlim(1, 1));
 
-            await ScreenshotGate.WaitAsync(cancellationToken);
             try
             {
                 await screenshotLock.WaitAsync(cancellationToken);
@@ -216,14 +223,23 @@ namespace ADB_Tool_Automation_Post_FB.Infrastructure.LDPlayer
                         screenshotFileName);
                     try
                     {
-                        using (Bitmap screenshot = Auto_LDPlayer.LDPlayer.ScreenShoot(
-                            LDType.Name,
-                            normalizedDeviceName,
-                            true,
-                            screenshotFileName))
+                        Bitmap screenshot;
+                        await ScreenshotGate.WaitAsync(cancellationToken);
+                        try
                         {
-                            if (screenshot != null)
-                                return EncodePng(screenshot, cancellationToken);
+                            screenshot = Auto_LDPlayer.LDPlayer.ScreenShoot(
+                                LDType.Name,
+                                normalizedDeviceName,
+                                true,
+                                screenshotFileName);
+                        }
+                        finally
+                        {
+                            ScreenshotGate.Release();
+                        }
+                        if (screenshot != null)
+                        {
+                            return new CapturedFrame(screenshot, DateTimeOffset.UtcNow);
                         }
 
                         // Auto_LDPlayer 1.1.0 can pull a valid PNG but return null when
@@ -234,7 +250,7 @@ namespace ADB_Tool_Automation_Post_FB.Infrastructure.LDPlayer
                         byte[] recovered = TryRecoverGeneratedScreenshot(
                             generatedFilePrefix, cancellationToken);
                         if (recovered != null)
-                            return recovered;
+                            return DecodeFrame(recovered);
                     }
                     finally
                     {
@@ -269,10 +285,6 @@ namespace ADB_Tool_Automation_Post_FB.Infrastructure.LDPlayer
                     $"Failed to capture PNG screenshot from LDPlayer device '{deviceName}': {ex.Message}",
                     ex);
             }
-            finally
-            {
-                ScreenshotGate.Release();
-            }
         }
 
         private static bool IsRecentlyHealthy(string deviceName)
@@ -292,6 +304,13 @@ namespace ADB_Tool_Automation_Post_FB.Infrastructure.LDPlayer
                 screenshot.Save(stream, ImageFormat.Png);
                 return stream.ToArray();
             }
+        }
+
+        private static CapturedFrame DecodeFrame(byte[] png)
+        {
+            using (var stream = new MemoryStream(png, writable: false))
+            using (var source = new Bitmap(stream))
+                return new CapturedFrame(new Bitmap(source), DateTimeOffset.UtcNow);
         }
 
         private static byte[] TryRecoverGeneratedScreenshot(string filePrefix,
