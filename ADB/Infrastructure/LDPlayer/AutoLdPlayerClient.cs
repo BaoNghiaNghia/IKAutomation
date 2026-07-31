@@ -33,9 +33,13 @@ namespace ADB_Tool_Automation_Post_FB.Infrastructure.LDPlayer
         private const int ScreenshotCaptureRetryDelayMilliseconds = 500;
         private static readonly ConcurrentDictionary<string, SemaphoreSlim> ScreenshotLocks =
             new ConcurrentDictionary<string, SemaphoreSlim>(StringComparer.OrdinalIgnoreCase);
+        private static readonly ConcurrentDictionary<string, DateTimeOffset> HealthyDevices =
+            new ConcurrentDictionary<string, DateTimeOffset>(StringComparer.OrdinalIgnoreCase);
         private static readonly SemaphoreSlim ScreenshotGate = new SemaphoreSlim(
             ReadPositiveSetting("Operations.MaxConcurrentScreenshots", 4),
             ReadPositiveSetting("Operations.MaxConcurrentScreenshots", 4));
+        private static readonly int AdbHealthTtlMilliseconds =
+            ReadPositiveSetting("Operations.AdbHealthTtlMs", 3000);
 
         private static int ReadPositiveSetting(string key, int fallback)
         {
@@ -153,22 +157,22 @@ namespace ADB_Tool_Automation_Post_FB.Infrastructure.LDPlayer
                 await screenshotLock.WaitAsync(cancellationToken);
                 try
                 {
-                string adbState = null;
-                for (int attempt = 1; attempt <= ScreenshotReadyAttempts; attempt++)
+                string adbState = "device";
+                if (!IsRecentlyHealthy(normalizedDeviceName))
                 {
-                    cancellationToken.ThrowIfCancellationRequested();
-                    adbState = Auto_LDPlayer.LDPlayer.Adb(
-                        LDType.Name,
-                        normalizedDeviceName,
-                        "get-state",
-                        3000,
-                        1);
+                    adbState = null;
+                    for (int attempt = 1; attempt <= ScreenshotReadyAttempts; attempt++)
+                    {
+                        cancellationToken.ThrowIfCancellationRequested();
+                        adbState = Auto_LDPlayer.LDPlayer.Adb(
+                            LDType.Name, normalizedDeviceName, "get-state", 3000, 1);
 
-                    if (string.Equals(adbState?.Trim(), "device", StringComparison.OrdinalIgnoreCase))
-                        break;
+                        if (string.Equals(adbState?.Trim(), "device", StringComparison.OrdinalIgnoreCase))
+                            break;
 
-                    if (attempt < ScreenshotReadyAttempts)
-                        await Task.Delay(300, cancellationToken);
+                        if (attempt < ScreenshotReadyAttempts)
+                            await Task.Delay(300, cancellationToken);
+                    }
                 }
 
                 if (!string.Equals(adbState?.Trim(), "device", StringComparison.OrdinalIgnoreCase))
@@ -181,6 +185,7 @@ namespace ADB_Tool_Automation_Post_FB.Infrastructure.LDPlayer
                         + "In LDPlayer, open Settings > Other settings, set ADB debugging to "
                         + $"Open local connection, save, and restart the emulator. ADB response: {response}");
                 }
+                HealthyDevices[normalizedDeviceName] = DateTimeOffset.UtcNow;
 
                 for (int attempt = 1; attempt <= ScreenshotCaptureAttempts; attempt++)
                 {
@@ -203,6 +208,7 @@ namespace ADB_Tool_Automation_Post_FB.Infrastructure.LDPlayer
                                 $"LDPlayer device '{normalizedDeviceName}' is not available through ADB "
                                 + $"after screenshot attempt {attempt - 1}. ADB response: {response}");
                         }
+                        HealthyDevices[normalizedDeviceName] = DateTimeOffset.UtcNow;
                     }
 
                     string screenshotFileName = $"ikautomation_{Guid.NewGuid():N}.png";
@@ -236,8 +242,11 @@ namespace ADB_Tool_Automation_Post_FB.Infrastructure.LDPlayer
                     }
 
                     if (attempt < ScreenshotCaptureAttempts)
+                    {
+                        HealthyDevices.TryRemove(normalizedDeviceName, out DateTimeOffset ignoredHealth);
                         await Task.Delay(ScreenshotCaptureRetryDelayMilliseconds,
                             cancellationToken);
+                    }
                 }
 
                 throw new InvalidOperationException(
@@ -255,6 +264,7 @@ namespace ADB_Tool_Automation_Post_FB.Infrastructure.LDPlayer
             }
             catch (Exception ex)
             {
+                HealthyDevices.TryRemove(normalizedDeviceName, out DateTimeOffset ignoredHealth);
                 throw new InvalidOperationException(
                     $"Failed to capture PNG screenshot from LDPlayer device '{deviceName}': {ex.Message}",
                     ex);
@@ -263,6 +273,14 @@ namespace ADB_Tool_Automation_Post_FB.Infrastructure.LDPlayer
             {
                 ScreenshotGate.Release();
             }
+        }
+
+        private static bool IsRecentlyHealthy(string deviceName)
+        {
+            DateTimeOffset confirmedAt;
+            return HealthyDevices.TryGetValue(deviceName, out confirmedAt)
+                && DateTimeOffset.UtcNow - confirmedAt
+                    < TimeSpan.FromMilliseconds(AdbHealthTtlMilliseconds);
         }
 
         private static byte[] EncodePng(Bitmap screenshot,

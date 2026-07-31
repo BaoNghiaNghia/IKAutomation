@@ -1,7 +1,9 @@
 using ADB_Tool_Automation_Post_FB.Core.Vision;
 using System;
 using System.Drawing;
+using System.Drawing.Imaging;
 using System.IO;
+using System.Runtime.InteropServices;
 
 namespace ADB_Tool_Automation_Post_FB.Infrastructure.Vision
 {
@@ -28,28 +30,61 @@ namespace ADB_Tool_Automation_Post_FB.Infrastructure.Vision
 
                 ImageRegion target = region ?? new ImageRegion(0, 0, current.Width, current.Height);
                 ValidateRegion(target, current.Width, current.Height);
-                double total = 0;
-                int samples = 0;
-                for (int y = target.Y; y < target.Y + target.Height; y += SampleStep)
+                BitmapData previousData = null;
+                BitmapData currentData = null;
+                try
                 {
-                    for (int x = target.X; x < target.X + target.Width; x += SampleStep)
-                    {
-                        Color before = previous.GetPixel(x, y);
-                        Color after = current.GetPixel(x, y);
-                        total += Math.Abs(before.R - after.R)
-                            + Math.Abs(before.G - after.G)
-                            + Math.Abs(before.B - after.B);
-                        samples++;
-                    }
-                }
+                    previousData = previous.LockBits(new Rectangle(0, 0, previous.Width,
+                        previous.Height), ImageLockMode.ReadOnly, previous.PixelFormat);
+                    currentData = current.LockBits(new Rectangle(0, 0, current.Width,
+                        current.Height), ImageLockMode.ReadOnly, current.PixelFormat);
+                    int previousBytesPerPixel = Image.GetPixelFormatSize(previous.PixelFormat) / 8;
+                    int currentBytesPerPixel = Image.GetPixelFormatSize(current.PixelFormat) / 8;
+                    if (previousBytesPerPixel < 3 || currentBytesPerPixel < 3)
+                        throw new InvalidOperationException("Frames must use an RGB pixel format.");
 
-                double ratio = samples == 0 ? 0 : total / (samples * 3d * 255d);
-                return new FrameComparisonResult
+                    byte[] previousRow = new byte[Math.Abs(previousData.Stride)];
+                    byte[] currentRow = new byte[Math.Abs(currentData.Stride)];
+                    double total = 0;
+                    int samples = 0;
+                    for (int y = target.Y; y < target.Y + target.Height; y += SampleStep)
+                    {
+                        Marshal.Copy(RowPointer(previousData, y, previous.Height), previousRow,
+                            0, previousRow.Length);
+                        Marshal.Copy(RowPointer(currentData, y, current.Height), currentRow,
+                            0, currentRow.Length);
+                        for (int x = target.X; x < target.X + target.Width; x += SampleStep)
+                        {
+                            int previousOffset = x * previousBytesPerPixel;
+                            int currentOffset = x * currentBytesPerPixel;
+                            total += Math.Abs(previousRow[previousOffset] - currentRow[currentOffset])
+                                + Math.Abs(previousRow[previousOffset + 1]
+                                    - currentRow[currentOffset + 1])
+                                + Math.Abs(previousRow[previousOffset + 2]
+                                    - currentRow[currentOffset + 2]);
+                            samples++;
+                        }
+                    }
+
+                    double ratio = samples == 0 ? 0 : total / (samples * 3d * 255d);
+                    return new FrameComparisonResult
+                    {
+                        DifferenceRatio = ratio,
+                        IsStable = ratio <= stableThreshold
+                    };
+                }
+                finally
                 {
-                    DifferenceRatio = ratio,
-                    IsStable = ratio <= stableThreshold
-                };
+                    if (previousData != null) previous.UnlockBits(previousData);
+                    if (currentData != null) current.UnlockBits(currentData);
+                }
             }
+        }
+
+        private static IntPtr RowPointer(BitmapData data, int y, int height)
+        {
+            int row = data.Stride < 0 ? height - 1 - y : y;
+            return IntPtr.Add(data.Scan0, row * data.Stride);
         }
 
         private static Bitmap Decode(byte[] png, string parameterName)
