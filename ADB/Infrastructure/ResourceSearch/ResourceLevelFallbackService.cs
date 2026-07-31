@@ -16,6 +16,8 @@ namespace ADB_Tool_Automation_Post_FB.Infrastructure.ResourceSearch
     public sealed class ResourceLevelFallbackService : IResourceLevelFallbackService
     {
         private const string TargetLevelTooLowVariant = "TargetLevelTooLow";
+        private const string SearchOtherRegionVariant = "SearchOtherRegion";
+        private const string LegacyMoveAreaVariant = "LegacyMoveArea";
 
         private static readonly TemplateId[] ToastTemplates =
         {
@@ -215,19 +217,25 @@ namespace ADB_Tool_Automation_Post_FB.Infrastructure.ResourceSearch
                                 searched.Message, searched.ErrorMessage, watch,
                                 $"level-{level}_searchfailed", token, true);
 
-                        if (string.Equals(searched.MatchedNotFoundVariant,
-                            TargetLevelTooLowVariant, StringComparison.Ordinal))
+                        if (RequiresSearchAreaChange(
+                            searched.MatchedNotFoundVariant))
                         {
-                            attempt.Message = "The target level is below the current season-map range. "
-                                + "Skipping lower levels and switching to the next resource.";
+                            attempt.Message = "The verified not-found toast requests a "
+                                + "different map resource area. Skipping lower levels so "
+                                + "the workflow can reposition with the map-pin button.";
                             return await CompleteAsync(deviceName, runId, result,
                                 ResourceLevelFallbackOutcome.ResourceLevelsExhausted,
                                 attempt.Message, null, watch,
-                                "target-level-too-low", token,
+                                "search-area-change-required", token,
                                 options.SaveExhaustedScreenshot);
                         }
 
-                        needsToastClear = true;
+                        // ResourceNotFound can also be inferred after a bounded
+                        // retry leaves the verified panel unchanged. In that case
+                        // no toast was actually observed, so waiting for a toast
+                        // template to disappear can latch onto unrelated map/UI
+                        // pixels and block the next level indefinitely.
+                        needsToastClear = searched.NotFoundToastVerified;
                     }
                 }
 
@@ -300,6 +308,16 @@ namespace ADB_Tool_Automation_Post_FB.Infrastructure.ResourceSearch
                 }
                 return value.Level;
             }
+        }
+
+        private static bool RequiresSearchAreaChange(string variant)
+        {
+            return string.Equals(
+                    variant, TargetLevelTooLowVariant, StringComparison.Ordinal)
+                || string.Equals(
+                    variant, SearchOtherRegionVariant, StringComparison.Ordinal)
+                || string.Equals(
+                    variant, LegacyMoveAreaVariant, StringComparison.Ordinal);
         }
 
         private int RememberCeiling(string deviceName, string runId, int level)

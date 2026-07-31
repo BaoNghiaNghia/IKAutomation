@@ -10,13 +10,15 @@ namespace ADB_Tool_Automation_Post_FB.Core.Workflows
 {
     public sealed class FarmUiPreferences
     {
+        public const int DefaultReadyCheckIntervalMinutes = 10;
+
         public FarmUiPreferences()
         {
             Version = 1;
             Iron = Stone = Wood = Food = true;
             LevelPriority = new[] { 7, 6, 5 };
             TeamPriority = new[] { TeamNumber.Team4, TeamNumber.Team3, TeamNumber.Team2 };
-            ReadyCheckIntervalMinutes = 15;
+            ReadyCheckIntervalMinutes = DefaultReadyCheckIntervalMinutes;
             ReadyMaxWaitHours = 12;
             UnoccupiedOnly = true;
         }

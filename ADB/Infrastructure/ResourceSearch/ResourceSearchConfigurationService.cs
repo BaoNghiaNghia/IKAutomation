@@ -729,8 +729,8 @@ namespace ADB_Tool_Automation_Post_FB.Infrastructure.ResourceSearch
             ConfigurationTemplateEvidence search, out bool changed)
         {
             changed = false;
-            ImageRegion? region = CreateSearchRelativeLevelValueRegion(search)
-                ?? CreateLevelValueRegion(minus, plus);
+            ImageRegion? region = CreateLevelValueComparisonRegion(
+                minus, plus, search);
             if (!region.HasValue) return false;
             try
             {
@@ -767,6 +767,36 @@ namespace ADB_Tool_Automation_Post_FB.Infrastructure.ResourceSearch
             {
                 return false;
             }
+        }
+
+        private static ImageRegion? CreateLevelValueComparisonRegion(
+            ConfigurationTemplateEvidence minus,
+            ConfigurationTemplateEvidence plus,
+            ConfigurationTemplateEvidence search)
+        {
+            if (HasBounds(minus) && HasBounds(plus) && HasBounds(search))
+            {
+                int controlsTop = Math.Min(minus.Y, plus.Y);
+                int controlsOffsetFromSearch = controlsTop - search.Y;
+                if (controlsOffsetFromSearch >= 40
+                    && controlsOffsetFromSearch <= 180)
+                {
+                    int centerX = ((minus.X + (minus.Width / 2))
+                        + (plus.X + (plus.Width / 2))) / 2;
+                    // Compare only the opaque current-level chip between the level
+                    // label and the slider. The wider area above it contains animated
+                    // resource art; the bottom edge contains the glowing slider. Both
+                    // can falsely make a capped level look changed.
+                    return new ImageRegion(
+                        Math.Max(0, centerX - 35),
+                        Math.Max(0, controlsTop - 4),
+                        70,
+                        32);
+                }
+            }
+
+            return CreateSearchRelativeLevelValueRegion(search)
+                ?? CreateLevelValueRegion(minus, plus);
         }
 
         private static byte[] TryCreateStableLevelTemplate(byte[] templateBytes)

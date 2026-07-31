@@ -24,6 +24,7 @@ namespace ADB_Tool_Automation_Post_FB.Core.Workflows
         public TimeSpan Duration { get; set; }
         public string Message { get; set; }
         public string ErrorMessage { get; set; }
+        public string TerritoryColorSummary { get; set; }
         public int RecoveryTransitions { get; set; }
         public OneShotFarmStep LastCompletedStep { get; set; }
     }

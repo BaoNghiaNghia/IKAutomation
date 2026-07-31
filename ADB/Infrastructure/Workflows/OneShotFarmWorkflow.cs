@@ -128,7 +128,8 @@ namespace ADB_Tool_Automation_Post_FB.Infrastructure.Workflows
                         : OneShotFarmProgressStage.Failed,
                     request, result.Message, result.LastCompletedStep,
                     result.LocatedResource, result.LocatedLevel,
-                    result.DispatchedTeam ?? result.SelectedTeam);
+                    result.DispatchedTeam ?? result.SelectedTeam,
+                    result.TerritoryColorSummary);
                 return result;
             }
             catch (OperationCanceledException)
@@ -602,7 +603,8 @@ namespace ADB_Tool_Automation_Post_FB.Infrastructure.Workflows
         private void ReportTerminal(IProgress<OneShotFarmProgress> progress,
             OneShotFarmProgressStage stage, OneShotFarmRequest request, string message,
             OneShotFarmStep? step = null, ResourceType? resource = null,
-            int? level = null, TeamNumber? team = null)
+            int? level = null, TeamNumber? team = null,
+            string territoryColorSummary = null)
         {
             if (progress == null) return;
             try
@@ -619,7 +621,8 @@ namespace ADB_Tool_Automation_Post_FB.Infrastructure.Workflows
                     // observed maximum for accounts whose actual ceiling is lower.
                     CurrentLevel = level,
                     CurrentTeam = team,
-                    Message = message
+                    Message = message,
+                    TerritoryColorSummary = territoryColorSummary
                 });
             }
             catch (Exception exception)
@@ -683,9 +686,12 @@ namespace ADB_Tool_Automation_Post_FB.Infrastructure.Workflows
                 OneShotFarmStep.ResourceFarmFallback, request, null,
                 "Running the resource and level fallback plan.");
             DateTimeOffset started = Start(runId, deviceName, OneShotFarmStep.ResourceFarmFallback);
+            var colorProgress = new CallbackProgress<ResourceFarmFallbackProgress>(
+                value => ReportTerritoryColor(progress, request, value));
             ResourceFarmFallbackResult fallbackResult = await resourceFarmFallback.RunAsync(
-                deviceName, request, initialState, token);
+                deviceName, request, initialState, colorProgress, token);
             result.ResourceFallbackResult = fallbackResult;
+            result.TerritoryColorSummary = fallbackResult.TerritoryColorSummary;
             result.AttemptedResources = fallbackResult.AttemptedResources;
             result.StorageFullResources = fallbackResult.StorageFullResources;
             result.LevelsExhaustedResources = fallbackResult.LevelsExhaustedResources;
@@ -743,6 +749,48 @@ namespace ADB_Tool_Automation_Post_FB.Infrastructure.Workflows
                 case ResourceFarmFallbackOutcome.Cancelled: return OneShotFarmOutcome.Cancelled;
                 default: return OneShotFarmOutcome.Failed;
             }
+        }
+
+        private void ReportTerritoryColor(
+            IProgress<OneShotFarmProgress> progress,
+            OneShotFarmRequest request,
+            ResourceFarmFallbackProgress value)
+        {
+            if (progress == null || value == null
+                || string.IsNullOrWhiteSpace(value.TerritoryColorSummary)) return;
+            try
+            {
+                progress.Report(new OneShotFarmProgress
+                {
+                    Stage = OneShotFarmProgressStage.RunningFarmStep,
+                    ReportedAt = DateTimeOffset.UtcNow,
+                    AllowedTeams = request?.AllowedTeams ?? new TeamNumber[0],
+                    CurrentStep = OneShotFarmStep.ResourceFarmFallback,
+                    CurrentResource = request == null
+                        ? (ResourceType?)null : request.ResourceType,
+                    Message = "Running the resource and level fallback plan.",
+                    TerritoryColorSummary = value.TerritoryColorSummary
+                });
+            }
+            catch (Exception exception)
+            {
+                logger.Error(
+                    "[OneShotFarm] Territory color progress callback failed; workflow continues.",
+                    exception);
+            }
+        }
+
+        private sealed class CallbackProgress<T> : IProgress<T>
+        {
+            private readonly Action<T> callback;
+
+            public CallbackProgress(Action<T> callback)
+            {
+                this.callback = callback
+                    ?? throw new ArgumentNullException(nameof(callback));
+            }
+
+            public void Report(T value) => callback(value);
         }
     }
 }

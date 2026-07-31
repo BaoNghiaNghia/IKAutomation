@@ -42,6 +42,7 @@ namespace IKAutomation.ResourceSearch.Tests
             Run("Level five adjusts directly from current level", LevelFive);
             Run("Account ceiling level six is accepted", AccountCeilingLevelSixIsAccepted);
             Run("Account ceiling level two is accepted", AccountCeilingLevelTwoIsAccepted);
+            Run("Account ceiling ignores animated pixels above level chip", AccountCeilingIgnoresAnimatedHeader);
             Run("Untemplated level fails without resetting the slider", UntemplatedLevelNoInput);
             Run("Compact level glyph adjusts directly without minimum reset", CompactLevelGlyphChanges);
             Run("Minimum level increases directly to target", MinimumLevelDirectAdjustment);
@@ -187,6 +188,7 @@ namespace IKAutomation.ResourceSearch.Tests
         private static void LevelFive() { Fixture f = Setup(); ResourceSearchConfigurationRequest q = Request(); q.TargetLevel = 5; ResourceSearchConfigurationResult r = Execute(f, q); Assert(r.Success && r.LevelVerified, r.ErrorMessage); Equal(0, f.Client.MinusTaps, "Minus taps."); Equal(2, f.Client.PlusTaps, "Plus taps."); }
         private static void AccountCeilingLevelSixIsAccepted() { Fixture f = Setup(); f.Ui.MaxLevel = 6; ResourceSearchConfigurationResult r = Execute(f); Assert(r.Success && r.LevelVerified && r.AccountCeilingAccepted, r.ErrorMessage); Equal((int?)6, r.ObservedLevel, "Observed level."); Equal(0, f.Client.MinusTaps, "Minus taps."); Equal(4, f.Client.PlusTaps, "Plus taps."); Equal(0, f.Client.SearchTaps, "Search taps."); }
         private static void AccountCeilingLevelTwoIsAccepted() { Fixture f = Setup(maximumLevel: 30, resetMinusTapCount: 30); f.Ui.DynamicLevelFrames = true; f.Ui.Level = 2; f.Ui.MaxLevel = 2; ResourceSearchConfigurationResult r = Execute(f); Assert(r.Success && r.LevelVerified && r.AccountCeilingAccepted, r.ErrorMessage); Equal((int?)null, r.ObservedLevel, "Untemplated account ceiling must not be guessed."); Equal(0, f.Client.MinusTaps, "Minus taps."); Equal(1, f.Client.PlusTaps, "Plus taps."); Equal(0, f.Client.SearchTaps, "Search taps."); }
+        private static void AccountCeilingIgnoresAnimatedHeader() { Fixture f = Setup(maximumLevel: 30, resetMinusTapCount: 30); f.Ui.ProductionLevelLayout = true; f.Ui.NoisyLevelHeaderFrames = true; f.Ui.Level = 2; f.Ui.MaxLevel = 2; f.Ui.FilterChecked = false; ResourceSearchConfigurationResult r = Execute(f); Assert(r.Success && r.LevelVerified && r.AccountCeilingAccepted && r.FilterVerified, r.ErrorMessage); Equal(1, f.Client.PlusTaps, "Plus taps."); Equal(0, f.Client.MinusTaps, "Minus taps."); Equal(1, f.Client.FilterTaps, "Unchecked filter must be enabled after accepting the account ceiling."); }
         private static void UntemplatedLevelNoInput() { Fixture f = Setup(maximumLevel: 30, resetMinusTapCount: 30); f.Ui.DynamicLevelFrames = true; var q = Request(); q.TargetLevel = 10; ResourceSearchConfigurationResult r = Execute(f, q); Assert(!r.Success && !r.LevelVerified, "Untemplated level was accepted."); Equal(0, f.Client.MinusTaps, "Minus taps."); Equal(0, f.Client.PlusTaps, "Plus taps."); Equal(0, f.Client.SearchTaps, "Search taps."); }
         private static void CompactLevelGlyphChanges() { Fixture f = Setup(maximumLevel: 30, resetMinusTapCount: 30); f.Ui.CompactDynamicLevelFrames = true; f.Ui.MaxLevel = 6; var q = Request(); q.TargetLevel = 6; ResourceSearchConfigurationResult r = Execute(f, q); Assert(r.Success && r.LevelVerified, r.ErrorMessage); Equal(6, f.Ui.Level, "final level"); Equal(0, f.Client.MinusTaps, "minus taps"); Equal(3, f.Client.PlusTaps, "plus taps"); }
         private static void MinimumLevelDirectAdjustment() { Fixture f = Setup(maximumLevel: 30, resetMinusTapCount: 30); f.Ui.DynamicLevelFrames = true; f.Ui.Level = 1; f.Ui.MaxLevel = 6; var q = Request(); q.TargetLevel = 6; ResourceSearchConfigurationResult r = Execute(f, q); Assert(r.Success && r.LevelVerified, r.ErrorMessage); Equal(0, f.Client.MinusTaps, "Minimum reset taps."); Equal(5, f.Client.PlusTaps, "Plus taps."); }
@@ -518,11 +520,13 @@ namespace IKAutomation.ResourceSearch.Tests
                 FilterRequiresStableControl, ResourceRequiresStableIcon, HideUncheckedFilter,
                 ResourceRequiresCompactStableIcon, BinaryLevelFallback,
                 LevelControlsLoseDirectMatchAfterTap, LevelControlDirectMatchDisabled,
-                DynamicLevelFrames, CompactDynamicLevelFrames;
+                DynamicLevelFrames, CompactDynamicLevelFrames,
+                ProductionLevelLayout, NoisyLevelHeaderFrames;
             public bool LevelControlsMissing;
             public bool ResourceTabSelected = true;
             public int Level = 3;
             public int MaxLevel = 7;
+            public int ScreenshotFrame;
         }
 
         private sealed class FakeMatcher : IImageMatcher
@@ -573,9 +577,17 @@ namespace IKAutomation.ResourceSearch.Tests
                         : Found((!ui.ResourceSelected || ui.AmbiguousResource)
                             && (!ui.ResourceRequiresStableIcon || region.HasValue), 100, 10, 20, 30);
                     case TemplateId.LevelMinusButton: return Found(!ui.LevelControlsMissing
-                        && (!ui.LevelControlDirectMatchDisabled || region.HasValue), 100, 100, 20, 20);
+                        && (!ui.LevelControlDirectMatchDisabled || region.HasValue),
+                        ui.ProductionLevelLayout ? 288 : 100,
+                        ui.ProductionLevelLayout ? 652 : 100,
+                        ui.ProductionLevelLayout ? 39 : 20,
+                        ui.ProductionLevelLayout ? 48 : 20);
                     case TemplateId.LevelPlusButton: return Found(!ui.LevelControlsMissing
-                        && (!ui.LevelControlDirectMatchDisabled || region.HasValue), 200, 100, 20, 20);
+                        && (!ui.LevelControlDirectMatchDisabled || region.HasValue),
+                        ui.ProductionLevelLayout ? 882 : 200,
+                        ui.ProductionLevelLayout ? 652 : 100,
+                        ui.ProductionLevelLayout ? 42 : 20,
+                        ui.ProductionLevelLayout ? 42 : 20);
                     case TemplateId.LevelValue7: return Found(ui.Level == 7 && !ui.HideLevelValue
                         && (!ui.LevelRequiresStableChip || region.HasValue), 150, 50, 20, 20);
                     case TemplateId.LevelValue6: return Found(ui.Level == 6 && !ui.HideLevelValue
@@ -587,7 +599,9 @@ namespace IKAutomation.ResourceSearch.Tests
                     case TemplateId.UnoccupiedFilterUnchecked: return Found(!ui.FilterChecked
                         && !ui.HideUncheckedFilter
                         && (!ui.FilterRequiresStableControl || region.HasValue), 300, 100, 20, 20);
-                    case TemplateId.SearchButtonEnabled: return ImageMatchResult.FoundAt(400, 400, 20, 20);
+                    case TemplateId.SearchButtonEnabled: return ui.ProductionLevelLayout
+                        ? ImageMatchResult.FoundAt(933, 549, 185, 70)
+                        : ImageMatchResult.FoundAt(400, 400, 20, 20);
                     default: return ImageMatchResult.FoundAt(1, 1, 10, 10);
                 }
             }
@@ -701,8 +715,8 @@ namespace IKAutomation.ResourceSearch.Tests
                 t.ThrowIfCancellationRequested(); Taps.Add(x + "," + y);
                 if (x == 210 && y == 674) { ResourceTabTaps++; ui.ResourceTabSelected = true; }
                 else if ((x == 20 || x == 50 || x == 80 || x == 110) && y == 25) { ResourceTaps++; if (!ui.IgnoreResourceTap) ui.ResourceSelected = true; }
-                else if (x == 110) { MinusTaps++; ui.Level = Math.Max(1, ui.Level - 1); if (ui.LevelControlsLoseDirectMatchAfterTap) ui.LevelControlDirectMatchDisabled = true; }
-                else if (x == 210) { PlusTaps++; ui.Level = Math.Min(ui.MaxLevel, ui.Level + 1); if (ui.LevelControlsLoseDirectMatchAfterTap) ui.LevelControlDirectMatchDisabled = true; }
+                else if (x == 110 || x == 307) { MinusTaps++; ui.Level = Math.Max(1, ui.Level - 1); if (ui.LevelControlsLoseDirectMatchAfterTap) ui.LevelControlDirectMatchDisabled = true; }
+                else if (x == 210 || x == 903) { PlusTaps++; ui.Level = Math.Min(ui.MaxLevel, ui.Level + 1); if (ui.LevelControlsLoseDirectMatchAfterTap) ui.LevelControlDirectMatchDisabled = true; }
                 else if (x == 310) { FilterTaps++; ui.FilterChecked = !ui.FilterChecked; }
                 else if (x == 408 && y == 362) { FilterTaps++; ui.FilterChecked = !ui.FilterChecked; }
                 else if (x == 410) SearchTaps++;
@@ -712,7 +726,8 @@ namespace IKAutomation.ResourceSearch.Tests
             {
                 t.ThrowIfCancellationRequested();
                 if (!ui.BinaryLevelFallback && !ui.DynamicLevelFrames
-                    && !ui.CompactDynamicLevelFrames)
+                    && !ui.CompactDynamicLevelFrames
+                    && !ui.ProductionLevelLayout)
                     return Task.FromResult(new byte[] { 1 });
                 using (var bitmap = new Bitmap(1280, 720))
                 using (var graphics = Graphics.FromImage(bitmap))
@@ -729,6 +744,16 @@ namespace IKAutomation.ResourceSearch.Tests
                         graphics.Clear(Color.Black);
                         graphics.FillRectangle(Brushes.White,
                             40 + ui.Level * 3, 480, 2, 8);
+                    }
+                    else if (ui.ProductionLevelLayout)
+                    {
+                        graphics.Clear(Color.Black);
+                        graphics.FillRectangle(Brushes.DarkSlateBlue,
+                            570, 648, 70, 32);
+                        if (ui.NoisyLevelHeaderFrames)
+                            graphics.FillRectangle(Brushes.White,
+                                552 + ((ui.ScreenshotFrame++ % 2) * 12),
+                                628, 8, 8);
                     }
                     bitmap.Save(stream, ImageFormat.Png);
                     return Task.FromResult(stream.ToArray());

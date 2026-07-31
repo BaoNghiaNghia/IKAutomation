@@ -339,9 +339,12 @@ namespace ADB_Tool_Automation_Post_FB.Infrastructure.Workflows
                 .CreateLinkedTokenSource(cancellationToken))
             {
                 CancellationToken attemptToken = attemptCancellation.Token;
+                bool usesExtendedNoProgressTimeout = false;
                 var farmProgress = new InlineProgress<MultiDeviceOneShotFarmProgress>(value =>
                 {
                     if (attemptToken.IsCancellationRequested) return;
+                    Volatile.Write(ref usesExtendedNoProgressTimeout,
+                        IsExpectedLongRunningOperation(value));
                     ApplyFarmProgress(snapshot, value);
                     MarkProgress(snapshot, value?.Message ?? "Farm progress");
                     Publish(snapshot, progress, value, attemptToken);
@@ -362,6 +365,7 @@ namespace ADB_Tool_Automation_Post_FB.Infrastructure.Workflows
                     cancellationToken.ThrowIfCancellationRequested();
                     TimeSpan idle = DateTimeOffset.UtcNow - snapshot.LastProgressAt;
                     int timeoutMs = snapshot.State == ContinuousFarmDeviceState.Waiting
+                        || Volatile.Read(ref usesExtendedNoProgressTimeout)
                         ? options.WaitingNoProgressTimeoutMs : options.NoProgressTimeoutMs;
                     if (idle.TotalMilliseconds >= timeoutMs)
                     {
@@ -408,11 +412,22 @@ namespace ADB_Tool_Automation_Post_FB.Infrastructure.Workflows
                 if (item?.Result?.Outcome == OneShotFarmOutcome.ResourcePlanExhausted)
                     return AttemptResult.WaitingForNextCycle(
                         "Search areas were exhausted; waiting for the next cycle before selecting a new area.");
+                if (item?.Result?.Outcome == OneShotFarmOutcome.RecoveryFailed
+                    && !string.IsNullOrWhiteSpace(
+                        item.Result.TerritoryColorSummary))
+                    return AttemptResult.WaitingForNextCycle(
+                        "No same-tone X/Y destination was found; waiting for the next "
+                        + "scheduled cycle before trying new coordinates.");
                 if (IsDeviceConnectivityFailure(error))
                     return AttemptResult.TechnicalFailure(error);
                 return AttemptResult.Failed(error);
             }
         }
+
+        private static bool IsExpectedLongRunningOperation(
+            MultiDeviceOneShotFarmProgress progress) =>
+            progress?.DeviceProgress?.Stage == OneShotFarmProgressStage.RunningFarmStep
+            && progress.DeviceProgress.CurrentStep == OneShotFarmStep.ResourceFarmFallback;
 
         private static bool IsDeviceConnectivityFailure(string error)
         {

@@ -11,7 +11,7 @@ namespace ADB_Tool_Automation_Post_FB.Infrastructure.Workflows
 {
     public sealed class MultiDeviceOneShotFarmRunner : IMultiDeviceOneShotFarmRunner
     {
-        public const int MaximumSupportedConcurrency = 20;
+        public const int MaximumSupportedConcurrency = 25;
 
         private readonly Func<IOneShotFarmWorkflow> workflowFactory;
         private readonly Func<IWorldMapTeamAvailabilityService> availabilityFactory;

@@ -33,7 +33,7 @@ namespace ADB_Tool_Automation_Post_FB.Core.MarchDispatch
                 nameof(minimumTimerForegroundRatio), nameof(maximumTimerForegroundRatio));
             ValidateRange(minimumTimerDifferenceRatio, maximumTimerDifferenceRatio,
                 nameof(minimumTimerDifferenceRatio), nameof(maximumTimerDifferenceRatio));
-            ValidateTimerRegions(teamTimerRegions, teamRosterRegion,
+            ValidateTimerRegions(teamTimerRegions,
                 expectedWidth, expectedHeight);
             ValidateRelativePath(failureScreenshotDirectory);
             PollIntervalMs = pollIntervalMs;
@@ -88,14 +88,10 @@ namespace ADB_Tool_Automation_Post_FB.Core.MarchDispatch
 
         private static void ValidateTimerRegions(
             IReadOnlyDictionary<TeamNumber, ImageRegion> regions,
-            ImageRegion rosterRegion,
             int expectedWidth, int expectedHeight)
         {
             if (regions == null) throw new ArgumentNullException(nameof(regions));
-            if ((long)rosterRegion.X + rosterRegion.Width > expectedWidth
-                || (long)rosterRegion.Y + rosterRegion.Height > expectedHeight)
-                throw new ArgumentOutOfRangeException(nameof(rosterRegion));
-            int previousBottom = rosterRegion.Y;
+            int previousBottom = 0;
             foreach (TeamNumber team in new[]
             {
                 TeamNumber.Team1, TeamNumber.Team2, TeamNumber.Team3, TeamNumber.Team4
@@ -107,12 +103,6 @@ namespace ADB_Tool_Automation_Post_FB.Core.MarchDispatch
                     || (long)region.Y + region.Height > expectedHeight)
                     throw new ArgumentOutOfRangeException(nameof(regions),
                         $"Timer ROI for '{team}' must be inside {expectedWidth}x{expectedHeight}.");
-                if (region.X < rosterRegion.X
-                    || region.X + region.Width > rosterRegion.X + rosterRegion.Width
-                    || region.Y < rosterRegion.Y
-                    || region.Y + region.Height > rosterRegion.Y + rosterRegion.Height)
-                    throw new ArgumentOutOfRangeException(nameof(regions),
-                        $"Timer ROI for '{team}' must stay inside the WorldMap team roster.");
                 if (region.Y < previousBottom)
                     throw new ArgumentOutOfRangeException(nameof(regions),
                         "Timer ROIs must be ordered by team and must not overlap.");

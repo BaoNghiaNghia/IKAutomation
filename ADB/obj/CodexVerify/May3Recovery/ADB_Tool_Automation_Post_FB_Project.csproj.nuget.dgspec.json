@@ -1,0 +1,75 @@
+{
+  "format": 1,
+  "restore": {
+    "D:\\Bot_Tool_Auto_Game\\IKAutomation\\ADB\\ADB_Tool_Automation_Post_FB_Project.csproj": {}
+  },
+  "projects": {
+    "D:\\Bot_Tool_Auto_Game\\IKAutomation\\ADB\\ADB_Tool_Automation_Post_FB_Project.csproj": {
+      "version": "1.0.0",
+      "restore": {
+        "projectUniqueName": "D:\\Bot_Tool_Auto_Game\\IKAutomation\\ADB\\ADB_Tool_Automation_Post_FB_Project.csproj",
+        "projectName": "ADB_Tool_Automation_Post_FB",
+        "projectPath": "D:\\Bot_Tool_Auto_Game\\IKAutomation\\ADB\\ADB_Tool_Automation_Post_FB_Project.csproj",
+        "packagesPath": "C:\\Users\\baong\\.nuget\\packages\\",
+        "outputPath": "D:\\Bot_Tool_Auto_Game\\IKAutomation\\ADB\\obj\\CodexVerify\\May3Recovery\\",
+        "projectStyle": "PackageReference",
+        "skipContentFileWrite": true,
+        "UsingMicrosoftNETSdk": false,
+        "fallbackFolders": [
+          "C:\\Program Files (x86)\\Microsoft Visual Studio\\Shared\\NuGetPackages"
+        ],
+        "configFilePaths": [
+          "C:\\Users\\baong\\AppData\\Roaming\\NuGet\\NuGet.Config",
+          "C:\\Program Files (x86)\\NuGet\\Config\\Microsoft.VisualStudio.FallbackLocation.config",
+          "C:\\Program Files (x86)\\NuGet\\Config\\Microsoft.VisualStudio.Offline.config"
+        ],
+        "originalTargetFrameworks": [
+          "net481"
+        ],
+        "sources": {
+          "C:\\Program Files (x86)\\Microsoft SDKs\\NuGetPackages\\": {},
+          "https://api.nuget.org/v3/index.json": {}
+        },
+        "frameworks": {
+          "net481": {
+            "framework": "net481",
+            "projectReferences": {}
+          }
+        },
+        "restoreAuditProperties": {
+          "enableAudit": "true",
+          "auditLevel": "low",
+          "auditMode": "direct"
+        }
+      },
+      "frameworks": {
+        "net481": {
+          "framework": "net481",
+          "dependencies": {
+            "Auto_LDPlayer": {
+              "target": "Package",
+              "version": "[1.1.0, )"
+            },
+            "Emgu.CV": {
+              "target": "Package",
+              "version": "[4.1.1.3497, )"
+            },
+            "KAutoHelper_Kteam": {
+              "target": "Package",
+              "version": "[1.0.1.2, )"
+            },
+            "Tesseract": {
+              "target": "Package",
+              "version": "[4.1.1, )"
+            }
+          }
+        }
+      },
+      "runtimes": {
+        "win": {
+          "#import": []
+        }
+      }
+    }
+  }
+}

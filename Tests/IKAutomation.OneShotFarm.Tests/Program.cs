@@ -58,6 +58,7 @@ internal static class Program
         Run("Four-resource plan advances after exhausted levels", ExhaustedAdvances);
         Run("Exhausted four-resource pass repositions and retries", ExhaustedPassRepositionsAndRetries);
         Run("Target-level-too-low toast repositions before switching resource", TargetLevelTooLowRepositions);
+        Run("Search-other-region toast repositions before trying lower levels", SearchOtherRegionRepositions);
         Run("All four resources exhausted returns plan exhausted", AllResourcesExhausted);
         Run("All four resources storage full returns all full", AllResourcesStorageFull);
         Run("Mixed fallback reaches Wood", MixedFallbackReachesWood);
@@ -102,6 +103,8 @@ internal static class Program
         Run("Ready gate reports eligible ready team", ProgressReadyFound);
         Run("Ready gate forwards the same progress", ProgressForwarded);
         Run("One-shot workflow reports running steps", ProgressInnerSteps);
+        Run("Territory colors are reported before resource plan completes", ProgressReportsTerritoryColorsLive);
+        Run("X/Y territory colors are forwarded from navigation immediately", ResourceFallbackForwardsNavigationColor);
         Run("Progress reports level only after search panel verification", ProgressLevelRequiresPanelVerification);
         Run("Ready wait cancellation is prompt and bounded", ProgressCancellationPrompt);
         Run("Null progress remains supported", ProgressNullSupported);
@@ -138,12 +141,12 @@ internal static class Program
         Run("WorldMap readiness service has no default token bypass", AvailabilityHasNoNone);
         Run("One-Shot UI has per-run Stop cancellation", OneShotUiHasStop);
         Run("One-Shot UI hides manual diagnostic controls", OneShotUiIsFocused);
-        Run("Multi-device runner caps concurrency at twenty", MultiDeviceConcurrencyIsCapped);
+        Run("Multi-device runner caps concurrency at twenty-five", MultiDeviceConcurrencyIsCapped);
         Run("Adaptive gate enforces its live concurrency limit", AdaptiveGateEnforcesLiveLimit);
         Run("Adaptive gate reduces concurrency under host pressure", AdaptiveGateReducesOnPressure);
         Run("Adaptive gate increases slowly without exceeding maximum", AdaptiveGateIncreasesWithinMaximum);
         Run("Adaptive stagger honors cancellation", AdaptiveStaggerHonorsCancellation);
-        Run("Concurrent retry shares the twenty-device limit", ConcurrentBatchesShareConcurrencyLimit);
+        Run("Concurrent retry shares the twenty-five-device limit", ConcurrentBatchesShareConcurrencyLimit);
         Run("Multi-device runner isolates requests per device", MultiDeviceRequestsAreIsolated);
         Run("One device failure does not stop other devices", MultiDeviceFailureIsIsolated);
         Run("All device preflights finish before farming starts", MultiDevicePreflightBarrier);
@@ -155,11 +158,13 @@ internal static class Program
         Run("Continuous supervisor waits after inconclusive march verification", ContinuousSupervisorWaitsAfterDispatchTimeout);
         Run("Continuous supervisor waits when all candidate storages are full", ContinuousSupervisorWaitsWhenStoragesAreFull);
         Run("Continuous supervisor waits when search areas are exhausted", ContinuousSupervisorWaitsWhenSearchAreasAreExhausted);
+        Run("Continuous supervisor waits after bounded territory-color candidates", ContinuousSupervisorWaitsAfterTerritoryCandidates);
         Run("Continuous supervisor recovers dropped LDPlayer ADB connection", ContinuousSupervisorRecoversDroppedAdb);
         Run("Continuous supervisor publishes aggregated health", ContinuousSupervisorPublishesHealth);
         Run("Heartbeat failure does not stop device workflows", HeartbeatFailureIsIsolated);
         Run("Watchdog recovers a cancellable stalled device", ContinuousWatchdogRecoversStalledDevice);
         Run("Watchdog quarantines a runner that ignores cancellation", ContinuousWatchdogQuarantinesUnstoppedRunner);
+        Run("Watchdog allows active resource fallback to use its extended timeout", ContinuousWatchdogAllowsResourceFallback);
         Run("Technical retry uses configured backoff", ContinuousSupervisorUsesTechnicalBackoff);
         Run("Circuit breaker quarantines and probes after cooldown", ContinuousCircuitBreakerRecoversAfterCooldown);
         Run("Continuous checkpoint round-trips device state", CheckpointRoundTripsDeviceState);
@@ -185,24 +190,26 @@ internal static class Program
     static ResourceFarmFallbackResult Plan(H h, FakeProfiles profiles=null, CancellationToken t=default(CancellationToken))
         => new ResourceFarmFallbackService(h.Nav,new FakeFallback(h.Config,h.Search),h.Popup,h.Open,h.Select,h.Dispatch,
             profiles??new FakeProfiles(),new ResourceFarmFallbackOptions(),new Log())
-            .RunAsync("LDPlayer",h.Request,GameState.WorldMap,t).GetAwaiter().GetResult();
+            .RunAsync("LDPlayer",h.Request,GameState.WorldMap,null,t).GetAwaiter().GetResult();
 
     static void MultiDeviceConcurrencyIsCapped()
     {
-        var probe = new MultiDeviceWorkflowProbe(20);
+        Eq(25, MultiDeviceOneShotFarmRunner.MaximumSupportedConcurrency,
+            "supported concurrency");
+        var probe = new MultiDeviceWorkflowProbe(25);
         var runner = new MultiDeviceOneShotFarmRunner(
-            () => new MultiDeviceProbeWorkflow(probe), 20);
+            () => new MultiDeviceProbeWorkflow(probe), 25);
         using (var cancellation = new CancellationTokenSource(TimeSpan.FromSeconds(10)))
         {
             Task<MultiDeviceOneShotFarmResult> run = runner.RunAsync(
-                Enumerable.Range(1, 25).Select(index => "Device" + index).ToArray(),
+                Enumerable.Range(1, 30).Select(index => "Device" + index).ToArray(),
                 new H().Request, null, cancellation.Token);
             Is(probe.RequiredConcurrencyReached.Task.Wait(TimeSpan.FromSeconds(5)),
-                "twenty devices did not enter concurrently");
-            Eq(20, probe.MaximumActive, "maximum active workflows");
+                "twenty-five devices did not enter concurrently");
+            Eq(25, probe.MaximumActive, "maximum active workflows");
             probe.Release.TrySetResult(true);
             MultiDeviceOneShotFarmResult result = run.GetAwaiter().GetResult();
-            Eq(25, result.Devices.Count, "device results");
+            Eq(30, result.Devices.Count, "device results");
             Is(result.Devices.All(item => item.Stage == MultiDeviceOneShotFarmStage.Completed),
                 "all devices should complete");
         }
@@ -369,6 +376,40 @@ internal static class Program
         }
     }
 
+    static void ContinuousSupervisorWaitsAfterTerritoryCandidates()
+    {
+        using (var cancellation = new CancellationTokenSource(TimeSpan.FromSeconds(5)))
+        {
+            var runner = new BusinessWaitRunner(
+                OneShotFarmOutcome.RecoveryFailed,
+                "No matching territory tone was found after bounded X/Y candidates.",
+                "Candidate=5/5; X=525; Y=409; Home=Green; "
+                    + "Destination=Blue; Result=Different; Source=CoordinateAnchor.");
+            var recovery = new FakeDeviceRecovery(true);
+            var snapshots = new List<ContinuousFarmDeviceSnapshot>();
+            var supervisor = new ContinuousFarmSupervisor(runner, recovery,
+                new ContinuousFarmSupervisorOptions(60000, 1));
+            var progress = new InlineProgress<ContinuousFarmSupervisorProgress>(value =>
+            {
+                lock (snapshots) snapshots.Add(value.Device);
+                if (value.Device.State == ContinuousFarmDeviceState.Waiting
+                    && value.Device.Message.Contains("No same-tone X/Y destination"))
+                    cancellation.Cancel();
+            });
+
+            supervisor.RunAsync(new[] { "May 2" }, new H().Request,
+                progress, cancellation.Token).GetAwaiter().GetResult();
+
+            Eq(1, runner.Calls, "a new X/Y batch started before the scheduled cycle");
+            Eq(0, recovery.Calls, "device recovery must not restart X/Y selection");
+            lock (snapshots)
+                Is(snapshots.Any(value =>
+                    value.State == ContinuousFarmDeviceState.Waiting
+                    && value.NextAttemptAt.HasValue),
+                    "territory-color exhaustion was not scheduled");
+        }
+    }
+
     static void ContinuousSupervisorRecoversDroppedAdb()
     {
         using (var cancellation = new CancellationTokenSource(TimeSpan.FromSeconds(5)))
@@ -484,6 +525,28 @@ internal static class Program
             Eq(ContinuousFarmDeviceState.Quarantined, result.Devices[0].State,
                 "unstopped runner state");
             Eq(0, recovery.Calls, "recovery must not overlap an unstopped runner");
+        }
+    }
+
+    static void ContinuousWatchdogAllowsResourceFallback()
+    {
+        using (var cancellation = new CancellationTokenSource(TimeSpan.FromSeconds(5)))
+        {
+            var runner = new LongResourceFallbackRunner(cancellation);
+            var recovery = new FakeDeviceRecovery(true);
+            var supervisor = new ContinuousFarmSupervisor(runner, recovery,
+                new ContinuousFarmSupervisorOptions(cycleIntervalMs: 60000,
+                    failureRetryDelayMs: 1, noProgressTimeoutMs: 30,
+                    watchdogPollIntervalMs: 5, cancellationGraceMs: 100,
+                    waitingNoProgressTimeoutMs: 250,
+                    technicalRetryDelaysMs: new[] { 1 }, retryJitterMaxMs: 0));
+            ContinuousFarmSupervisorResult result = supervisor.RunAsync(new[] { "May 2" },
+                new H().Request, null, cancellation.Token).GetAwaiter().GetResult();
+            Is(result.WasCancelled, "successful resource fallback did not finish the test");
+            Eq(0, recovery.Calls, "active resource fallback incorrectly invoked recovery");
+            Eq(0, result.Devices[0].WatchdogTimeoutCount,
+                "active resource fallback incorrectly timed out");
+            Eq(1, runner.Calls, "resource fallback cycle was unexpectedly retried");
         }
     }
 
@@ -860,8 +923,8 @@ internal static class Program
         string code = File.ReadAllText(Path.Combine(root, "UI",
             "DeviceDiagnosticWindow.xaml.cs"));
         string main = File.ReadAllText(Path.Combine(root, "MainWindow.xaml.cs"));
-        Is(xaml.Contains("RunOneShotFarmButton") && xaml.Contains("RunContinuousFarmButton"),
-            "bounded or continuous run control is missing");
+        Is(!xaml.Contains("RunOneShotFarmButton") && xaml.Contains("RunContinuousFarmButton"),
+            "continuous-only run control is not configured");
         Is(code.Contains("continuousFarmSupervisor.RunAsync")
             && code.Contains("RunContinuousSupervisorAsync")
             && code.Contains("ApplySupervisorSnapshot(snapshot)"),
@@ -973,9 +1036,9 @@ internal static class Program
 
     static void ConcurrentBatchesShareConcurrencyLimit()
     {
-        var probe = new MultiDeviceWorkflowProbe(20);
+        var probe = new MultiDeviceWorkflowProbe(25);
         var runner = new MultiDeviceOneShotFarmRunner(
-            () => new MultiDeviceProbeWorkflow(probe), 20);
+            () => new MultiDeviceProbeWorkflow(probe), 25);
         using (var cancellation = new CancellationTokenSource(TimeSpan.FromSeconds(10)))
         {
             Task<MultiDeviceOneShotFarmResult> first = runner.RunAsync(
@@ -986,10 +1049,10 @@ internal static class Program
                 new H().Request, null, cancellation.Token);
             Is(probe.RequiredConcurrencyReached.Task.Wait(TimeSpan.FromSeconds(5)),
                 "concurrent batches did not fill the shared limit");
-            Eq(20, probe.MaximumActive, "concurrent batches exceeded shared limit");
+            Eq(25, probe.MaximumActive, "concurrent batches exceeded shared limit");
             probe.Release.TrySetResult(true);
             Task.WhenAll(first, retry).GetAwaiter().GetResult();
-            Eq(20, probe.MaximumActive, "shared limit changed after queued work");
+            Eq(25, probe.MaximumActive, "shared limit changed after queued work");
         }
     }
 
@@ -1154,6 +1217,7 @@ internal static class Program
     static void ExhaustedAdvances(){var h=new H();h.Search.Outcomes.Enqueue(ResourceSearchOutcome.ResourceNotFound);h.Search.Outcomes.Enqueue(ResourceSearchOutcome.ResourceNotFound);h.Search.Outcomes.Enqueue(ResourceSearchOutcome.ResourceNotFound);h.Search.Outcomes.Enqueue(ResourceSearchOutcome.ResourceLocated);var r=Plan(h);Eq(ResourceFarmFallbackOutcome.MarchStarted,r.Outcome,"outcome");Is(new[]{ResourceType.Iron,ResourceType.Stone}.SequenceEqual(r.AttemptedResources),"attempted");Is(new[]{ResourceType.Iron}.SequenceEqual(r.LevelsExhaustedResources),"exhausted");}
     static void ExhaustedPassRepositionsAndRetries(){var h=new H();h.Request.ResourceLevelPriority=new[]{7};for(int i=0;i<4;i++)h.Search.Outcomes.Enqueue(ResourceSearchOutcome.ResourceNotFound);h.Search.Outcomes.Enqueue(ResourceSearchOutcome.ResourceLocated);var r=Plan(h);Eq(ResourceFarmFallbackOutcome.MarchStarted,r.Outcome,"outcome");Eq(1,h.Nav.RepositionCalls,"reposition");Eq(5,h.Search.Calls,"search calls");Eq((ResourceType?)ResourceType.Iron,r.DispatchedResource,"retried resource");Is(new[]{ResourceType.Iron,ResourceType.Stone,ResourceType.Wood,ResourceType.Food}.SequenceEqual(r.LevelsExhaustedResources),"exhausted pass");}
     static void TargetLevelTooLowRepositions(){var h=new H();h.Search.Outcomes.Enqueue(ResourceSearchOutcome.ResourceNotFound);h.Search.Outcomes.Enqueue(ResourceSearchOutcome.ResourceLocated);h.Search.MatchedNotFoundVariants.Enqueue("TargetLevelTooLow");var r=Plan(h);Eq(ResourceFarmFallbackOutcome.MarchStarted,r.Outcome,"outcome");Eq(1,h.Nav.RepositionCalls,"reposition");Eq(2,h.Search.Calls,"search calls");Eq((ResourceType?)ResourceType.Iron,r.DispatchedResource,"retried resource");Is(new[]{ResourceType.Iron}.SequenceEqual(r.AttemptedResources),"resource should be retried before switching");}
+    static void SearchOtherRegionRepositions(){var h=new H();h.Search.Outcomes.Enqueue(ResourceSearchOutcome.ResourceNotFound);h.Search.Outcomes.Enqueue(ResourceSearchOutcome.ResourceLocated);h.Search.MatchedNotFoundVariants.Enqueue("SearchOtherRegion");var r=Plan(h);Eq(ResourceFarmFallbackOutcome.MarchStarted,r.Outcome,"outcome");Eq(1,h.Nav.RepositionCalls,"map-pin reposition");Eq(2,h.Search.Calls,"search should retry after reposition without trying lower levels first");Eq((ResourceType?)ResourceType.Iron,r.DispatchedResource,"retried resource");Is(new[]{ResourceType.Iron}.SequenceEqual(r.AttemptedResources),"resource should be retried before switching");}
     static void AllResourcesExhausted(){var h=new H();h.Search.Outcome=ResourceSearchOutcome.ResourceNotFound;var r=Plan(h);Eq(ResourceFarmFallbackOutcome.ResourcePlanExhausted,r.Outcome,"outcome");Is(new[]{ResourceType.Iron,ResourceType.Stone,ResourceType.Wood,ResourceType.Food}.SequenceEqual(r.LevelsExhaustedResources),"exhausted");Eq(0,h.Popup.Calls+h.Open.Calls+h.Select.Calls+h.Dispatch.Calls,"downstream");}
     static void AllResourcesStorageFull(){var h=new H();for(int i=0;i<4;i++)h.Dispatch.Outcomes.Enqueue(DispatchMarchOutcome.StorageLimitResourceSwitchRequired);var r=Plan(h);Eq(ResourceFarmFallbackOutcome.AllCandidateStoragesFull,r.Outcome,"outcome");Is(new[]{ResourceType.Iron,ResourceType.Stone,ResourceType.Wood,ResourceType.Food}.SequenceEqual(r.StorageFullResources),"storage order");Eq(4,h.Dispatch.Calls,"dispatches");}
     static void MixedFallbackReachesWood(){var h=new H();h.Search.Outcomes.Enqueue(ResourceSearchOutcome.ResourceLocated);h.Search.Outcomes.Enqueue(ResourceSearchOutcome.ResourceNotFound);h.Search.Outcomes.Enqueue(ResourceSearchOutcome.ResourceNotFound);h.Search.Outcomes.Enqueue(ResourceSearchOutcome.ResourceNotFound);h.Search.Outcomes.Enqueue(ResourceSearchOutcome.ResourceLocated);h.Dispatch.Outcomes.Enqueue(DispatchMarchOutcome.StorageLimitResourceSwitchRequired);h.Dispatch.Outcomes.Enqueue(DispatchMarchOutcome.MarchStarted);var r=Plan(h);Eq(ResourceFarmFallbackOutcome.MarchStarted,r.Outcome,"outcome");Is(new[]{ResourceType.Iron,ResourceType.Stone,ResourceType.Wood}.SequenceEqual(r.AttemptedResources),"attempted");Is(new[]{ResourceType.Iron}.SequenceEqual(r.StorageFullResources),"storage");Is(new[]{ResourceType.Stone}.SequenceEqual(r.LevelsExhaustedResources),"exhausted");Eq((ResourceType?)ResourceType.Wood,r.DispatchedResource,"resource");Eq((int?)7,r.LocatedLevel,"level");}
@@ -1199,6 +1263,8 @@ internal static class Program
     static void ProgressReadyFound(){var p=new RecordingProgress();var availability=new FakeAvailability();availability.ReadyTeamSequences.Enqueue(new[]{TeamNumber.Team4,TeamNumber.Team1});var request=new OneShotFarmRequest{AllowedTeams=new[]{TeamNumber.Team4,TeamNumber.Team3}};ReadyGate(new FakeInnerWorkflow(),availability).RunAsync("LDPlayer",request,p,default(CancellationToken)).GetAwaiter().GetResult();var ready=p.Items.Single(x=>x.Stage==OneShotFarmProgressStage.ReadyTeamFound);Is(ready.ReadyTeams.SequenceEqual(new[]{TeamNumber.Team4,TeamNumber.Team1}),"ready teams");Is(ready.EligibleReadyTeams.SequenceEqual(new[]{TeamNumber.Team4}),"eligible teams");}
     static void ProgressForwarded(){var p=new RecordingProgress();var inner=new FakeInnerWorkflow();ReadyGate(inner,new FakeAvailability(true)).RunAsync("LDPlayer",new OneShotFarmRequest(),p,default(CancellationToken)).GetAwaiter().GetResult();Is(ReferenceEquals(p,inner.LastProgress),"progress reference");}
     static void ProgressInnerSteps(){var h=new H();var p=new RecordingProgress();var r=h.Workflow.RunAsync("LDPlayer",h.Request,p,default(CancellationToken)).GetAwaiter().GetResult();Is(r.Success,"workflow");Is(p.Items.Any(x=>x.Stage==OneShotFarmProgressStage.PreparingFarm),"preparing");Is(p.Items.Any(x=>x.Stage==OneShotFarmProgressStage.RunningFarmStep&&x.CurrentStep==OneShotFarmStep.EnsureWorldMap),"running step");Eq(OneShotFarmProgressStage.Completed,p.Items.Last().Stage,"terminal");}
+    static void ProgressReportsTerritoryColorsLive(){var h=new H();var plan=new FakePlan{ColorSummary="Home=Green; Destination=Green; Result=Match; Source=FreshPin."};var p=new RecordingProgress();var r=PlanWorkflow(h,plan).RunAsync("LDPlayer",h.Request,p,default(CancellationToken)).GetAwaiter().GetResult();Is(r.Success,"workflow");var color=p.Items.FirstOrDefault(x=>x.TerritoryColorSummary==plan.ColorSummary);Is(color!=null,"live color progress missing");Eq(OneShotFarmProgressStage.RunningFarmStep,color.Stage,"color was only reported at terminal");Eq(OneShotFarmStep.ResourceFarmFallback,color.CurrentStep.Value,"color step");}
+    static void ResourceFallbackForwardsNavigationColor(){var h=new H();h.Request.ResourceLevelPriority=new[]{7};h.Search.Outcome=ResourceSearchOutcome.ResourceNotFound;h.Nav.RepositionSuccess=false;h.Nav.TerritoryColorSummary="Candidate=1/5; X=582; Y=429; Home=Green; Destination=Blue; Result=Different; Source=CoordinateAnchor.";var p=new RecordingFallbackProgress();var service=new ResourceFarmFallbackService(h.Nav,new FakeFallback(h.Config,h.Search),h.Popup,h.Open,h.Select,h.Dispatch,new FakeProfiles(),new ResourceFarmFallbackOptions(),new Log());var r=service.RunAsync("LDPlayer",h.Request,GameState.WorldMap,p,default(CancellationToken)).GetAwaiter().GetResult();Eq(ResourceFarmFallbackOutcome.RecoveryFailed,r.Outcome,"outcome");Is(p.Items.Any(x=>x.TerritoryColorSummary==h.Nav.TerritoryColorSummary),"navigation color was only exposed after recovery completed");}
     static void ProgressLevelRequiresPanelVerification(){var h=new H();h.Request.TargetLevel=7;var plan=new FakePlan{LocatedLevel=6};var p=new RecordingProgress();var r=PlanWorkflow(h,plan).RunAsync("LDPlayer",h.Request,p,default(CancellationToken)).GetAwaiter().GetResult();Is(r.Success,"workflow");var beforeVerification=p.Items.Where(x=>x.Stage!=OneShotFarmProgressStage.Completed).ToArray();Is(beforeVerification.All(x=>!x.CurrentLevel.HasValue),"preferred level was reported as observed");Eq((int?)6,p.Items.Last().CurrentLevel,"verified panel level");}
     static void ProgressCancellationPrompt(){using(var source=new CancellationTokenSource()){var availability=new FakeAvailability(false);var p=new DelegateProgress(x=>{if(x.Stage==OneShotFarmProgressStage.WaitingForReadyTeam)source.Cancel();});var watch=System.Diagnostics.Stopwatch.StartNew();var r=ReadyGate(new FakeInnerWorkflow(),availability,new ReadyTeamGateOptions(30000,60000)).RunAsync("LDPlayer",new OneShotFarmRequest(),p,source.Token).GetAwaiter().GetResult();watch.Stop();Eq(OneShotFarmOutcome.Cancelled,r.Outcome,"outcome");Is(watch.ElapsedMilliseconds<2000,"cancel was not prompt");Eq(1,availability.Calls,"extra availability check");}}
     static void ProgressNullSupported(){var r=ReadyGate(new FakeInnerWorkflow(),new FakeAvailability(true)).RunAsync("LDPlayer",new OneShotFarmRequest(),null,default(CancellationToken)).GetAwaiter().GetResult();Is(r.Success,"null progress");}
@@ -1207,7 +1273,7 @@ internal static class Program
     static void ProgressCallbackSafe(){var h=new H();var r=h.Workflow.RunAsync("LDPlayer",h.Request,new ThrowingProgress(),default(CancellationToken)).GetAwaiter().GetResult();Is(r.Success,"progress callback changed workflow outcome");}
     static void ProgressHasNoNone(){foreach(string file in new[]{"ADB/Core/Workflows/OneShotFarmProgress.cs","ADB/Infrastructure/Workflows/ReadyTeamOneShotFarmWorkflow.cs","ADB/Infrastructure/Workflows/OneShotFarmWorkflow.cs","ADB/UI/DeviceDiagnosticWindow.xaml.cs"})Is(!File.ReadAllText(Path.Combine(Environment.CurrentDirectory,file)).Contains("CancellationToken"+".None"),file);}
     static void PreferenceMissingUsesDefaults(){using(var f=new PreferenceFixture()){var d=ValidPreferences();d.Iron=false;var r=f.Store.LoadAsync(d,default(CancellationToken)).GetAwaiter().GetResult();Is(r.Success&&r.UsedDefaults,"defaults");Is(!r.Preferences.Iron,"default value");Is(!File.Exists(f.FilePath),"file created on load");}}
-    static void PreferenceSafeDefaults(){var p=new FarmUiPreferences();int count=(p.Iron?1:0)+(p.Stone?1:0)+(p.Wood?1:0)+(p.Food?1:0);Is(count>=2,"resource count");Is(FarmUiPreferencesMapper.Validate(p).IsValid,"safe defaults invalid");}
+    static void PreferenceSafeDefaults(){var p=new FarmUiPreferences();int count=(p.Iron?1:0)+(p.Stone?1:0)+(p.Wood?1:0)+(p.Food?1:0);Is(count>=2,"resource count");Eq(10,p.ReadyCheckIntervalMinutes,"default ready check interval");Is(FarmUiPreferencesMapper.Validate(p).IsValid,"safe defaults invalid");}
     static void PreferenceResourcesRoundTrip(){using(var f=new PreferenceFixture()){var p=ValidPreferences();p.Iron=false;p.Stone=true;p.Wood=false;p.Food=true;f.Save(p);var a=f.Load().Preferences;Is(!a.Iron&&a.Stone&&!a.Wood&&a.Food,"flags");}}
     static void PreferencePrioritiesRoundTrip(){using(var f=new PreferenceFixture()){var p=ValidPreferences();p.LevelPriority=new[]{7,5,3};p.TeamPriority=new[]{TeamNumber.Team3,TeamNumber.Team4,TeamNumber.Team2};f.Save(p);var a=f.Load().Preferences;Is(a.LevelPriority.SequenceEqual(p.LevelPriority),"levels");Is(a.TeamPriority.SequenceEqual(p.TeamPriority),"teams");}}
     static void PreferenceOptionsRoundTrip(){using(var f=new PreferenceFixture()){var p=ValidPreferences();p.AllowTeam1=true;p.TeamPriority=new[]{TeamNumber.Team4,TeamNumber.Team1};p.ReadyCheckIntervalMinutes=31;p.ReadyMaxWaitHours=7;p.UnoccupiedOnly=false;f.Save(p);var a=f.Load().Preferences;Is(a.AllowTeam1&&!a.UnoccupiedOnly,"switches");Eq(31,a.ReadyCheckIntervalMinutes,"interval");Eq(7,a.ReadyMaxWaitHours,"wait");}}
@@ -1235,8 +1301,8 @@ internal static class Program
     static void AvailabilityNoReady(){var f=new AvailabilityFixture();var r=f.Service.CheckAsync("LDPlayer",default(CancellationToken)).GetAwaiter().GetResult();Is(r.Success&&!r.AnyReadyTeam,"busy roster treated as failure or ready");Eq(0,f.Client.Inputs,"input");}
     static void AvailabilityMissingTemplate(){var f=new AvailabilityFixture();f.Registry.Missing.Add(TemplateId.WorldMapTeamReadyAnchor);var r=f.Service.CheckAsync("LDPlayer",default(CancellationToken)).GetAwaiter().GetResult();Is(!r.Success&&!r.AnyReadyTeam,"missing template accepted");Eq(0,f.Nav.EnsureCalls,"navigation");Eq(0,f.Client.Captures,"capture");}
     static void AvailabilityHasNoNone(){string source=File.ReadAllText(Path.Combine(Environment.CurrentDirectory,"ADB","Infrastructure","TeamSelection","WorldMapTeamAvailabilityService.cs"));Is(!source.Contains("CancellationToken"+".None"),"token bypass");}
-    static void OneShotUiHasStop(){string root=Path.Combine(Environment.CurrentDirectory,"ADB","UI");string xaml=File.ReadAllText(Path.Combine(root,"DeviceDiagnosticWindow.xaml"));string code=File.ReadAllText(Path.Combine(root,"DeviceDiagnosticWindow.xaml.cs"));Is(xaml.Contains("StopOneShotFarmButton")&&xaml.Contains("StopOneShotFarm_Click"),"Stop button missing");Is(code.Contains("CreateLinkedTokenSource")&&code.Contains("oneShotFarmCancellation")&&code.Contains("currentRun.Cancel()"),"per-run cancellation missing");Is(!code.Substring(code.IndexOf("private async void RunOneShotFarm_Click"),code.IndexOf("private void ApplyFarmPreferences")-code.IndexOf("private async void RunOneShotFarm_Click")).Contains("RunOperationAsync"),"one-shot still disables the whole window");}
-    static void OneShotUiIsFocused(){string xaml=File.ReadAllText(Path.Combine(Environment.CurrentDirectory,"ADB","UI","DeviceDiagnosticWindow.xaml"));foreach(string hidden in new[]{"Tap Test","Swipe Test","Check Device","Launch Game","Capture Screenshot","Detect Current State","Ensure World Map","Open Search Panel","Configure Search","Search Iron","Verify Resource Popup","Open Team Selection","Select Farm Team","Dispatch Selected Team","Back Test","Text=\"Package name\"","Text=\"State name\"","Text=\"Note\"","Chỉ mục tiêu chưa có người khai thác","Thiết lập nâng cao","Chiến lược tìm kiếm","Thứ tự cấp","Thứ tự đội","Lịch chờ đội","Lưu cấu hình","Khôi phục mặc định"})Is(!xaml.Contains(hidden),"manual control remains: "+hidden);Is(xaml.Contains("RunOneShotFarmButton")&&xaml.Contains("StopOneShotFarmButton"),"farm controls missing");Is(xaml.Contains("FarmProgressItemsControl")&&xaml.Contains("Chi tiết lần chạy gần nhất"),"compact operations layout missing");}
+    static void OneShotUiHasStop(){string root=Path.Combine(Environment.CurrentDirectory,"ADB","UI");string xaml=File.ReadAllText(Path.Combine(root,"DeviceDiagnosticWindow.xaml"));string code=File.ReadAllText(Path.Combine(root,"DeviceDiagnosticWindow.xaml.cs"));Is(xaml.Contains("StopOneShotFarmButton")&&xaml.Contains("StopOneShotFarm_Click"),"Stop button missing");Is(code.Contains("CreateLinkedTokenSource")&&code.Contains("oneShotFarmCancellation")&&code.Contains("currentRun.Cancel()"),"per-run cancellation missing");int start=code.IndexOf("private async void RunContinuousFarm_Click",StringComparison.Ordinal);int end=code.IndexOf("private void ApplyContinuousFarmProgress",StringComparison.Ordinal);Is(start>=0&&end>start&&!code.Substring(start,end-start).Contains("RunOperationAsync"),"continuous run still disables the whole window");}
+    static void OneShotUiIsFocused(){string root=Path.Combine(Environment.CurrentDirectory,"ADB","UI");string xaml=File.ReadAllText(Path.Combine(root,"DeviceDiagnosticWindow.xaml"));string code=File.ReadAllText(Path.Combine(root,"DeviceDiagnosticWindow.xaml.cs"));foreach(string hidden in new[]{"Tap Test","Swipe Test","Check Device","Launch Game","Capture Screenshot","Detect Current State","Ensure World Map","Open Search Panel","Configure Search","Search Iron","Verify Resource Popup","Open Team Selection","Select Farm Team","Dispatch Selected Team","Back Test","Text=\"Package name\"","Text=\"State name\"","Text=\"Note\"","Chỉ mục tiêu chưa có người khai thác","Thiết lập nâng cao","Chiến lược tìm kiếm","Thứ tự cấp","Thứ tự đội","Lịch chờ đội","Lưu cấu hình","Khôi phục mặc định","RunOneShotFarmButton","Chi tiết lần chạy gần nhất"})Is(!xaml.Contains(hidden),"manual control remains: "+hidden);Is(xaml.Contains("RunContinuousFarmButton")&&xaml.Contains("StopOneShotFarmButton"),"continuous farm controls missing");Is(xaml.Contains("FarmProgressItemsControl"),"compact operations layout missing");Is(xaml.Contains("Binding StageDisplay")&&code.Contains("Đang khôi phục")&&code.Contains("Chu kỳ chưa hoàn tất; thiết bị này sẽ tự thử lại.")&&code.Contains("Không thể thiết lập cấp tài nguyên."),"Vietnamese farm progress localization is missing");Is(xaml.Contains("Binding TerritoryColor")&&xaml.Contains("Binding TeamsSummary")&&code.Contains("Màu vùng — Nhà:"),"compact territory-color progress is missing");Is(code.Contains("bool isAvailabilityUpdate")&&code.Contains("else if (progress.CurrentTeam.HasValue)"),"ready-team status is overwritten by non-availability progress");Is(xaml.Contains("Tối đa 25 thiết bị")&&xaml.Contains("DeviceSelectionListBox\" Grid.Row=\"1\"")&&xaml.Contains("VerticalAlignment=\"Stretch\""),"25-device full-height sidebar layout is missing");}
     static OneShotFarmWorkflow PlanWorkflow(H h,FakePlan plan,FakeRegistry registry=null,FakeRandom random=null)=>new OneShotFarmWorkflow(h.Nav,new FakeFallback(h.Config,h.Search),h.Popup,h.Open,h.Select,h.Dispatch,h.Detector,h.Lock,new OneShotFarmWorkflowOptions(true,true,"Diagnostics/OneShotFarm"),h.Diag,new Log(),new ResourceFarmFallbackOptions(),plan,registry==null?null:new FakeProfiles(),registry,random);
 
     sealed class H
@@ -1245,10 +1311,10 @@ internal static class Program
         public H(){Workflow=new OneShotFarmWorkflow(Nav,new FakeFallback(Config,Search),Popup,Open,Select,Dispatch,Detector,Lock,new OneShotFarmWorkflowOptions(true,true,"Diagnostics/OneShotFarm"),Diag,new Log());}
         public int Total=>Nav.EnsureCalls+Nav.PanelCalls+Config.Calls+Search.Calls+Popup.Calls+Open.Calls+Select.Calls+Dispatch.Calls;
     }
-    sealed class FakeNav:IWorldMapNavigationService{public int EnsureCalls,PanelCalls,RepositionCalls;public bool EnsureSuccess=true,PanelSuccess=true,RepositionSuccess=true,UseFallbackEvidence;public Action AfterEnsure;public Task<NavigationResult> EnsureWorldMapAsync(string d,CancellationToken t){EnsureCalls++;AfterEnsure?.Invoke();return Task.FromResult(new NavigationResult{Success=EnsureSuccess,FinalState=GameState.WorldMap,Message="world"});}public Task<NavigationResult> OpenResourceSearchPanelAsync(string d,CancellationToken t){PanelCalls++;GameDetectionEvidence[] evidence=UseFallbackEvidence?new[]{new GameDetectionEvidence{TemplateId=TemplateId.SearchButtonEnabled,Found=true},new GameDetectionEvidence{TemplateId=TemplateId.LevelMinusButton,Found=true},new GameDetectionEvidence{TemplateId=TemplateId.ResourceSearchPanelAnchor,Found=false}}:new[]{new GameDetectionEvidence{TemplateId=TemplateId.SearchButtonEnabled,Found=true},new GameDetectionEvidence{TemplateId=TemplateId.ResourceSearchPanelAnchor,Found=true}};return Task.FromResult(new NavigationResult{Success=PanelSuccess,FinalState=PanelSuccess?GameState.ResourceSearchPanel:GameState.WorldMap,Message="panel",FinalEvidence=PanelSuccess?evidence:new GameDetectionEvidence[0]});}public Task<NavigationResult> RepositionToAllianceTerritoryAsync(string d,CancellationToken t){RepositionCalls++;return Task.FromResult(new NavigationResult{Success=RepositionSuccess,FinalState=RepositionSuccess?GameState.WorldMap:GameState.ContinentMap,Message=RepositionSuccess?"repositioned":"failed",FinalEvidence=new GameDetectionEvidence[0],Transitions=new NavigationTransition[0]});}}
+    sealed class FakeNav:IWorldMapNavigationService,IWorldMapNavigationProgressService{public int EnsureCalls,PanelCalls,RepositionCalls;public bool EnsureSuccess=true,PanelSuccess=true,RepositionSuccess=true,UseFallbackEvidence;public string TerritoryColorSummary;public Action AfterEnsure;public Task<NavigationResult> EnsureWorldMapAsync(string d,CancellationToken t){EnsureCalls++;AfterEnsure?.Invoke();return Task.FromResult(new NavigationResult{Success=EnsureSuccess,FinalState=GameState.WorldMap,Message="world"});}public Task<NavigationResult> OpenResourceSearchPanelAsync(string d,CancellationToken t){PanelCalls++;GameDetectionEvidence[] evidence=UseFallbackEvidence?new[]{new GameDetectionEvidence{TemplateId=TemplateId.SearchButtonEnabled,Found=true},new GameDetectionEvidence{TemplateId=TemplateId.LevelMinusButton,Found=true},new GameDetectionEvidence{TemplateId=TemplateId.ResourceSearchPanelAnchor,Found=false}}:new[]{new GameDetectionEvidence{TemplateId=TemplateId.SearchButtonEnabled,Found=true},new GameDetectionEvidence{TemplateId=TemplateId.ResourceSearchPanelAnchor,Found=true}};return Task.FromResult(new NavigationResult{Success=PanelSuccess,FinalState=PanelSuccess?GameState.ResourceSearchPanel:GameState.WorldMap,Message="panel",FinalEvidence=PanelSuccess?evidence:new GameDetectionEvidence[0]});}public Task<NavigationResult> RepositionToAllianceTerritoryAsync(string d,CancellationToken t)=>RepositionToAllianceTerritoryAsync(d,null,t);public Task<NavigationResult> RepositionToAllianceTerritoryAsync(string d,IProgress<NavigationTransition> p,CancellationToken t){RepositionCalls++;var transitions=new List<NavigationTransition>();if(!string.IsNullOrWhiteSpace(TerritoryColorSummary)){var transition=new NavigationTransition{Operation="TerritoryColor",Message=TerritoryColorSummary};transitions.Add(transition);p?.Report(transition);}return Task.FromResult(new NavigationResult{Success=RepositionSuccess,FinalState=RepositionSuccess?GameState.WorldMap:GameState.ContinentMap,Message=RepositionSuccess?"repositioned":"failed",FinalEvidence=new GameDetectionEvidence[0],Transitions=transitions});}}
     sealed class FakeConfig:IResourceSearchConfigurationService{public int Calls;public bool Success=true;public ResourceSearchConfigurationRequest Last;public Task<ResourceSearchConfigurationResult> ConfigureAsync(string d,ResourceSearchConfigurationRequest r,CancellationToken t){Calls++;Last=r;return Task.FromResult(new ResourceSearchConfigurationResult{Success=Success,ResourceVerified=Success,LevelVerified=Success,FilterVerified=Success,FinalState=GameState.ResourceSearchPanel,Message="config"});}}
     sealed class FakeSearch:IResourceSearchExecutionService{public int Calls;public bool Success=true;public ResourceSearchOutcome Outcome=ResourceSearchOutcome.ResourceLocated;public Queue<ResourceSearchOutcome> Outcomes=new Queue<ResourceSearchOutcome>();public Queue<string> MatchedNotFoundVariants=new Queue<string>();public ResourceSearchExecutionRequest Last;public Task<ResourceSearchExecutionResult> ExecuteAsync(string d,ResourceSearchExecutionRequest r,CancellationToken t){Calls++;Last=r;ResourceSearchOutcome o=Outcomes.Count>0?Outcomes.Dequeue():Outcome;string variant=MatchedNotFoundVariants.Count>0?MatchedNotFoundVariants.Dequeue():null;return Task.FromResult(new ResourceSearchExecutionResult{Success=Success&&o==ResourceSearchOutcome.ResourceLocated,Outcome=o,FinalState=o==ResourceSearchOutcome.ResourceLocated?GameState.ResourcePopup:GameState.ResourceSearchPanel,MatchedNotFoundVariant=variant,Message="search"});}}
-    sealed class FakeFallback:IResourceLevelFallbackService{readonly FakeConfig c;readonly FakeSearch s;public FakeFallback(FakeConfig c,FakeSearch s){this.c=c;this.s=s;}public async Task<ResourceLevelFallbackResult> SearchAsync(string d,ResourceType type,ResourceLevelFallbackPolicy p,bool u,CancellationToken t){var a=new List<ResourceLevelAttemptResult>();foreach(int level in p.Levels){for(int n=1;n<=p.AttemptsPerLevel;n++){t.ThrowIfCancellationRequested();var q=new ResourceSearchConfigurationRequest{ResourceType=type,TargetLevel=level,UnoccupiedOnly=u};var cr=await c.ConfigureAsync(d,q,t);var ar=new ResourceLevelAttemptResult{Level=level,AttemptNumber=n,ConfigurationResult=cr,ConfigurationSucceeded=cr.Success&&cr.ResourceVerified&&cr.LevelVerified&&cr.FilterVerified};a.Add(ar);if(!ar.ConfigurationSucceeded)return R(type,ResourceLevelFallbackOutcome.ConfigurationFailed,a,null,cr.Message,cr.ErrorMessage);var sr=await s.ExecuteAsync(d,new ResourceSearchExecutionRequest{Configuration=q,ConfigureBeforeSearch=false},t);ar.SearchResult=sr;ar.SearchOutcome=sr.Outcome;ar.MatchedNotFoundVariant=sr.MatchedNotFoundVariant;if(sr.Outcome==ResourceSearchOutcome.ResourceLocated)return R(type,ResourceLevelFallbackOutcome.ResourceLocated,a,level,"located",null);if(sr.Outcome!=ResourceSearchOutcome.ResourceNotFound)return R(type,ResourceLevelFallbackOutcome.SearchFailed,a,null,sr.Message,sr.ErrorMessage);if(string.Equals(sr.MatchedNotFoundVariant,"TargetLevelTooLow",StringComparison.Ordinal))return R(type,ResourceLevelFallbackOutcome.ResourceLevelsExhausted,a,null,"target level too low",null);}}return R(type,ResourceLevelFallbackOutcome.ResourceLevelsExhausted,a,null,"exhausted",null);}static ResourceLevelFallbackResult R(ResourceType type,ResourceLevelFallbackOutcome o,List<ResourceLevelAttemptResult>a,int?l,string m,string e)=>new ResourceLevelFallbackResult{Outcome=o,Success=o==ResourceLevelFallbackOutcome.ResourceLocated,ResourceType=type,LocatedLevel=l,LastAttemptedLevel=a.LastOrDefault()?.Level,RequestedLevels=new[]{7,6,5},Attempts=a,InitialState=GameState.ResourceSearchPanel,FinalState=o==ResourceLevelFallbackOutcome.ResourceLocated?GameState.ResourcePopup:GameState.ResourceSearchPanel,Message=m,ErrorMessage=e};}
+    sealed class FakeFallback:IResourceLevelFallbackService{readonly FakeConfig c;readonly FakeSearch s;public FakeFallback(FakeConfig c,FakeSearch s){this.c=c;this.s=s;}public async Task<ResourceLevelFallbackResult> SearchAsync(string d,ResourceType type,ResourceLevelFallbackPolicy p,bool u,CancellationToken t){var a=new List<ResourceLevelAttemptResult>();foreach(int level in p.Levels){for(int n=1;n<=p.AttemptsPerLevel;n++){t.ThrowIfCancellationRequested();var q=new ResourceSearchConfigurationRequest{ResourceType=type,TargetLevel=level,UnoccupiedOnly=u};var cr=await c.ConfigureAsync(d,q,t);var ar=new ResourceLevelAttemptResult{Level=level,AttemptNumber=n,ConfigurationResult=cr,ConfigurationSucceeded=cr.Success&&cr.ResourceVerified&&cr.LevelVerified&&cr.FilterVerified};a.Add(ar);if(!ar.ConfigurationSucceeded)return R(type,ResourceLevelFallbackOutcome.ConfigurationFailed,a,null,cr.Message,cr.ErrorMessage);var sr=await s.ExecuteAsync(d,new ResourceSearchExecutionRequest{Configuration=q,ConfigureBeforeSearch=false},t);ar.SearchResult=sr;ar.SearchOutcome=sr.Outcome;ar.MatchedNotFoundVariant=sr.MatchedNotFoundVariant;if(sr.Outcome==ResourceSearchOutcome.ResourceLocated)return R(type,ResourceLevelFallbackOutcome.ResourceLocated,a,level,"located",null);if(sr.Outcome!=ResourceSearchOutcome.ResourceNotFound)return R(type,ResourceLevelFallbackOutcome.SearchFailed,a,null,sr.Message,sr.ErrorMessage);if(IsAreaChange(sr.MatchedNotFoundVariant))return R(type,ResourceLevelFallbackOutcome.ResourceLevelsExhausted,a,null,"search area change required",null);}}return R(type,ResourceLevelFallbackOutcome.ResourceLevelsExhausted,a,null,"exhausted",null);}static bool IsAreaChange(string v)=>string.Equals(v,"TargetLevelTooLow",StringComparison.Ordinal)||string.Equals(v,"SearchOtherRegion",StringComparison.Ordinal)||string.Equals(v,"LegacyMoveArea",StringComparison.Ordinal);static ResourceLevelFallbackResult R(ResourceType type,ResourceLevelFallbackOutcome o,List<ResourceLevelAttemptResult>a,int?l,string m,string e)=>new ResourceLevelFallbackResult{Outcome=o,Success=o==ResourceLevelFallbackOutcome.ResourceLocated,ResourceType=type,LocatedLevel=l,LastAttemptedLevel=a.LastOrDefault()?.Level,RequestedLevels=new[]{7,6,5},Attempts=a,InitialState=GameState.ResourceSearchPanel,FinalState=o==ResourceLevelFallbackOutcome.ResourceLocated?GameState.ResourcePopup:GameState.ResourceSearchPanel,Message=m,ErrorMessage=e};}
     sealed class FakePopup:IResourceAwarePopupVerificationService{public int Calls;public bool Ready=true;public Task<ResourcePopupVerificationResult> VerifyAsync(string d,CancellationToken t)=>VerifyAsync(d,ResourceType.Iron,t);public Task<ResourcePopupVerificationResult> VerifyAsync(string d,ResourceType resource,CancellationToken t){Calls++;return Task.FromResult(new ResourcePopupVerificationResult{Success=Ready,Outcome=Ready?ResourcePopupOutcome.ResourcePopupReady:ResourcePopupOutcome.ResourcePopupMismatch,PopupAnchorVerified=Ready,IronResourceVerified=Ready,ResourceVerified=Ready,ResourceType=resource,ExpectedResource=resource,ExpectedResourceVerified=Ready,ExpectedPopupTitleTemplate=FakeProfiles.Profile(resource).PopupTitleTemplate,GatherButtonVerified=Ready,FinalState=GameState.ResourcePopup,Message="popup"});}}
     sealed class FakeProfiles:IResourceTemplateProfileProvider{public ResourceType? Unsupported;public ResourceTemplateProfile Get(ResourceType r)=>Profile(r);public bool IsSupported(ResourceType r)=>Unsupported!=r;public string GetUnsupportedReason(ResourceType r)=>$"TemplateId '{Profile(r).PopupTitleTemplate}' is missing at 'Data/missing.png'.";public static ResourceTemplateProfile Profile(ResourceType r){switch(r){case ResourceType.Iron:return new ResourceTemplateProfile{ResourceType=r,SelectedTemplate=TemplateId.ResourceIronSelected,UnselectedTemplate=TemplateId.ResourceIronUnselected,PopupTitleTemplate=TemplateId.ResourcePopupIronTitle,DisplayName="Sắt"};case ResourceType.Stone:return new ResourceTemplateProfile{ResourceType=r,SelectedTemplate=TemplateId.ResourceStoneSelected,UnselectedTemplate=TemplateId.ResourceStoneUnselected,PopupTitleTemplate=TemplateId.ResourcePopupStoneTitle,DisplayName="Mỏ Đá"};case ResourceType.Wood:return new ResourceTemplateProfile{ResourceType=r,SelectedTemplate=TemplateId.ResourceWoodSelected,UnselectedTemplate=TemplateId.ResourceWoodUnselected,PopupTitleTemplate=TemplateId.ResourcePopupWoodTitle,DisplayName="Rừng"};default:return new ResourceTemplateProfile{ResourceType=r,SelectedTemplate=TemplateId.ResourceFoodSelected,UnselectedTemplate=TemplateId.ResourceFoodUnselected,PopupTitleTemplate=TemplateId.ResourcePopupFoodTitle,DisplayName="Đất nông nghiệp"};}}}
     sealed class FakeOpen:IOpenTeamSelectionService{public int Calls;public bool Ready=true;public Task<OpenTeamSelectionResult> OpenAsync(string d,CancellationToken t){Calls++;return Task.FromResult(new OpenTeamSelectionResult{Success=Ready,Outcome=Ready?OpenTeamSelectionOutcome.TeamSelectionOpened:OpenTeamSelectionOutcome.TeamSelectionOpenedButNotReady,FinalState=GameState.TeamSelection,TeamSelectionVerified=true,TeamSelectionReady=Ready,Message="open"});}}
@@ -1256,11 +1322,12 @@ internal static class Program
     sealed class FakeDispatch:IDispatchSelectedTeamService{public int Calls;public bool Verified=true;public DispatchMarchOutcome Outcome=DispatchMarchOutcome.MarchStarted;public Queue<DispatchMarchOutcome> Outcomes=new Queue<DispatchMarchOutcome>();public DispatchMarchRequest Last;public Task<DispatchMarchResult> DispatchAsync(string d,DispatchMarchRequest r,CancellationToken t){Calls++;Last=r;var outcome=Outcomes.Count>0?Outcomes.Dequeue():Outcome;bool storage=outcome==DispatchMarchOutcome.StorageLimitResourceSwitchRequired;bool expiry=outcome==DispatchMarchOutcome.ResourceExpiryResourceSwitchRequired;bool resourceSwitch=storage||expiry;return Task.FromResult(new DispatchMarchResult{Success=!resourceSwitch&&Verified,Outcome=outcome,MarchStartedVerified=!resourceSwitch&&Verified,DispatchedTeam=resourceSwitch?(TeamNumber?)null:r.ExpectedTeam,StorageLimitDialogDetected=storage,StorageLimitCancelled=storage,ResourceExpiryDialogDetected=expiry,ResourceExpiryCancelled=expiry,ResourceSwitchRequired=resourceSwitch,StorageFullResource=storage?(ResourceType?)r.CurrentResource:null,StorageLimitResult=resourceSwitch?new StorageLimitDialogResult{ReturnedToWorldMap=true,FinalState=GameState.WorldMap,RecoveryTransitions=1}:null,FinalState=GameState.WorldMap,Message="dispatch"});}}
     sealed class FakeDetector:IGameStateDetector{public GameState Initial=GameState.WorldMap;int calls;public Task<GameDetectionResult> DetectAsync(string d,CancellationToken t){t.ThrowIfCancellationRequested();calls++;GameState state=calls==1?Initial:GameState.WorldMap;GameDetectionEvidence[] evidence=state==GameState.ResourceSearchPanel?new[]{new GameDetectionEvidence{TemplateId=TemplateId.SearchButtonEnabled,Found=true},new GameDetectionEvidence{TemplateId=TemplateId.LevelMinusButton,Found=true}}:new GameDetectionEvidence[0];return Task.FromResult(new GameDetectionResult{State=state,IsSuccessful=true,Evidence=evidence});}public GameDetectionResult Detect(byte[] p)=>null;}
     sealed class RecordingLock:IDeviceOperationLock{public int Releases;public bool Active;public async Task<T> RunAsync<T>(string d,Func<CancellationToken,Task<T>> o,CancellationToken t){t.ThrowIfCancellationRequested();Active=true;try{return await o(t);}finally{Active=false;Releases++;}}}
-    sealed class FakePlan:IResourceFarmFallbackService{public int Calls;public int LocatedLevel=7;public Action DuringRun;public IReadOnlyList<ResourceType> LastPriority;public Task<ResourceFarmFallbackResult> RunAsync(string d,OneShotFarmRequest r,GameState s,CancellationToken t){t.ThrowIfCancellationRequested();Calls++;LastPriority=r.ResourcePriority.ToArray();DuringRun?.Invoke();return Task.FromResult(new ResourceFarmFallbackResult{Outcome=ResourceFarmFallbackOutcome.MarchStarted,Success=true,RequestedResources=r.ResourcePriority,AttemptedResources=new[]{r.ResourcePriority[0]},StorageFullResources=new ResourceType[0],LevelsExhaustedResources=new ResourceType[0],LocatedResource=r.ResourcePriority[0],LocatedLevel=LocatedLevel,DispatchedResource=r.ResourcePriority[0],DispatchedTeam=TeamNumber.Team4,Attempts=new ResourceFarmAttemptResult[0],InitialState=s,FinalState=GameState.WorldMap,Message="march"});}}
+    sealed class FakePlan:IResourceFarmFallbackService{public int Calls;public int LocatedLevel=7;public string ColorSummary;public Action DuringRun;public IReadOnlyList<ResourceType> LastPriority;public Task<ResourceFarmFallbackResult> RunAsync(string d,OneShotFarmRequest r,GameState s,IProgress<ResourceFarmFallbackProgress> p,CancellationToken t){t.ThrowIfCancellationRequested();Calls++;LastPriority=r.ResourcePriority.ToArray();DuringRun?.Invoke();if(!string.IsNullOrWhiteSpace(ColorSummary))p?.Report(new ResourceFarmFallbackProgress{RecoveryAttempt=1,TerritoryColorSummary=ColorSummary});return Task.FromResult(new ResourceFarmFallbackResult{Outcome=ResourceFarmFallbackOutcome.MarchStarted,Success=true,RequestedResources=r.ResourcePriority,AttemptedResources=new[]{r.ResourcePriority[0]},StorageFullResources=new ResourceType[0],LevelsExhaustedResources=new ResourceType[0],LocatedResource=r.ResourcePriority[0],LocatedLevel=LocatedLevel,DispatchedResource=r.ResourcePriority[0],DispatchedTeam=TeamNumber.Team4,Attempts=new ResourceFarmAttemptResult[0],InitialState=s,FinalState=GameState.WorldMap,Message="march",TerritoryColorSummary=ColorSummary});}}
     sealed class FakeRandom:IRandomProvider{readonly Queue<int> values;public int Calls;public FakeRandom(params int[] values){this.values=new Queue<int>(values);}public int Next(int maxExclusive){Calls++;return values.Count==0?0:values.Dequeue();}}
     sealed class FakeRegistry:ITemplateRegistry{public readonly HashSet<TemplateId> Missing=new HashSet<TemplateId>();public TemplateDefinition GetDefinition(TemplateId id)=>new TemplateDefinition(id,id+".png",.8);public string GetPath(TemplateId id)=>Path.Combine("Data","InfinityKingdom",id+".png");public byte[] LoadBytes(TemplateId id)=>new[]{(byte)id};public bool Exists(TemplateId id)=>!Missing.Contains(id);}
     sealed class FakeDiag:IOneShotFarmDiagnosticService{public bool Throw;public Task<string> CaptureAsync(string d,OneShotFarmStep s,OneShotFarmOutcome o,CancellationToken t){if(Throw)throw new Exception("disk");return Task.FromResult("diag.png");}}
     sealed class RecordingProgress:IProgress<OneShotFarmProgress>{public readonly List<OneShotFarmProgress> Items=new List<OneShotFarmProgress>();public void Report(OneShotFarmProgress value){Items.Add(value);}}
+    sealed class RecordingFallbackProgress:IProgress<ResourceFarmFallbackProgress>{public readonly List<ResourceFarmFallbackProgress> Items=new List<ResourceFarmFallbackProgress>();public void Report(ResourceFarmFallbackProgress value){Items.Add(value);}}
     sealed class DelegateProgress:IProgress<OneShotFarmProgress>{readonly Action<OneShotFarmProgress> action;public DelegateProgress(Action<OneShotFarmProgress> action){this.action=action;}public void Report(OneShotFarmProgress value){action(value);}}
     sealed class ThrowingProgress:IProgress<OneShotFarmProgress>{public void Report(OneShotFarmProgress value){throw new InvalidOperationException("closed UI");}}
     sealed class TestPreferencePath:IFarmUiPreferencesPathProvider{readonly string path;public TestPreferencePath(string path){this.path=path;}public string GetPath()=>path;}
@@ -1305,6 +1372,43 @@ internal static class Program
         {
             var farm=new OneShotFarmResult{DeviceName=device,Success=true,Outcome=OneShotFarmOutcome.MarchStarted,Message="completed"};
             return new MultiDeviceOneShotFarmResult{MaximumConcurrency=20,Devices=new[]{new MultiDeviceOneShotFarmItemResult{DeviceName=device,Stage=MultiDeviceOneShotFarmStage.Completed,Result=farm}}};
+        }
+    }
+    sealed class LongResourceFallbackRunner:IMultiDeviceOneShotFarmRunner
+    {
+        readonly CancellationTokenSource cancellation;public int Calls;
+        public LongResourceFallbackRunner(CancellationTokenSource cancellation){this.cancellation=cancellation;}
+        public async Task<MultiDeviceOneShotFarmResult> RunAsync(
+            IReadOnlyList<string> devices,OneShotFarmRequest request,
+            IProgress<MultiDeviceOneShotFarmProgress> progress,CancellationToken token)
+        {
+            token.ThrowIfCancellationRequested();Calls++;string device=devices.Single();
+            progress?.Report(new MultiDeviceOneShotFarmProgress
+            {
+                DeviceName=device,Stage=MultiDeviceOneShotFarmStage.Running,
+                Message="Running the resource and level fallback plan.",
+                DeviceProgress=new OneShotFarmProgress
+                {
+                    Stage=OneShotFarmProgressStage.RunningFarmStep,
+                    CurrentStep=OneShotFarmStep.ResourceFarmFallback,
+                    Message="Running the resource and level fallback plan."
+                }
+            });
+            await Task.Delay(80,token);
+            cancellation.Cancel();
+            var farm=new OneShotFarmResult
+            {
+                DeviceName=device,Success=true,Outcome=OneShotFarmOutcome.MarchStarted,
+                Message="completed"
+            };
+            return new MultiDeviceOneShotFarmResult
+            {
+                MaximumConcurrency=20,
+                Devices=new[]{new MultiDeviceOneShotFarmItemResult
+                {
+                    DeviceName=device,Stage=MultiDeviceOneShotFarmStage.Completed,Result=farm
+                }}
+            };
         }
     }
     sealed class RecoveryClient:ILdPlayerClient
@@ -1363,9 +1467,11 @@ internal static class Program
     }
     sealed class BusinessWaitRunner:IMultiDeviceOneShotFarmRunner
     {
-        readonly OneShotFarmOutcome outcome;readonly string message;public int Calls;
-        public BusinessWaitRunner(OneShotFarmOutcome outcome,string message)
-        {this.outcome=outcome;this.message=message;}
+        readonly OneShotFarmOutcome outcome;readonly string message;
+        readonly string territoryColorSummary;public int Calls;
+        public BusinessWaitRunner(OneShotFarmOutcome outcome,string message,
+            string territoryColorSummary=null)
+        {this.outcome=outcome;this.message=message;this.territoryColorSummary=territoryColorSummary;}
         public Task<MultiDeviceOneShotFarmResult> RunAsync(
             IReadOnlyList<string> devices,OneShotFarmRequest request,
             IProgress<MultiDeviceOneShotFarmProgress> progress,CancellationToken token)
@@ -1373,7 +1479,8 @@ internal static class Program
             token.ThrowIfCancellationRequested();Calls++;string device=devices.Single();
             var farmResult=new OneShotFarmResult
             {
-                DeviceName=device,Success=false,Outcome=outcome,Message=message
+                DeviceName=device,Success=false,Outcome=outcome,Message=message,
+                TerritoryColorSummary=territoryColorSummary
             };
             return Task.FromResult(new MultiDeviceOneShotFarmResult
             {

@@ -47,7 +47,9 @@ namespace ADB_Tool_Automation_Post_FB.Infrastructure.Workflows
         }
 
         public async Task<ResourceFarmFallbackResult> RunAsync(string deviceName,
-            OneShotFarmRequest request, GameState initialState, CancellationToken cancellationToken)
+            OneShotFarmRequest request, GameState initialState,
+            IProgress<ResourceFarmFallbackProgress> progress,
+            CancellationToken cancellationToken)
         {
             var watch = Stopwatch.StartNew();
             var attempts = new List<ResourceFarmAttemptResult>();
@@ -127,11 +129,13 @@ namespace ADB_Tool_Automation_Post_FB.Infrastructure.Workflows
                         attempt.SearchLevelsExhausted = true;
                         AddUnique(exhausted, resource);
                         attempt.Message = level.Message; attempt.Duration = attemptWatch.Elapsed;
-                        if (RequiresSearchAreaRecovery(level))
+                        string searchAreaVariant =
+                            GetSearchAreaRecoveryVariant(level);
+                        if (searchAreaVariant != null)
                         {
                             searchAreaRecoveryRequested = true;
                             Log(runId, deviceName, resource, level.LocatedLevel,
-                                "SearchAreaRecovery", "TargetLevelTooLow");
+                                "SearchAreaRecovery", searchAreaVariant);
                             break;
                         }
                         if (options.SwitchWhenLevelsExhausted) continue;
@@ -257,12 +261,48 @@ namespace ADB_Tool_Automation_Post_FB.Infrastructure.Workflows
                     if (searchAreaAttempt >= options.MaxSearchAreaRecoveryAttempts)
                         return Complete(result, ResourceFarmFallbackOutcome.ResourcePlanExhausted, watch,
                             searchAreaRecoveryRequested
-                                ? "The target level is unavailable in the current season-map area, "
+                                ? "The verified toast requires a different map resource area, "
                                     + "and the bounded search-area recovery plan was exhausted."
                                 : "The four-resource plan was exhausted without a march.", null);
 
-                    NavigationResult reposition = await navigation.RepositionToAllianceTerritoryAsync(
-                        deviceName, cancellationToken);
+                    NavigationResult reposition;
+                    var progressNavigation =
+                        navigation as IWorldMapNavigationProgressService;
+                    if (progressNavigation != null)
+                    {
+                        var navigationProgress =
+                            new CallbackProgress<NavigationTransition>(transition =>
+                            {
+                                if (transition == null
+                                    || !string.Equals(transition.Operation,
+                                        "TerritoryColor",
+                                        StringComparison.Ordinal)
+                                    || string.IsNullOrWhiteSpace(
+                                        transition.Message)
+                                    || transition.Message.IndexOf(
+                                        "Home=", StringComparison.Ordinal) < 0)
+                                    return;
+                                result.TerritoryColorSummary =
+                                    transition.Message;
+                                ReportColor(progress,
+                                    searchAreaAttempt + 1,
+                                    transition.Message);
+                            });
+                        reposition = await progressNavigation
+                            .RepositionToAllianceTerritoryAsync(
+                                deviceName, navigationProgress,
+                                cancellationToken);
+                    }
+                    else
+                    {
+                        reposition = await navigation
+                            .RepositionToAllianceTerritoryAsync(
+                                deviceName, cancellationToken);
+                    }
+                    result.TerritoryColorSummary =
+                        GetTerritoryColorSummary(reposition);
+                    ReportColor(progress, searchAreaAttempt + 1,
+                        result.TerritoryColorSummary);
                     result.FinalState = reposition.FinalState;
                     result.RecoveryTransitions++;
                     LogRecovery(runId, deviceName, reposition.Success ? "Repositioned" : "Failed");
@@ -335,13 +375,58 @@ namespace ADB_Tool_Automation_Post_FB.Infrastructure.Workflows
             if (!items.Contains(resource)) items.Add(resource);
         }
 
-        private static bool RequiresSearchAreaRecovery(ResourceLevelFallbackResult result)
+        private static string GetSearchAreaRecoveryVariant(
+            ResourceLevelFallbackResult result)
         {
-            return result?.Attempts != null
-                && result.Attempts.Any(attempt => string.Equals(
-                    attempt.MatchedNotFoundVariant,
-                    "TargetLevelTooLow",
-                    StringComparison.Ordinal));
+            if (result?.Attempts == null)
+                return null;
+
+            return result.Attempts
+                .Select(attempt => attempt.MatchedNotFoundVariant)
+                .FirstOrDefault(IsSearchAreaRecoveryVariant);
+        }
+
+        private static bool IsSearchAreaRecoveryVariant(string variant)
+        {
+            return string.Equals(
+                    variant, "TargetLevelTooLow", StringComparison.Ordinal)
+                || string.Equals(
+                    variant, "SearchOtherRegion", StringComparison.Ordinal)
+                || string.Equals(
+                    variant, "LegacyMoveArea", StringComparison.Ordinal);
+        }
+
+        private static string GetTerritoryColorSummary(NavigationResult result)
+        {
+            return result?.Transitions?
+                .Where(transition => string.Equals(
+                    transition.Operation, "TerritoryColor",
+                    StringComparison.Ordinal)
+                    && !string.IsNullOrWhiteSpace(transition.Message)
+                    && transition.Message.IndexOf(
+                        "Home=", StringComparison.Ordinal) >= 0)
+                .Select(transition => transition.Message)
+                .LastOrDefault();
+        }
+
+        private static void ReportColor(
+            IProgress<ResourceFarmFallbackProgress> progress,
+            int recoveryAttempt,
+            string summary)
+        {
+            if (progress == null || string.IsNullOrWhiteSpace(summary)) return;
+            try
+            {
+                progress.Report(new ResourceFarmFallbackProgress
+                {
+                    RecoveryAttempt = recoveryAttempt,
+                    TerritoryColorSummary = summary
+                });
+            }
+            catch
+            {
+                // Progress reporting must never alter device recovery.
+            }
         }
 
         private void Log(string runId, string device, ResourceType resource,
@@ -350,5 +435,21 @@ namespace ADB_Tool_Automation_Post_FB.Infrastructure.Workflows
 
         private void LogRecovery(string runId, string device, string outcome) => logger.Info(
             $"[Resource Farm Fallback] RunId='{runId}', DeviceName='{device}', Resource='', Level='', Phase='SearchAreaRecovery', Outcome='{outcome ?? string.Empty}', Cancellation=false");
+
+        private sealed class CallbackProgress<T> : IProgress<T>
+        {
+            private readonly Action<T> callback;
+
+            public CallbackProgress(Action<T> callback)
+            {
+                this.callback = callback
+                    ?? throw new ArgumentNullException(nameof(callback));
+            }
+
+            public void Report(T value)
+            {
+                callback(value);
+            }
+        }
     }
 }

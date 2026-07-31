@@ -29,6 +29,7 @@ namespace ADB_Tool_Automation_Post_FB.Core.Workflows
         public int? CurrentLevel { get; set; }
         public TeamNumber? CurrentTeam { get; set; }
         public string Message { get; set; }
+        public string TerritoryColorSummary { get; set; }
     }
 
     public static class OneShotFarmProgressUtilities

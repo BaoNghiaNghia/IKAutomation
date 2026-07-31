@@ -8,7 +8,7 @@ namespace ADB_Tool_Automation_Post_FB.Infrastructure.Workflows
         public static AdaptiveConcurrencyOptions Load() => new AdaptiveConcurrencyOptions(
             ReadInt("Operations.AdaptiveMinimumConcurrency", 4),
             ReadInt("Operations.AdaptiveInitialConcurrency", 6),
-            ReadInt("Operations.AdaptiveMaximumConcurrency", 20),
+            ReadInt("Operations.AdaptiveMaximumConcurrency", 25),
             ReadInt("Operations.AdaptiveSampleIntervalMs", 5000),
             ReadInt("Operations.AdaptiveHealthySamplesToIncrease", 3),
             ReadDouble("Operations.AdaptiveHighCpuPercent", 88d),

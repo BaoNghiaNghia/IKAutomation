@@ -10,7 +10,7 @@ namespace ADB_Tool_Automation_Post_FB.Infrastructure.Workflows
     public sealed class AdaptiveConcurrencyOptions
     {
         public AdaptiveConcurrencyOptions(int minimumConcurrency = 4,
-            int initialConcurrency = 6, int maximumConcurrency = 20,
+            int initialConcurrency = 6, int maximumConcurrency = 25,
             int sampleIntervalMs = 5000, int healthySamplesToIncrease = 3,
             double highCpuPercent = 88d, long lowAvailableMemoryBytes = 2147483648L,
             double highTechnicalFailureRate = 0.25d, int observationWindowSize = 20,
@@ -18,7 +18,7 @@ namespace ADB_Tool_Automation_Post_FB.Infrastructure.Workflows
             int automationStaggerMinMs = 2000, int automationStaggerMaxMs = 10000,
             int recoveryStaggerMinMs = 30000, int recoveryStaggerMaxMs = 60000)
         {
-            if (minimumConcurrency < 1 || maximumConcurrency > 20
+            if (minimumConcurrency < 1 || maximumConcurrency > 25
                 || initialConcurrency < minimumConcurrency
                 || initialConcurrency > maximumConcurrency)
                 throw new ArgumentOutOfRangeException(nameof(initialConcurrency));

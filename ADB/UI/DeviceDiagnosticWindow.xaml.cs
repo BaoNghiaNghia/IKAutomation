@@ -158,49 +158,6 @@ namespace ADB_Tool_Automation_Post_FB.UI
             foreach (DeviceSelectionItem item in deviceSelections) item.IsSelected = false;
         }
 
-        private async void RunOneShotFarm_Click(object sender, RoutedEventArgs e)
-        {
-            if (oneShotFarmCancellation != null) return;
-            string[] selectedDevices = deviceSelections
-                .Where(item => item.IsSelected)
-                .Select(item => item.DeviceName)
-                .ToArray();
-            if (selectedDevices.Length == 0)
-            {
-                StatusTextBlock.Text = "Hãy chọn ít nhất một thiết bị LDPlayer để chạy.";
-                return;
-            }
-            if (!TryReadFarmPreferences(out FarmUiPreferences preferences, out string validationError))
-            {
-                StatusTextBlock.Text = validationError;
-                return;
-            }
-
-            FarmUiPreferencesSaveResult saveResult;
-            try
-            {
-                saveResult = await farmPreferencesStore.SaveAsync(
-                    preferences, lifetimeCancellation.Token);
-            }
-            catch (OperationCanceledException) { return; }
-            catch (Exception exception)
-            {
-                saveResult = new FarmUiPreferencesSaveResult
-                {
-                    Success = false,
-                    Message = "Không thể lưu cấu hình farm; vẫn dùng cấu hình hiện tại. "
-                        + exception.Message
-                };
-            }
-            OneShotFarmRequest request = FarmUiPreferencesMapper.CreateRequest(
-                preferences, defaultOneShotFarmRequest);
-            string saveWarning = saveResult.Success ? null : saveResult.Message;
-            failedDeviceNames.Clear();
-            retryRequest = request;
-            RetryFailedDevicesButton.IsEnabled = false;
-            await RunDeviceBatchAsync(selectedDevices, request, saveWarning, false);
-        }
-
         private async void RetryFailedDevices_Click(object sender, RoutedEventArgs e)
         {
             if (oneShotFarmCancellationRequested) return;
@@ -270,7 +227,6 @@ namespace ADB_Tool_Automation_Post_FB.UI
             var progress = new Progress<ContinuousFarmSupervisorProgress>(value =>
                 ApplyContinuousFarmProgress(runGeneration, runCancellation,
                     attemptVersions, value));
-            RunOneShotFarmButton.IsEnabled = false;
             RunContinuousFarmButton.IsEnabled = false;
             RetryFailedDevicesButton.IsEnabled = false;
             StopOneShotFarmButton.IsEnabled = true;
@@ -305,7 +261,6 @@ namespace ADB_Tool_Automation_Post_FB.UI
                 if (ReferenceEquals(oneShotFarmCancellation, runCancellation))
                     oneShotFarmCancellation = null;
                 runCancellation.Dispose();
-                RunOneShotFarmButton.IsEnabled = true;
                 RunContinuousFarmButton.IsEnabled = true;
                 StopOneShotFarmButton.IsEnabled = false;
                 OneShotFarmResourcesGroupBox.IsEnabled = true;
@@ -365,22 +320,85 @@ namespace ADB_Tool_Automation_Post_FB.UI
 
         private void ApplyHealthDashboard(ContinuousFarmHealthSnapshot health)
         {
-            HealthOverviewTextBlock.Text = $"{health.HealthyDevices}/{health.TotalDevices} healthy";
-            HealthStatesTextBlock.Text = $"running={health.RunningDevices}; waiting={health.WaitingDevices}; "
-                + $"recovering={health.RecoveringDevices}; quarantined={health.QuarantinedDevices}; "
-                + $"stopped={health.StoppedDevices}";
-            HealthPressureTextBlock.Text = $"failures={health.DevicesWithFailures}; low disk={health.LowDiskDevices}";
+            bool needsAttention = health.DevicesWithFailures > 0
+                || health.LowDiskDevices > 0
+                || health.QuarantinedDevices > 0
+                || health.HealthyDevices < health.TotalDevices;
+            HealthOverviewTextBlock.Text = health.TotalDevices <= 0
+                ? "Chưa chạy"
+                : needsAttention
+                    ? $"{health.HealthyDevices}/{health.TotalDevices} ổn định · cần chú ý"
+                    : $"{health.HealthyDevices}/{health.TotalDevices} ổn định";
+            HealthOverviewTextBlock.Foreground = needsAttention
+                ? Brushes.DarkOrange : Brushes.SeaGreen;
+            HealthStatesTextBlock.Text = FormatHealthStates(health);
+            HealthPressureTextBlock.Text = FormatHealthPressure(health);
             HealthLoadTextBlock.Text = health.ConcurrencyLimit > 0
-                ? $"{health.ActiveExecutions}/{health.ConcurrencyLimit}" : "-";
-            string heartbeatState = !health.LastHeartbeatAttemptAt.HasValue ? "-"
-                : health.LastHeartbeatSucceeded == true ? "sent"
-                : health.LastHeartbeatSucceeded == false ? "failed" : "skipped";
-            HealthHeartbeatTextBlock.Text = health.LastHeartbeatAttemptAt.HasValue
-                ? $"{health.LastHeartbeatAttemptAt.Value.ToLocalTime():yyyy-MM-dd HH:mm:ss} - {heartbeatState}; {health.HeartbeatMessage}"
-                : "-";
+                ? $"{health.ActiveExecutions}/{health.ConcurrencyLimit} tác vụ"
+                : "Chưa có dữ liệu";
+            HealthHeartbeatTextBlock.Text = FormatHeartbeat(health);
             TimeSpan uptime = health.GeneratedAt - health.StartedAt;
             if (uptime < TimeSpan.Zero) uptime = TimeSpan.Zero;
-            HealthUptimeTextBlock.Text = $"{(int)uptime.TotalDays}d {uptime.Hours:00}:{uptime.Minutes:00}:{uptime.Seconds:00}";
+            HealthUptimeTextBlock.Text = uptime.TotalDays >= 1
+                ? $"{(int)uptime.TotalDays} ngày {uptime.Hours:00}:{uptime.Minutes:00}:{uptime.Seconds:00}"
+                : $"{uptime.Hours:00}:{uptime.Minutes:00}:{uptime.Seconds:00}";
+        }
+
+        private static string FormatHealthStates(ContinuousFarmHealthSnapshot health)
+        {
+            var states = new List<string>();
+            AddHealthState(states, "Đang chạy", health.RunningDevices);
+            AddHealthState(states, "Đang chờ", health.WaitingDevices);
+            AddHealthState(states, "Đang khôi phục", health.RecoveringDevices);
+            AddHealthState(states, "Cách ly", health.QuarantinedDevices);
+            AddHealthState(states, "Chuẩn bị",
+                health.PreflightDevices + health.ReadyDevices);
+            AddHealthState(states, "Đã dừng", health.StoppedDevices);
+            return states.Count > 0
+                ? string.Join(" · ", states)
+                : health.TotalDevices > 0
+                    ? "Không có thiết bị đang hoạt động"
+                    : "Chưa bắt đầu";
+        }
+
+        private static string FormatHealthPressure(ContinuousFarmHealthSnapshot health)
+        {
+            var warnings = new List<string>();
+            AddHealthState(warnings, "Thiết bị lỗi", health.DevicesWithFailures);
+            AddHealthState(warnings, "Thiếu dung lượng", health.LowDiskDevices);
+            return warnings.Count > 0
+                ? string.Join(" · ", warnings)
+                : "Không có cảnh báo";
+        }
+
+        private static void AddHealthState(
+            ICollection<string> values, string label, int count)
+        {
+            if (count > 0) values.Add($"{label}: {count}");
+        }
+
+        private static string FormatHeartbeat(ContinuousFarmHealthSnapshot health)
+        {
+            if (!health.LastHeartbeatAttemptAt.HasValue)
+                return "Chưa gửi";
+
+            string time = health.LastHeartbeatAttemptAt.Value
+                .ToLocalTime().ToString("HH:mm:ss", CultureInfo.InvariantCulture);
+            if (health.LastHeartbeatSucceeded == true)
+                return $"{time} · Gửi thành công";
+            if (health.LastHeartbeatSucceeded != false)
+                return $"{time} · Đã bỏ qua";
+
+            string message = health.HeartbeatMessage ?? string.Empty;
+            bool configurationError = message.IndexOf(
+                    "token", StringComparison.OrdinalIgnoreCase) >= 0
+                || message.IndexOf("404", StringComparison.OrdinalIgnoreCase) >= 0
+                || message.IndexOf("invalid", StringComparison.OrdinalIgnoreCase) >= 0
+                || message.IndexOf("revoked", StringComparison.OrdinalIgnoreCase) >= 0
+                || message.IndexOf("not configured", StringComparison.OrdinalIgnoreCase) >= 0;
+            return configurationError
+                ? $"{time} · Cấu hình Telegram chưa hợp lệ"
+                : $"{time} · Gửi thất bại";
         }
 
         private async Task RunDeviceBatchAsync(string[] deviceNames,
@@ -414,14 +432,13 @@ namespace ADB_Tool_Automation_Post_FB.UI
             foreach (DeviceSelectionItem item in deviceSelections.Where(item =>
                 deviceNames.Contains(item.DeviceName, StringComparer.OrdinalIgnoreCase)))
                 item.Status = "Queued";
-            RunOneShotFarmButton.IsEnabled = false;
             RunContinuousFarmButton.IsEnabled = false;
             RetryFailedDevicesButton.IsEnabled = false;
             StopOneShotFarmButton.IsEnabled = true;
             OneShotFarmResourcesGroupBox.IsEnabled = false;
             StatusTextBlock.Text = isRetry
                 ? $"Đang chạy lại {deviceNames.Length} thiết bị lỗi; các thiết bị khác không bị ảnh hưởng..."
-                : $"Đang chạy {deviceNames.Length} thiết bị; tối đa 20 thiết bị đồng thời...";
+                : $"Đang chạy {deviceNames.Length} thiết bị; tối đa 25 thiết bị đồng thời...";
             try
             {
                 MultiDeviceOneShotFarmResult result = await multiDeviceFarmRunner.RunAsync(
@@ -464,7 +481,6 @@ namespace ADB_Tool_Automation_Post_FB.UI
                     if (ReferenceEquals(oneShotFarmCancellation, runCancellation))
                         oneShotFarmCancellation = null;
                     runCancellation.Dispose();
-                    RunOneShotFarmButton.IsEnabled = true;
                     RunContinuousFarmButton.IsEnabled = true;
                     StopOneShotFarmButton.IsEnabled = false;
                     OneShotFarmResourcesGroupBox.IsEnabled = true;
@@ -513,8 +529,9 @@ namespace ADB_Tool_Automation_Post_FB.UI
                     StringComparison.OrdinalIgnoreCase));
             if (item != null)
                 item.Status = string.IsNullOrWhiteSpace(progress.Message)
-                    ? progress.Stage.ToString()
-                    : $"{progress.Stage}: {progress.Message}";
+                    ? FarmProgressVietnamese.Stage(progress.Stage.ToString())
+                    : $"{FarmProgressVietnamese.Stage(progress.Stage.ToString())}: "
+                        + FarmProgressVietnamese.Message(progress.Message);
             if (progress.Stage == MultiDeviceOneShotFarmStage.Failed)
             {
                 activeDeviceNames.Remove(progress.DeviceName);
@@ -627,7 +644,7 @@ namespace ADB_Tool_Automation_Post_FB.UI
         {
             if (farmProgressItems.Count == 0)
             {
-                ProgressOverviewTextBlock.Text = "Idle";
+                ProgressOverviewTextBlock.Text = "Chưa chạy";
                 return;
             }
             int active = farmProgressItems.Count(item => item.IsActive);
@@ -660,7 +677,8 @@ namespace ADB_Tool_Automation_Post_FB.UI
                 LevelPriority = defaultFarmPreferences.LevelPriority.ToArray(),
                 TeamPriority = defaultFarmPreferences.TeamPriority.ToArray(),
                 AllowTeam1 = defaultFarmPreferences.AllowTeam1,
-                ReadyCheckIntervalMinutes = defaultFarmPreferences.ReadyCheckIntervalMinutes,
+                ReadyCheckIntervalMinutes =
+                    FarmUiPreferences.DefaultReadyCheckIntervalMinutes,
                 ReadyMaxWaitHours = defaultFarmPreferences.ReadyMaxWaitHours,
                 UnoccupiedOnly = true
             };
@@ -1075,12 +1093,228 @@ namespace ADB_Tool_Automation_Post_FB.UI
         public event PropertyChangedEventHandler PropertyChanged;
     }
 
+    internal static class FarmProgressVietnamese
+    {
+        private static readonly IReadOnlyDictionary<string, string> Stages =
+            new Dictionary<string, string>(StringComparer.Ordinal)
+            {
+                ["Queued"] = "Đang xếp hàng",
+                ["Preflight"] = "Đang kiểm tra",
+                ["Ready"] = "Sẵn sàng",
+                ["Running"] = "Đang chạy",
+                ["Waiting"] = "Đang chờ",
+                ["Recovering"] = "Đang khôi phục",
+                ["Quarantined"] = "Tạm cách ly",
+                ["Stopped"] = "Đã dừng",
+                ["CheckingTeamAvailability"] = "Đang kiểm tra đội",
+                ["WaitingForReadyTeam"] = "Đang chờ đội",
+                ["ReadyTeamFound"] = "Đã tìm thấy đội",
+                ["PreparingFarm"] = "Đang chuẩn bị",
+                ["RunningFarmStep"] = "Đang thực hiện",
+                ["Stopping"] = "Đang dừng",
+                ["Completed"] = "Hoàn tất",
+                ["Failed"] = "Thất bại",
+                ["Cancelled"] = "Đã hủy"
+            };
+
+        private static readonly IReadOnlyDictionary<string, string> Messages =
+            new Dictionary<string, string>(StringComparer.Ordinal)
+            {
+                ["Screenshot capture recovered. A fresh preflight will run before retry."] =
+                    "Đã khôi phục chụp màn hình. Hệ thống sẽ kiểm tra lại thiết bị trước khi thử tiếp.",
+                ["Cycle failed; this device will retry independently."] =
+                    "Chu kỳ chưa hoàn tất; thiết bị này sẽ tự thử lại.",
+                ["Running the resource and level fallback plan."] =
+                    "Đang tìm tài nguyên và thử các cấp phù hợp.",
+                ["Level configuration failed."] =
+                    "Không thể thiết lập cấp tài nguyên.",
+                ["Checking WorldMap, screenshot, roster and eligible teams."] =
+                    "Đang kiểm tra bản đồ, ảnh chụp và các đội có thể sử dụng.",
+                ["Waiting for an execution slot."] =
+                    "Đang chờ đến lượt thực thi.",
+                ["One-Shot Farm started."] =
+                    "Đã bắt đầu chu kỳ farm.",
+                ["Preparing the one-shot farm workflow."] =
+                    "Đang chuẩn bị chu kỳ farm.",
+                ["Checking the initial game state."] =
+                    "Đang kiểm tra trạng thái ban đầu của trò chơi.",
+                ["Ensuring World Map."] =
+                    "Đang bảo đảm trò chơi ở bản đồ thế giới.",
+                ["Opening resource search panel."] =
+                    "Đang mở bảng tìm tài nguyên.",
+                ["Searching the configured resource levels."] =
+                    "Đang tìm theo các cấp tài nguyên đã cấu hình.",
+                ["Verifying resource popup."] =
+                    "Đang xác minh bảng thông tin tài nguyên.",
+                ["Opening team selection."] =
+                    "Đang mở màn hình chọn đội.",
+                ["Selecting an eligible farm team."] =
+                    "Đang chọn đội farm phù hợp.",
+                ["No allowed team is ready; waiting before the next check."] =
+                    "Chưa có đội được phép nào sẵn sàng; sẽ kiểm tra lại.",
+                ["Maximum ready-team wait time elapsed."] =
+                    "Đã hết thời gian chờ đội sẵn sàng.",
+                ["Watchdog detected no progress; starting recovery ladder."] =
+                    "Không ghi nhận tiến triển; đang bắt đầu khôi phục thiết bị.",
+                ["Cycle failed; starting recovery ladder."] =
+                    "Chu kỳ gặp lỗi; đang bắt đầu khôi phục thiết bị.",
+                ["Cycle completed; waiting for the next supervised cycle."] =
+                    "Chu kỳ đã hoàn tất; đang chờ chu kỳ tiếp theo.",
+                ["Continuous supervisor stopped."] =
+                    "Luồng chạy liên tục đã dừng.",
+                ["Continuous supervisor started."] =
+                    "Đã bắt đầu luồng chạy liên tục.",
+                ["Starting cycle"] = "Đang bắt đầu chu kỳ",
+                ["Farm progress"] = "Đang thực hiện chu kỳ farm",
+                ["Restart preflight"] = "Kiểm tra lại sau khi khởi động",
+                ["Checkpoint restored; a fresh preflight is required before any input."] =
+                    "Đã khôi phục trạng thái; cần kiểm tra lại thiết bị trước khi thao tác.",
+                ["March verification was inconclusive; waiting for the next team availability check."] =
+                    "Chưa xác minh được hành quân; đang chờ lần kiểm tra đội tiếp theo.",
+                ["All selected resource storages are full; waiting 6 hours before checking again."] =
+                    "Kho của các tài nguyên đã chọn đều đầy; sẽ kiểm tra lại sau 6 giờ.",
+                ["Search areas were exhausted; waiting for the next cycle before selecting a new area."] =
+                    "Đã tìm hết khu vực hiện tại; chu kỳ sau sẽ chọn khu vực mới.",
+                ["No same-tone X/Y destination was found; waiting for the next scheduled cycle before trying new coordinates."] =
+                    "Chưa tìm thấy điểm X/Y cùng tone màu; sẽ chờ tới chu kỳ kế tiếp rồi mới thử tọa độ mới.",
+                ["Screenshot captured."] = "Đã chụp màn hình.",
+                ["Screenshot was empty."] = "Ảnh chụp màn hình bị trống.",
+                ["LDPlayer is running."] = "LDPlayer đang chạy.",
+                ["LDPlayer is not running."] = "LDPlayer chưa chạy.",
+                ["Game relaunch and screenshot preflight succeeded."] =
+                    "Đã mở lại trò chơi và kiểm tra ảnh chụp thành công.",
+                ["LDPlayer restart and screenshot preflight succeeded."] =
+                    "Đã khởi động lại LDPlayer và kiểm tra ảnh chụp thành công.",
+                ["Device recovery ladder was exhausted."] =
+                    "Đã thử hết các bước khôi phục thiết bị nhưng chưa thành công."
+            };
+
+        public static string Stage(string value) =>
+            Translate(Stages, value);
+
+        public static string Message(string value)
+        {
+            string translated = Translate(Messages, value);
+            if (!string.Equals(translated, value, StringComparison.Ordinal))
+                return translated;
+            if (value != null && value.StartsWith(
+                "Starting supervised cycle ", StringComparison.Ordinal))
+                return "Đang bắt đầu " + value.Replace(
+                    "Starting supervised cycle ", "chu kỳ tự động ");
+            if (value != null && value.StartsWith(
+                "Checking allowed teams (attempt ", StringComparison.Ordinal))
+                return value.Replace("Checking allowed teams (attempt ",
+                    "Đang kiểm tra các đội được phép (lần ")
+                    .Replace(").", ").");
+            if (value != null && value.StartsWith(
+                "Dispatching Team", StringComparison.Ordinal))
+                return value.Replace("Dispatching Team", "Đang điều Đội ");
+            return string.IsNullOrWhiteSpace(value) ? "-" : value;
+        }
+
+        public static string TerritoryColor(string value)
+        {
+            if (string.IsNullOrWhiteSpace(value)) return string.Empty;
+            var fields = value.Split(';')
+                .Select(part => part.Trim().Split(new[] { '=' }, 2))
+                .Where(parts => parts.Length == 2)
+                .ToDictionary(parts => parts[0], parts => parts[1],
+                    StringComparer.OrdinalIgnoreCase);
+            fields.TryGetValue("Home", out string home);
+            fields.TryGetValue("Destination", out string destination);
+            fields.TryGetValue("Result", out string result);
+            fields.TryGetValue("Candidate", out string candidate);
+            fields.TryGetValue("X", out string x);
+            fields.TryGetValue("Y", out string y);
+            string comparison = string.Equals(result, "Match",
+                    StringComparison.OrdinalIgnoreCase)
+                ? "cùng tone"
+                : string.Equals(result, "Different",
+                    StringComparison.OrdinalIgnoreCase)
+                    ? "khác tone"
+                    : "chưa xác định";
+            string location = string.IsNullOrWhiteSpace(x)
+                || string.IsNullOrWhiteSpace(y)
+                ? string.Empty
+                : $" · X/Y: {x}/{y}";
+            string prefix = string.IsNullOrWhiteSpace(candidate)
+                ? "Màu vùng — Nhà:"
+                : $"Màu vùng — Lần {candidate} · Nhà:";
+            return $"{prefix} {ColorName(home)} · Điểm tài nguyên: "
+                + $"{ColorName(destination)} · {comparison}"
+                + location;
+        }
+
+        private static string ColorName(string value)
+        {
+            switch (value)
+            {
+                case "Green": return "xanh lá";
+                case "Red": return "đỏ";
+                case "Gold": return "vàng";
+                case "Blue": return "xanh lam";
+                case "Purple": return "tím";
+                default: return "chưa rõ";
+            }
+        }
+
+        public static string Step(string value)
+        {
+            switch (value)
+            {
+                case "Preflight": return "Kiểm tra ban đầu";
+                case "EnsureWorldMap": return "Mở bản đồ thế giới";
+                case "OpenSearchPanel": return "Mở bảng tìm tài nguyên";
+                case "ConfigureSearch": return "Thiết lập tìm kiếm";
+                case "ExecuteSearch": return "Thực hiện tìm kiếm";
+                case "SearchWithLevelFallback": return "Thử các cấp tài nguyên";
+                case "ResourceFarmFallback": return "Tìm tài nguyên và cấp phù hợp";
+                case "VerifyResourcePopup": return "Xác minh tài nguyên";
+                case "OpenTeamSelection": return "Mở chọn đội";
+                case "SelectTeam": return "Chọn đội";
+                case "DispatchTeam": return "Điều đội";
+                case "FinalVerification": return "Xác minh kết quả";
+                case "Completed": return "Hoàn tất";
+                default: return Message(value);
+            }
+        }
+
+        public static string Resource(string value)
+        {
+            switch (value)
+            {
+                case "Iron": return "Sắt";
+                case "Stone": return "Đá";
+                case "Wood": return "Gỗ";
+                case "Food": return "Lương thực";
+                default: return string.IsNullOrWhiteSpace(value) ? "-" : value;
+            }
+        }
+
+        public static string Team(string value)
+        {
+            if (!string.IsNullOrWhiteSpace(value)
+                && value.StartsWith("Team", StringComparison.Ordinal))
+                return "Đội " + value.Substring("Team".Length);
+            return string.IsNullOrWhiteSpace(value) ? "-" : value;
+        }
+
+        private static string Translate(
+            IReadOnlyDictionary<string, string> translations, string value) =>
+            !string.IsNullOrWhiteSpace(value)
+                && translations.TryGetValue(value, out string translated)
+                    ? translated
+                    : value;
+    }
+
     internal sealed class DeviceFarmProgressItem : INotifyPropertyChanged
     {
         private string stage = "Queued";
         private string message = "Đang chờ thực thi.";
         private string detail = "-";
-        private string schedule = "-";
+        private string schedule = string.Empty;
+        private string territoryColor = string.Empty;
+        private string teamsSummary = string.Empty;
         private DateTimeOffset? nextCheckAt;
         private DateTimeOffset? waitDeadline;
 
@@ -1092,10 +1326,27 @@ namespace ADB_Tool_Automation_Post_FB.UI
 
         public string DeviceName { get; }
         public ObservableCollection<TeamFarmProgressItem> Teams { get; }
-        public string Stage { get => stage; private set => Set(ref stage, value, nameof(Stage)); }
+        public string Stage
+        {
+            get => stage;
+            private set
+            {
+                if (string.Equals(stage, value, StringComparison.Ordinal)) return;
+                stage = value;
+                PropertyChanged?.Invoke(this,
+                    new PropertyChangedEventArgs(nameof(Stage)));
+                PropertyChanged?.Invoke(this,
+                    new PropertyChangedEventArgs(nameof(StageDisplay)));
+            }
+        }
+        public string StageDisplay => FarmProgressVietnamese.Stage(Stage);
         public string Message { get => message; private set => Set(ref message, value, nameof(Message)); }
         public string Detail { get => detail; private set => Set(ref detail, value, nameof(Detail)); }
         public string Schedule { get => schedule; private set => Set(ref schedule, value, nameof(Schedule)); }
+        public string TerritoryColor { get => territoryColor; private set => Set(
+            ref territoryColor, value, nameof(TerritoryColor)); }
+        public string TeamsSummary { get => teamsSummary; private set => Set(
+            ref teamsSummary, value, nameof(TeamsSummary)); }
         public bool IsWaiting => string.Equals(Stage,
             OneShotFarmProgressStage.WaitingForReadyTeam.ToString(), StringComparison.Ordinal);
         public bool IsActive => Stage == "Queued" || Stage == "Stopping"
@@ -1110,7 +1361,9 @@ namespace ADB_Tool_Automation_Post_FB.UI
             Stage = "Queued";
             Message = "Đang chờ thực thi.";
             Detail = "-";
-            Schedule = "-";
+            Schedule = string.Empty;
+            TerritoryColor = string.Empty;
+            TeamsSummary = string.Empty;
             Teams.Clear();
         }
 
@@ -1123,33 +1376,57 @@ namespace ADB_Tool_Automation_Post_FB.UI
         public void Apply(OneShotFarmProgress progress)
         {
             Stage = progress.Stage.ToString();
-            Message = progress.Message ?? "-";
-            Detail = $"Kiểm tra: {progress.TeamAvailabilityChecks}; bước: "
-                + $"{progress.CurrentStep?.ToString() ?? "-"}; tài nguyên/cấp: "
-                + $"{progress.CurrentResource?.ToString() ?? "-"}/"
-                + $"{progress.CurrentLevel?.ToString(CultureInfo.InvariantCulture) ?? "-"}";
+            Message = FarmProgressVietnamese.Message(progress.Message);
+            var details = new List<string>();
+            if (progress.TeamAvailabilityChecks > 0)
+                details.Add($"Kiểm tra đội: {progress.TeamAvailabilityChecks}");
+            details.Add($"Bước: {FarmProgressVietnamese.Step(progress.CurrentStep?.ToString())}");
+            details.Add("Tài nguyên: "
+                + $"{FarmProgressVietnamese.Resource(progress.CurrentResource?.ToString())}"
+                + (progress.CurrentLevel.HasValue
+                    ? $" · cấp {progress.CurrentLevel.Value}" : string.Empty));
+            Detail = string.Join(" · ", details);
+            if (!string.IsNullOrWhiteSpace(progress.TerritoryColorSummary))
+                TerritoryColor = FarmProgressVietnamese.TerritoryColor(
+                    progress.TerritoryColorSummary);
+            else if (progress.CurrentStep == OneShotFarmStep.ResourceFarmFallback)
+                TerritoryColor =
+                    "Màu vùng — đang chờ kiểm tra khi hệ thống đổi vị trí X/Y.";
             nextCheckAt = progress.NextCheckAt;
             waitDeadline = progress.WaitDeadline;
             IReadOnlyList<TeamNumber> allowed = progress.AllowedTeams ?? new TeamNumber[0];
             IReadOnlyList<TeamNumber> detected = progress.DetectedTeams ?? new TeamNumber[0];
             IReadOnlyList<TeamNumber> ready = progress.ReadyTeams ?? new TeamNumber[0];
             IReadOnlyList<TeamNumber> eligible = progress.EligibleReadyTeams ?? new TeamNumber[0];
-            if (detected.Count > 0)
-                SynchronizeTeams(detected);
-            foreach (TeamFarmProgressItem item in Teams)
+            bool isAvailabilityUpdate =
+                progress.Stage == OneShotFarmProgressStage.CheckingTeamAvailability
+                || progress.Stage == OneShotFarmProgressStage.WaitingForReadyTeam
+                || progress.Stage == OneShotFarmProgressStage.ReadyTeamFound;
+            if (isAvailabilityUpdate)
             {
-                bool isAllowed = allowed.Contains(item.Team);
-                bool isReady = ready.Contains(item.Team);
-                bool isEligible = eligible.Contains(item.Team);
-                bool isCurrent = progress.CurrentTeam == item.Team;
-                string status = isCurrent ? "Đang xử lý"
-                    : isEligible ? "Có thể chọn"
-                    : isReady && isAllowed ? "Sẵn sàng"
-                    : isReady ? "Sẵn sàng · không được phép"
-                    : isAllowed ? "Được phép · bận/chưa xác minh"
-                    : "Không được phép";
-                item.SetStatus(status, isCurrent || isEligible || isReady);
+                if (detected.Count > 0)
+                    SynchronizeTeams(detected);
+                foreach (TeamFarmProgressItem item in Teams)
+                {
+                    bool isAllowed = allowed.Contains(item.Team);
+                    bool isReady = ready.Contains(item.Team);
+                    bool isEligible = eligible.Contains(item.Team);
+                    string status = isEligible ? "Có thể chọn"
+                        : isReady && isAllowed ? "Sẵn sàng"
+                        : isReady ? "Sẵn sàng · không được phép"
+                        : isAllowed ? "Được phép · bận/chưa xác minh"
+                        : "Không được phép";
+                    item.SetStatus(status, isEligible || isReady);
+                }
             }
+            else if (progress.CurrentTeam.HasValue)
+            {
+                TeamFarmProgressItem current = Teams.FirstOrDefault(
+                    item => item.Team == progress.CurrentTeam.Value);
+                current?.SetStatus("Đang xử lý", true);
+            }
+            TeamsSummary = string.Join(" · ", Teams.Select(item =>
+                $"{item.TeamName}: {ShortTeamStatus(item.Status)}"));
             UpdateCountdown(DateTimeOffset.Now);
         }
 
@@ -1160,12 +1437,13 @@ namespace ADB_Tool_Automation_Post_FB.UI
             Stage = snapshot.State == ContinuousFarmDeviceState.Waiting
                 ? OneShotFarmProgressStage.WaitingForReadyTeam.ToString()
                 : snapshot.State.ToString();
-            Message = snapshot.Message ?? "-";
+            Message = FarmProgressVietnamese.Message(snapshot.Message);
             Detail = $"Chu kỳ: {snapshot.CycleCount}; bước: "
-                + $"{snapshot.CurrentOperation ?? "-"}; tài nguyên/cấp/đội: "
-                + $"{snapshot.CurrentResource ?? "-"}/"
+                + $"{FarmProgressVietnamese.Message(snapshot.CurrentOperation)}; "
+                + "tài nguyên/cấp/đội: "
+                + $"{FarmProgressVietnamese.Resource(snapshot.CurrentResource)}/"
                 + $"{snapshot.CurrentLevel?.ToString(CultureInfo.InvariantCulture) ?? "-"}/"
-                + $"{snapshot.CurrentTeam ?? "-"}";
+                + $"{FarmProgressVietnamese.Team(snapshot.CurrentTeam)}";
             nextCheckAt = snapshot.NextAttemptAt;
             waitDeadline = snapshot.NextAttemptAt;
             UpdateCountdown(DateTimeOffset.Now);
@@ -1201,7 +1479,15 @@ namespace ADB_Tool_Automation_Post_FB.UI
                 ? $"Kiểm tra tiếp: {nextCheckAt.Value.ToLocalTime():HH:mm:ss} · "
                     + $"còn {next.ToString(@"mm\:ss", CultureInfo.InvariantCulture)} · "
                     + $"thời gian chờ {wait.ToString(@"hh\:mm\:ss", CultureInfo.InvariantCulture)}"
-                : "-";
+                : string.Empty;
+        }
+
+        private static string ShortTeamStatus(string value)
+        {
+            if (value == "Được phép · bận/chưa xác minh") return "đang bận";
+            if (value == "Sẵn sàng · không được phép") return "sẵn sàng, không dùng";
+            if (value == "Không được phép") return "không dùng";
+            return string.IsNullOrWhiteSpace(value) ? "chưa rõ" : value.ToLowerInvariant();
         }
 
         private void Set(ref string field, string value, string propertyName)
@@ -1225,7 +1511,7 @@ namespace ADB_Tool_Automation_Post_FB.UI
         }
 
         public TeamNumber Team { get; }
-        public string TeamName => Team.ToString();
+        public string TeamName => FarmProgressVietnamese.Team(Team.ToString());
         public string Status
         {
             get => status;

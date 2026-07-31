@@ -1,18 +1,44 @@
 using ADB_Tool_Automation_Post_FB.Core.Vision;
 using System;
+using System.Collections.Generic;
 using System.Drawing;
 using System.IO;
 
 namespace ADB_Tool_Automation_Post_FB.Infrastructure.Vision
 {
-    public sealed class KAutoImageMatcher : IImageMatcher
+    public sealed class KAutoImageMatcher : IImageMatcher, IBatchImageMatcher
     {
+        public IReadOnlyList<ImageMatchResult> FindMany(
+            byte[] screenshotPng,
+            IReadOnlyList<ImageMatchRequest> requests)
+        {
+            ValidateImageBytes(screenshotPng, nameof(screenshotPng));
+            if (requests == null) throw new ArgumentNullException(nameof(requests));
+            var results = new List<ImageMatchResult>(requests.Count);
+            using (Bitmap screenshot = DecodeBitmap(screenshotPng, nameof(screenshotPng)))
+            {
+                foreach (ImageMatchRequest request in requests)
+                {
+                    if (request == null) throw new ArgumentException("A match request cannot be null.", nameof(requests));
+                    results.Add(FindOnBitmap(screenshot, request.TemplatePng, request.SearchRegion));
+                }
+            }
+            return results.AsReadOnly();
+        }
+
         public ImageMatchResult Find(byte[] screenshotPng, byte[] templatePng, ImageRegion? searchRegion = null)
         {
             ValidateImageBytes(screenshotPng, nameof(screenshotPng));
             ValidateImageBytes(templatePng, nameof(templatePng));
 
             using (Bitmap screenshot = DecodeBitmap(screenshotPng, nameof(screenshotPng)))
+                return FindOnBitmap(screenshot, templatePng, searchRegion);
+        }
+
+        private static ImageMatchResult FindOnBitmap(
+            Bitmap screenshot, byte[] templatePng, ImageRegion? searchRegion)
+        {
+            ValidateImageBytes(templatePng, nameof(templatePng));
             using (Bitmap template = DecodeBitmap(templatePng, nameof(templatePng)))
             {
                 int offsetX = 0;

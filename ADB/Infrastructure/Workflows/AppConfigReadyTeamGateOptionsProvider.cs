@@ -9,7 +9,8 @@ namespace ADB_Tool_Automation_Post_FB.Infrastructure.Workflows
     {
         public static ReadyTeamGateOptions Load()
         {
-            int minutes = Int("CheckIntervalMinutes", 15);
+            int minutes = Int("CheckIntervalMinutes",
+                FarmUiPreferences.DefaultReadyCheckIntervalMinutes);
             int maxWaitHours = Int("MaxWaitHours", 12);
             int noReadyConfirmations = Int("NoReadyConfirmations", 3);
             int postDispatchRecheckDelayMs = Int("PostDispatchRecheckDelayMs", 750);

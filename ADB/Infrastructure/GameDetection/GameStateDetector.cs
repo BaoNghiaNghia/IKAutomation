@@ -161,12 +161,66 @@ namespace ADB_Tool_Automation_Post_FB.Infrastructure.GameDetection
                 };
             }
 
-            var evidence = new List<GameDetectionEvidence>(DetectionTemplates.Length);
             var configurationErrors = new List<string>();
-            foreach (TemplateId templateId in DetectionTemplates)
+            var templateIds = DetectionTemplates;
+            var requests = new List<ImageMatchRequest>(templateIds.Length);
+            foreach (TemplateId templateId in templateIds)
             {
-                evidence.Add(MatchTemplate(
-                    screenshotPng, templateId, width, height, configurationErrors));
+                string path = null;
+                try
+                {
+                    path = templateRegistry.GetPath(templateId);
+                    if (!templateRegistry.Exists(templateId))
+                    {
+                        configurationErrors.Add($"Required template '{templateId}' was not found at '{path}'.");
+                        continue;
+                    }
+                    requests.Add(new ImageMatchRequest(
+                        templateRegistry.LoadBytes(templateId),
+                        GetSearchRegion(templateId, width, height)));
+                }
+                catch (Exception exception)
+                {
+                    configurationErrors.Add($"Template '{templateId}' configuration could not be resolved: {exception.Message}");
+                }
+            }
+
+            var evidence = new List<GameDetectionEvidence>(DetectionTemplates.Length);
+            IReadOnlyList<ImageMatchResult> matches = null;
+            if (configurationErrors.Count == 0 && imageMatcher is IBatchImageMatcher batchMatcher)
+                matches = batchMatcher.FindMany(screenshotPng, requests);
+            int matchIndex = 0;
+            foreach (TemplateId templateId in templateIds)
+            {
+                if (configurationErrors.Count > 0)
+                {
+                    evidence.Add(MatchTemplate(screenshotPng, templateId, width, height, configurationErrors));
+                    continue;
+                }
+                ImageMatchRequest request = requests[matchIndex];
+                if (matches == null && RequiresStableFallback(templateId))
+                {
+                    evidence.Add(MatchTemplate(
+                        screenshotPng, templateId, width, height, configurationErrors));
+                    matchIndex++;
+                    continue;
+                }
+                ImageMatchResult match = matches != null
+                    ? matches[matchIndex]
+                    : imageMatcher.Find(screenshotPng, request.TemplatePng, request.SearchRegion);
+                matchIndex++;
+                if ((match == null || !match.Found) && RequiresStableFallback(templateId))
+                {
+                    // Keep the existing lighting-resistant fallback for the few
+                    // dynamic map anchors; the common path remains one screenshot
+                    // decode for all templates.
+                    evidence.Add(MatchTemplate(
+                        screenshotPng, templateId, width, height, configurationErrors));
+                }
+                else
+                {
+                    evidence.Add(EvidenceFromMatch(templateId, match, request.SearchRegion));
+                }
             }
 
             if (configurationErrors.Count > 0)
@@ -324,6 +378,54 @@ namespace ADB_Tool_Automation_Post_FB.Infrastructure.GameDetection
                 ScreenshotWidth = width,
                 ScreenshotHeight = height,
                 IsSuccessful = true
+            };
+        }
+
+        private ImageRegion? GetSearchRegion(
+            TemplateId templateId, int screenshotWidth, int screenshotHeight)
+        {
+            return IsStorageLimitTemplate(templateId)
+                ? options.StorageLimitDialogRegion
+                : IsTeamSelectionTemplate(templateId)
+                ? options.TeamSelectionRegion
+                : IsPopupActionTemplate(templateId)
+                ? options.ResourcePopupActionRegion
+                : IsPopupTemplate(templateId)
+                ? options.ResourcePopupRegion
+                : templateId == TemplateId.CityToWorldMapButton
+                || templateId == TemplateId.WorldMapPinButton
+                ? new ImageRegion(0, screenshotHeight / 2, screenshotWidth / 2, screenshotHeight - screenshotHeight / 2)
+                : templateId == TemplateId.ContinentMapHomeTerritoryAnchor
+                ? new ImageRegion(screenshotWidth / 4, screenshotHeight / 5, screenshotWidth / 2, screenshotHeight - (screenshotHeight * 2 / 5))
+                : templateId == TemplateId.ContinentMapPinButton
+                ? new ImageRegion(0, 0, screenshotWidth / 4, screenshotHeight / 5)
+                : templateId == TemplateId.ContinentMapHomeLocationPin
+                || templateId == TemplateId.ContinentMapSearchTargetPin
+                ? new ImageRegion(screenshotWidth / 6, screenshotHeight / 10, screenshotWidth - (screenshotWidth / 6), screenshotHeight - (screenshotHeight / 10))
+                : IsSearchPanelTemplate(templateId)
+                ? new ImageRegion(0, screenshotHeight / 2, screenshotWidth, screenshotHeight - screenshotHeight / 2)
+                : (ImageRegion?)null;
+        }
+
+        private static bool RequiresStableFallback(TemplateId templateId) =>
+            templateId == TemplateId.WorldMapAnchor
+            || templateId == TemplateId.CityToWorldMapButton
+            || templateId == TemplateId.WorldMapPinButton
+            || templateId == TemplateId.ContinentMapPinButton
+            || templateId == TemplateId.ContinentMapHomeLocationPin
+            || templateId == TemplateId.ContinentMapSearchTargetPin;
+
+        private GameDetectionEvidence EvidenceFromMatch(
+            TemplateId templateId, ImageMatchResult match, ImageRegion? searchRegion)
+        {
+            return new GameDetectionEvidence
+            {
+                TemplateId = templateId,
+                TemplateExists = true,
+                Found = match != null && match.Found,
+                MatchResult = match,
+                SearchRegion = searchRegion,
+                Message = match != null && match.Found ? "Template matched." : "Template not found."
             };
         }
 

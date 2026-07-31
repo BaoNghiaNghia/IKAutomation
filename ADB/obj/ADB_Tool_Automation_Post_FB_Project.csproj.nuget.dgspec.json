@@ -58,10 +58,6 @@
               "target": "Package",
               "version": "[1.0.1.2, )"
             },
-            "System.Text.Json": {
-              "target": "Package",
-              "version": "[9.0.4, )"
-            },
             "Tesseract": {
               "target": "Package",
               "version": "[4.1.1, )"
@@ -71,15 +67,6 @@
       },
       "runtimes": {
         "win": {
-          "#import": []
-        },
-        "win-arm64": {
-          "#import": []
-        },
-        "win-x64": {
-          "#import": []
-        },
-        "win-x86": {
           "#import": []
         }
       }

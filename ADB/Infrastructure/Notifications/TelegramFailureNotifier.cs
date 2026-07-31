@@ -14,8 +14,8 @@ namespace ADB_Tool_Automation_Post_FB.Infrastructure.Notifications
     public sealed class TelegramFailureNotifier : IAutomationFailureNotifier,
         IContinuousFarmHeartbeatNotifier
     {
-        public const string BotTokenEnvironmentVariable = "IKAUTOMATION_TELEGRAM_BOT_TOKEN";
-        public const string ChatIdEnvironmentVariable = "IKAUTOMATION_TELEGRAM_CHAT_ID";
+        public const string BotTokenEnvironmentVariable = "AAHswQOaB25N3qp0TLSJVfj6lf4aux6Vv7E";
+        public const string ChatIdEnvironmentVariable = "8834119234";
         private const int TelegramMessageLimit = 4096;
         private readonly HttpClient httpClient;
         private readonly string botToken;
