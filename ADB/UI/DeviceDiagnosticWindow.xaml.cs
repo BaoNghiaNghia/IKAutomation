@@ -142,10 +142,58 @@ namespace ADB_Tool_Automation_Post_FB.UI
                     });
                 }
 
+                await RefreshDeviceRuntimeStateAsync(deviceNames, cancellationToken);
+                UpdateDeviceSummary();
+
                 return deviceNames.Count == 0
                     ? "No LDPlayer instances were found. Check LDCONSOLE_PATH and create an instance in LDPlayer."
                     : $"Found {deviceNames.Count} LDPlayer instance(s).";
             });
+        }
+
+        private async Task RefreshDeviceRuntimeStateAsync(
+            IReadOnlyList<string> deviceNames,
+            CancellationToken cancellationToken)
+        {
+            using (var gate = new SemaphoreSlim(4, 4))
+            {
+                Task[] checks = deviceNames.Select(async deviceName =>
+                {
+                    await gate.WaitAsync(cancellationToken);
+                    try
+                    {
+                        DeviceDiagnosticResult result = await diagnosticService.CheckDeviceAsync(
+                            deviceName, cancellationToken);
+                        DeviceSelectionItem item = deviceSelections.FirstOrDefault(value =>
+                            string.Equals(value.DeviceName, deviceName, StringComparison.OrdinalIgnoreCase));
+                        if (item == null) return;
+
+                        item.IsRunning = result.IsRunning;
+                        item.IsInGame = result.IsRunning
+                            && result.ScreenshotSucceeded
+                            && result.MatchesExpectedResolution;
+                        item.Status = !item.IsRunning
+                            ? "Đã tắt"
+                            : item.IsInGame
+                                ? "Đang mở · Trong game"
+                                : "Đang mở";
+                    }
+                    finally
+                    {
+                        gate.Release();
+                    }
+                }).ToArray();
+
+                await Task.WhenAll(checks);
+            }
+        }
+
+        private void UpdateDeviceSummary()
+        {
+            int total = deviceSelections.Count;
+            int open = deviceSelections.Count(item => item.IsRunning);
+            int inGame = deviceSelections.Count(item => item.IsInGame);
+            DeviceSummaryTextBlock.Text = $"Tổng: {total} · Đang mở: {open} · Trong game: {inGame}";
         }
 
         private void SelectAllDevices_Click(object sender, RoutedEventArgs e)
@@ -295,7 +343,10 @@ namespace ADB_Tool_Automation_Post_FB.UI
                 string concurrency = snapshot.ConcurrencyLimit > 0
                     ? $"; load={snapshot.ActiveExecutions}/{snapshot.ConcurrencyLimit}"
                     : string.Empty;
+                item.IsRunning = true;
+                item.IsInGame = true;
                 item.Status = $"{snapshot.State}: {snapshot.Message}{retry}{storage}{concurrency}";
+                UpdateDeviceSummary();
             }
             if (snapshot.State == ContinuousFarmDeviceState.Stopped)
                 activeDeviceNames.Remove(snapshot.DeviceName);
@@ -528,10 +579,15 @@ namespace ADB_Tool_Automation_Post_FB.UI
                 string.Equals(value.DeviceName, progress.DeviceName,
                     StringComparison.OrdinalIgnoreCase));
             if (item != null)
+            {
+                item.IsRunning = true;
+                item.IsInGame = true;
                 item.Status = string.IsNullOrWhiteSpace(progress.Message)
                     ? FarmProgressVietnamese.Stage(progress.Stage.ToString())
                     : $"{FarmProgressVietnamese.Stage(progress.Stage.ToString())}: "
                         + FarmProgressVietnamese.Message(progress.Message);
+                UpdateDeviceSummary();
+            }
             if (progress.Stage == MultiDeviceOneShotFarmStage.Failed)
             {
                 activeDeviceNames.Remove(progress.DeviceName);
@@ -1058,6 +1114,8 @@ namespace ADB_Tool_Automation_Post_FB.UI
     {
         private bool isSelected;
         private string status;
+        private bool isRunning;
+        private bool isInGame;
 
         public DeviceSelectionItem(string deviceName)
         {
@@ -1087,6 +1145,28 @@ namespace ADB_Tool_Automation_Post_FB.UI
                 status = value;
                 PropertyChanged?.Invoke(this,
                     new PropertyChangedEventArgs(nameof(Status)));
+            }
+        }
+
+        public bool IsRunning
+        {
+            get => isRunning;
+            set
+            {
+                if (isRunning == value) return;
+                isRunning = value;
+                PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(nameof(IsRunning)));
+            }
+        }
+
+        public bool IsInGame
+        {
+            get => isInGame;
+            set
+            {
+                if (isInGame == value) return;
+                isInGame = value;
+                PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(nameof(IsInGame)));
             }
         }
 

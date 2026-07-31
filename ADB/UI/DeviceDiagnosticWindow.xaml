@@ -182,6 +182,10 @@
                             <TextBlock Text="Thiết bị" Style="{StaticResource CardTitleStyle}"/>
                             <TextBlock Text="Chọn tối đa 25 LDPlayer cho phiên chạy."
                                        Style="{StaticResource CaptionStyle}" Margin="0,3,0,0"/>
+                            <TextBlock x:Name="DeviceSummaryTextBlock"
+                                       Text="Tổng: 0 · Đang mở: 0 · Trong game: 0"
+                                       Style="{StaticResource CaptionStyle}" Margin="0,4,0,0"
+                                       Foreground="#FF1D4ED8"/>
                         </StackPanel>
                         <Button Grid.Column="1" Content="Làm mới"
                                 Click="RefreshDevices_Click"
