@@ -163,6 +163,37 @@
             </Style.Triggers>
         </Style>
 
+        <Style x:Key="DeviceRunningBadgeStyle" TargetType="Border" BasedOn="{StaticResource DeviceStatusBadgeStyle}">
+            <Setter Property="Background" Value="#FFFFF7ED"/>
+            <Setter Property="BorderBrush" Value="#FFFED7AA"/>
+            <Setter Property="Visibility" Value="Collapsed"/>
+            <Style.Triggers>
+                <DataTrigger Binding="{Binding IsRunning}" Value="True">
+                    <Setter Property="Visibility" Value="Visible"/>
+                </DataTrigger>
+            </Style.Triggers>
+        </Style>
+
+        <Style x:Key="DeviceGameBadgeStyle" TargetType="Border" BasedOn="{StaticResource DeviceStatusBadgeStyle}">
+            <Setter Property="Background" Value="#FFECFDF5"/>
+            <Setter Property="BorderBrush" Value="#FFA7F3D0"/>
+            <Setter Property="Visibility" Value="Collapsed"/>
+            <Style.Triggers>
+                <DataTrigger Binding="{Binding IsInGame}" Value="True">
+                    <Setter Property="Visibility" Value="Visible"/>
+                </DataTrigger>
+            </Style.Triggers>
+        </Style>
+
+        <Style x:Key="DeviceOfflineBadgeStyle" TargetType="Border" BasedOn="{StaticResource DeviceStatusBadgeStyle}">
+            <Setter Property="Visibility" Value="Collapsed"/>
+            <Style.Triggers>
+                <DataTrigger Binding="{Binding IsRunning}" Value="False">
+                    <Setter Property="Visibility" Value="Visible"/>
+                </DataTrigger>
+            </Style.Triggers>
+        </Style>
+
         <Style TargetType="ListBoxItem">
             <Setter Property="HorizontalContentAlignment" Value="Stretch"/>
             <Setter Property="Padding" Value="0"/>
@@ -235,7 +266,14 @@
                             <TextBlock x:Name="DeviceSummaryTextBlock"
                                        Text="Tổng: 0 · Đang mở: 0 · Trong game: 0"
                                        Style="{StaticResource CaptionStyle}" Margin="0,4,0,0"
-                                       Foreground="#FF1D4ED8"/>
+                                       Foreground="#FF1D4ED8" Visibility="Collapsed"/>
+                            <StackPanel x:Name="DeviceLoadingPanel" Orientation="Horizontal"
+                                        Margin="0,5,0,0">
+                                <ProgressBar Width="72" Height="5" IsIndeterminate="True"
+                                             Foreground="#FF0F766E"/>
+                                <TextBlock Text=" Đang tải danh sách thiết bị..."
+                                           Style="{StaticResource CaptionStyle}" Margin="7,0,0,0"/>
+                            </StackPanel>
                         </StackPanel>
                         <Button Grid.Column="1" Content="Làm mới"
                                 Click="RefreshDevices_Click"
@@ -257,12 +295,20 @@
                                             <ColumnDefinition Width="190"/>
                                         </Grid.ColumnDefinitions>
                                         <CheckBox IsChecked="{Binding IsSelected}"
+                                                  IsEnabled="{Binding IsInGame}"
                                                   Content="{Binding DeviceName}"
                                                   Style="{StaticResource DeviceCheckBoxStyle}"/>
-                                        <Border Grid.Column="1" Style="{StaticResource DeviceStatusBadgeStyle}"
-                                                HorizontalAlignment="Left" ToolTip="{Binding Status}">
-                                            <TextBlock Text="{Binding Status}" Foreground="#FF475569"/>
-                                        </Border>
+                                        <StackPanel Grid.Column="1" Orientation="Horizontal">
+                                            <Border Style="{StaticResource DeviceRunningBadgeStyle}" Margin="0,0,5,0">
+                                                <TextBlock Text="Đang mở" Foreground="#FF9A3412"/>
+                                            </Border>
+                                            <Border Style="{StaticResource DeviceGameBadgeStyle}" Margin="0,0,5,0">
+                                                <TextBlock Text="Trong game" Foreground="#FF047857"/>
+                                            </Border>
+                                            <Border Style="{StaticResource DeviceOfflineBadgeStyle}">
+                                                <TextBlock Text="Đã tắt" Foreground="#FF64748B"/>
+                                            </Border>
+                                        </StackPanel>
                                     </Grid>
                                 </Border>
                             </DataTemplate>

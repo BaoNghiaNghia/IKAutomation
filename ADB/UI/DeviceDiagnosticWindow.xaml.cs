@@ -123,9 +123,13 @@ namespace ADB_Tool_Automation_Post_FB.UI
 
         private async Task RefreshDeviceListAsync()
         {
-            await RunOperationAsync(async cancellationToken =>
+            DeviceLoadingPanel.Visibility = Visibility.Visible;
+            DeviceSummaryTextBlock.Visibility = Visibility.Collapsed;
+            try
             {
-                IReadOnlyList<string> deviceNames = await diagnosticService.GetDeviceNamesAsync(cancellationToken);
+                await RunOperationAsync(async cancellationToken =>
+                {
+                    IReadOnlyList<string> deviceNames = await diagnosticService.GetDeviceNamesAsync(cancellationToken);
 
                 var previous = deviceSelections.ToDictionary(item => item.DeviceName,
                     item => item, StringComparer.OrdinalIgnoreCase);
@@ -145,10 +149,17 @@ namespace ADB_Tool_Automation_Post_FB.UI
                 await RefreshDeviceRuntimeStateAsync(deviceNames, cancellationToken);
                 UpdateDeviceSummary();
 
-                return deviceNames.Count == 0
-                    ? "No LDPlayer instances were found. Check LDCONSOLE_PATH and create an instance in LDPlayer."
-                    : $"Found {deviceNames.Count} LDPlayer instance(s).";
-            });
+                    return deviceNames.Count == 0
+                        ? "No LDPlayer instances were found. Check LDCONSOLE_PATH and create an instance in LDPlayer."
+                        : $"Found {deviceNames.Count} LDPlayer instance(s).";
+                });
+            }
+            finally
+            {
+                DeviceLoadingPanel.Visibility = Visibility.Collapsed;
+                DeviceSummaryTextBlock.Visibility = Visibility.Visible;
+                UpdateDeviceSummary();
+            }
         }
 
         private async Task RefreshDeviceRuntimeStateAsync(
@@ -172,6 +183,8 @@ namespace ADB_Tool_Automation_Post_FB.UI
                         item.IsInGame = result.IsRunning
                             && result.ScreenshotSucceeded
                             && result.MatchesExpectedResolution;
+                        if (!item.IsInGame)
+                            item.IsSelected = false;
                         item.Status = !item.IsRunning
                             ? "Đã tắt"
                             : item.IsInGame
@@ -198,7 +211,8 @@ namespace ADB_Tool_Automation_Post_FB.UI
 
         private void SelectAllDevices_Click(object sender, RoutedEventArgs e)
         {
-            foreach (DeviceSelectionItem item in deviceSelections) item.IsSelected = true;
+            foreach (DeviceSelectionItem item in deviceSelections)
+                item.IsSelected = item.IsInGame;
         }
 
         private void ClearDeviceSelection_Click(object sender, RoutedEventArgs e)
