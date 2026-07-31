@@ -49,32 +49,38 @@ namespace ADB_Tool_Automation_Post_FB.Infrastructure.GameDetection
                 { GameState.ResourceSearchPanel, Profile2(
                     TemplateId.ResourceSearchPanelAnchor, TemplateId.SearchButtonEnabled,
                     TemplateId.ResourcePopupInfoAnchor, TemplateId.TeamSelectionPanelAnchor,
-                    TemplateId.StorageLimitDialogAnchor) },
+                    TemplateId.StorageLimitDialogAnchor, TemplateId.ResourceExpiryDialogAnchor,
+                    TemplateId.StorageLimitCancelButton) },
                 { GameState.ResourcePopup, Profile2(
                     TemplateId.ResourcePopupInfoAnchor, TemplateId.GatherButtonEnabled,
                     TemplateId.ResourceSearchPanelAnchor, TemplateId.TeamSelectionPanelAnchor,
-                    TemplateId.StorageLimitDialogAnchor) },
+                    TemplateId.StorageLimitDialogAnchor, TemplateId.ResourceExpiryDialogAnchor,
+                    TemplateId.StorageLimitCancelButton) },
                 { GameState.TeamSelection, Profile2(
                     TemplateId.TeamSelectionPanelAnchor, TemplateId.TeamActionButtonEnabled,
                     TemplateId.ResourceSearchPanelAnchor, TemplateId.ResourcePopupInfoAnchor,
-                    TemplateId.StorageLimitDialogAnchor) },
+                    TemplateId.StorageLimitDialogAnchor, TemplateId.ResourceExpiryDialogAnchor,
+                    TemplateId.StorageLimitCancelButton) },
                 { GameState.WorldMap, Profile1(
                     TemplateId.WorldMapAnchor,
                     TemplateId.ResourceSearchPanelAnchor, TemplateId.ResourcePopupInfoAnchor,
-                    TemplateId.TeamSelectionPanelAnchor, TemplateId.StorageLimitDialogAnchor) },
+                    TemplateId.TeamSelectionPanelAnchor, TemplateId.StorageLimitDialogAnchor,
+                    TemplateId.ResourceExpiryDialogAnchor, TemplateId.StorageLimitCancelButton) },
                 { GameState.ContinentMap, Profile1(
                     TemplateId.ContinentMapTitle,
                     TemplateId.ResourceSearchPanelAnchor, TemplateId.ResourcePopupInfoAnchor,
-                    TemplateId.TeamSelectionPanelAnchor) },
+                    TemplateId.TeamSelectionPanelAnchor, TemplateId.StorageLimitDialogAnchor,
+                    TemplateId.ResourceExpiryDialogAnchor, TemplateId.StorageLimitCancelButton) },
                 { GameState.City, Profile1(
                     TemplateId.CityToWorldMapButton,
                     TemplateId.ResourceSearchPanelAnchor, TemplateId.ResourcePopupInfoAnchor,
-                    TemplateId.TeamSelectionPanelAnchor) },
-                { GameState.StorageLimitDialog, Profile1(
-                    TemplateId.StorageLimitDialogAnchor,
+                    TemplateId.TeamSelectionPanelAnchor, TemplateId.StorageLimitDialogAnchor,
+                    TemplateId.ResourceExpiryDialogAnchor, TemplateId.StorageLimitCancelButton) },
+                { GameState.StorageLimitDialog, Profile2(
+                    TemplateId.StorageLimitDialogAnchor, TemplateId.StorageLimitCancelButton,
                     TemplateId.ResourceSearchPanelAnchor, TemplateId.TeamSelectionPanelAnchor) },
-                { GameState.ResourceExpiryDialog, Profile1(
-                    TemplateId.ResourceExpiryDialogAnchor,
+                { GameState.ResourceExpiryDialog, Profile2(
+                    TemplateId.ResourceExpiryDialogAnchor, TemplateId.StorageLimitCancelButton,
                     TemplateId.ResourceSearchPanelAnchor, TemplateId.TeamSelectionPanelAnchor) }
             };
 

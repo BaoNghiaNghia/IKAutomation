@@ -53,6 +53,9 @@ namespace IKAutomation.GameDetection.Tests
             Run("Detector prefers direct frame capture when available", DetectorPrefersDirectFrameCapture);
             Run("Expected state uses a fast profile", ExpectedStateUsesFastProfile);
             Run("Incorrect expected state falls back to full detection", IncorrectExpectedStateFallsBack);
+            Run("Storage fast profile requires cancel", StorageFastProfileRequiresCancel);
+            Run("Expiry fast profile requires cancel", ExpiryFastProfileRequiresCancel);
+            Run("World fast profile yields to storage modal", WorldFastProfileYieldsToStorageModal);
             Run("Wrong resolution stops matching", WrongResolutionStopsMatching);
             Run("Evidence contains all detection templates", EvidenceContainsThreeTemplates);
             Run("Level minus is a stable panel anchor fallback", LevelMinusPanelFallback);
@@ -417,7 +420,7 @@ namespace IKAutomation.GameDetection.Tests
                 GameDetectionResult result = ((IFrameGameStateDetector)detector).Detect(frame, "IK-fast",
                     new GameStateDetectionContext(GameState.ResourceSearchPanel, null));
                 Equal(GameState.ResourceSearchPanel, result.State, "Expected state.");
-                Equal(5, result.Evidence.Count, "Expected profile template count.");
+                Equal(7, result.Evidence.Count, "Expected profile template count including modal guards.");
             }
         }
 
@@ -441,6 +444,47 @@ namespace IKAutomation.GameDetection.Tests
             using (var stream = new MemoryStream(CreatePng(1280, 720), writable: false))
             using (var source = new Bitmap(stream))
                 return new CapturedFrame(new Bitmap(source), DateTimeOffset.UtcNow);
+        }
+
+        private static void StorageFastProfileRequiresCancel()
+        {
+            var matcher = new FakeImageMatcher();
+            matcher.Matches.Add(TemplateId.StorageLimitDialogAnchor);
+            var detector = CreateDetector(new FakeLdPlayerClient(), matcher: matcher);
+            using (CapturedFrame frame = Frame())
+            {
+                GameDetectionResult result = ((IFrameGameStateDetector)detector).Detect(frame, "IK-storage",
+                    new GameStateDetectionContext(GameState.StorageLimitDialog, null));
+                Equal(GameState.Unknown, result.State, "Storage anchor without cancel must not be accepted.");
+            }
+        }
+
+        private static void ExpiryFastProfileRequiresCancel()
+        {
+            var matcher = new FakeImageMatcher();
+            matcher.Matches.Add(TemplateId.ResourceExpiryDialogAnchor);
+            var detector = CreateDetector(new FakeLdPlayerClient(), matcher: matcher);
+            using (CapturedFrame frame = Frame())
+            {
+                GameDetectionResult result = ((IFrameGameStateDetector)detector).Detect(frame, "IK-expiry",
+                    new GameStateDetectionContext(GameState.ResourceExpiryDialog, null));
+                Equal(GameState.Unknown, result.State, "Expiry anchor without cancel must not be accepted.");
+            }
+        }
+
+        private static void WorldFastProfileYieldsToStorageModal()
+        {
+            var matcher = new FakeImageMatcher();
+            matcher.Matches.Add(TemplateId.WorldMapAnchor);
+            matcher.Matches.Add(TemplateId.StorageLimitDialogAnchor);
+            matcher.Matches.Add(TemplateId.StorageLimitCancelButton);
+            var detector = CreateDetector(new FakeLdPlayerClient(), matcher: matcher);
+            using (CapturedFrame frame = Frame())
+            {
+                GameDetectionResult result = ((IFrameGameStateDetector)detector).Detect(frame, "IK-modal",
+                    new GameStateDetectionContext(GameState.WorldMap, null));
+                Equal(GameState.StorageLimitDialog, result.State, "Blocking storage modal must beat WorldMap.");
+            }
         }
 
         private static void WrongResolutionStopsMatching()
