@@ -113,6 +113,56 @@
             <Setter Property="VerticalAlignment" Value="Center"/>
         </Style>
 
+        <Style x:Key="DeviceCheckBoxStyle" TargetType="CheckBox">
+            <Setter Property="Foreground" Value="{StaticResource TextPrimaryBrush}"/>
+            <Setter Property="VerticalAlignment" Value="Center"/>
+            <Setter Property="FontWeight" Value="SemiBold"/>
+            <Setter Property="Template">
+                <Setter.Value>
+                    <ControlTemplate TargetType="CheckBox">
+                        <StackPanel Orientation="Horizontal">
+                            <Border x:Name="Box" Width="18" Height="18" CornerRadius="5"
+                                    BorderThickness="1.5" BorderBrush="#FFCBD5E1"
+                                    Background="White" Margin="0,0,8,0">
+                                <Path x:Name="Mark" Data="M 3,9 L 7,13 L 15,4"
+                                      Stroke="White" StrokeThickness="2" Visibility="Collapsed"/>
+                            </Border>
+                            <ContentPresenter VerticalAlignment="Center"/>
+                        </StackPanel>
+                        <ControlTemplate.Triggers>
+                            <Trigger Property="IsChecked" Value="True">
+                                <Setter TargetName="Box" Property="Background" Value="#FF0F766E"/>
+                                <Setter TargetName="Box" Property="BorderBrush" Value="#FF0F766E"/>
+                                <Setter TargetName="Mark" Property="Visibility" Value="Visible"/>
+                            </Trigger>
+                            <Trigger Property="IsMouseOver" Value="True">
+                                <Setter TargetName="Box" Property="BorderBrush" Value="#FF0D9488"/>
+                            </Trigger>
+                        </ControlTemplate.Triggers>
+                    </ControlTemplate>
+                </Setter.Value>
+            </Setter>
+        </Style>
+
+        <Style x:Key="DeviceStatusBadgeStyle" TargetType="Border">
+            <Setter Property="Background" Value="#FFF1F5F9"/>
+            <Setter Property="BorderBrush" Value="#FFE2E8F0"/>
+            <Setter Property="BorderThickness" Value="1"/>
+            <Setter Property="CornerRadius" Value="10"/>
+            <Setter Property="Padding" Value="9,3"/>
+            <Setter Property="VerticalAlignment" Value="Center"/>
+            <Style.Triggers>
+                <DataTrigger Binding="{Binding IsRunning}" Value="True">
+                    <Setter Property="Background" Value="#FFFFF7ED"/>
+                    <Setter Property="BorderBrush" Value="#FFFED7AA"/>
+                </DataTrigger>
+                <DataTrigger Binding="{Binding IsInGame}" Value="True">
+                    <Setter Property="Background" Value="#FFECFDF5"/>
+                    <Setter Property="BorderBrush" Value="#FFA7F3D0"/>
+                </DataTrigger>
+            </Style.Triggers>
+        </Style>
+
         <Style TargetType="ListBoxItem">
             <Setter Property="HorizontalContentAlignment" Value="Stretch"/>
             <Setter Property="Padding" Value="0"/>
@@ -208,12 +258,11 @@
                                         </Grid.ColumnDefinitions>
                                         <CheckBox IsChecked="{Binding IsSelected}"
                                                   Content="{Binding DeviceName}"
-                                                  FontWeight="SemiBold"/>
-                                        <TextBlock Grid.Column="1" Text="{Binding Status}"
-                                                   Foreground="#FF475569"
-                                                   TextTrimming="CharacterEllipsis"
-                                                   ToolTip="{Binding Status}"
-                                                   VerticalAlignment="Center"/>
+                                                  Style="{StaticResource DeviceCheckBoxStyle}"/>
+                                        <Border Grid.Column="1" Style="{StaticResource DeviceStatusBadgeStyle}"
+                                                HorizontalAlignment="Left" ToolTip="{Binding Status}">
+                                            <TextBlock Text="{Binding Status}" Foreground="#FF475569"/>
+                                        </Border>
                                     </Grid>
                                 </Border>
                             </DataTemplate>

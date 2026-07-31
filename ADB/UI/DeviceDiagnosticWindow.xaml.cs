@@ -212,7 +212,7 @@ namespace ADB_Tool_Automation_Post_FB.UI
             string[] devices = failedDeviceNames
                 .Where(name => !activeDeviceNames.Contains(name))
                 .Where(name => deviceSelections.Any(item => string.Equals(
-                    item.DeviceName, name, StringComparison.OrdinalIgnoreCase)))
+                    item.DeviceName, name, StringComparison.OrdinalIgnoreCase) && item.IsInGame))
                 .ToArray();
             if (devices.Length == 0 || retryRequest == null)
             {
@@ -230,12 +230,12 @@ namespace ADB_Tool_Automation_Post_FB.UI
         {
             if (oneShotFarmCancellation != null) return;
             string[] selectedDevices = deviceSelections
-                .Where(item => item.IsSelected)
+                .Where(item => item.IsSelected && item.IsInGame)
                 .Select(item => item.DeviceName)
                 .ToArray();
             if (selectedDevices.Length == 0)
             {
-                StatusTextBlock.Text = "Hãy chọn ít nhất một thiết bị LDPlayer để chạy.";
+                StatusTextBlock.Text = "Chỉ có thể chạy các thiết bị đã chọn và đang trong game.";
                 return;
             }
             if (!TryReadFarmPreferences(out FarmUiPreferences preferences,
