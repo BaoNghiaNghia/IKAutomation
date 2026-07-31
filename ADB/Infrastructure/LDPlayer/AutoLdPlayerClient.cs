@@ -4,6 +4,7 @@ using Auto_LDPlayer.Enums;
 using System;
 using System.Collections.Concurrent;
 using System.Collections.Generic;
+using System.Configuration;
 using System.Drawing;
 using System.Drawing.Imaging;
 using System.Globalization;
@@ -32,6 +33,16 @@ namespace ADB_Tool_Automation_Post_FB.Infrastructure.LDPlayer
         private const int ScreenshotCaptureRetryDelayMilliseconds = 500;
         private static readonly ConcurrentDictionary<string, SemaphoreSlim> ScreenshotLocks =
             new ConcurrentDictionary<string, SemaphoreSlim>(StringComparer.OrdinalIgnoreCase);
+        private static readonly SemaphoreSlim ScreenshotGate = new SemaphoreSlim(
+            ReadPositiveSetting("Operations.MaxConcurrentScreenshots", 4),
+            ReadPositiveSetting("Operations.MaxConcurrentScreenshots", 4));
+
+        private static int ReadPositiveSetting(string key, int fallback)
+        {
+            int value;
+            return int.TryParse(ConfigurationManager.AppSettings[key], out value) && value > 0
+                ? value : fallback;
+        }
 
         public static string ConfigureLdConsolePath(string configuredPath)
         {
@@ -136,9 +147,12 @@ namespace ADB_Tool_Automation_Post_FB.Infrastructure.LDPlayer
                 normalizedDeviceName,
                 _ => new SemaphoreSlim(1, 1));
 
-            await screenshotLock.WaitAsync(cancellationToken);
+            await ScreenshotGate.WaitAsync(cancellationToken);
             try
             {
+                await screenshotLock.WaitAsync(cancellationToken);
+                try
+                {
                 string adbState = null;
                 for (int attempt = 1; attempt <= ScreenshotReadyAttempts; attempt++)
                 {
@@ -229,6 +243,11 @@ namespace ADB_Tool_Automation_Post_FB.Infrastructure.LDPlayer
                 throw new InvalidOperationException(
                     $"Auto_LDPlayer returned no screenshot for LDPlayer device '{normalizedDeviceName}' "
                     + $"after ADB reported ready and {ScreenshotCaptureAttempts} capture attempts.");
+                }
+                finally
+                {
+                    screenshotLock.Release();
+                }
             }
             catch (OperationCanceledException)
             {
@@ -242,7 +261,7 @@ namespace ADB_Tool_Automation_Post_FB.Infrastructure.LDPlayer
             }
             finally
             {
-                screenshotLock.Release();
+                ScreenshotGate.Release();
             }
         }
 

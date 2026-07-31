@@ -426,8 +426,9 @@ namespace ADB_Tool_Automation_Post_FB.Infrastructure.Workflows
 
         private static bool IsExpectedLongRunningOperation(
             MultiDeviceOneShotFarmProgress progress) =>
-            progress?.DeviceProgress?.Stage == OneShotFarmProgressStage.RunningFarmStep
-            && progress.DeviceProgress.CurrentStep == OneShotFarmStep.ResourceFarmFallback;
+            progress?.Stage == MultiDeviceOneShotFarmStage.Queued
+            || (progress?.DeviceProgress?.Stage == OneShotFarmProgressStage.RunningFarmStep
+                && progress.DeviceProgress.CurrentStep == OneShotFarmStep.ResourceFarmFallback);
 
         private static bool IsDeviceConnectivityFailure(string error)
         {

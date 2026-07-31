@@ -1,6 +1,7 @@
 using ADB_Tool_Automation_Post_FB.Core.Vision;
 using System;
 using System.Collections.Generic;
+using System.Reflection;
 using System.Drawing;
 using System.IO;
 
@@ -8,12 +9,37 @@ namespace ADB_Tool_Automation_Post_FB.Infrastructure.Vision
 {
     public sealed class KAutoImageMatcher : IImageMatcher, IBatchImageMatcher
     {
+        private static readonly System.Threading.SemaphoreSlim VisionGate =
+            new System.Threading.SemaphoreSlim(ReadPositiveSetting(
+                "Operations.MaxConcurrentVisionOperations", 6));
+
+        private static int ReadPositiveSetting(string key, int fallback)
+        {
+            try
+            {
+                Type manager = Type.GetType(
+                    "System.Configuration.ConfigurationManager, System.Configuration")
+                    ?? Type.GetType(
+                        "System.Configuration.ConfigurationManager, System.Configuration.ConfigurationManager");
+                PropertyInfo appSettings = manager?.GetProperty("AppSettings");
+                object settings = appSettings?.GetValue(null, null);
+                string configured = settings?.GetType().GetProperty("Item")
+                    ?.GetValue(settings, new object[] { key }) as string;
+                int value;
+                return int.TryParse(configured, out value) && value > 0 ? value : fallback;
+            }
+            catch { return fallback; }
+        }
+
         public IReadOnlyList<ImageMatchResult> FindMany(
             byte[] screenshotPng,
             IReadOnlyList<ImageMatchRequest> requests)
         {
             ValidateImageBytes(screenshotPng, nameof(screenshotPng));
             if (requests == null) throw new ArgumentNullException(nameof(requests));
+            VisionGate.Wait();
+            try
+            {
             var results = new List<ImageMatchResult>(requests.Count);
             using (Bitmap screenshot = DecodeBitmap(screenshotPng, nameof(screenshotPng)))
             {
@@ -24,6 +50,8 @@ namespace ADB_Tool_Automation_Post_FB.Infrastructure.Vision
                 }
             }
             return results.AsReadOnly();
+            }
+            finally { VisionGate.Release(); }
         }
 
         public ImageMatchResult Find(byte[] screenshotPng, byte[] templatePng, ImageRegion? searchRegion = null)
@@ -31,8 +59,13 @@ namespace ADB_Tool_Automation_Post_FB.Infrastructure.Vision
             ValidateImageBytes(screenshotPng, nameof(screenshotPng));
             ValidateImageBytes(templatePng, nameof(templatePng));
 
-            using (Bitmap screenshot = DecodeBitmap(screenshotPng, nameof(screenshotPng)))
-                return FindOnBitmap(screenshot, templatePng, searchRegion);
+            VisionGate.Wait();
+            try
+            {
+                using (Bitmap screenshot = DecodeBitmap(screenshotPng, nameof(screenshotPng)))
+                    return FindOnBitmap(screenshot, templatePng, searchRegion);
+            }
+            finally { VisionGate.Release(); }
         }
 
         private static ImageMatchResult FindOnBitmap(
