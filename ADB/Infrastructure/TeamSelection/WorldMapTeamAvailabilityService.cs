@@ -210,6 +210,11 @@ namespace ADB_Tool_Automation_Post_FB.Infrastructure.TeamSelection
             int configuredOverride = options.GetKnownUnlockedTeamCount(deviceName);
             bool useCached = currentKnowledge != null
                 && freshExisting.Count < currentKnowledge.ActiveTeams.Count;
+            // A row-local lock is strong contradictory evidence, but a known roster
+            // is only downgraded after the cache confirmation policy accepts it.
+            // Until then it remains diagnostic evidence, not an immediate removal.
+            var effectiveLockedTeams = useCached
+                ? new HashSet<TeamNumber>() : lockedTeamsFresh;
             HashSet<TeamNumber> existing = configuredOverride > 0
                 ? new HashSet<TeamNumber>(teams.Where(team => (int)team <= configuredOverride))
                 : useCached || freshExisting.Count == 0
@@ -232,12 +237,16 @@ namespace ADB_Tool_Automation_Post_FB.Infrastructure.TeamSelection
                     : TeamRosterClassification.FreshConfirmed
                 : TeamRosterClassification.Uncertain;
 
-            var availableTeams = existing.OrderBy(team => (int)team).ToList();
-            var readyTeams = readyMatchesByTeam.Keys.Where(existing.Contains)
+            var lockedTeams = effectiveLockedTeams.OrderBy(team => (int)team).ToList();
+            var availableTeams = existing.Where(team => !effectiveLockedTeams.Contains(team))
                 .OrderBy(team => (int)team).ToList();
-            var busyTeams = busyTeamsFresh.Where(existing.Contains)
+            var readyTeams = readyMatchesByTeam.Keys.Where(team => existing.Contains(team)
+                    && !effectiveLockedTeams.Contains(team))
                 .OrderBy(team => (int)team).ToList();
-            var lockedTeams = lockedTeamsFresh.OrderBy(team => (int)team).ToList();
+            // An unlocked existing row that is not freshly Ready is busy for the
+            // scheduler, even when the optional busy/timer anchor is obscured.
+            var busyTeams = availableTeams.Where(team => !readyTeams.Contains(team))
+                .OrderBy(team => (int)team).ToList();
             var readyMatches = readyTeams.Select(team => readyMatchesByTeam[team]).ToList();
             var rowObservations = teams.Select(team => new TeamRowObservation
             {
@@ -249,7 +258,7 @@ namespace ADB_Tool_Automation_Post_FB.Infrastructure.TeamSelection
                     ? new ImageRegion(readyMatch.X, readyMatch.Y, readyMatch.Width, readyMatch.Height)
                     : default(ImageRegion),
                 RowBounds = lastLayout?.Rows[(int)team - 1] ?? default(ImageRegion),
-                Exists = existing.Contains(team),
+                Exists = availableTeams.Contains(team),
                 IsVisible = rowEvidenceTeams.Contains(team),
                 IsReady = readyTeams.Contains(team),
                 IsBusy = busyTeams.Contains(team),
