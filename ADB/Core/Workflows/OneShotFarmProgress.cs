@@ -5,6 +5,17 @@ using System.Collections.Generic;
 
 namespace ADB_Tool_Automation_Post_FB.Core.Workflows
 {
+    public enum MapRepositionState
+    {
+        None,
+        OpeningContinentMap,
+        TestingCoordinate,
+        VerifyingTerritoryColor,
+        ReturningToWorldMap,
+        Completed,
+        Failed
+    }
+
     public sealed class OneShotFarmProgress
     {
         public OneShotFarmProgress()
@@ -28,6 +39,13 @@ namespace ADB_Tool_Automation_Post_FB.Core.Workflows
         public ResourceType? CurrentResource { get; set; }
         public int? CurrentLevel { get; set; }
         public TeamNumber? CurrentTeam { get; set; }
+        public TeamNumber? CurrentExpectedTeam { get; set; }
+        public TeamNumber? CurrentSelectedTeam { get; set; }
+        public TeamNumber? LastDispatchedTeam { get; set; }
+        public int ConfirmedRosterCount { get; set; }
+        public string RosterConfidence { get; set; }
+        public string RosterSource { get; set; }
+        public MapRepositionState MapRepositionState { get; set; }
         public string Message { get; set; }
         public string TerritoryColorSummary { get; set; }
     }

@@ -9,5 +9,6 @@ namespace ADB_Tool_Automation_Post_FB.Core.MarchDispatch
         public bool RequireExpectedTeamSelected { get; set; } = true;
         public bool AllowStructuralVerificationFallback { get; set; } = true;
         public ResourceType CurrentResource { get; set; } = ResourceType.Iron;
+        public string RunId { get; set; }
     }
 }

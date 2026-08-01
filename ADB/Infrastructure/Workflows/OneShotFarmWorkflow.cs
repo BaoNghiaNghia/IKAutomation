@@ -356,7 +356,8 @@ namespace ADB_Tool_Automation_Post_FB.Infrastructure.Workflows
                 token.ThrowIfCancellationRequested(); started = Start(runId, deviceName, OneShotFarmStep.DispatchTeam);
                 DispatchMarchResult dispatched = await dispatch.DispatchAsync(deviceName, new DispatchMarchRequest
                 { ExpectedTeam = selected.SelectedTeam.Value, RequireExpectedTeamSelected = true,
-                    AllowStructuralVerificationFallback = true, CurrentResource = request.ResourceType }, token);
+                    AllowStructuralVerificationFallback = true, CurrentResource = request.ResourceType,
+                    RunId = request.RunId }, token);
                 result.DispatchResult = dispatched; result.FinalState = dispatched.FinalState;
                 if (dispatched.Outcome == DispatchMarchOutcome.Cancelled) throw new OperationCanceledException(token);
                 if (dispatched.Outcome == DispatchMarchOutcome.StorageLimitResourceSwitchRequired)
@@ -583,6 +584,10 @@ namespace ADB_Tool_Automation_Post_FB.Infrastructure.Workflows
             if (progress == null) return;
             try
             {
+                TeamNumber? expectedTeam = step == OneShotFarmStep.OpenTeamSelection
+                    || step == OneShotFarmStep.SelectTeam
+                    || step == OneShotFarmStep.DispatchTeam
+                    ? FirstExpectedTeam(request) : (TeamNumber?)null;
                 progress.Report(new OneShotFarmProgress
                 {
                     Stage = stage,
@@ -593,7 +598,10 @@ namespace ADB_Tool_Automation_Post_FB.Infrastructure.Workflows
                     // TargetLevel is only a preference. The account-specific level is
                     // not known until the Resource Search Panel has been verified.
                     CurrentLevel = null,
-                    CurrentTeam = team,
+                    CurrentTeam = team ?? expectedTeam,
+                    CurrentExpectedTeam = expectedTeam,
+                    CurrentSelectedTeam = step == OneShotFarmStep.DispatchTeam ? team : null,
+                    MapRepositionState = MapRepositionState.None,
                     Message = message
                 });
             }
@@ -623,14 +631,23 @@ namespace ADB_Tool_Automation_Post_FB.Infrastructure.Workflows
                     // observed maximum for accounts whose actual ceiling is lower.
                     CurrentLevel = level,
                     CurrentTeam = team,
+                    CurrentExpectedTeam = null,
+                    CurrentSelectedTeam = null,
+                    LastDispatchedTeam = stage == OneShotFarmProgressStage.Completed ? team : null,
+                    MapRepositionState = MapRepositionState.None,
                     Message = message,
-                    TerritoryColorSummary = territoryColorSummary
+                    TerritoryColorSummary = null
                 });
             }
             catch (Exception exception)
             {
                 logger.Error("[OneShotFarm] Terminal progress callback failed; workflow continues.", exception);
             }
+        }
+        private static TeamNumber? FirstExpectedTeam(OneShotFarmRequest request)
+        {
+            IReadOnlyList<TeamNumber> priority = request?.TeamPriority ?? request?.AllowedTeams;
+            return priority != null && priority.Count > 0 ? priority[0] : (TeamNumber?)null;
         }
         private static OneShotFarmResult NewResult(string device, OneShotFarmRequest request, IReadOnlyList<OneShotFarmStepResult> steps) => new OneShotFarmResult { DeviceName = device, RequestedResource = request.ResourceType, RequestedLevel = request.TargetLevel, RequestedUnoccupiedOnly = request.UnoccupiedOnly, AttemptedLevels = new int[0], AttemptedResources = new[] { request.ResourceType }, SelectedResources = request.SelectedResources ?? request.ResourcePriority, ShuffledResourcePriority = request.ResourcePriority, MissingRuntimeTemplates = new MissingRuntimeTemplate[0], StorageFullResources = new ResourceType[0], InitialState = GameState.Unknown, FinalState = GameState.Unknown, LastCompletedStep = OneShotFarmStep.Preflight, Steps = steps };
         private static OneShotFarmResult Empty(string device, OneShotFarmRequest request, string error, OneShotFarmOutcome outcome = OneShotFarmOutcome.PreconditionFailed) => new OneShotFarmResult { Outcome = outcome, Success = false, DeviceName = device, RequestedResource = request == null ? ResourceType.Iron : request.ResourceType, RequestedLevel = request == null ? 7 : request.TargetLevel, RequestedUnoccupiedOnly = request == null || request.UnoccupiedOnly, AttemptedLevels = new int[0], AttemptedResources = request == null ? new ResourceType[0] : new[] { request.ResourceType }, SelectedResources = request?.SelectedResources ?? request?.ResourcePriority ?? new ResourceType[0], ShuffledResourcePriority = request?.ResourcePriority ?? new ResourceType[0], StorageFullResources = new ResourceType[0], InitialState = GameState.Unknown, FinalState = GameState.Unknown, LastCompletedStep = OneShotFarmStep.Preflight, Message = error, ErrorMessage = error, Steps = new OneShotFarmStepResult[0] };
@@ -777,7 +794,8 @@ namespace ADB_Tool_Automation_Post_FB.Infrastructure.Workflows
                             ? "Selecting an eligible farm team."
                             : "Running the resource and level fallback plan.",
                     TerritoryColorSummary = value.ClearTerritoryColor
-                        ? null : value.TerritoryColorSummary
+                        ? null : value.TerritoryColorSummary,
+                    MapRepositionState = value.MapRepositionState
                 });
             }
             catch (Exception exception)

@@ -240,7 +240,11 @@ namespace ADB_Tool_Automation_Post_FB.Infrastructure.TeamSelection
                 BadgeFound = badgeMatches.ContainsKey(team),
                 BadgeBounds = badgeMatches.TryGetValue(team, out ImageMatchResult badge)
                     ? new ImageRegion(badge.X, badge.Y, badge.Width, badge.Height) : default(ImageRegion),
+                ReadyBounds = readyMatchesByTeam.TryGetValue(team, out ImageMatchResult readyMatch)
+                    ? new ImageRegion(readyMatch.X, readyMatch.Y, readyMatch.Width, readyMatch.Height)
+                    : default(ImageRegion),
                 RowBounds = lastLayout?.Rows[(int)team - 1] ?? default(ImageRegion),
+                Exists = existing.Contains(team),
                 IsVisible = rowEvidenceTeams.Contains(team),
                 IsReady = readyTeams.Contains(team),
                 IsBusy = busyTeams.Contains(team),
@@ -253,20 +257,30 @@ namespace ADB_Tool_Automation_Post_FB.Infrastructure.TeamSelection
                     : badgeMatches.ContainsKey(team) ? "NumberedBadge"
                     : busyTeams.Contains(team) ? "BusyStructure"
                     : readyTeams.Contains(team) ? "ReadyLabel"
-                    : existing.Contains(team) ? "CachedConfirmed" : "None"
+                    : existing.Contains(team) ? "CachedConfirmed" : "None",
+                EvidenceStrength = badgeMatches.ContainsKey(team) || lockedTeams.Contains(team)
+                    ? "Strong" : rowEvidenceTeams.Contains(team) ? "Moderate"
+                    : existing.Contains(team) ? "Cached" : "None"
             }).ToArray();
 
             ImageMatchResult match = readyMatches.FirstOrDefault()
                 ?? ImageMatchResult.NotFound();
             bool ready = readyTeams.Count > 0;
-            logger.Info($"[WorldMap Team Availability] DeviceName='{deviceName}', "
+            logger.Info($"[WorldMap Team Roster] DeviceName='{deviceName}', "
                 + $"Ready={ready}, ReadyTeams='{string.Join(",", readyTeams)}', "
                 + $"AvailableTeams='{string.Join(",", availableTeams)}', "
+                + $"Team1Exists={existing.Contains(TeamNumber.Team1)}, "
+                + $"Team2Exists={existing.Contains(TeamNumber.Team2)}, "
+                + $"Team3Exists={existing.Contains(TeamNumber.Team3)}, "
+                + $"Team4Exists={existing.Contains(TeamNumber.Team4)}, "
+                + $"Team4Locked={lockedTeams.Contains(TeamNumber.Team4)}, "
                 + $"Bounds=({match.X},{match.Y},{match.Width},{match.Height}), "
                 + $"Region=({options.TeamRosterRegion.X},{options.TeamRosterRegion.Y},"
                 + $"{options.TeamRosterRegion.Width},{options.TeamRosterRegion.Height}), "
                 + $"LockedTeams='{string.Join(",", lockedTeams)}', BusyTeams='{string.Join(",", busyTeams)}', "
                 + $"RowHeight={options.TeamRowHeight}, FreshRosterCount={freshExisting.Count}, "
+                + $"FreshConfirmedTeams='{string.Join(",", freshExisting.OrderBy(team => (int)team))}', "
+                + $"CachedConfirmedTeams='{string.Join(",", previousKnowledge?.ActiveTeams.OrderBy(team => (int)team) ?? Enumerable.Empty<TeamNumber>())}', "
                 + $"PreviousKnownRosterCount={previousKnownCount}, "
                 + $"RosterSource='{rosterSource}', Cancellation=false");
             return new WorldMapTeamAvailabilityResult

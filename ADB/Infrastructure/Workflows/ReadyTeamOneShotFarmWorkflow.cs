@@ -116,6 +116,9 @@ namespace ADB_Tool_Automation_Post_FB.Infrastructure.Workflows
                     if (eligibleReadyTeams.Count > 0)
                     {
                         consecutiveNoReadyChecks = 0;
+                        OneShotFarmRequest cycleRequest = CreateCycleRequest(request,
+                            eligibleReadyTeams, dispatchedResources);
+                        TeamNumber expectedTeam = cycleRequest.TeamPriority.First();
                         Report(progress, new OneShotFarmProgress
                         {
                             Stage = OneShotFarmProgressStage.ReadyTeamFound,
@@ -125,13 +128,16 @@ namespace ADB_Tool_Automation_Post_FB.Infrastructure.Workflows
                             DetectedTeams = detectedTeams,
                             ReadyTeams = check.ReadyTeams ?? new TeamNumber[0],
                             EligibleReadyTeams = eligibleReadyTeams,
+                            CurrentExpectedTeam = expectedTeam,
+                            CurrentTeam = expectedTeam,
+                            ConfirmedRosterCount = check.ConfirmedRosterCount,
+                            RosterConfidence = check.IsRosterUncertain ? "Uncertain" : "Confirmed",
+                            RosterSource = check.RosterEvidenceSource.ToString(),
                             WaitDeadline = waitDeadline,
                             Message = VietnameseUserMessageLocalizer.Default.Format(
                                 UiMessageKey.ReadyAllowedTeams,
                                 string.Join(", ", eligibleReadyTeams))
                         });
-                        OneShotFarmRequest cycleRequest = CreateCycleRequest(request,
-                            eligibleReadyTeams, dispatchedResources);
                         OneShotFarmResult result = await inner.RunAsync(
                             deviceName, cycleRequest, progress, cancellationToken);
                         result.TeamAvailabilityChecks = checks;

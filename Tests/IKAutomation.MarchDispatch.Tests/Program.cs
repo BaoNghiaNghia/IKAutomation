@@ -29,6 +29,7 @@ internal static class Program
     {
         Run("TeamSelection not ready sends no Tap", NotReady);
         Run("Expected Team4 not selected sends no Tap", NotSelected);
+        Run("Expected Team2 with selected Team3 sends no action", WrongObservedTeamBlocked);
         Run("Selected border without expected badge is rejected", BadgeVariationAccepted);
         Run("Team4 selected permits action Tap", SelectedPermitsTap);
         Run("Team1 selected permits action Tap", Team1SelectedPermitsTap);
@@ -117,7 +118,8 @@ internal static class Program
 
     private static void NotReady() { var h = new Harness(); h.Detector.Initial = h.Detector.Result(GameState.Unknown, false); var r = Execute(h); Eq(DispatchMarchOutcome.TeamSelectionNotReady, r.Outcome, "outcome"); Eq(0, h.Client.Taps.Count, "tap count"); }
     private static void NotSelected() { var h = new Harness(); h.Matcher.Rule = (f, id, roi) => id == TemplateId.TeamSelectedBorderAnchor ? ImageMatchResult.NotFound() : h.Matcher.Default(f, id, roi); var r = Execute(h); Eq(DispatchMarchOutcome.ExpectedTeamNotSelected, r.Outcome, "outcome"); Eq(0, h.Client.Taps.Count, "tap count"); }
-    private static void BadgeVariationAccepted() { var h = new Harness(); h.Matcher.Rule = (f,id,roi) => id == TemplateId.Team4Badge ? ImageMatchResult.NotFound() : h.Matcher.Default(f,id,roi); var r=Execute(h); Eq(DispatchMarchOutcome.ExpectedTeamNotSelected,r.Outcome,"outcome"); Eq(0,r.ActionTapCount,"tap count"); Is(!r.ExpectedTeamSelectedBeforeTap,"selected border without expected badge must not identify Team4"); }
+    private static void WrongObservedTeamBlocked() { var h=new Harness();h.Request.ExpectedTeam=TeamNumber.Team2;h.Matcher.SelectedTeam=TeamNumber.Team3;var r=Execute(h);Eq(DispatchMarchOutcome.ExpectedTeamNotSelected,r.Outcome,"outcome");Eq((TeamNumber?)TeamNumber.Team3,r.ObservedSelectedTeam,"observed team");Is(r.SelectionMismatch,"mismatch flag");Is(!r.ActionTapSent&&h.Client.Taps.Count==0,"wrong team action"); }
+    private static void BadgeVariationAccepted() { var h = new Harness(); h.Matcher.Rule = (f,id,roi) => id == TemplateId.Team4Badge ? ImageMatchResult.NotFound() : h.Matcher.Default(f,id,roi); var r=Execute(h); Eq(DispatchMarchOutcome.ExpectedTeamNotSelected,r.Outcome,"outcome"); Eq(0,r.ActionTapCount,"tap count"); Is(!r.ActionTapSent,"action tap flag"); Is(!r.ExpectedTeamSelectedBeforeTap,"selected border without expected badge must not identify Team4"); }
     private static void SelectedPermitsTap() { var h = new Harness(); var r = Execute(h); Eq(DispatchMarchOutcome.MarchStarted, r.Outcome, "outcome"); Is(r.ExpectedTeamSelectedBeforeTap, "selected"); }
     private static void Team1SelectedPermitsTap() { var h = new Harness(); h.Request.ExpectedTeam = TeamNumber.Team1; h.Matcher.SelectedTeam = TeamNumber.Team1; var r = Execute(h); Eq(DispatchMarchOutcome.MarchStarted, r.Outcome, "outcome"); Is(r.ExpectedTeamSelectedBeforeTap, "selected"); }
     private static void AmbiguousSelection() { var h = new Harness(); h.Matcher.Rule = (f,id,roi) => id==TemplateId.Team3Badge&&f<=2?Found(20,315):id == TemplateId.TeamSelectedBorderAnchor && roi.HasValue && ((roi.Value.Y<=325&&roi.Value.Y+roi.Value.Height>325)||(roi.Value.Y<=470&&roi.Value.Y+roi.Value.Height>470)) ? Found(10,roi.Value.Y) : h.Matcher.Default(f,id,roi); var r=Execute(h); Eq(DispatchMarchOutcome.VerificationIndeterminate,r.Outcome,"outcome"); Eq(0,h.Client.Taps.Count,"tap count"); }

@@ -47,6 +47,14 @@ namespace ADB_Tool_Automation_Post_FB.Core.Workflows
         public string CurrentResource { get; set; }
         public int? CurrentLevel { get; set; }
         public string CurrentTeam { get; set; }
+        public string CurrentExpectedTeam { get; set; }
+        public string CurrentSelectedTeam { get; set; }
+        public string LastDispatchedTeam { get; set; }
+        public int ConfirmedRosterCount { get; set; }
+        public string RosterConfidence { get; set; }
+        public string RosterSource { get; set; }
+        public MapRepositionState MapRepositionState { get; set; }
+        public string TerritoryColorSummary { get; set; }
         public bool RestoredFromCheckpoint { get; set; }
         public DateTimeOffset? CheckpointSavedAt { get; set; }
         public long FreeDiskBytes { get; set; }

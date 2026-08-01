@@ -1,4 +1,5 @@
 using ADB_Tool_Automation_Post_FB.Core.MarchDispatch;
+using ADB_Tool_Automation_Post_FB.Core.TeamSelection;
 using ADB_Tool_Automation_Post_FB.Core.Workflows;
 using System;
 using System.Collections.Concurrent;
@@ -167,6 +168,13 @@ namespace ADB_Tool_Automation_Post_FB.Infrastructure.Workflows
                     cancellationToken.ThrowIfCancellationRequested();
                     await RunMaintenanceSafelyAsync(snapshot, progress, cancellationToken);
                     snapshot.CycleCount++;
+                    snapshot.CurrentResource = null;
+                    snapshot.CurrentLevel = null;
+                    snapshot.CurrentTeam = null;
+                    snapshot.CurrentExpectedTeam = null;
+                    snapshot.CurrentSelectedTeam = null;
+                    snapshot.MapRepositionState = MapRepositionState.None;
+                    snapshot.TerritoryColorSummary = null;
                     Transition(snapshot, ContinuousFarmDeviceState.Preflight,
                         $"Starting supervised cycle {snapshot.CycleCount}.", null, null);
                     MarkProgress(snapshot, "Starting cycle");
@@ -413,6 +421,13 @@ namespace ADB_Tool_Automation_Post_FB.Infrastructure.Workflows
                         == DispatchMarchOutcome.TransitionTimeout)
                     return AttemptResult.WaitingForNextCycle(
                         "March verification was inconclusive; waiting for the next team availability check.");
+                SelectFarmTeamResult selection = item?.Result?.SelectTeamResult
+                    ?? item?.Result?.ResourceFallbackResult?.Attempts?
+                        .Select(attempt => attempt.SelectTeamResult).LastOrDefault(value => value != null);
+                if (selection?.Outcome == SelectFarmTeamOutcome.TeamSelectionMismatch)
+                    return AttemptResult.WaitingForNextCycle(
+                        "Chọn đội không khớp; thiết bị sẽ thử lại theo lịch ngắn.",
+                        options.FailureRetryDelayMs);
                 if (item?.Result?.Outcome == OneShotFarmOutcome.AllCandidateStoragesFull)
                     return AttemptResult.WaitingForNextCycle(
                         "All selected resource storages are full; waiting 6 hours before checking again.",
@@ -577,6 +592,22 @@ namespace ADB_Tool_Automation_Post_FB.Infrastructure.Workflows
                 snapshot.CurrentLevel = progress.DeviceProgress.CurrentLevel;
             if (progress.DeviceProgress?.CurrentTeam != null)
                 snapshot.CurrentTeam = progress.DeviceProgress.CurrentTeam.Value.ToString();
+            if (progress.DeviceProgress != null)
+            {
+                snapshot.CurrentExpectedTeam = progress.DeviceProgress.CurrentExpectedTeam?.ToString();
+                snapshot.CurrentSelectedTeam = progress.DeviceProgress.CurrentSelectedTeam?.ToString();
+                if (progress.DeviceProgress.LastDispatchedTeam.HasValue)
+                    snapshot.LastDispatchedTeam = progress.DeviceProgress.LastDispatchedTeam.Value.ToString();
+                if (progress.DeviceProgress.ConfirmedRosterCount > 0)
+                    snapshot.ConfirmedRosterCount = progress.DeviceProgress.ConfirmedRosterCount;
+                if (!string.IsNullOrWhiteSpace(progress.DeviceProgress.RosterConfidence))
+                    snapshot.RosterConfidence = progress.DeviceProgress.RosterConfidence;
+                if (!string.IsNullOrWhiteSpace(progress.DeviceProgress.RosterSource))
+                    snapshot.RosterSource = progress.DeviceProgress.RosterSource;
+                snapshot.MapRepositionState = progress.DeviceProgress.MapRepositionState;
+                snapshot.TerritoryColorSummary = snapshot.MapRepositionState == MapRepositionState.None
+                    ? null : progress.DeviceProgress.TerritoryColorSummary;
+            }
             ContinuousFarmDeviceState state;
             switch (progress.Stage)
             {
@@ -666,9 +697,16 @@ namespace ADB_Tool_Automation_Post_FB.Infrastructure.Workflows
                 snapshot.CurrentResource = result.DispatchedResource.Value.ToString();
             if (result.LocatedLevel.HasValue) snapshot.CurrentLevel = result.LocatedLevel;
             if (result.DispatchedTeam.HasValue)
+            {
+                snapshot.LastDispatchedTeam = result.DispatchedTeam.Value.ToString();
+                snapshot.CurrentSelectedTeam = result.DispatchedTeam.Value.ToString();
                 snapshot.CurrentTeam = result.DispatchedTeam.Value.ToString();
+            }
             else if (result.SelectedTeam.HasValue)
+            {
+                snapshot.CurrentSelectedTeam = result.SelectedTeam.Value.ToString();
                 snapshot.CurrentTeam = result.SelectedTeam.Value.ToString();
+            }
         }
 
         private static void MarkProgress(ContinuousFarmDeviceSnapshot snapshot, string operation)
@@ -825,6 +863,14 @@ namespace ADB_Tool_Automation_Post_FB.Infrastructure.Workflows
                 CurrentResource = source.CurrentResource,
                 CurrentLevel = source.CurrentLevel,
                 CurrentTeam = source.CurrentTeam,
+                CurrentExpectedTeam = source.CurrentExpectedTeam,
+                CurrentSelectedTeam = source.CurrentSelectedTeam,
+                LastDispatchedTeam = source.LastDispatchedTeam,
+                ConfirmedRosterCount = source.ConfirmedRosterCount,
+                RosterConfidence = source.RosterConfidence,
+                RosterSource = source.RosterSource,
+                MapRepositionState = source.MapRepositionState,
+                TerritoryColorSummary = source.TerritoryColorSummary,
                 RestoredFromCheckpoint = source.RestoredFromCheckpoint,
                 CheckpointSavedAt = source.CheckpointSavedAt,
                 FreeDiskBytes = source.FreeDiskBytes,

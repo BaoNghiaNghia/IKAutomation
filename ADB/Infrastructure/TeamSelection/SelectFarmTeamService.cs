@@ -370,20 +370,23 @@ namespace ADB_Tool_Automation_Post_FB.Infrastructure.TeamSelection
                     && (!result.ExpectedTeam.HasValue
                         || result.ActualSelectedTeam.Value != result.ExpectedTeam.Value);
                 SelectFarmTeamOutcome outcome = wrongTeam
-                    ? SelectFarmTeamOutcome.WrongTeamSelected
+                    ? SelectFarmTeamOutcome.TeamSelectionMismatch
                     : DateTimeOffset.UtcNow >= selectionDeadline
                     ? SelectFarmTeamOutcome.SelectionTimeout
                     : SelectFarmTeamOutcome.NoEligibleTeam;
                 if (wrongTeam)
                 {
                     result.FailureReason = "WrongTeamSelected";
+                    result.CleanupAttempted = true;
                     await client.BackAsync(deviceName, cancellationToken);
                     GameDetectionResult cleanup = await detector.DetectAsync(deviceName,
                         cancellationToken);
                     result.FinalState = cleanup.State;
+                    result.StateAfterCleanup = cleanup.State;
+                    result.CleanupSucceeded = cleanup.State == GameState.WorldMap;
                 }
                 return await CompleteAsync(deviceName, result, outcome,
-                    outcome == SelectFarmTeamOutcome.WrongTeamSelected
+                    outcome == SelectFarmTeamOutcome.TeamSelectionMismatch
                         ? "Đội đang được chọn không khớp đội dự kiến; đã dừng trước lệnh thu thập."
                     : outcome == SelectFarmTeamOutcome.SelectionTimeout
                         ? "Farm team selection timed out without a verified team."
@@ -591,7 +594,7 @@ namespace ADB_Tool_Automation_Post_FB.Infrastructure.TeamSelection
             result.Duration = watch.Elapsed;
             result.Message = message;
             result.ErrorMessage = error;
-            logger.Info($"[Farm Team Selection] InitialState='{result.InitialState}', FinalState='{result.FinalState}', TeamTapCount={result.TeamTapCount}, SelectedTeam='{result.SelectedTeam}', SelectedVerified={result.SelectedStateVerified}, Outcome='{outcome}', DurationMs={result.Duration.TotalMilliseconds:F0}, Cancellation={outcome == SelectFarmTeamOutcome.Cancelled}, Error='{error ?? string.Empty}'");
+            logger.Info($"[Farm Team Selection] ExpectedTeam='{result.ExpectedTeam}', ObservedSelectedTeam='{result.ActualSelectedTeam}', InitialState='{result.InitialState}', FinalState='{result.FinalState}', TeamTapCount={result.TeamTapCount}, SelectedTeam='{result.SelectedTeam}', SelectedVerified={result.SelectedStateVerified}, CleanupAttempted={result.CleanupAttempted}, CleanupSucceeded={result.CleanupSucceeded}, StateAfterCleanup='{result.StateAfterCleanup}', Outcome='{outcome}', DurationMs={result.Duration.TotalMilliseconds:F0}, Cancellation={outcome == SelectFarmTeamOutcome.Cancelled}, Error='{error ?? string.Empty}'");
             return result;
         }
 

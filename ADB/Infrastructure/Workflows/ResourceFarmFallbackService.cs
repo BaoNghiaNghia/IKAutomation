@@ -211,7 +211,8 @@ namespace ADB_Tool_Automation_Post_FB.Infrastructure.Workflows
                     DispatchMarchResult dispatched = await dispatch.DispatchAsync(deviceName,
                         new DispatchMarchRequest { ExpectedTeam = selected.SelectedTeam.Value,
                             RequireExpectedTeamSelected = true,
-                            AllowStructuralVerificationFallback = true, CurrentResource = resource },
+                            AllowStructuralVerificationFallback = true, CurrentResource = resource,
+                            RunId = runId },
                         cancellationToken);
                     attempt.DispatchResult = dispatched; result.FinalState = dispatched.FinalState;
                     if (dispatched.Outcome == DispatchMarchOutcome.Cancelled)
@@ -457,7 +458,8 @@ namespace ADB_Tool_Automation_Post_FB.Infrastructure.Workflows
                 progress.Report(new ResourceFarmFallbackProgress
                 {
                     RecoveryAttempt = recoveryAttempt,
-                    TerritoryColorSummary = summary
+                    TerritoryColorSummary = summary,
+                    MapRepositionState = MapRepositionState.VerifyingTerritoryColor
                 });
             }
             catch
@@ -477,7 +479,8 @@ namespace ADB_Tool_Automation_Post_FB.Infrastructure.Workflows
                 progress.Report(new ResourceFarmFallbackProgress
                 {
                     CurrentStep = step,
-                    ClearTerritoryColor = clearTerritoryColor
+                    ClearTerritoryColor = clearTerritoryColor,
+                    MapRepositionState = MapRepositionState.None
                 });
             }
             catch

@@ -1492,15 +1492,11 @@ namespace ADB_Tool_Automation_Post_FB.UI
                 + (progress.CurrentLevel.HasValue
                     ? $" · cấp {progress.CurrentLevel.Value}" : string.Empty));
             Detail = string.Join(" · ", details);
-            if (!string.IsNullOrWhiteSpace(progress.TerritoryColorSummary))
+            if (progress.MapRepositionState != MapRepositionState.None
+                && !string.IsNullOrWhiteSpace(progress.TerritoryColorSummary))
                 TerritoryColor = FarmProgressVietnamese.TerritoryColor(
                     progress.TerritoryColorSummary);
-            else if (progress.CurrentStep == OneShotFarmStep.ResourceFarmFallback)
-                TerritoryColor =
-                    "Màu vùng — đang chờ kiểm tra khi hệ thống đổi vị trí X/Y.";
-            else if (progress.CurrentStep == OneShotFarmStep.OpenTeamSelection
-                || progress.CurrentStep == OneShotFarmStep.SelectTeam
-                || progress.CurrentStep == OneShotFarmStep.DispatchTeam)
+            else
                 TerritoryColor = string.Empty;
             nextCheckAt = progress.NextCheckAt;
             waitDeadline = progress.WaitDeadline;
@@ -1529,10 +1525,14 @@ namespace ADB_Tool_Automation_Post_FB.UI
                     item.SetStatus(status, isEligible || isReady);
                 }
             }
-            else if (progress.CurrentTeam.HasValue)
+            else if (progress.CurrentSelectedTeam.HasValue
+                || progress.CurrentExpectedTeam.HasValue
+                || progress.CurrentTeam.HasValue)
             {
+                TeamNumber activeTeam = progress.CurrentSelectedTeam
+                    ?? progress.CurrentExpectedTeam ?? progress.CurrentTeam.Value;
                 TeamFarmProgressItem current = Teams.FirstOrDefault(
-                    item => item.Team == progress.CurrentTeam.Value);
+                    item => item.Team == activeTeam);
                 current?.SetStatus("Đang xử lý", true);
             }
             TeamsSummary = string.Join(" · ", Teams.Select(item =>
@@ -1548,12 +1548,21 @@ namespace ADB_Tool_Automation_Post_FB.UI
                 ? OneShotFarmProgressStage.WaitingForReadyTeam.ToString()
                 : snapshot.State.ToString();
             Message = FarmProgressVietnamese.Message(snapshot.Message);
+            string activeTeam = snapshot.CurrentSelectedTeam
+                ?? snapshot.CurrentExpectedTeam ?? "-";
             Detail = $"Chu kỳ: {snapshot.CycleCount}; bước: "
                 + $"{FarmProgressVietnamese.Message(snapshot.CurrentOperation)}; "
                 + "tài nguyên/cấp/đội: "
                 + $"{FarmProgressVietnamese.Resource(snapshot.CurrentResource)}/"
                 + $"{snapshot.CurrentLevel?.ToString(CultureInfo.InvariantCulture) ?? "-"}/"
-                + $"{FarmProgressVietnamese.Team(snapshot.CurrentTeam)}";
+                + $"{FarmProgressVietnamese.Team(activeTeam)}";
+            if (!string.IsNullOrWhiteSpace(snapshot.CurrentExpectedTeam))
+                Detail += $" · đội dự kiến: {FarmProgressVietnamese.Team(snapshot.CurrentExpectedTeam)}";
+            if (!string.IsNullOrWhiteSpace(snapshot.CurrentSelectedTeam))
+                Detail += $" · đội đã chọn: {FarmProgressVietnamese.Team(snapshot.CurrentSelectedTeam)}";
+            TerritoryColor = snapshot.MapRepositionState == MapRepositionState.None
+                ? string.Empty : FarmProgressVietnamese.TerritoryColor(
+                    snapshot.TerritoryColorSummary);
             nextCheckAt = snapshot.NextAttemptAt;
             waitDeadline = snapshot.NextAttemptAt;
             UpdateCountdown(DateTimeOffset.UtcNow);

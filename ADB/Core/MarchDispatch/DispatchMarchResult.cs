@@ -15,6 +15,11 @@ namespace ADB_Tool_Automation_Post_FB.Core.MarchDispatch
         public TeamNumber? ActualSelectedTeam { get; set; }
         public IReadOnlyList<TeamNumber> VisibleTeams { get; set; }
         public string FailureReason { get; set; }
+        public TeamNumber? ObservedSelectedTeam { get; set; }
+        public bool SelectionMismatch { get; set; }
+        public bool ActionTapSent { get; set; }
+        public bool RecoveryAttempted { get; set; }
+        public string RunId { get; set; }
         public TeamNumber? DispatchedTeam { get; set; }
         public GameState InitialState { get; set; }
         public GameState FinalState { get; set; }

@@ -19,5 +19,6 @@ namespace ADB_Tool_Automation_Post_FB.Core.Workflows
         public string TerritoryColorSummary { get; set; }
         public OneShotFarmStep? CurrentStep { get; set; }
         public bool ClearTerritoryColor { get; set; }
+        public MapRepositionState MapRepositionState { get; set; }
     }
 }

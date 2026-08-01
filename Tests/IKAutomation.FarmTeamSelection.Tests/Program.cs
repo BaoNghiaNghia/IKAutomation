@@ -36,6 +36,7 @@ namespace IKAutomation.FarmTeamSelection.Tests
             Run("Team4 requires selected border in Team4 ROI", WrongRoiNotSuccess);
             Run("Selected border in Team3 does not verify Team4", WrongRoiNotSuccess);
             Run("Expected Team2 replaces initially selected Team3", ExpectedTeam2ReplacesTeam3);
+            Run("Persistent wrong Team3 selection cleans up without success", PersistentWrongTeamCleansUp);
             Run("Visible Team2 is mapped by badge identity", ScrolledListMapsTeam2ByBadge);
             Run("Hidden expected team is found with bounded scroll", HiddenTeamFoundAfterScroll);
             Run("Unavailable expected team stops after bounded scroll", HiddenTeamStopsAfterBoundedScroll);
@@ -143,6 +144,9 @@ namespace IKAutomation.FarmTeamSelection.Tests
 
         private static void ExpectedTeam2ReplacesTeam3()
         { Fixture f=Setup(maxAttempts:2);f.Matcher.Badges.UnionWith(new[]{TeamNumber.Team2,TeamNumber.Team3});f.Matcher.Selected.Add(TeamNumber.Team3);f.Matcher.SelectOnTap[TeamNumber.Team2]=TeamNumber.Team2;SelectFarmTeamResult r=Execute(f,Only(TeamNumber.Team2));Equal(SelectFarmTeamOutcome.TeamSelected,r.Outcome);Equal(TeamNumber.Team2,r.SelectedTeam.Value);Equal(TeamNumber.Team2,r.ActualSelectedTeam.Value);Equal(1,f.Client.Taps.Count); }
+
+        private static void PersistentWrongTeamCleansUp()
+        { Fixture f=Setup(maxAttempts:2);f.Matcher.Badges.UnionWith(new[]{TeamNumber.Team2,TeamNumber.Team3});f.Matcher.Selected.Add(TeamNumber.Team3);f.Matcher.SelectOnTap[TeamNumber.Team2]=TeamNumber.Team3;SelectFarmTeamResult r=Execute(f,Only(TeamNumber.Team2));Equal(SelectFarmTeamOutcome.TeamSelectionMismatch,r.Outcome);Equal(2,r.TeamTapCount);Assert(r.CleanupAttempted,"cleanup was not attempted");Equal(TeamNumber.Team3,r.ActualSelectedTeam.Value);Assert(!r.Success&&f.Client.BackCalls==1,"mismatch was not bounded"); }
 
         private static void ScrolledListMapsTeam2ByBadge()
         { Fixture f=Successful(TeamNumber.Team2);f.Matcher.Badges.Add(TeamNumber.Team3);SelectFarmTeamResult r=Execute(f,Only(TeamNumber.Team2));Equal(TeamNumber.Team2,r.SelectedTeam.Value);Assert(r.VisibleTeams.Contains(TeamNumber.Team2)&&r.VisibleTeams.Contains(TeamNumber.Team3),"visible badge map");Equal(0,f.Client.SwipeCalls); }
@@ -474,14 +478,14 @@ namespace IKAutomation.FarmTeamSelection.Tests
 
         private sealed class FakeClient : ILdPlayerClient
         {
-            private readonly FakeMatcher matcher; public readonly List<string> Taps = new List<string>(); public int ProhibitedInputs, CaptureDelayMs, SwipeCalls; public CancellationTokenSource CancelOnTap;
+            private readonly FakeMatcher matcher; public readonly List<string> Taps = new List<string>(); public int ProhibitedInputs, CaptureDelayMs, SwipeCalls, BackCalls; public CancellationTokenSource CancelOnTap;
             public FakeClient(FakeMatcher matcher) { this.matcher = matcher; }
             public async Task<byte[]> CaptureScreenshotPngAsync(string d, CancellationToken t) { t.ThrowIfCancellationRequested(); if (CaptureDelayMs > 0) await Task.Delay(CaptureDelayMs, t); return new byte[] { 1 }; }
             public Task TapAsync(string d, int x, int y, CancellationToken t) { t.ThrowIfCancellationRequested(); Taps.Add(x + "," + y); matcher.OnTap(x, y); CancelOnTap?.Cancel(); return Task.CompletedTask; }
             private Task Prohibited() { ProhibitedInputs++; return Task.CompletedTask; }
             public Task<IReadOnlyList<string>> GetDeviceNamesAsync(CancellationToken t) => Task.FromResult<IReadOnlyList<string>>(new[] { "LDPlayer" });
             public Task<bool> IsRunningAsync(string d, CancellationToken t) => Task.FromResult(true); public Task OpenAsync(string d, CancellationToken t) => Task.CompletedTask; public Task CloseAsync(string d, CancellationToken t) => Task.CompletedTask; public Task RunAppAsync(string d, string p, CancellationToken t) => Task.CompletedTask;
-            public Task TapByPercentAsync(string d, double x, double y, CancellationToken t) => Prohibited(); public Task LongPressAsync(string d, int x, int y, int m, CancellationToken t) => Prohibited(); public Task SwipeByPercentAsync(string d, double a, double b, double c, double e, int m, CancellationToken t) { t.ThrowIfCancellationRequested(); SwipeCalls++; matcher.OnSwipe(); return Task.CompletedTask; } public Task BackAsync(string d, CancellationToken t) => Prohibited(); public Task InputTextAsync(string d, string s, CancellationToken t) => Prohibited(); public Task PressKeyAsync(string d, AndroidKeyCode k, CancellationToken t) => Prohibited();
+            public Task TapByPercentAsync(string d, double x, double y, CancellationToken t) => Prohibited(); public Task LongPressAsync(string d, int x, int y, int m, CancellationToken t) => Prohibited(); public Task SwipeByPercentAsync(string d, double a, double b, double c, double e, int m, CancellationToken t) { t.ThrowIfCancellationRequested(); SwipeCalls++; matcher.OnSwipe(); return Task.CompletedTask; } public Task BackAsync(string d, CancellationToken t) { t.ThrowIfCancellationRequested(); BackCalls++; return Task.CompletedTask; } public Task InputTextAsync(string d, string s, CancellationToken t) => Prohibited(); public Task PressKeyAsync(string d, AndroidKeyCode k, CancellationToken t) => Prohibited();
         }
 
         private sealed class FakeStore : ISelectFarmTeamDiagnosticStore

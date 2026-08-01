@@ -19,6 +19,9 @@ namespace ADB_Tool_Automation_Post_FB.Core.TeamSelection
         public int ScrollAttempts { get; set; }
         public int SelectionVerificationFrames { get; set; }
         public string FailureReason { get; set; }
+        public bool CleanupAttempted { get; set; }
+        public bool CleanupSucceeded { get; set; }
+        public GameState StateAfterCleanup { get; set; }
         public bool TeamSelectionScreenVerified { get; set; }
         public bool SelectedStateVerified { get; set; }
         public TimeSpan Duration { get; set; }

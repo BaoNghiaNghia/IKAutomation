@@ -107,7 +107,8 @@ namespace ADB_Tool_Automation_Post_FB.Infrastructure.MarchDispatch
             byte[] lastFrame = null;
             try
             {
-                logger.Info($"[March Dispatch] DeviceName='{deviceName}', ExpectedTeam='{request.ExpectedTeam}', Phase='Starting', Cancellation=false");
+                result.RunId = request.RunId;
+                logger.Info($"[March Dispatch] RunId='{request.RunId ?? string.Empty}', DeviceName='{deviceName}', ExpectedTeam='{request.ExpectedTeam}', Phase='Starting', Cancellation=false");
                 if (!RequiredTemplatesExist(request.ExpectedTeam, out string templateError))
                     return Complete(result, DispatchMarchOutcome.Failed,
                         "Required march-dispatch templates are incomplete; no Tap was sent.", templateError, watch);
@@ -129,8 +130,9 @@ namespace ADB_Tool_Automation_Post_FB.Infrastructure.MarchDispatch
                 lastFrame = await client.CaptureScreenshotPngAsync(deviceName, cancellationToken);
                 Verification precheck = VerifySelection(lastFrame, request.ExpectedTeam, badgeId);
                 result.ActualSelectedTeam = precheck.ActualSelectedTeam;
+                result.ObservedSelectedTeam = precheck.ActualSelectedTeam;
                 result.VisibleTeams = precheck.VisibleTeams;
-                logger.Info($"[March Dispatch] DeviceName='{deviceName}', TeamSelectionVerified={result.TeamSelectionVerified}, ExpectedTeam='{request.ExpectedTeam}', ExpectedBadgeFound={precheck.BadgeFound}, ExpectedSelected={precheck.SelectedFound}, AmbiguousSelection={precheck.Ambiguous}");
+                logger.Info($"[Dispatch Guard] RunId='{request.RunId ?? string.Empty}', DeviceName='{deviceName}', ExpectedTeam='{request.ExpectedTeam}', ObservedSelectedTeam='{precheck.ActualSelectedTeam}', ExpectedBadgeFound={precheck.BadgeFound}, ExpectedSelected={precheck.SelectedFound}, ActionTapSent=false, Outcome='Precheck'");
                 if (precheck.Ambiguous)
                     return await CompleteAsync(deviceName, result, DispatchMarchOutcome.VerificationIndeterminate,
                         "Selected border appeared in multiple team ROIs; no Tap was sent.",
@@ -149,6 +151,7 @@ namespace ADB_Tool_Automation_Post_FB.Infrastructure.MarchDispatch
                 GameDetectionResult freshState = detector.Detect(beforeDispatch);
                 Verification freshSelection = VerifySelection(beforeDispatch, request.ExpectedTeam, badgeId);
                 result.ActualSelectedTeam = freshSelection.ActualSelectedTeam;
+                result.ObservedSelectedTeam = freshSelection.ActualSelectedTeam;
                 result.VisibleTeams = freshSelection.VisibleTeams;
                 ImageMatchResult action = Match(beforeDispatch, TemplateId.TeamActionButtonEnabled, null);
                 logger.Info($"[March Dispatch] DeviceName='{deviceName}', FreshState='{freshState.State}', ExpectedBadgeFound={freshSelection.BadgeFound}, ExpectedSelected={freshSelection.SelectedFound}, ActionButtonFound={HasBounds(action)}, ActionButtonBounds={(HasBounds(action) ? $"({action.X},{action.Y},{action.Width},{action.Height})" : string.Empty)}");
@@ -571,6 +574,10 @@ namespace ADB_Tool_Automation_Post_FB.Infrastructure.MarchDispatch
             DispatchMarchOutcome outcome, string message, string error, Stopwatch watch)
         {
             result.Outcome = outcome;
+            result.ObservedSelectedTeam = result.ActualSelectedTeam;
+            result.SelectionMismatch = result.ActualSelectedTeam.HasValue
+                && result.ActualSelectedTeam.Value != result.ExpectedTeam;
+            result.ActionTapSent = result.ActionTapCount > 0;
             result.Success = outcome == DispatchMarchOutcome.MarchStarted
                 || outcome == DispatchMarchOutcome.AlreadyMarching;
             result.Duration = watch.Elapsed;
