@@ -222,6 +222,7 @@ namespace ADB_Tool_Automation_Post_FB.Infrastructure.TeamSelection
                         continueAfterConfirmedUnavailable = false;
 
                         lastFrame = await client.CaptureScreenshotPngAsync(deviceName, cancellationToken);
+                        DateTimeOffset inputFrameCapturedAt = DateTimeOffset.UtcNow;
                         GameDetectionResult state = detector.Detect(lastFrame);
                         if (!IsSelectionScreen(state))
                             return await CompleteAsync(deviceName, result,
@@ -297,22 +298,37 @@ namespace ADB_Tool_Automation_Post_FB.Infrastructure.TeamSelection
                             break;
                         }
 
-                        int tapX = Math.Min(region.X + region.Width - 8,
-                            Math.Max(badge.X + badge.Width + 8,
-                                region.X + (region.Width * 3 / 4)));
-                        int tapY = Math.Max(region.Y + 4,
-                            Math.Min(region.Y + region.Height - 4, badge.CenterY));
+                        int safeLeft = Math.Max(region.X + 8, options.MinimumSafeTapX);
+                        int safeRight = Math.Min(region.X + region.Width - 8,
+                            options.MaximumSafeTapX);
+                        if (safeRight < safeLeft)
+                        {
+                            attempt.Message = "The expected team row has no safe selectable area; no Tap was sent.";
+                            break;
+                        }
+                        int tapX = Math.Max(safeLeft, Math.Min(safeRight,
+                            region.X + (region.Width * 3 / 4)));
+                        int tapY = region.Y + (region.Height / 2);
+                        int inputFrameAgeMs = (int)Math.Max(0,
+                            (DateTimeOffset.UtcNow - inputFrameCapturedAt).TotalMilliseconds);
+                        if (inputFrameAgeMs > options.MaxInputFrameAgeMs)
+                        {
+                            attempt.Message = "The team-selection screenshot was stale; no Tap was sent.";
+                            continue;
+                        }
                         await client.TapAsync(deviceName, tapX, tapY, cancellationToken);
                         result.TeamTapCount++;
                         attempt.TapSent = true;
-                        logger.Info($"[Team Selection Mapping] RunId='{request.RunId ?? string.Empty}', DeviceName='{deviceName}', ExpectedTeam='{team}', VisibleTeams='{Join(result.VisibleTeams)}', SelectedBefore='{result.ActualSelectedTeam}', BadgeBounds=({badge.X},{badge.Y},{badge.Width},{badge.Height}), RowBounds=({region.X},{region.Y},{region.Width},{region.Height}), ScrollAttempt={result.ScrollAttempts}, TapAttempt={attemptNumber}, TapCoordinates=({tapX},{tapY}), NextAction='VerifyExactTeam'");
+                        logger.Info($"[Team Selection Mapping] RunId='{request.RunId ?? string.Empty}', DeviceName='{deviceName}', ExpectedTeam='{team}', VisibleTeams='{Join(result.VisibleTeams)}', SelectedBefore='{result.ActualSelectedTeam}', BadgeBounds=({badge.X},{badge.Y},{badge.Width},{badge.Height}), RowBounds=({region.X},{region.Y},{region.Width},{region.Height}), SafeTapBounds=({safeLeft},{region.Y},{safeRight-safeLeft+1},{region.Height}), ScrollAttempt={result.ScrollAttempts}, TapAttempt={attemptNumber}, TapCoordinates=({tapX},{tapY}), InputFrameAgeMs={inputFrameAgeMs}, NextAction='VerifyExactTeam'");
 
-                        DateTimeOffset observationDeadline = DateTimeOffset.UtcNow.AddMilliseconds(
-                            Math.Max(options.TapRetryDelayMs, options.PollIntervalMs * 2));
+                        // Both confirmations must come from fresh frames. The selection
+                        // timeout remains the hard bound even on slower LDPlayer captures.
+                        DateTimeOffset observationDeadline = selectionDeadline;
                         bool firstPostTapObservation = true;
+                        int consistentSelectionFrames = 0;
                         while (firstPostTapObservation
                             || (DateTimeOffset.UtcNow < observationDeadline
-                                && DateTimeOffset.UtcNow < selectionDeadline))
+                                && consistentSelectionFrames < 2))
                         {
                             firstPostTapObservation = false;
                             await Task.Delay(options.PollIntervalMs, cancellationToken);
@@ -342,9 +358,14 @@ namespace ADB_Tool_Automation_Post_FB.Infrastructure.TeamSelection
                                     selectedButUnavailable = true;
                                     break;
                                 }
+                                consistentSelectionFrames++;
                                 attempt.SelectedVerified = true;
                                 attempt.SelectedBorderMatch = observed.Matches[team];
-                                attempt.Message = "Team selected border was verified in the target ROI.";
+                                attempt.Message = consistentSelectionFrames < 2
+                                    ? "Team selected border was observed once; waiting for a second consistent frame."
+                                    : "Team selected border was verified in two consecutive target-row frames.";
+                                if (consistentSelectionFrames < 2)
+                                    continue;
                                 result.SelectedTeam = team;
                                 result.ActualSelectedTeam = team;
                                 result.SelectedStateVerified = true;
@@ -352,6 +373,7 @@ namespace ADB_Tool_Automation_Post_FB.Infrastructure.TeamSelection
                                 return Complete(result, SelectFarmTeamOutcome.TeamSelected,
                                     $"{team} was selected and verified.", null, watch);
                             }
+                            consistentSelectionFrames = 0;
                         }
 
                         if (selectedButUnavailable)
@@ -377,13 +399,13 @@ namespace ADB_Tool_Automation_Post_FB.Infrastructure.TeamSelection
                 if (wrongTeam)
                 {
                     result.FailureReason = "WrongTeamSelected";
-                    result.CleanupAttempted = true;
-                    await client.BackAsync(deviceName, cancellationToken);
-                    GameDetectionResult cleanup = await detector.DetectAsync(deviceName,
-                        cancellationToken);
-                    result.FinalState = cleanup.State;
-                    result.StateAfterCleanup = cleanup.State;
-                    result.CleanupSucceeded = cleanup.State == GameState.WorldMap;
+                    // Android Back from TeamSelection can leave the game at City.
+                    // Preserve the verified screen and let the owning transaction retry
+                    // selection; no blind cleanup input is safe here.
+                    result.CleanupAttempted = false;
+                    result.FinalState = GameState.TeamSelection;
+                    result.StateAfterCleanup = GameState.TeamSelection;
+                    result.CleanupSucceeded = false;
                 }
                 return await CompleteAsync(deviceName, result, outcome,
                     outcome == SelectFarmTeamOutcome.TeamSelectionMismatch

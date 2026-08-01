@@ -1508,9 +1508,14 @@ namespace ADB_Tool_Automation_Post_FB.UI
                 progress.Stage == OneShotFarmProgressStage.CheckingTeamAvailability
                 || progress.Stage == OneShotFarmProgressStage.WaitingForReadyTeam
                 || progress.Stage == OneShotFarmProgressStage.ReadyTeamFound;
+            bool rosterUncertain = isAvailabilityUpdate && detected.Count == 0
+                && string.Equals(progress.RosterConfidence, "Uncertain",
+                    StringComparison.OrdinalIgnoreCase);
             if (isAvailabilityUpdate)
             {
-                if (detected.Count > 0)
+                if (rosterUncertain)
+                    Teams.Clear();
+                else if (detected.Count > 0)
                     SynchronizeTeams(detected);
                 foreach (TeamFarmProgressItem item in Teams)
                 {
@@ -1535,8 +1540,10 @@ namespace ADB_Tool_Automation_Post_FB.UI
                     item => item.Team == activeTeam);
                 current?.SetStatus("Đang xử lý", true);
             }
-            TeamsSummary = string.Join(" · ", Teams.Select(item =>
-                $"{item.TeamName}: {ShortTeamStatus(item.Status)}"));
+            TeamsSummary = rosterUncertain
+                ? "Chưa xác định đủ số lượng đội; hệ thống sẽ kiểm tra lại."
+                : string.Join(" · ", Teams.Select(item =>
+                    $"{item.TeamName}: {ShortTeamStatus(item.Status)}"));
             UpdateCountdown(DateTimeOffset.UtcNow);
         }
 

@@ -18,8 +18,6 @@ namespace ADB_Tool_Automation_Post_FB.Infrastructure.TeamSelection
 {
     public sealed class WorldMapTeamAvailabilityService : IWorldMapTeamAvailabilityService
     {
-        private const int ObservationFrameCount = 2;
-        private const int ObservationIntervalMs = 120;
         private readonly IWorldMapNavigationService navigation;
         private readonly IGameStateDetector detector;
         private readonly ILdPlayerClient client;
@@ -111,10 +109,10 @@ namespace ADB_Tool_Automation_Post_FB.Infrastructure.TeamSelection
             int verifiedFrameCount = 0;
             GameDetectionResult lastState = null;
             WorldMapTeamRosterLayout lastLayout = null;
-            for (int frame = 0; frame < ObservationFrameCount; frame++)
+            for (int frame = 0; frame < options.ObservationFrameCount; frame++)
             {
                 if (frame > 0)
-                    await Task.Delay(ObservationIntervalMs, cancellationToken);
+                    await Task.Delay(options.ObservationIntervalMs, cancellationToken);
 
                 using (CapturedFrame screenshot = await CaptureFrameAsync(deviceName, cancellationToken))
                 {
@@ -209,16 +207,23 @@ namespace ADB_Tool_Automation_Post_FB.Infrastructure.TeamSelection
             }
             RosterKnowledge currentKnowledge;
             knownRosters.TryGetValue(deviceName, out currentKnowledge);
+            int configuredOverride = options.GetKnownUnlockedTeamCount(deviceName);
             bool useCached = currentKnowledge != null
                 && freshExisting.Count < currentKnowledge.ActiveTeams.Count;
-            HashSet<TeamNumber> existing = useCached || freshExisting.Count == 0
+            HashSet<TeamNumber> existing = configuredOverride > 0
+                ? new HashSet<TeamNumber>(teams.Where(team => (int)team <= configuredOverride))
+                : useCached || freshExisting.Count == 0
                 ? new HashSet<TeamNumber>(currentKnowledge?.ActiveTeams
                     ?? Enumerable.Empty<TeamNumber>())
                 : freshExisting;
-            TeamRosterEvidenceSource rosterSource = useCached || (freshExisting.Count == 0
+            TeamRosterEvidenceSource rosterSource = configuredOverride > 0
+                ? TeamRosterEvidenceSource.FreshRowEvidence
+                : useCached || (freshExisting.Count == 0
                     && existing.Count > 0)
                 ? TeamRosterEvidenceSource.CachedKnownCount : freshSource;
-            TeamRosterClassification classification = rosterSource
+            TeamRosterClassification classification = configuredOverride > 0
+                ? TeamRosterClassification.FreshConfirmed
+                : rosterSource
                     == TeamRosterEvidenceSource.CachedKnownCount
                 ? TeamRosterClassification.CachedConfirmed
                 : freshExisting.Count > 0
@@ -262,11 +267,18 @@ namespace ADB_Tool_Automation_Post_FB.Infrastructure.TeamSelection
                     ? "Strong" : rowEvidenceTeams.Contains(team) ? "Moderate"
                     : existing.Contains(team) ? "Cached" : "None"
             }).ToArray();
+            IReadOnlyDictionary<TeamNumber, TeamRowObservation> rowsByTeam =
+                rowObservations.ToDictionary(row => row.Team, row => row);
 
             ImageMatchResult match = readyMatches.FirstOrDefault()
                 ?? ImageMatchResult.NotFound();
             bool ready = readyTeams.Count > 0;
+            string resultSource = configuredOverride > 0
+                ? "ConfiguredOverride"
+                : useCached && freshExisting.Count > 0 ? "FreshPlusCached"
+                : classification.ToString();
             logger.Info($"[WorldMap Team Roster] DeviceName='{deviceName}', "
+                + $"ObservationFrames={verifiedFrameCount}/{options.ObservationFrameCount}, "
                 + $"Ready={ready}, ReadyTeams='{string.Join(",", readyTeams)}', "
                 + $"AvailableTeams='{string.Join(",", availableTeams)}', "
                 + $"Team1Exists={existing.Contains(TeamNumber.Team1)}, "
@@ -282,7 +294,11 @@ namespace ADB_Tool_Automation_Post_FB.Infrastructure.TeamSelection
                 + $"FreshConfirmedTeams='{string.Join(",", freshExisting.OrderBy(team => (int)team))}', "
                 + $"CachedConfirmedTeams='{string.Join(",", previousKnowledge?.ActiveTeams.OrderBy(team => (int)team) ?? Enumerable.Empty<TeamNumber>())}', "
                 + $"PreviousKnownRosterCount={previousKnownCount}, "
-                + $"RosterSource='{rosterSource}', Cancellation=false");
+                + $"ConfiguredOverride={configuredOverride}, "
+                + $"RosterStatus='{classification}', RosterSource='{resultSource}', "
+                + $"RosterConfidence='{(classification == TeamRosterClassification.Uncertain ? "Uncertain" : currentKnowledge?.EvidenceStrength ?? "Fresh")}', "
+                + $"{RowLog(rowObservations, TeamNumber.Team1)}, {RowLog(rowObservations, TeamNumber.Team2)}, "
+                + $"{RowLog(rowObservations, TeamNumber.Team3)}, {RowLog(rowObservations, TeamNumber.Team4)}, Cancellation=false");
             return new WorldMapTeamAvailabilityResult
             {
                 Success = true,
@@ -293,6 +309,7 @@ namespace ADB_Tool_Automation_Post_FB.Infrastructure.TeamSelection
                 BusyTeams = busyTeams.AsReadOnly(),
                 LockedTeams = lockedTeams.AsReadOnly(),
                 RowObservations = rowObservations,
+                TeamRows = rowsByTeam,
                 ConfirmedRosterCount = availableTeams.Count,
                 FinalState = GameState.WorldMap,
                 ReadyMatch = match,
@@ -300,7 +317,10 @@ namespace ADB_Tool_Automation_Post_FB.Infrastructure.TeamSelection
                 RosterEvidenceSource = rosterSource,
                 RosterClassification = classification,
                 IsRosterUncertain = rosterSource == TeamRosterEvidenceSource.Unknown,
-                RosterSource = classification.ToString(),
+                RosterSource = resultSource,
+                RosterStatus = classification.ToString(),
+                RosterConfidence = classification == TeamRosterClassification.Uncertain
+                    ? "Uncertain" : currentKnowledge?.EvidenceStrength ?? "Fresh",
                 Message = ready
                     ? $"Detected {availableTeams.Count} team(s); ready teams: "
                         + $"{string.Join(", ", readyTeams)}."
@@ -416,6 +436,14 @@ namespace ADB_Tool_Automation_Post_FB.Infrastructure.TeamSelection
             }
         }
 
+        private static string RowLog(IReadOnlyList<TeamRowObservation> rows, TeamNumber team)
+        {
+            TeamRowObservation row = rows.FirstOrDefault(value => value.Team == team);
+            return row == null
+                ? $"{team}Exists=false"
+                : $"{team}Exists={row.Exists}, {team}Ready={row.IsReady}, {team}Locked={row.IsLocked}, {team}Evidence='{row.EvidenceSource}'";
+        }
+
         private static WorldMapTeamAvailabilityResult Failed(string message,
             string error = null, GameState state = GameState.Unknown) =>
             new WorldMapTeamAvailabilityResult
@@ -428,6 +456,7 @@ namespace ADB_Tool_Automation_Post_FB.Infrastructure.TeamSelection
                 BusyTeams = new TeamNumber[0],
                 LockedTeams = new TeamNumber[0],
                 RowObservations = new TeamRowObservation[0],
+                TeamRows = new Dictionary<TeamNumber, TeamRowObservation>(),
                 FinalState = state,
                 Message = message,
                 ErrorMessage = error ?? message,
@@ -435,7 +464,9 @@ namespace ADB_Tool_Automation_Post_FB.Infrastructure.TeamSelection
                 ReadyMatches = new ImageMatchResult[0],
                 RosterEvidenceSource = TeamRosterEvidenceSource.Unknown,
                 RosterClassification = TeamRosterClassification.Failed,
-                IsRosterUncertain = true
+                IsRosterUncertain = true,
+                RosterStatus = TeamRosterClassification.Failed.ToString(),
+                RosterConfidence = "Failed"
             };
 
         private sealed class RosterKnowledge

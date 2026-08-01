@@ -155,15 +155,8 @@ namespace ADB_Tool_Automation_Post_FB.Infrastructure.StorageLimit
                 if (state.State != GameState.TeamSelection) continue;
 
                 result.ReturnedToTeamSelection = true;
-                if (result.BackCount >= options.MaxBackAttempts) return null;
-                cancellationToken.ThrowIfCancellationRequested();
-                await client.BackAsync(deviceName, cancellationToken);
-                result.BackSent = true;
-                result.BackCount++;
-                result.RecoveryTransitions++;
-                logger.Info($"[{logName}] DeviceName='{deviceName}', TeamSelectionVerified=true, BackSent=true, BackCount={result.BackCount}");
-                return await VerifyAfterBackAsync(deviceName, result, dialogState,
-                    cancellationToken, watch);
+                logger.Info($"[{logName}] DeviceName='{deviceName}', TeamSelectionVerified=true, BackSent=false, Recovery='DeferredToOwningTransaction'");
+                return null;
             }
             return null;
         }

@@ -344,6 +344,11 @@ namespace ADB_Tool_Automation_Post_FB.Infrastructure.GameDetection
                 || continentPinButton.Found
                 || continentHomePin.Found
                 || continentSearchPin.Found;
+            // City has no terrain-based heuristic: it requires the bounded City map
+            // button plus absence of every higher-priority overlay/map confirmation.
+            bool cityConfirmed = cityMapButton.Found && !teamSelectionConfirmed
+                && !panelConfirmed && !popupConfirmed && !continentMapConfirmed
+                && !worldAnchor.Found;
             GameState state = resourceExpiryConfirmed
                 ? GameState.ResourceExpiryDialog
                 : storageLimitConfirmed
@@ -354,7 +359,7 @@ namespace ADB_Tool_Automation_Post_FB.Infrastructure.GameDetection
                 : popupConfirmed ? GameState.ResourcePopup
                     : continentMapConfirmed ? GameState.ContinentMap
                         : worldAnchor.Found ? GameState.WorldMap
-                            : cityMapButton.Found ? GameState.City : GameState.Unknown;
+                            : cityConfirmed ? GameState.City : GameState.Unknown;
 
             teamPanel.Message += teamSelectionConfirmed
                 ? resourceExpiryConfirmed
@@ -436,7 +441,7 @@ namespace ADB_Tool_Automation_Post_FB.Infrastructure.GameDetection
                 ? " Yellow search pin confirmed ContinentMap."
                 : " Yellow search pin was checked as ContinentMap evidence.";
             cityMapButton.Message += state == GameState.City
-                ? " Rule City selected from the lower-left World Map navigation button."
+                ? " Rule City selected from the bounded World Map navigation button with no conflicting overlay or map evidence."
                 : worldAnchor.Found
                     ? " WorldMap has priority over City."
                     : " Rule City not satisfied.";

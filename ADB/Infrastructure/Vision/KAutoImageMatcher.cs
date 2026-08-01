@@ -162,14 +162,18 @@ namespace ADB_Tool_Automation_Post_FB.Infrastructure.Vision
         private static ImageMatchResult FindOnSearchBitmap(Bitmap searchImage,
             byte[] templatePng, int offsetX, int offsetY)
         {
-            Bitmap template = GetDecodedTemplate(templatePng);
-            if (template.Width > searchImage.Width || template.Height > searchImage.Height)
-                throw new ArgumentException($"Template size {template.Width}x{template.Height} exceeds search image size "
-                    + $"{searchImage.Width}x{searchImage.Height}.", nameof(templatePng));
-            Point? topLeftPoint = KAutoHelper.ImageScanOpenCV.FindOutPoint(searchImage, template);
-            return !topLeftPoint.HasValue ? ImageMatchResult.NotFound()
-                : ImageMatchResult.FoundAt(topLeftPoint.Value.X + offsetX,
-                    topLeftPoint.Value.Y + offsetY, template.Width, template.Height, null);
+            // The cached image is an immutable master. Native matching receives a
+            // per-call clone so concurrent workers never share a mutable Bitmap.
+            using (Bitmap template = (Bitmap)GetDecodedTemplate(templatePng).Clone())
+            {
+                if (template.Width > searchImage.Width || template.Height > searchImage.Height)
+                    throw new ArgumentException($"Template size {template.Width}x{template.Height} exceeds search image size "
+                        + $"{searchImage.Width}x{searchImage.Height}.", nameof(templatePng));
+                Point? topLeftPoint = KAutoHelper.ImageScanOpenCV.FindOutPoint(searchImage, template);
+                return !topLeftPoint.HasValue ? ImageMatchResult.NotFound()
+                    : ImageMatchResult.FoundAt(topLeftPoint.Value.X + offsetX,
+                        topLeftPoint.Value.Y + offsetY, template.Width, template.Height, null);
+            }
         }
 
         private static Bitmap GetDecodedTemplate(byte[] templatePng)

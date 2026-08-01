@@ -131,10 +131,10 @@ namespace IKAutomation.FarmTeamSelection.Tests
         { Fixture f = Setup(); SelectFarmTeamResult r = Execute(f); Sequence(new[] { TeamNumber.Team4, TeamNumber.Team3, TeamNumber.Team2, TeamNumber.Team1 }, r.AttemptedTeams); }
 
         private static void BadgeCenter()
-        { Fixture f = Successful(TeamNumber.Team4); SelectFarmTeamResult r = Execute(f); Equal(SelectFarmTeamOutcome.TeamSelected, r.Outcome); Equal("176,470", f.Client.Taps[0]); }
+        { Fixture f = Successful(TeamNumber.Team4); SelectFarmTeamResult r = Execute(f); Equal(SelectFarmTeamOutcome.TeamSelected, r.Outcome); Equal("160,470", f.Client.Taps[0]); }
 
         private static void DynamicCoordinate()
-        { Fixture f = Successful(TeamNumber.Team4); f.Matcher.BaseY[TeamNumber.Team4] = 370; Execute(f); Equal("176,380", f.Client.Taps[0]); }
+        { Fixture f = Successful(TeamNumber.Team4); f.Matcher.BaseY[TeamNumber.Team4] = 370; Execute(f); Equal("160,380", f.Client.Taps[0]); }
 
         private static void BadgeRecaptured()
         { Fixture f = Successful(TeamNumber.Team4); Execute(f); Assert(f.Matcher.BadgeCalls[TeamNumber.Team4] >= 2, "Badge was not inspected and refreshed."); }
@@ -146,7 +146,7 @@ namespace IKAutomation.FarmTeamSelection.Tests
         { Fixture f=Setup(maxAttempts:2);f.Matcher.Badges.UnionWith(new[]{TeamNumber.Team2,TeamNumber.Team3});f.Matcher.Selected.Add(TeamNumber.Team3);f.Matcher.SelectOnTap[TeamNumber.Team2]=TeamNumber.Team2;SelectFarmTeamResult r=Execute(f,Only(TeamNumber.Team2));Equal(SelectFarmTeamOutcome.TeamSelected,r.Outcome);Equal(TeamNumber.Team2,r.SelectedTeam.Value);Equal(TeamNumber.Team2,r.ActualSelectedTeam.Value);Equal(1,f.Client.Taps.Count); }
 
         private static void PersistentWrongTeamCleansUp()
-        { Fixture f=Setup(maxAttempts:2);f.Matcher.Badges.UnionWith(new[]{TeamNumber.Team2,TeamNumber.Team3});f.Matcher.Selected.Add(TeamNumber.Team3);f.Matcher.SelectOnTap[TeamNumber.Team2]=TeamNumber.Team3;SelectFarmTeamResult r=Execute(f,Only(TeamNumber.Team2));Equal(SelectFarmTeamOutcome.TeamSelectionMismatch,r.Outcome);Equal(2,r.TeamTapCount);Assert(r.CleanupAttempted,"cleanup was not attempted");Equal(TeamNumber.Team3,r.ActualSelectedTeam.Value);Assert(!r.Success&&f.Client.BackCalls==1,"mismatch was not bounded"); }
+        { Fixture f=Setup(maxAttempts:2);f.Matcher.Badges.UnionWith(new[]{TeamNumber.Team2,TeamNumber.Team3});f.Matcher.Selected.Add(TeamNumber.Team3);f.Matcher.SelectOnTap[TeamNumber.Team2]=TeamNumber.Team3;SelectFarmTeamResult r=Execute(f,Only(TeamNumber.Team2));Equal(SelectFarmTeamOutcome.TeamSelectionMismatch,r.Outcome);Equal(2,r.TeamTapCount);Assert(!r.CleanupAttempted,"TeamSelection must not receive cleanup input");Equal(TeamNumber.Team3,r.ActualSelectedTeam.Value);Assert(!r.Success&&f.Client.BackCalls==0,"TeamSelection must never be closed with Android Back"); }
 
         private static void ScrolledListMapsTeam2ByBadge()
         { Fixture f=Successful(TeamNumber.Team2);f.Matcher.Badges.Add(TeamNumber.Team3);SelectFarmTeamResult r=Execute(f,Only(TeamNumber.Team2));Equal(TeamNumber.Team2,r.SelectedTeam.Value);Assert(r.VisibleTeams.Contains(TeamNumber.Team2)&&r.VisibleTeams.Contains(TeamNumber.Team3),"visible badge map");Equal(0,f.Client.SwipeCalls); }
@@ -306,7 +306,7 @@ namespace IKAutomation.FarmTeamSelection.Tests
         { Fixture f = Setup(); var q = new TeamSelectionRequest { AllowedTeams = new[] { TeamNumber.Team1 }, Priority = new[] { TeamNumber.Team1 }, AllowTeam1 = false }; Equal(SelectFarmTeamOutcome.Failed, Execute(f, q).Outcome); }
 
         private static void AllowedTeam1UsesBounds()
-        { Fixture f = Successful(TeamNumber.Team1); SelectFarmTeamResult r = Execute(f, Only(TeamNumber.Team1)); Equal(SelectFarmTeamOutcome.TeamSelected, r.Outcome); Equal(TeamNumber.Team1, r.SelectedTeam.Value); Equal("176,35", f.Client.Taps[0]); Assert(f.Matcher.BadgeCalls[TeamNumber.Team1] >= 2, "Team1 badge was not refreshed before Tap."); }
+        { Fixture f = Successful(TeamNumber.Team1); SelectFarmTeamResult r = Execute(f, Only(TeamNumber.Team1)); Equal(SelectFarmTeamOutcome.TeamSelected, r.Outcome); Equal(TeamNumber.Team1, r.SelectedTeam.Value); Equal("160,42", f.Client.Taps[0]); Assert(f.Matcher.BadgeCalls[TeamNumber.Team1] >= 2, "Team1 badge was not refreshed before Tap."); }
 
         private static void EmptyListsRejected()
         { Fixture f = Setup(); var q = new TeamSelectionRequest { AllowedTeams = new TeamNumber[0], Priority = new TeamNumber[0] }; Equal(SelectFarmTeamOutcome.Failed, Execute(f, q).Outcome); }

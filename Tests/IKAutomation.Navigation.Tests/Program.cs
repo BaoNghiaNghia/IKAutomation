@@ -28,7 +28,7 @@ namespace IKAutomation.Navigation.Tests
             Run("Ensure WorldMap sends no input when already there", EnsureWorldNoInput);
             Run("Panel uses one Back and verifies WorldMap", PanelBackOnce);
             Run("ContinentMap uses one Back and verifies WorldMap", ContinentBackOnce);
-            Run("TeamSelection uses bounded Back and verifies WorldMap", TeamSelectionBackToWorldMap);
+            Run("TeamSelection never sends Android Back", TeamSelectionDoesNotSendBack);
             Run("City taps fresh map button and verifies WorldMap", CityMapButtonOnce);
             Run("City without fresh map-button bounds sends no input", CityMissingBoundsNoInput);
             Run("Unknown fails without input", UnknownNoInput);
@@ -79,7 +79,7 @@ namespace IKAutomation.Navigation.Tests
         private static void EnsureWorldNoInput() { var f = Setup(State(GameState.WorldMap)); f.Service.EnsureWorldMapAsync("d", Token).GetAwaiter().GetResult(); Equal(0, f.Client.TotalInput, "Unexpected input."); }
         private static void PanelBackOnce() { var f = Setup(State(GameState.ResourceSearchPanel), State(GameState.WorldMap)); var r=f.Service.EnsureWorldMapAsync("d",Token).GetAwaiter().GetResult(); Assert(r.Success,"Failed."); Equal(1,f.Client.BackCalls,"Back count."); Equal(GameState.WorldMap,r.FinalState,"Final state."); }
         private static void ContinentBackOnce() { var f = Setup(State(GameState.ContinentMap), State(GameState.WorldMap)); var r=f.Service.EnsureWorldMapAsync("d",Token).GetAwaiter().GetResult(); Assert(r.Success,"Failed."); Equal(1,f.Client.BackCalls,"Back count."); }
-        private static void TeamSelectionBackToWorldMap() { var f = Setup(State(GameState.TeamSelection), State(GameState.WorldMap)); var r=f.Service.EnsureWorldMapAsync("d",Token).GetAwaiter().GetResult(); Assert(r.Success,"Failed."); Equal(1,f.Client.BackCalls,"Back count."); Equal(GameState.WorldMap,r.FinalState,"Final state."); }
+        private static void TeamSelectionDoesNotSendBack() { var f = Setup(State(GameState.TeamSelection)); var r=f.Service.EnsureWorldMapAsync("d",Token).GetAwaiter().GetResult(); Assert(!r.Success,"TeamSelection must require controlled recovery."); Equal(0,f.Client.TotalInput,"TeamSelection must not receive blind input."); Assert(r.Message.Contains("TeamSelection is still open"),"Structured recovery message."); }
         private static void CityMapButtonOnce() { var f=Setup(State(GameState.City,true),State(GameState.WorldMap)); var r=f.Service.EnsureWorldMapAsync("d",Token).GetAwaiter().GetResult(); Assert(r.Success,"Failed."); Equal(1,f.Client.TapCalls,"Tap count."); Equal(25,f.Client.LastX,"Tap X."); Equal(40,f.Client.LastY,"Tap Y."); }
         private static void CityMissingBoundsNoInput() { var f=Setup(State(GameState.City)); var r=f.Service.EnsureWorldMapAsync("d",Token).GetAwaiter().GetResult(); Assert(!r.Success,"Unexpected success."); Equal(0,f.Client.TotalInput,"Blind input."); }
         private static void UnknownNoInput() { var f=Setup(State(GameState.Unknown)); var r=f.Service.EnsureWorldMapAsync("d",Token).GetAwaiter().GetResult(); Assert(!r.Success,"Unexpected success."); Equal(0,f.Client.TotalInput,"Blind input."); }

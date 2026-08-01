@@ -13,7 +13,9 @@ namespace ADB_Tool_Automation_Post_FB.Core.TeamSelection
             IReadOnlyDictionary<TeamNumber, ImageRegion> teamRegions,
             int expectedWidth = 1280, int expectedHeight = 720,
             int maxRosterScrollAttempts = 3, int rosterScrollDurationMs = 350,
-            ImageRegion? teamSelectionRosterRegion = null)
+            ImageRegion? teamSelectionRosterRegion = null,
+            int minimumSafeTapX = 80, int maximumSafeTapX = 160,
+            int maxInputFrameAgeMs = 1000)
         {
             if (pollIntervalMs <= 0) throw new ArgumentOutOfRangeException(nameof(pollIntervalMs));
             if (selectionTimeoutSeconds <= 0) throw new ArgumentOutOfRangeException(nameof(selectionTimeoutSeconds));
@@ -25,6 +27,10 @@ namespace ADB_Tool_Automation_Post_FB.Core.TeamSelection
                 throw new ArgumentOutOfRangeException(nameof(maxRosterScrollAttempts));
             if (rosterScrollDurationMs <= 0)
                 throw new ArgumentOutOfRangeException(nameof(rosterScrollDurationMs));
+            if (minimumSafeTapX < 80 || maximumSafeTapX < minimumSafeTapX)
+                throw new ArgumentOutOfRangeException(nameof(minimumSafeTapX));
+            if (maxInputFrameAgeMs <= 0 || maxInputFrameAgeMs > 5000)
+                throw new ArgumentOutOfRangeException(nameof(maxInputFrameAgeMs));
             foreach (TeamNumber team in new[] { TeamNumber.Team1, TeamNumber.Team2, TeamNumber.Team3, TeamNumber.Team4 })
             {
                 if (!teamRegions.TryGetValue(team, out ImageRegion region))
@@ -45,6 +51,9 @@ namespace ADB_Tool_Automation_Post_FB.Core.TeamSelection
             ExpectedHeight = expectedHeight;
             MaxRosterScrollAttempts = maxRosterScrollAttempts;
             RosterScrollDurationMs = rosterScrollDurationMs;
+            MinimumSafeTapX = minimumSafeTapX;
+            MaximumSafeTapX = maximumSafeTapX;
+            MaxInputFrameAgeMs = maxInputFrameAgeMs;
             TeamSelectionRosterRegion = teamSelectionRosterRegion
                 ?? Union(teamRegions, expectedWidth, expectedHeight);
         }
@@ -60,6 +69,9 @@ namespace ADB_Tool_Automation_Post_FB.Core.TeamSelection
         public int ExpectedHeight { get; }
         public int MaxRosterScrollAttempts { get; }
         public int RosterScrollDurationMs { get; }
+        public int MinimumSafeTapX { get; }
+        public int MaximumSafeTapX { get; }
+        public int MaxInputFrameAgeMs { get; }
         public ImageRegion TeamSelectionRosterRegion { get; }
 
         private static ImageRegion Union(IReadOnlyDictionary<TeamNumber, ImageRegion> regions,

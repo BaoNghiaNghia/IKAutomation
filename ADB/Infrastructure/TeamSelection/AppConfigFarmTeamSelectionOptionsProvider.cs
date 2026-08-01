@@ -27,7 +27,10 @@ namespace ADB_Tool_Automation_Post_FB.Infrastructure.TeamSelection
                 rosterScrollDurationMs: Int("RosterScrollDurationMs", 350),
                 teamSelectionRosterRegion: new ImageRegion(
                     Int("RosterRegion.X", 0), Int("RosterRegion.Y", 0),
-                    Int("RosterRegion.Width", 300), Int("RosterRegion.Height", 590)));
+                    Int("RosterRegion.Width", 300), Int("RosterRegion.Height", 590)),
+                minimumSafeTapX: Int("MinimumSafeTapX", 80),
+                maximumSafeTapX: Int("MaximumSafeTapX", 160),
+                maxInputFrameAgeMs: Int("MaxInputFrameAgeMs", 1000));
         }
 
         public static TeamSelectionRequest LoadRequest()

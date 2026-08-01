@@ -131,8 +131,9 @@ namespace ADB_Tool_Automation_Post_FB.Infrastructure.Workflows
                             CurrentExpectedTeam = expectedTeam,
                             CurrentTeam = expectedTeam,
                             ConfirmedRosterCount = check.ConfirmedRosterCount,
-                            RosterConfidence = check.IsRosterUncertain ? "Uncertain" : "Confirmed",
-                            RosterSource = check.RosterEvidenceSource.ToString(),
+                            RosterConfidence = check.RosterConfidence
+                                ?? (check.IsRosterUncertain ? "Uncertain" : "Confirmed"),
+                            RosterSource = check.RosterSource ?? check.RosterEvidenceSource.ToString(),
                             WaitDeadline = waitDeadline,
                             Message = VietnameseUserMessageLocalizer.Default.Format(
                                 UiMessageKey.ReadyAllowedTeams,
@@ -185,6 +186,10 @@ namespace ADB_Tool_Automation_Post_FB.Infrastructure.Workflows
                             DetectedTeams = detectedTeams,
                             ReadyTeams = check.ReadyTeams ?? new TeamNumber[0],
                             EligibleReadyTeams = new TeamNumber[0],
+                            ConfirmedRosterCount = check.ConfirmedRosterCount,
+                            RosterConfidence = check.RosterConfidence
+                                ?? (check.IsRosterUncertain ? "Uncertain" : "Confirmed"),
+                            RosterSource = check.RosterSource ?? check.RosterEvidenceSource.ToString(),
                             NextCheckAt = scheduledCheckAt,
                             WaitDeadline = waitDeadline,
                             Message = message
@@ -216,6 +221,10 @@ namespace ADB_Tool_Automation_Post_FB.Infrastructure.Workflows
                                 DetectedTeams = detectedTeams,
                                 ReadyTeams = check.ReadyTeams ?? new TeamNumber[0],
                                 EligibleReadyTeams = new TeamNumber[0],
+                                ConfirmedRosterCount = check.ConfirmedRosterCount,
+                                RosterConfidence = check.RosterConfidence
+                                    ?? (check.IsRosterUncertain ? "Uncertain" : "Confirmed"),
+                                RosterSource = check.RosterSource ?? check.RosterEvidenceSource.ToString(),
                                 Message = VietnameseUserMessageLocalizer.Default.Format(
                                     UiMessageKey.ConfirmingNoReadyTeam,
                                     consecutiveNoReadyChecks, options.NoReadyConfirmations)
@@ -263,6 +272,10 @@ namespace ADB_Tool_Automation_Post_FB.Infrastructure.Workflows
                         DetectedTeams = detectedTeams,
                         ReadyTeams = check.ReadyTeams ?? new TeamNumber[0],
                         EligibleReadyTeams = new TeamNumber[0],
+                        ConfirmedRosterCount = check.ConfirmedRosterCount,
+                        RosterConfidence = check.RosterConfidence
+                            ?? (check.IsRosterUncertain ? "Uncertain" : "Confirmed"),
+                        RosterSource = check.RosterSource ?? check.RosterEvidenceSource.ToString(),
                         NextCheckAt = nextCheckAt,
                         WaitDeadline = waitDeadline,
                         Message = VietnameseUserMessageLocalizer.Default.Get(

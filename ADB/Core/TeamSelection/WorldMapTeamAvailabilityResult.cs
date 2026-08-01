@@ -32,6 +32,12 @@ namespace ADB_Tool_Automation_Post_FB.Core.TeamSelection
         public IReadOnlyList<TeamNumber> BusyTeams { get; set; }
         public IReadOnlyList<TeamNumber> LockedTeams { get; set; }
         public IReadOnlyList<TeamRowObservation> RowObservations { get; set; }
+        public IReadOnlyDictionary<TeamNumber, TeamRowObservation> TeamRows { get; set; }
+        public IReadOnlyDictionary<TeamNumber, TeamRowObservation> Rows
+        {
+            get => TeamRows;
+            set => TeamRows = value;
+        }
         public int ConfirmedRosterCount { get; set; }
         public GameState FinalState { get; set; }
         public ImageMatchResult ReadyMatch { get; set; }
@@ -40,6 +46,8 @@ namespace ADB_Tool_Automation_Post_FB.Core.TeamSelection
         public TeamRosterClassification RosterClassification { get; set; }
         public bool IsRosterUncertain { get; set; }
         public string RosterSource { get; set; }
+        public string RosterStatus { get; set; }
+        public string RosterConfidence { get; set; }
         public string Message { get; set; }
         public string ErrorMessage { get; set; }
     }
