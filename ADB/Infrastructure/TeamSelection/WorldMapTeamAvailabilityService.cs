@@ -120,6 +120,10 @@ namespace ADB_Tool_Automation_Post_FB.Infrastructure.TeamSelection
 
                 using (CapturedFrame screenshot = await CaptureFrameAsync(deviceName, cancellationToken))
                 {
+                RosterRowLayout layout = ResolveRowLayout(screenshot);
+                if (layout == null)
+                    return Failed("Team roster region falls outside the captured frame.",
+                        state: GameState.WorldMap);
                 lastState = Detect(screenshot, deviceName,
                     new GameStateDetectionContext(GameState.WorldMap, GameState.WorldMap));
                 if (lastState == null || !lastState.IsSuccessful
@@ -128,16 +132,14 @@ namespace ADB_Tool_Automation_Post_FB.Infrastructure.TeamSelection
 
                 verifiedFrameCount++;
                 var badgeRequests = teams.Select((team, index) => new ImageMatchRequest(
-                    registry.LoadBytes(BadgeTemplate(team)), RosterRowRegion(
-                        rosterTop + (index * rowHeight), rowHeight))).ToArray();
+                    registry.LoadBytes(BadgeTemplate(team)), layout.Rows[index])).ToArray();
                 IReadOnlyList<ImageMatchResult> badgeResults = FindMany(screenshot, badgeRequests);
                 var badgesInFrame = new Dictionary<TeamNumber, ImageMatchResult>();
                 for (int index = 0; index < teams.Length; index++)
                 {
                     TeamNumber team = teams[index];
                     ImageMatchResult badgeMatch = badgeResults[index] ?? ImageMatchResult.NotFound();
-                    if (badgeMatch.Found && badgeMatch.Width > 0
-                        && badgeMatch.Height > 0)
+                    if (IsMatchInsideRow(badgeMatch, layout.Rows[index]))
                     {
                         badgeMatches[team] = badgeMatch;
                         badgesInFrame[team] = badgeMatch;
@@ -152,8 +154,7 @@ namespace ADB_Tool_Automation_Post_FB.Infrastructure.TeamSelection
                 for (int index = 0; index < teams.Length; index++)
                 {
                     TeamNumber team = teams[index];
-                    ImageRegion rowRegion = RosterRowRegion(
-                        rosterTop + (index * rowHeight), rowHeight);
+                    ImageRegion rowRegion = layout.Rows[index];
                     readyRequests.Add(new ImageMatchRequest(readyTemplate, rowRegion));
                     readyRequestTeams.Add(team);
                 }
@@ -163,8 +164,7 @@ namespace ADB_Tool_Automation_Post_FB.Infrastructure.TeamSelection
                 {
                     TeamNumber team = readyRequestTeams[index];
                     ImageMatchResult rowMatch = readyResults[index] ?? ImageMatchResult.NotFound();
-                    if (rowMatch.Found && rowMatch.Width > 0
-                        && rowMatch.Height > 0)
+                    if (IsMatchInsideRow(rowMatch, layout.Rows[(int)team - 1]))
                         readyMatchesByTeam[team] = rowMatch;
                 }
                 }
@@ -209,6 +209,12 @@ namespace ADB_Tool_Automation_Post_FB.Infrastructure.TeamSelection
                 : knownTeamCount > 0
                     ? TeamRosterEvidenceSource.CachedKnownCount
                     : TeamRosterEvidenceSource.Unknown;
+            TeamRosterClassification classification = freshTeamCount > 0
+                ? freshTeamCount == 1 && badgeMatches.ContainsKey(TeamNumber.Team1)
+                    ? TeamRosterClassification.ExplicitSingleTeam
+                    : TeamRosterClassification.FreshConfirmed
+                : knownTeamCount > 0 ? TeamRosterClassification.CachedConfirmed
+                    : TeamRosterClassification.Uncertain;
 
             // Team rows are contiguous from Team1. The highest freshly verified
             // badge or ready row establishes the roster size, including accounts
@@ -245,6 +251,7 @@ namespace ADB_Tool_Automation_Post_FB.Infrastructure.TeamSelection
                 ReadyMatch = match,
                 ReadyMatches = readyMatches.AsReadOnly(),
                 RosterEvidenceSource = rosterSource,
+                RosterClassification = classification,
                 IsRosterUncertain = rosterSource == TeamRosterEvidenceSource.Unknown,
                 Message = ready
                     ? $"Detected {availableTeams.Count} team(s); ready teams: "
@@ -343,6 +350,7 @@ namespace ADB_Tool_Automation_Post_FB.Infrastructure.TeamSelection
                 ReadyMatch = ImageMatchResult.NotFound(),
                 ReadyMatches = new ImageMatchResult[0],
                 RosterEvidenceSource = TeamRosterEvidenceSource.Unknown,
+                RosterClassification = TeamRosterClassification.Failed,
                 IsRosterUncertain = true
             };
 
@@ -359,6 +367,41 @@ namespace ADB_Tool_Automation_Post_FB.Infrastructure.TeamSelection
             public int HighestConfirmedTeamCount { get; }
             public DateTimeOffset LastConfirmedAt { get; }
             public TeamRosterEvidenceSource EvidenceSource { get; }
+            public string EvidenceStrength => EvidenceSource == TeamRosterEvidenceSource.FreshBadges
+                ? "Strong" : "RowEvidence";
+        }
+
+        private RosterRowLayout ResolveRowLayout(CapturedFrame frame)
+        {
+            if (frame == null || options.TeamRosterRegion.X >= frame.Width
+                || options.TeamRosterRegion.Y >= frame.Height) return null;
+            int width = Math.Min(options.TeamRosterRegion.Width,
+                frame.Width - options.TeamRosterRegion.X);
+            int top = options.TeamRosterRegion.Y;
+            int rowHeight = options.TeamRowHeight;
+            int lastBottom = top + (options.TeamRowCount * rowHeight);
+            if (width <= 0 || lastBottom > options.TeamRosterRegion.Y
+                + options.TeamRosterRegion.Height || lastBottom > frame.Height) return null;
+            var rows = new ImageRegion[options.TeamRowCount];
+            for (int index = 0; index < rows.Length; index++)
+                rows[index] = new ImageRegion(options.TeamRosterRegion.X,
+                    top + (index * rowHeight), width, rowHeight);
+            return new RosterRowLayout(rows);
+        }
+
+        private bool IsMatchInsideRow(ImageMatchResult match, ImageRegion row)
+        {
+            if (match == null || !match.Found || match.Width <= 0 || match.Height <= 0)
+                return false;
+            int tolerance = options.RowVerticalTolerance;
+            return match.Y >= row.Y - tolerance
+                && match.Y + match.Height <= row.Y + row.Height + tolerance;
+        }
+
+        private sealed class RosterRowLayout
+        {
+            public RosterRowLayout(ImageRegion[] rows) { Rows = rows; }
+            public ImageRegion[] Rows { get; }
         }
     }
 }

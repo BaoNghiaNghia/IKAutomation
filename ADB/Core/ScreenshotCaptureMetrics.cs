@@ -5,6 +5,7 @@ namespace ADB_Tool_Automation_Post_FB.Core.Diagnostics
     {
         public long FramesCaptured { get; set; }
         public long FramesEncodedToPng { get; set; }
+        public long PngEncodes { get; set; }
         public long ScreenshotGateWaitMs { get; set; }
         public long ScreenShootDurationMs { get; set; }
         public long AdbHealthChecks { get; set; }

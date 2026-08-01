@@ -4,6 +4,7 @@ using System.Collections.Generic;
 using System.Reflection;
 using System.Drawing;
 using System.IO;
+using System.Linq;
 using System.Runtime.CompilerServices;
 
 namespace ADB_Tool_Automation_Post_FB.Infrastructure.Vision
@@ -47,16 +48,8 @@ namespace ADB_Tool_Automation_Post_FB.Infrastructure.Vision
             VisionGate.Wait();
             try
             {
-            var results = new List<ImageMatchResult>(requests.Count);
             using (Bitmap screenshot = DecodeBitmap(screenshotPng, nameof(screenshotPng)))
-            {
-                foreach (ImageMatchRequest request in requests)
-                {
-                    if (request == null) throw new ArgumentException("A match request cannot be null.", nameof(requests));
-                    results.Add(FindOnBitmap(screenshot, request.TemplatePng, request.SearchRegion));
-                }
-            }
-            return results.AsReadOnly();
+                return FindManyOnBitmap(screenshot, requests);
             }
             finally { VisionGate.Release(); }
         }
@@ -71,14 +64,7 @@ namespace ADB_Tool_Automation_Post_FB.Infrastructure.Vision
             VisionGate.Wait();
             try
             {
-                var results = new List<ImageMatchResult>(requests.Count);
-                foreach (ImageMatchRequest request in requests)
-                {
-                    if (request == null)
-                        throw new ArgumentException("A match request cannot be null.", nameof(requests));
-                    results.Add(FindOnBitmap(frame.Bitmap, request.TemplatePng, request.SearchRegion));
-                }
-                return results.AsReadOnly();
+                return FindManyOnBitmap(frame.Bitmap, requests);
             }
             finally { VisionGate.Release(); }
         }
@@ -132,29 +118,58 @@ namespace ADB_Tool_Automation_Post_FB.Infrastructure.Vision
                             screenshot.PixelFormat);
                     }
                     else searchImage = screenshot;
-
-                    if (template.Width > searchImage.Width || template.Height > searchImage.Height)
-                    {
-                        throw new ArgumentException(
-                            $"Template size {template.Width}x{template.Height} exceeds search image size " +
-                            $"{searchImage.Width}x{searchImage.Height}.",
-                            nameof(templatePng));
-                    }
-
-                    Point? topLeftPoint = KAutoHelper.ImageScanOpenCV.FindOutPoint(searchImage, template);
-                    if (!topLeftPoint.HasValue)
-                        return ImageMatchResult.NotFound();
-
-                    int left = topLeftPoint.Value.X + offsetX;
-                    int top = topLeftPoint.Value.Y + offsetY;
-
-                    return ImageMatchResult.FoundAt(left, top, template.Width, template.Height, null);
+                    return FindOnSearchBitmap(searchImage, templatePng, offsetX, offsetY);
                 }
                 finally
                 {
                     if (!ReferenceEquals(searchImage, screenshot)) searchImage?.Dispose();
                 }
             }
+        }
+
+        // KAutoHelper exposes only Bitmap matching. Grouping equal ROIs removes
+        // avoidable Clone allocations in FindMany without introducing another
+        // OpenCV runtime or changing the existing VisionGate ownership.
+        private static IReadOnlyList<ImageMatchResult> FindManyOnBitmap(Bitmap screenshot,
+            IReadOnlyList<ImageMatchRequest> requests)
+        {
+            var results = new ImageMatchResult[requests.Count];
+            foreach (var group in requests.Select((request, index) => new { request, index })
+                .GroupBy(item => item.request?.SearchRegion))
+            {
+                if (group.Key.HasValue)
+                    ValidateRegionBounds(group.Key.Value, screenshot.Width, screenshot.Height);
+                Bitmap roi = group.Key.HasValue ? screenshot.Clone(new Rectangle(group.Key.Value.X,
+                    group.Key.Value.Y, group.Key.Value.Width, group.Key.Value.Height),
+                    screenshot.PixelFormat) : screenshot;
+                try
+                {
+                    foreach (var item in group)
+                    {
+                        if (item.request == null)
+                            throw new ArgumentException("A match request cannot be null.", nameof(requests));
+                        int offsetX = group.Key.HasValue ? group.Key.Value.X : 0;
+                        int offsetY = group.Key.HasValue ? group.Key.Value.Y : 0;
+                        results[item.index] = FindOnSearchBitmap(roi,
+                            item.request.TemplatePng, offsetX, offsetY);
+                    }
+                }
+                finally { if (!ReferenceEquals(roi, screenshot)) roi.Dispose(); }
+            }
+            return Array.AsReadOnly(results);
+        }
+
+        private static ImageMatchResult FindOnSearchBitmap(Bitmap searchImage,
+            byte[] templatePng, int offsetX, int offsetY)
+        {
+            Bitmap template = GetDecodedTemplate(templatePng);
+            if (template.Width > searchImage.Width || template.Height > searchImage.Height)
+                throw new ArgumentException($"Template size {template.Width}x{template.Height} exceeds search image size "
+                    + $"{searchImage.Width}x{searchImage.Height}.", nameof(templatePng));
+            Point? topLeftPoint = KAutoHelper.ImageScanOpenCV.FindOutPoint(searchImage, template);
+            return !topLeftPoint.HasValue ? ImageMatchResult.NotFound()
+                : ImageMatchResult.FoundAt(topLeftPoint.Value.X + offsetX,
+                    topLeftPoint.Value.Y + offsetY, template.Width, template.Height, null);
         }
 
         private static Bitmap GetDecodedTemplate(byte[] templatePng)

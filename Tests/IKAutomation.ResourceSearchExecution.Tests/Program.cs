@@ -138,8 +138,8 @@ namespace IKAutomation.ResourceSearchExecution.Tests
         private static void TargetLevelTooLowNoRetry() { Fixture f=TargetLevelTooLowToastFixture(); Execute(f); Eq(1,f.Client.TapCalls,"tap"); }
         private static void AlternateOneFrameToast() { Fixture f=AlternateToastFixture(); var r=Execute(f); Is(r.NotFoundObserved,"latch"); Eq(1,r.ObservedFrameCount,"frames"); }
         private static void AlternateLatchSurvivesDisappearance() { Fixture f=AlternateToastFixture(); f.Matcher.ToastFrames.Clear(); f.Matcher.ToastFrames.Add(2); var r=Execute(f); Is(r.NotFoundObserved&&r.NotFoundToastVerified,"latch"); Eq(1,r.ObservedFrameCount,"poll stopped"); }
-        private static void ShortOnly() { Fixture f=AlternateToastFixture(maxAttempts:1); f.Matcher.Other=false; var r=Execute(f); Is(r.FailureReason==ResourceSearchFailureReason.ToastAmbiguous&&!r.NotFoundObserved,"reason"); }
-        private static void OtherRegionOnly() { Fixture f=AlternateToastFixture(maxAttempts:1); f.Matcher.Short=false; var r=Execute(f); Is(r.FailureReason==ResourceSearchFailureReason.ToastAmbiguous&&!r.NotFoundObserved,"reason"); }
+        private static void ShortOnly() { Fixture f=AlternateToastFixture(maxAttempts:1); f.Matcher.Other=false; var r=Execute(f); Is(r.FailureReason==ResourceSearchFailureReason.ToastAmbiguous&&!r.NotFoundObserved,"reason"); Is(r.Outcome!=ResourceSearchOutcome.ResourceNotFound,"ambiguous toast became not found"); }
+        private static void OtherRegionOnly() { Fixture f=AlternateToastFixture(maxAttempts:1); f.Matcher.Short=false; var r=Execute(f); Is(r.FailureReason==ResourceSearchFailureReason.ToastAmbiguous&&!r.NotFoundObserved,"reason"); Is(r.Outcome!=ResourceSearchOutcome.ResourceNotFound,"ambiguous toast became not found"); }
         private static void ShortThenOtherRegion()
         {
             Fixture f=Setup(maxAttempts:1,windowMs:100,fastPollMs:1); f.Matcher.Short=true; f.Matcher.Other=true;

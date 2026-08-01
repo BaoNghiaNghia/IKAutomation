@@ -215,7 +215,7 @@ namespace ADB_Tool_Automation_Post_FB.Infrastructure.ResourceSearch
                             result.FailureReason = ResourceSearchFailureReason.ToastAmbiguous;
                             result.ShouldRetrySearch = true;
                             return await CompleteAsync(deviceName, result, context,
-                                ResourceSearchOutcome.ResourceNotFound,
+                                ResourceSearchOutcome.SearchTapNotApplied,
                                 "Chưa xác định rõ thông báo tìm kiếm; đang kiểm tra lại.",
                                 null, watch, cancellationToken);
                         }
@@ -346,6 +346,9 @@ namespace ADB_Tool_Automation_Post_FB.Infrastructure.ResourceSearch
             bool alternateConfirmed = alternatePairClose
                 || (context.ShortAnchorSeen && context.OtherRegionAnchorSeen
                     && !context.AlternatePairTooFarSeen);
+            // This template is also the structural companion for the target-level
+            // toast. Treat it as a season restriction only when that companion is
+            // absent; otherwise TargetLevelTooLow keeps its existing semantics.
             bool seasonMapRestriction = HasBounds(seasonMapAnchor)
                 && !HasBounds(targetLevelTooLowAnchor);
             string matchedVariant = seasonMapRestriction

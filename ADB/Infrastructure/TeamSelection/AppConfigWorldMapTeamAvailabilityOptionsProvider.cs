@@ -12,7 +12,8 @@ namespace ADB_Tool_Automation_Post_FB.Infrastructure.TeamSelection
                 Int("TeamRosterRegion.X", 0), Int("TeamRosterRegion.Y", 290),
                 Int("TeamRosterRegion.Width", 150),
             Int("TeamRosterRegion.Height", 280)),
-            Int("TeamRowCount", 4), NullableInt("TeamRowHeight"), Int("BadgeTopPadding", 8));
+            Int("TeamRowCount", 4), NullableInt("TeamRowHeight"), Int("BadgeTopPadding", 8),
+            Int("RowVerticalTolerance", 4));
 
         private static string Key(string name) => "WorldMapTeamAvailability." + name;
 

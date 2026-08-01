@@ -381,6 +381,9 @@ namespace ADB_Tool_Automation_Post_FB.UI
                 GetOrCreateFarmProgress(snapshot.DeviceName)
                     .ApplySupervisorSnapshot(snapshot);
             }
+            if (snapshot.State == ContinuousFarmDeviceState.Waiting
+                && snapshot.NextAttemptAt.HasValue)
+                oneShotFarmProgressTimer.Start();
         }
 
         private void ApplyHealthDashboard(ContinuousFarmHealthSnapshot health)
@@ -594,7 +597,9 @@ namespace ADB_Tool_Automation_Post_FB.UI
                     StringComparison.OrdinalIgnoreCase));
             if (item != null)
             {
-                item.IsRunning = true;
+                // A yielded readiness check is scheduled by the supervisor; it no
+                // longer owns a farm slot and must not appear as actively running.
+                item.IsRunning = progress.Stage == MultiDeviceOneShotFarmStage.Running;
                 item.IsInGame = true;
                 item.Status = string.IsNullOrWhiteSpace(progress.Message)
                     ? FarmProgressVietnamese.Stage(progress.Stage.ToString())
@@ -687,7 +692,7 @@ namespace ADB_Tool_Automation_Post_FB.UI
 
         private void UpdateOneShotFarmCountdown()
         {
-            DateTimeOffset now = DateTimeOffset.Now;
+            DateTimeOffset now = DateTimeOffset.UtcNow;
             foreach (DeviceFarmProgressItem item in farmProgressItems)
                 item.UpdateCountdown(now);
         }
@@ -1528,7 +1533,7 @@ namespace ADB_Tool_Automation_Post_FB.UI
             }
             TeamsSummary = string.Join(" · ", Teams.Select(item =>
                 $"{item.TeamName}: {ShortTeamStatus(item.Status)}"));
-            UpdateCountdown(DateTimeOffset.Now);
+            UpdateCountdown(DateTimeOffset.UtcNow);
         }
 
         public void ApplySupervisorSnapshot(ContinuousFarmDeviceSnapshot snapshot)
@@ -1547,7 +1552,7 @@ namespace ADB_Tool_Automation_Post_FB.UI
                 + $"{FarmProgressVietnamese.Team(snapshot.CurrentTeam)}";
             nextCheckAt = snapshot.NextAttemptAt;
             waitDeadline = snapshot.NextAttemptAt;
-            UpdateCountdown(DateTimeOffset.Now);
+            UpdateCountdown(DateTimeOffset.UtcNow);
         }
 
         private void SynchronizeTeams(IReadOnlyList<TeamNumber> visibleTeams)
@@ -1578,10 +1583,16 @@ namespace ADB_Tool_Automation_Post_FB.UI
             TimeSpan wait = OneShotFarmProgressUtilities.Remaining(now, waitDeadline);
             Schedule = nextCheckAt.HasValue
                 ? $"Kiểm tra tiếp: {nextCheckAt.Value.ToLocalTime():HH:mm:ss} · "
-                    + $"còn {next.ToString(@"mm\:ss", CultureInfo.InvariantCulture)} · "
-                    + $"thời gian chờ {wait.ToString(@"hh\:mm\:ss", CultureInfo.InvariantCulture)}"
+                    + (next == TimeSpan.Zero ? "đến thời điểm kiểm tra"
+                        : $"còn {FormatRemaining(next)} · thời gian chờ {FormatDuration(wait)}")
                 : string.Empty;
         }
+
+        private static string FormatRemaining(TimeSpan value) =>
+            $"{Math.Max(0, (int)value.TotalHours * 60 + value.Minutes):00}:{value.Seconds:00}";
+
+        private static string FormatDuration(TimeSpan value) =>
+            $"{Math.Max(0, (int)value.TotalHours):00}:{value.Minutes:00}:{value.Seconds:00}";
 
         private static string ShortTeamStatus(string value)
         {

@@ -159,6 +159,9 @@ internal static class Program
         Run("All device preflights finish before farming starts", MultiDevicePreflightBarrier);
         Run("Preflight failure does not stop healthy devices", MultiDevicePreflightFailureIsIsolated);
         Run("Ready gate consumes preflight result without duplicate check", MultiDevicePreflightIsReused);
+        Run("Waiting devices yield execution and adaptive capacity", WaitingDevicesYieldExecutionSlots);
+        Run("Ready devices proceed while other devices yield", ReadyDevicesProceedWhileWaiting);
+        Run("Runner has no global preflight barrier", MultiDeviceHasNoGlobalPreflightBarrier);
         Run("One-Shot UI retries only failed devices", MultiDeviceUiRetriesFailures);
         Run("Continuous supervisor keeps device states independent", ContinuousSupervisorIsolatesDevices);
         Run("Continuous supervisor cancellation stops waiting devices", ContinuousSupervisorCancellationStopsWaiting);
@@ -1185,6 +1188,69 @@ internal static class Program
             "seeded workflow result");
     }
 
+    static void WaitingDevicesYieldExecutionSlots()
+    {
+        var availability = new DeviceReadinessAvailability(new string[0]);
+        var adaptive = new AdaptiveConcurrencyGate(new AdaptiveConcurrencyOptions(
+            minimumConcurrency: 1, initialConcurrency: 6, maximumConcurrency: 6,
+            sampleIntervalMs: 60000, healthySamplesToIncrease: 100,
+            automationStaggerMinMs: 0, automationStaggerMaxMs: 0,
+            recoveryStaggerMinMs: 0, recoveryStaggerMaxMs: 0),
+            new FakeHostResourceProbe(10, 8L * 1024 * 1024 * 1024));
+        var workflow = new CountingSuccessWorkflow();
+        var runner = new MultiDeviceOneShotFarmRunner(() => workflow,
+            () => availability, 6, adaptive);
+        var request = new OneShotFarmRequest
+        {
+            ReadyTeamWaitMode = ReadyTeamWaitMode.YieldToSupervisor,
+            ReadyTeamOptions = new ReadyTeamGateRunOptions(60000, 60000)
+        };
+        MultiDeviceOneShotFarmResult result = runner.RunAsync(
+            Enumerable.Range(1, 25).Select(index => "May " + index).ToArray(),
+            request, null, default(CancellationToken)).GetAwaiter().GetResult();
+        Eq(25, availability.Calls, "devices 7-25 did not receive preflight");
+        Eq(0, workflow.Calls, "waiting device entered workflow");
+        Is(result.Devices.All(item => item.Stage
+            == MultiDeviceOneShotFarmStage.WaitingForReadyTeam), "waiting stage");
+        Is(result.Devices.All(item => item.Result.Outcome
+            == OneShotFarmOutcome.WaitingForReadyTeam
+            && item.Result.NextCheckAt.HasValue), "deferred outcome schedule");
+        Eq(0, result.Failed, "waiting was counted as failure");
+        Eq(25, result.WaitingForTeam, "waiting count");
+        Eq(0, adaptive.GetSnapshot().ActiveExecutions, "waiting adaptive leases leaked");
+    }
+
+    static void ReadyDevicesProceedWhileWaiting()
+    {
+        var availability = new DeviceReadinessAvailability(new[] { "Ready" });
+        var workflow = new CountingSuccessWorkflow();
+        var runner = new MultiDeviceOneShotFarmRunner(() => workflow,
+            () => availability, 1);
+        var request = new OneShotFarmRequest
+        {
+            ReadyTeamWaitMode = ReadyTeamWaitMode.YieldToSupervisor,
+            ReadyTeamOptions = new ReadyTeamGateRunOptions(60000, 60000)
+        };
+        MultiDeviceOneShotFarmResult result = runner.RunAsync(
+            new[] { "Waiting", "Ready" }, request, null,
+            default(CancellationToken)).GetAwaiter().GetResult();
+        Eq(MultiDeviceOneShotFarmStage.WaitingForReadyTeam,
+            result.Devices.Single(item => item.DeviceName == "Waiting").Stage,
+            "waiting device stage");
+        Eq(MultiDeviceOneShotFarmStage.Completed,
+            result.Devices.Single(item => item.DeviceName == "Ready").Stage,
+            "ready device did not proceed");
+        Eq(1, workflow.Calls, "unexpected workflow count");
+    }
+
+    static void MultiDeviceHasNoGlobalPreflightBarrier()
+    {
+        string source = File.ReadAllText(Path.Combine(Environment.CurrentDirectory,
+            "ADB", "Infrastructure", "Workflows", "MultiDeviceOneShotFarmRunner.cs"));
+        Is(!source.Contains("Task.WhenAll(preflight"),
+            "a global preflight barrier remains");
+    }
+
     static void MultiDeviceUiRetriesFailures()
     {
         string root = Path.Combine(Environment.CurrentDirectory, "ADB", "UI");
@@ -1356,7 +1422,7 @@ internal static class Program
     static void PreferenceHasNoNone(){foreach(string file in new[]{"ADB/Core/Workflows/FarmUiPreferences.cs","ADB/Core/Workflows/ReadyTeamGateRunOptions.cs","ADB/Infrastructure/Workflows/LocalAppDataFarmUiPreferencesStore.cs","ADB/UI/DeviceDiagnosticWindow.xaml.cs"})Is(!File.ReadAllText(Path.Combine(Environment.CurrentDirectory,file)).Contains("CancellationToken"+".None"),file);}
     static FarmUiPreferences ValidPreferences()=>new FarmUiPreferences{Iron=true,Stone=true,Wood=true,Food=true,LevelPriority=new[]{7,6,5},TeamPriority=new[]{TeamNumber.Team4,TeamNumber.Team3,TeamNumber.Team2},AllowTeam1=false,ReadyCheckIntervalMinutes=15,ReadyMaxWaitHours=12,UnoccupiedOnly=true};
     static ReadyTeamOneShotFarmWorkflow ReadyGate(FakeInnerWorkflow inner,FakeAvailability availability,ReadyTeamGateOptions options=null)=>new ReadyTeamOneShotFarmWorkflow(inner,availability,options??new ReadyTeamGateOptions(1),new Log());
-    static void AvailabilityUsesRosterRoi(){var f=new AvailabilityFixture();f.Matcher.ReadyRows.Add(4);var r=f.Service.CheckAsync("LDPlayer",default(CancellationToken)).GetAwaiter().GetResult();Is(r.Success&&r.AnyReadyTeam,"ready not found");Eq(2,f.Client.Captures,"captures");Eq(16,f.Matcher.Regions.Count,"badge and ready scans");for(int frame=0;frame<2;frame++){for(int i=0;i<4;i++){var badgeRegion=f.Matcher.Regions[(frame*8)+i].Value;Eq(290+(i*70),badgeRegion.Y,"wrong badge ROI");Eq(70,badgeRegion.Height,"wrong badge ROI height");}for(int i=0;i<4;i++){var region=f.Matcher.Regions[(frame*8)+4+i].Value;Eq(290+(i*70),region.Y,"wrong row top "+i);Eq(70,region.Height,"wrong row height "+i);Eq(150,region.Width,"wrong row width "+i);}}}
+    static void AvailabilityUsesRosterRoi(){var f=new AvailabilityFixture();f.Matcher.ReadyRows.Add(4);var r=f.Service.CheckAsync("LDPlayer",default(CancellationToken)).GetAwaiter().GetResult();Is(r.Success&&r.AnyReadyTeam,"ready not found");Eq(2,f.Client.Captures,"captures");Eq(4,f.Matcher.FrameBatches,"one badge and one ready batch per frame");Eq(16,f.Matcher.Regions.Count,"badge and ready scans");for(int frame=0;frame<2;frame++){for(int i=0;i<4;i++){var badgeRegion=f.Matcher.Regions[(frame*8)+i].Value;Eq(290+(i*70),badgeRegion.Y,"wrong badge ROI");Eq(70,badgeRegion.Height,"wrong badge ROI height");}for(int i=0;i<4;i++){var region=f.Matcher.Regions[(frame*8)+4+i].Value;Eq(290+(i*70),region.Y,"wrong row top "+i);Eq(70,region.Height,"wrong row height "+i);Eq(150,region.Width,"wrong row width "+i);}}}
     static void AvailabilityMapsReadyTeams(){var f=new AvailabilityFixture();f.Matcher.ReadyRows.UnionWith(new[]{2,4});var r=f.Service.CheckAsync("LDPlayer",default(CancellationToken)).GetAwaiter().GetResult();Is(r.Success&&r.AnyReadyTeam,"ready not found");Is(r.ReadyTeams.SequenceEqual(new[]{TeamNumber.Team2,TeamNumber.Team4}),"team mapping");Eq(2,r.ReadyMatches.Count,"match count");}
     static void AvailabilityAcceptsThreeTeamBadgeVariation(){var f=new AvailabilityFixture();f.Matcher.PresentRows.IntersectWith(new[]{2,3});f.Matcher.ReadyRows.Add(3);f.Matcher.SecondFrameReadyRows.UnionWith(new[]{2,3});var r=f.Service.CheckAsync("LDPlayer",default(CancellationToken)).GetAwaiter().GetResult();Is(r.Success&&r.AnyReadyTeam,"detected three-team roster should be checked");Is(r.AvailableTeams.SequenceEqual(new[]{TeamNumber.Team1,TeamNumber.Team2,TeamNumber.Team3}),"three-team rows");Is(r.ReadyTeams.SequenceEqual(new[]{TeamNumber.Team2,TeamNumber.Team3}),"three-team ready mapping");}
     static void AvailabilityDetectsVariableTeamCounts(){foreach(int count in new[]{2,3,4}){var f=new AvailabilityFixture();f.Matcher.PresentRows.RemoveWhere(row=>row>count);f.Matcher.ReadyRows.UnionWith(Enumerable.Range(1,count));var r=f.Service.CheckAsync("LDPlayer",default(CancellationToken)).GetAwaiter().GetResult();var expected=Enumerable.Range(1,count).Select(number=>(TeamNumber)number).ToArray();Is(r.Success,"availability failed for "+count);Is(r.AvailableTeams.SequenceEqual(expected),"detected count "+count);Is(r.ReadyTeams.SequenceEqual(expected),"absent team reported ready for "+count);Eq(16,f.Matcher.Regions.Count,"unexpected scans for "+count);}}
@@ -1410,7 +1476,7 @@ internal static class Program
     sealed class FakeInnerWorkflow:IOneShotFarmWorkflow{public int Calls;public IProgress<OneShotFarmProgress> LastProgress;public readonly List<OneShotFarmRequest> Requests=new List<OneShotFarmRequest>();public readonly Queue<bool> Successes=new Queue<bool>();public Task<OneShotFarmResult> RunAsync(string d,OneShotFarmRequest r,CancellationToken t)=>RunAsync(d,r,null,t);public Task<OneShotFarmResult> RunAsync(string d,OneShotFarmRequest r,IProgress<OneShotFarmProgress> p,CancellationToken t){t.ThrowIfCancellationRequested();Calls++;LastProgress=p;Requests.Add(r);bool success=Successes.Count==0||Successes.Dequeue();TeamNumber team=r.TeamPriority[0];return Task.FromResult(new OneShotFarmResult{Outcome=success?OneShotFarmOutcome.MarchStarted:OneShotFarmOutcome.TeamDispatchFailed,Success=success,DeviceName=d,RequestedResource=r.ResourceType,RequestedLevel=r.TargetLevel,AttemptedLevels=new int[0],AttemptedResources=new ResourceType[0],SelectedResources=r.SelectedResources,ShuffledResourcePriority=r.ResourcePriority,StorageFullResources=new ResourceType[0],LevelsExhaustedResources=new ResourceType[0],LocatedResource=success?(ResourceType?)r.ResourcePriority[0]:null,DispatchedResource=success?(ResourceType?)r.ResourcePriority[0]:null,SelectedTeam=success?(TeamNumber?)team:null,DispatchedTeam=success?(TeamNumber?)team:null,Steps=new OneShotFarmStepResult[0],LastCompletedStep=success?OneShotFarmStep.Completed:OneShotFarmStep.DispatchTeam});}}
     sealed class AvailabilityFixture{public FakeNav Nav=new FakeNav();public AvailabilityDetector Detector=new AvailabilityDetector();public AvailabilityClient Client=new AvailabilityClient();public FakeRegistry Registry=new FakeRegistry();public AvailabilityMatcher Matcher=new AvailabilityMatcher();public WorldMapTeamAvailabilityService Service;public AvailabilityFixture(){Service=new WorldMapTeamAvailabilityService(Nav,Detector,Client,Registry,Matcher,new RecordingLock(),new WorldMapTeamAvailabilityOptions(new ImageRegion(0,290,150,280)),new Log());}}
     sealed class AvailabilityDetector:IGameStateDetector{public GameState State=GameState.WorldMap;public Task<GameDetectionResult> DetectAsync(string d,CancellationToken t)=>Task.FromResult(Result());public GameDetectionResult Detect(byte[] p)=>Result();GameDetectionResult Result()=>new GameDetectionResult{State=State,IsSuccessful=State!=GameState.Unknown,Evidence=new GameDetectionEvidence[0]};}
-    sealed class AvailabilityMatcher:IImageMatcher{public readonly HashSet<int> PresentRows=new HashSet<int>(new[]{1,2,3,4});public readonly HashSet<int> ReadyRows=new HashSet<int>();public readonly HashSet<int> SecondFrameReadyRows=new HashSet<int>();public readonly List<ImageRegion?> Regions=new List<ImageRegion?>();public ImageMatchResult Find(byte[] s,byte[] t,ImageRegion? r=null){Regions.Add(r);if(!r.HasValue||t==null||t.Length==0)return ImageMatchResult.NotFound();TemplateId id=(TemplateId)t[0];int badgeRow=id==TemplateId.Team1Badge?1:id==TemplateId.Team2Badge?2:id==TemplateId.Team3Badge?3:id==TemplateId.Team4Badge?4:0;if(badgeRow>0)return PresentRows.Contains(badgeRow)?ImageMatchResult.FoundAt(8,306+((badgeRow-1)*70),20,20):ImageMatchResult.NotFound();int readyRow=((r.Value.Y-290)/70)+1;bool secondFrame=Regions.Count>8;bool found=id==TemplateId.WorldMapTeamReadyAnchor&&(ReadyRows.Contains(readyRow)||(secondFrame&&SecondFrameReadyRows.Contains(readyRow)));return found?ImageMatchResult.FoundAt(70,r.Value.Y+10,20,20):ImageMatchResult.NotFound();}}
+    sealed class AvailabilityMatcher:IImageMatcher,IFrameImageMatcher{public readonly HashSet<int> PresentRows=new HashSet<int>(new[]{1,2,3,4});public readonly HashSet<int> ReadyRows=new HashSet<int>();public readonly HashSet<int> SecondFrameReadyRows=new HashSet<int>();public readonly List<ImageRegion?> Regions=new List<ImageRegion?>();public int FrameBatches;public ImageMatchResult Find(byte[] s,byte[] t,ImageRegion? r=null){Regions.Add(r);if(!r.HasValue||t==null||t.Length==0)return ImageMatchResult.NotFound();TemplateId id=(TemplateId)t[0];int badgeRow=id==TemplateId.Team1Badge?1:id==TemplateId.Team2Badge?2:id==TemplateId.Team3Badge?3:id==TemplateId.Team4Badge?4:0;if(badgeRow>0)return PresentRows.Contains(badgeRow)?ImageMatchResult.FoundAt(8,306+((badgeRow-1)*70),20,20):ImageMatchResult.NotFound();int readyRow=((r.Value.Y-290)/70)+1;bool secondFrame=Regions.Count>8;bool found=id==TemplateId.WorldMapTeamReadyAnchor&&(ReadyRows.Contains(readyRow)||(secondFrame&&SecondFrameReadyRows.Contains(readyRow)));return found?ImageMatchResult.FoundAt(70,r.Value.Y+10,20,20):ImageMatchResult.NotFound();}public ImageMatchResult Find(CapturedFrame f,byte[] t,ImageRegion? r=null)=>Find(new byte[0],t,r);public IReadOnlyList<ImageMatchResult> FindMany(CapturedFrame f,IReadOnlyList<ImageMatchRequest> requests){FrameBatches++;return requests.Select(x=>Find(new byte[0],x.TemplatePng,x.SearchRegion)).ToArray();}}
     sealed class AvailabilityClient:ILdPlayerClient,IFrameCapturingLdPlayerClient{public int Captures,Inputs;public Task<byte[]> CaptureScreenshotPngAsync(string d,CancellationToken t){t.ThrowIfCancellationRequested();Captures++;return Task.FromResult(new byte[]{1});}public Task<CapturedFrame> CaptureFrameAsync(string d,CancellationToken t){t.ThrowIfCancellationRequested();Captures++;return Task.FromResult(new CapturedFrame(new Bitmap(1280,720),DateTimeOffset.UtcNow));}public Task<IReadOnlyList<string>> GetDeviceNamesAsync(CancellationToken t)=>Task.FromResult<IReadOnlyList<string>>(new[]{"LDPlayer"});public Task<bool> IsRunningAsync(string d,CancellationToken t)=>Task.FromResult(true);public Task OpenAsync(string d,CancellationToken t)=>Task.CompletedTask;public Task CloseAsync(string d,CancellationToken t)=>Task.CompletedTask;public Task RunAppAsync(string d,string p,CancellationToken t)=>Task.CompletedTask;public Task TapAsync(string d,int x,int y,CancellationToken t){Inputs++;return Task.CompletedTask;}public Task TapByPercentAsync(string d,double x,double y,CancellationToken t){Inputs++;return Task.CompletedTask;}public Task LongPressAsync(string d,int x,int y,int ms,CancellationToken t){Inputs++;return Task.CompletedTask;}public Task SwipeByPercentAsync(string d,double sx,double sy,double ex,double ey,int ms,CancellationToken t){Inputs++;return Task.CompletedTask;}public Task BackAsync(string d,CancellationToken t){Inputs++;return Task.CompletedTask;}public Task InputTextAsync(string d,string v,CancellationToken t){Inputs++;return Task.CompletedTask;}public Task PressKeyAsync(string d,AndroidKeyCode k,CancellationToken t){Inputs++;return Task.CompletedTask;}}
     sealed class InlineProgress<T>:IProgress<T>{readonly Action<T> action;public InlineProgress(Action<T> action){this.action=action;}public void Report(T value){action(value);}}
     sealed class FakeDeviceRecovery:IDeviceRecoveryService
@@ -1726,6 +1792,48 @@ internal static class Program
                 ReadyTeams=success?new[]{TeamNumber.Team4}:new TeamNumber[0],
                 ReadyMatches=new ImageMatchResult[0],FinalState=GameState.WorldMap,
                 Message=success?"ready":"preflight failed",ErrorMessage=success?null:"capture failed"};
+        }
+    }
+    sealed class DeviceReadinessAvailability:IWorldMapTeamAvailabilityService
+    {
+        readonly HashSet<string> readyDevices;
+        int calls;
+        public int Calls => Volatile.Read(ref calls);
+        public DeviceReadinessAvailability(IEnumerable<string> readyDevices)
+        {
+            this.readyDevices = new HashSet<string>(readyDevices,
+                StringComparer.OrdinalIgnoreCase);
+        }
+        public Task<WorldMapTeamAvailabilityResult> CheckAsync(string d,CancellationToken t)
+        {
+            t.ThrowIfCancellationRequested(); Interlocked.Increment(ref calls);
+            bool ready = readyDevices.Contains(d);
+            return Task.FromResult(new WorldMapTeamAvailabilityResult
+            {
+                Success = true, AnyReadyTeam = ready,
+                AvailableTeams = new[] { TeamNumber.Team4 },
+                ReadyTeams = ready ? new[] { TeamNumber.Team4 } : new TeamNumber[0],
+                ReadyMatches = new ImageMatchResult[0], FinalState = GameState.WorldMap,
+                Message = ready ? "ready" : "waiting"
+            });
+        }
+    }
+    sealed class CountingSuccessWorkflow:IOneShotFarmWorkflow
+    {
+        int calls; public int Calls => Volatile.Read(ref calls);
+        public Task<OneShotFarmResult> RunAsync(string d,OneShotFarmRequest r,CancellationToken t)
+            => RunAsync(d,r,null,t);
+        public Task<OneShotFarmResult> RunAsync(string d,OneShotFarmRequest r,
+            IProgress<OneShotFarmProgress> p,CancellationToken t)
+        {
+            t.ThrowIfCancellationRequested(); Interlocked.Increment(ref calls);
+            return Task.FromResult(new OneShotFarmResult { DeviceName = d, Success = true,
+                Outcome = OneShotFarmOutcome.MarchStarted,
+                AttemptedLevels = new int[0], AttemptedResources = new ResourceType[0],
+                MissingRuntimeTemplates = new MissingRuntimeTemplate[0],
+                StorageFullResources = new ResourceType[0],
+                LevelsExhaustedResources = new ResourceType[0],
+                Steps = new OneShotFarmStepResult[0] });
         }
     }
     sealed class PreflightAwareWorkflow:IOneShotFarmWorkflow

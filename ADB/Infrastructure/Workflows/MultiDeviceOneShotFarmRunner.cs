@@ -105,7 +105,8 @@ namespace ADB_Tool_Automation_Post_FB.Infrastructure.Workflows
             if (availabilityFactory != null
                 && request.ReadyTeamWaitMode == ReadyTeamWaitMode.YieldToSupervisor
                 && !HasEligibleReadyTeam(preflight.Availability, request))
-                return WaitingForReadyTeam(preflight.DeviceName, preflight.Availability);
+                return WaitingForReadyTeam(preflight.DeviceName, preflight.Availability,
+                    request);
 
             return await RunDeviceAsync(preflight.DeviceName,
                 CreatePreflightRequest(request, preflight.Availability), executionGate,
@@ -247,8 +248,12 @@ namespace ADB_Tool_Automation_Post_FB.Infrastructure.Workflows
         }
 
         private static MultiDeviceOneShotFarmItemResult WaitingForReadyTeam(string deviceName,
-            WorldMapTeamAvailabilityResult availability)
+            WorldMapTeamAvailabilityResult availability, OneShotFarmRequest request)
         {
+            int delayMs = request?.ReadyTeamOptions?.CheckIntervalMs ?? 600000;
+            DateTimeOffset nextCheckAt = DateTimeOffset.UtcNow.AddMilliseconds(delayMs);
+            string message = VietnameseUserMessageLocalizer.Default.Get(
+                UiMessageKey.YieldedUntilScheduledCheck);
             return new MultiDeviceOneShotFarmItemResult
             {
                 DeviceName = deviceName,
@@ -257,9 +262,9 @@ namespace ADB_Tool_Automation_Post_FB.Infrastructure.Workflows
                 {
                     DeviceName = deviceName,
                     Success = false,
-                    Outcome = OneShotFarmOutcome.NoEligibleTeam,
-                    Message = VietnameseUserMessageLocalizer.Default.Get(
-                        UiMessageKey.YieldedUntilScheduledCheck),
+                    Outcome = OneShotFarmOutcome.WaitingForReadyTeam,
+                    Message = message,
+                    NextCheckAt = nextCheckAt,
                     DetectedTeams = availability?.AvailableTeams ?? new TeamNumber[0],
                     ReadyTeams = availability?.ReadyTeams ?? new TeamNumber[0],
                     AttemptedLevels = new int[0],

@@ -402,8 +402,12 @@ namespace ADB_Tool_Automation_Post_FB.Infrastructure.Workflows
                     ?? item?.Result?.Message ?? "Supervised cycle returned no result.";
                 if (succeeded) return AttemptResult.Completed();
                 if (item?.Stage == MultiDeviceOneShotFarmStage.WaitingForReadyTeam)
+                {
+                    int? nextCheckDelayMs = GetNextCheckDelayMs(item.Result?.NextCheckAt);
                     return AttemptResult.WaitingForNextCycle(
-                        item.Result?.Message ?? "No allowed team is ready; waiting for the next check.");
+                        item.Result?.Message ?? "No allowed team is ready; waiting for the next check.",
+                        nextCheckDelayMs);
+                }
                 if (item?.Result?.Outcome == OneShotFarmOutcome.TeamDispatchFailed
                     && item.Result.DispatchResult?.Outcome
                         == DispatchMarchOutcome.TransitionTimeout)
@@ -433,6 +437,13 @@ namespace ADB_Tool_Automation_Post_FB.Infrastructure.Workflows
             progress?.Stage == MultiDeviceOneShotFarmStage.Queued
             || (progress?.DeviceProgress?.Stage == OneShotFarmProgressStage.RunningFarmStep
                 && progress.DeviceProgress.CurrentStep == OneShotFarmStep.ResourceFarmFallback);
+
+        private static int? GetNextCheckDelayMs(DateTimeOffset? nextCheckAt)
+        {
+            if (!nextCheckAt.HasValue) return null;
+            double delay = (nextCheckAt.Value - DateTimeOffset.UtcNow).TotalMilliseconds;
+            return delay <= 0d ? 1 : (int)Math.Min(int.MaxValue, Math.Ceiling(delay));
+        }
 
         private static bool IsDeviceConnectivityFailure(string error)
         {

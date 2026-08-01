@@ -61,6 +61,7 @@ namespace ADB_Tool_Automation_Post_FB.Infrastructure.LDPlayer
             {
                 FramesCaptured = Interlocked.Read(ref framesCaptured),
                 FramesEncodedToPng = Interlocked.Read(ref framesEncodedToPng),
+                PngEncodes = Interlocked.Read(ref framesEncodedToPng),
                 ScreenshotGateWaitMs = Interlocked.Read(ref screenshotGateWaitMs),
                 ScreenShootDurationMs = Interlocked.Read(ref screenShootDurationMs),
                 AdbHealthChecks = Interlocked.Read(ref adbHealthChecks),

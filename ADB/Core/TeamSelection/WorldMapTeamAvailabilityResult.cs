@@ -13,6 +13,15 @@ namespace ADB_Tool_Automation_Post_FB.Core.TeamSelection
         ExplicitSingleTeam
     }
 
+    public enum TeamRosterClassification
+    {
+        FreshConfirmed,
+        CachedConfirmed,
+        ExplicitSingleTeam,
+        Uncertain,
+        Failed
+    }
+
     public sealed class WorldMapTeamAvailabilityResult
     {
         public bool Success { get; set; }
@@ -23,6 +32,7 @@ namespace ADB_Tool_Automation_Post_FB.Core.TeamSelection
         public ImageMatchResult ReadyMatch { get; set; }
         public IReadOnlyList<ImageMatchResult> ReadyMatches { get; set; }
         public TeamRosterEvidenceSource RosterEvidenceSource { get; set; }
+        public TeamRosterClassification RosterClassification { get; set; }
         public bool IsRosterUncertain { get; set; }
         public string Message { get; set; }
         public string ErrorMessage { get; set; }
