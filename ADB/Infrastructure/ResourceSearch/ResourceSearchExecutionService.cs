@@ -138,7 +138,7 @@ namespace ADB_Tool_Automation_Post_FB.Infrastructure.ResourceSearch
 
                     ImageMatchResult button = Match(beforeTap, TemplateId.SearchButtonEnabled, null);
                     if (!HasBounds(button))
-                        return await CompleteAsync(deviceName, result, context, ResourceSearchOutcome.Failed,
+                        return await CompleteAsync(deviceName, result, context, ResourceSearchOutcome.SearchButtonUnavailable,
                             "SearchButtonEnabled was not found with valid bounds; no Tap was sent.", null,
                             watch, cancellationToken);
 
@@ -181,27 +181,9 @@ namespace ADB_Tool_Automation_Post_FB.Infrastructure.ResourceSearch
                     {
                         if (attempt < options.MaxSearchTapAttempts)
                             continue;
-                        if (result.SearchTapCount >= 2 && HasPartialNotFoundToast(observations))
-                        {
-                            result.NotFoundObserved = true;
-                            result.MatchedNotFoundVariant = PartialToastPanelStayedOpenVariant;
-                            return await CompleteAsync(deviceName, result, context,
-                                ResourceSearchOutcome.ResourceNotFound,
-                                "ResourceNotFound was inferred after two bounded verified Search taps: the panel remained confirmed and a partial not-found toast anchor was observed.",
-                                null, watch, cancellationToken);
-                        }
-                        if (result.SearchTapCount >= 2
-                            && context.OpenPanelObservationCount > 0)
-                        {
-                            result.NotFoundObserved = true;
-                            result.MatchedNotFoundVariant = VerifiedRetryPanelStayedOpenVariant;
-                            return await CompleteAsync(deviceName, result, context,
-                                ResourceSearchOutcome.ResourceNotFound,
-                                "ResourceNotFound was inferred after two bounded verified Search taps: the panel remained confirmed in a post-Tap observation and no popup or camera transition occurred; no toast match was claimed.",
-                                null, watch, cancellationToken);
-                        }
-                        return await CompleteAsync(deviceName, result, context, ResourceSearchOutcome.Timeout,
-                            "Search result was indeterminate: panel remained open and no transient toast was captured.",
+                        return await CompleteAsync(deviceName, result, context,
+                            ResourceSearchOutcome.SearchTapNotApplied,
+                            "Search was tapped with fresh bounds, but the panel did not change after all bounded retries.",
                             null, watch, cancellationToken);
                     }
 
@@ -230,7 +212,8 @@ namespace ADB_Tool_Automation_Post_FB.Infrastructure.ResourceSearch
                     : result.PanelClosed && !result.CameraMovementObserved
                         ? "WorldMap was observed after the panel closed, but camera movement was not verified."
                         : "Resource search result observation timed out.";
-                return await CompleteAsync(deviceName, result, context, ResourceSearchOutcome.Timeout,
+                return await CompleteAsync(deviceName, result, context,
+                    ResourceSearchOutcome.SearchTransitionTimeout,
                     timeoutMessage, null, watch, cancellationToken);
             }
             catch (OperationCanceledException) { throw; }
@@ -238,7 +221,8 @@ namespace ADB_Tool_Automation_Post_FB.Infrastructure.ResourceSearch
             {
                 logger.Error($"[Resource Search Execution] DeviceName='{deviceName}', Error='{exception.Message}', "
                     + $"SearchTapCount={result.SearchTapCount}, DurationMs={watch.Elapsed.TotalMilliseconds:F0}", exception);
-                return await CompleteAsync(deviceName, result, context, ResourceSearchOutcome.Failed,
+                return await CompleteAsync(deviceName, result, context,
+                    ResourceSearchOutcome.TechnicalFailure,
                     "Resource search execution failed.", exception.Message, watch, cancellationToken);
             }
         }

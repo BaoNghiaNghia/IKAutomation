@@ -32,6 +32,7 @@ namespace IKAutomation.ResourceSearchExecution.Tests
             Run("Missing Search bounds fails without Tap", MissingSearchBounds);
             Run("Outcome prevents a second Tap", OutcomeStopsTap);
             Run("Retry is bounded", RetryBounded);
+            Run("Three ignored Search taps return SearchTapNotApplied", ThreeIgnoredTaps);
             Run("NotFound latch prevents retry", NotFoundNoRetry);
             Run("Both toast anchors produce NotFound", BothToastAnchors);
             Run("Alternate toast pair produces NotFound", AlternateToastPair);
@@ -115,9 +116,17 @@ namespace IKAutomation.ResourceSearchExecution.Tests
         private static void ConfigurationFailure() { Fixture f=Setup(); f.Configuration.Success=false; var r=Execute(f); Is(r.Outcome==ResourceSearchOutcome.Failed,"outcome"); Eq(0,f.Client.TapCalls,"tap"); }
         private static void SearchCenter() { Fixture f=ToastFixture(); Execute(f); Eq(110,f.Client.LastX,"x"); Eq(220,f.Client.LastY,"y"); }
         private static void ResourceTabFallbackAllowsSearch() { Fixture f=Setup(windowMs:3); f.Detector.SetStates(PanelFromResourceTab(),World()); var r=Execute(f); Eq(1,r.SearchTapCount,"search tap count"); Eq(1,f.Client.TapCalls,"client tap count"); }
-        private static void MissingSearchBounds() { Fixture f=Setup(); f.Matcher.InvalidSearchBounds=true; var r=Execute(f); Is(r.Outcome==ResourceSearchOutcome.Failed,"outcome"); Eq(0,f.Client.TapCalls,"tap"); }
+        private static void MissingSearchBounds() { Fixture f=Setup(); f.Matcher.InvalidSearchBounds=true; var r=Execute(f); Is(r.Outcome==ResourceSearchOutcome.SearchButtonUnavailable,"outcome"); Eq(0,f.Client.TapCalls,"tap"); }
         private static void OutcomeStopsTap() { Fixture f=ToastFixture(); Execute(f); Eq(1,f.Client.TapCalls,"tap"); }
-        private static void RetryBounded() { Fixture f=Setup(maxAttempts:2); var r=Execute(f); Is(r.Outcome==ResourceSearchOutcome.ResourceNotFound,"outcome"); Eq(2,f.Client.TapCalls,"tap"); }
+        private static void RetryBounded() { Fixture f=Setup(maxAttempts:2); var r=Execute(f); Is(r.Outcome==ResourceSearchOutcome.SearchTapNotApplied,"outcome"); Eq(2,f.Client.TapCalls,"tap"); }
+        private static void ThreeIgnoredTaps()
+        {
+            Fixture f=Setup(maxAttempts:3,windowMs:3);
+            ResourceSearchExecutionResult result=Execute(f);
+            Is(result.Outcome==ResourceSearchOutcome.SearchTapNotApplied,"outcome");
+            Eq(3,result.SearchTapCount,"tap count");
+            Eq(0,f.Client.ProhibitedCalls,"Back must not be sent");
+        }
         private static void NotFoundNoRetry() { Fixture f=ToastFixture(); var r=Execute(f); Is(r.NotFoundObserved,"latch"); Eq(1,f.Client.TapCalls,"tap"); }
         private static void BothToastAnchors() { var r=Execute(ToastFixture()); Is(r.Outcome==ResourceSearchOutcome.ResourceNotFound,"outcome"); }
         private static void AlternateToastPair() { var r=Execute(AlternateToastFixture()); Is(r.Outcome==ResourceSearchOutcome.ResourceNotFound&&r.MatchedNotFoundVariant=="SearchOtherRegion","outcome"); }
@@ -165,11 +174,11 @@ namespace IKAutomation.ResourceSearchExecution.Tests
         private static void LatchRemainsTrue() { var r=Execute(ToastFixture()); Is(r.NotFoundObserved&&r.NotFoundToastVerified,"latch"); }
         private static void NotFoundNotException() { ResourceSearchExecutionResult r=Execute(ToastFixture()); Is(r.ErrorMessage==null,"error"); }
         private static void OpenPanelNotLocated() { var r=Execute(Setup()); Is(!r.Success,"success"); }
-        private static void OpenPanelTimeout() { var r=Execute(Setup(maxAttempts:1)); Is(r.Outcome==ResourceSearchOutcome.Timeout,"outcome"); }
-        private static void RetryPanelNoChangeInfersNotFound() { Fixture f=Setup(maxAttempts:2,windowMs:3); var r=Execute(f); Is(r.Outcome==ResourceSearchOutcome.ResourceNotFound&&r.NotFoundObserved,"outcome"); Is(!r.NotFoundToastVerified&&r.MatchedNotFoundVariant=="VerifiedRetryPanelStayedOpen","inference evidence"); Eq(2,r.SearchTapCount,"bounded retries"); }
-        private static void RetrySparsePanelObservationInfersNotFound() { Fixture f=Setup(maxAttempts:2,windowMs:100); f.Client.CaptureDelayMs=600; var r=Execute(f); Is(r.Outcome==ResourceSearchOutcome.ResourceNotFound&&r.NotFoundObserved,"outcome"); Eq(1,r.ObservedFrameCount,"sparse observations"); Eq(2,r.SearchTapCount,"bounded retries"); }
-        private static void RetryPanelChangeInfersNotFound() { Fixture f=Setup(maxAttempts:2,windowMs:3); f.Stability.Differences.Enqueue(.05); f.Stability.Differences.Enqueue(.05); var r=Execute(f); Is(r.Outcome==ResourceSearchOutcome.ResourceNotFound&&r.NotFoundObserved,"outcome"); Is(!r.NotFoundToastVerified&&r.MatchedNotFoundVariant=="VerifiedRetryPanelStayedOpen","inference evidence"); Eq(2,r.SearchTapCount,"bounded retries"); Is(!r.CameraMovementObserved,"panel animation was treated as camera movement"); }
-        private static void RetryPartialToastInfersNotFound() { Fixture f=Setup(maxAttempts:2,windowMs:3); f.Matcher.Short=true; f.Matcher.ToastFrames.Add(2); var r=Execute(f); Is(r.Outcome==ResourceSearchOutcome.ResourceNotFound&&r.NotFoundObserved,"outcome"); Is(!r.NotFoundToastVerified&&r.MatchedNotFoundVariant=="PartialToastPanelStayedOpen","partial evidence"); Eq(2,r.SearchTapCount,"bounded retries"); }
+        private static void OpenPanelTimeout() { var r=Execute(Setup(maxAttempts:1)); Is(r.Outcome==ResourceSearchOutcome.SearchTapNotApplied,"outcome"); }
+        private static void RetryPanelNoChangeInfersNotFound() { Fixture f=Setup(maxAttempts:2,windowMs:3); var r=Execute(f); Is(r.Outcome==ResourceSearchOutcome.SearchTapNotApplied&&!r.NotFoundObserved,"outcome"); Eq(2,r.SearchTapCount,"bounded retries"); }
+        private static void RetrySparsePanelObservationInfersNotFound() { Fixture f=Setup(maxAttempts:2,windowMs:100); f.Client.CaptureDelayMs=600; var r=Execute(f); Is(r.Outcome==ResourceSearchOutcome.SearchTapNotApplied&&!r.NotFoundObserved,"outcome"); Eq(1,r.ObservedFrameCount,"sparse observations"); Eq(2,r.SearchTapCount,"bounded retries"); }
+        private static void RetryPanelChangeInfersNotFound() { Fixture f=Setup(maxAttempts:2,windowMs:3); f.Stability.Differences.Enqueue(.05); f.Stability.Differences.Enqueue(.05); var r=Execute(f); Is(r.Outcome==ResourceSearchOutcome.SearchTapNotApplied&&!r.NotFoundObserved,"outcome"); Eq(2,r.SearchTapCount,"bounded retries"); Is(!r.CameraMovementObserved,"panel animation was treated as camera movement"); }
+        private static void RetryPartialToastInfersNotFound() { Fixture f=Setup(maxAttempts:2,windowMs:3); f.Matcher.Short=true; f.Matcher.ToastFrames.Add(2); var r=Execute(f); Is(r.Outcome==ResourceSearchOutcome.SearchTapNotApplied&&!r.NotFoundObserved,"outcome"); Eq(2,r.SearchTapCount,"bounded retries"); }
         private static void LocatedNeedsClosedPanel() { Fixture f=Setup(requiredStable:1); f.Stability.Differences.Enqueue(.1); f.Stability.Differences.Enqueue(.001); var r=Execute(f); Is(!r.Success,"success"); }
         private static void LocatedNeedsWorldMap() { Fixture f=Setup(requiredStable:1); f.Detector.SetStates(Panel(),State(GameState.ContinentMap),State(GameState.ContinentMap)); f.Stability.Differences.Enqueue(.1); f.Stability.Differences.Enqueue(.001); Is(!Execute(f).Success,"success"); }
         private static void LocatedNeedsMovement() { Fixture f=Setup(requiredStable:1); f.Detector.SetStates(Panel(),World(),World()); f.Stability.Differences.Enqueue(.001); f.Stability.Differences.Enqueue(.001); Is(!Execute(f).Success,"success"); }
