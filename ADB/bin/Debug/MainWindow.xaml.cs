@@ -26,12 +26,19 @@ using System.Threading;
 using System.Threading.Tasks;
 using System.Windows;
 using System.Windows.Controls;
+using System.Windows.Media;
+using MediaBrush = System.Windows.Media.Brush;
 
 
 namespace ADB_Tool_Automation_Post_FB
 {
     public partial class MainWindow : Window
     {
+        private DeviceDiagnosticWindow farmControlWindow;
+        private static readonly MediaBrush FarmControlClosedBrush =
+            new SolidColorBrush(System.Windows.Media.Color.FromRgb(126, 87, 194));
+        private static readonly MediaBrush FarmControlOpenBrush =
+            new SolidColorBrush(System.Windows.Media.Color.FromRgb(0, 137, 123));
         #region data
         private byte[] TRUY_CAP_BMP;
         private byte[] THAM_GIA_BMP;
@@ -205,6 +212,16 @@ namespace ADB_Tool_Automation_Post_FB
 
         private void Button_Click_DeviceDiagnostic(object sender, RoutedEventArgs e)
         {
+            if (farmControlWindow != null)
+            {
+                if (farmControlWindow.WindowState == WindowState.Minimized)
+                    farmControlWindow.WindowState = WindowState.Normal;
+                farmControlWindow.Show();
+                farmControlWindow.Activate();
+                farmControlWindow.Focus();
+                return;
+            }
+
             var adaptiveConcurrencyGate = new AdaptiveConcurrencyGate(
                 AppConfigAdaptiveConcurrencyOptionsProvider.Load());
             var multiDeviceRunner = new MultiDeviceOneShotFarmRunner(
@@ -212,7 +229,7 @@ namespace ADB_Tool_Automation_Post_FB
                 () => OneShotFarmWorkflowFactory.CreateTeamAvailabilityFromAppConfig(),
                 MultiDeviceOneShotFarmRunner.MaximumSupportedConcurrency,
                 adaptiveConcurrencyGate);
-            var diagnosticWindow = new DeviceDiagnosticWindow(
+            farmControlWindow = new DeviceDiagnosticWindow(
                 DeviceDiagnosticServiceFactory.CreateFromAppConfig(),
                 multiDeviceRunner,
                 new ContinuousFarmSupervisor(multiDeviceRunner,
@@ -233,7 +250,24 @@ namespace ADB_Tool_Automation_Post_FB
             {
                 Owner = this
             };
-            diagnosticWindow.Show();
+            farmControlWindow.Closed += FarmControlWindow_Closed;
+            SetFarmControlButtonOpen(true);
+            farmControlWindow.Show();
+        }
+
+        private void FarmControlWindow_Closed(object sender, EventArgs e)
+        {
+            farmControlWindow = null;
+            SetFarmControlButtonOpen(false);
+        }
+
+        private void SetFarmControlButtonOpen(bool isOpen)
+        {
+            DeviceDiagnosticButton.Background = isOpen
+                ? FarmControlOpenBrush : FarmControlClosedBrush;
+            DeviceDiagnosticButton.BorderBrush = DeviceDiagnosticButton.Background;
+            DeviceDiagnosticButton.Content = isOpen
+                ? "IK Device Diagnostic • Đang mở" : "IK Device Diagnostic";
         }
 
         // ---------------- UI Event Handlers ---------------- //

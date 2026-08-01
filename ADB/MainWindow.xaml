@@ -42,7 +42,8 @@
                     Foreground="White"
                     BorderBrush="#2196F3"/>
 
-            <Button Grid.Column="1"
+            <Button x:Name="DeviceDiagnosticButton"
+                    Grid.Column="1"
                     Content="IK Device Diagnostic"
                     Click="Button_Click_DeviceDiagnostic"
                     Height="50"
