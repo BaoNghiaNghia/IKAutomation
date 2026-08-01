@@ -250,7 +250,7 @@ namespace ADB_Tool_Automation_Post_FB.Infrastructure.Workflows
         private static MultiDeviceOneShotFarmItemResult WaitingForReadyTeam(string deviceName,
             WorldMapTeamAvailabilityResult availability, OneShotFarmRequest request)
         {
-            int delayMs = request?.ReadyTeamOptions?.CheckIntervalMs ?? 600000;
+            int delayMs = request?.ReadyTeamOptions?.CheckIntervalMs ?? 240000;
             DateTimeOffset nextCheckAt = DateTimeOffset.UtcNow.AddMilliseconds(delayMs);
             string message = VietnameseUserMessageLocalizer.Default.Get(
                 UiMessageKey.YieldedUntilScheduledCheck);

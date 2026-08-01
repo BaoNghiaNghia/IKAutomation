@@ -10,7 +10,7 @@ namespace ADB_Tool_Automation_Post_FB.Core.Workflows
 {
     public sealed class FarmUiPreferences
     {
-        public const int DefaultReadyCheckIntervalMinutes = 10;
+        public const int DefaultReadyCheckIntervalMinutes = 4;
 
         public FarmUiPreferences()
         {
