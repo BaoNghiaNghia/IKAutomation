@@ -96,15 +96,17 @@ namespace ADB_Tool_Automation_Post_FB.Infrastructure.TeamSelection
                 }
                 result.TeamSelectionScreenVerified = true;
 
-                lastFrame = await client.CaptureScreenshotPngAsync(deviceName, cancellationToken);
-                GameDetectionResult freshState = detector.Detect(lastFrame);
+                GameDetectionResult freshState = await ConfirmSelectionScreenAsync(
+                    deviceName, cancellationToken, frame => lastFrame = frame);
                 if (!IsSelectionScreen(freshState))
                     return await CompleteAsync(deviceName, result,
                         SelectFarmTeamOutcome.TeamSelectionNotReady,
                         "Team Selection was not ready on the fresh screenshot; no Tap was sent.",
                         freshState.ErrorMessage, lastFrame, watch, cancellationToken);
 
-                SelectedScan selected = ScanSelected(lastFrame);
+                IReadOnlyDictionary<TeamNumber, ImageRegion> initialRegions =
+                    ResolveTeamRegions(freshState);
+                SelectedScan selected = ScanSelected(lastFrame, initialRegions);
                 if (selected.IsAmbiguous)
                     return await CompleteAsync(deviceName, result, SelectFarmTeamOutcome.Failed,
                         "Selected border appeared in multiple team ROIs; no Tap was sent.",
@@ -155,7 +157,7 @@ namespace ADB_Tool_Automation_Post_FB.Infrastructure.TeamSelection
                         continue;
                     }
 
-                    ImageRegion teamRegion = options.TeamRegions[team];
+                    ImageRegion teamRegion = initialRegions[team];
                     ImageMatchResult preliminaryBadge = Match(lastFrame, badgeId, teamRegion);
                     bool preliminaryDisabled = IsDisabled(lastFrame, teamRegion);
                     if (!HasBounds(preliminaryBadge) || preliminaryDisabled)
@@ -195,7 +197,10 @@ namespace ADB_Tool_Automation_Post_FB.Infrastructure.TeamSelection
                                 "Team Selection stopped being ready; no further Tap was sent.",
                                 state.ErrorMessage, lastFrame, watch, cancellationToken);
 
-                        SelectedScan currentSelected = ScanSelected(lastFrame);
+                        IReadOnlyDictionary<TeamNumber, ImageRegion> currentRegions =
+                            ResolveTeamRegions(state);
+                        teamRegion = currentRegions[team];
+                        SelectedScan currentSelected = ScanSelected(lastFrame, currentRegions);
                         if (currentSelected.IsAmbiguous)
                             return await CompleteAsync(deviceName, result,
                                 SelectFarmTeamOutcome.Failed,
@@ -226,7 +231,7 @@ namespace ADB_Tool_Automation_Post_FB.Infrastructure.TeamSelection
                             break;
                         }
 
-                        ImageRegion region = teamRegion;
+                        ImageRegion region = ResolveTeamRegions(state)[team];
                         ImageMatchResult badge = Match(lastFrame, badgeId, region);
                         bool disabled = IsDisabled(lastFrame, region);
                         var attempt = new TeamSelectionAttempt
@@ -266,7 +271,8 @@ namespace ADB_Tool_Automation_Post_FB.Infrastructure.TeamSelection
                             lastFrame = await client.CaptureScreenshotPngAsync(deviceName, cancellationToken);
                             GameDetectionResult observedState = detector.Detect(lastFrame);
                             if (!IsSelectionScreen(observedState)) continue;
-                            SelectedScan observed = ScanSelected(lastFrame);
+                            SelectedScan observed = ScanSelected(lastFrame,
+                                ResolveTeamRegions(observedState));
                             if (observed.IsAmbiguous)
                                 return await CompleteAsync(deviceName, result,
                                     SelectFarmTeamOutcome.Failed,
@@ -328,16 +334,39 @@ namespace ADB_Tool_Automation_Post_FB.Infrastructure.TeamSelection
             }
         }
 
-        private SelectedScan ScanSelected(byte[] frame)
+        private SelectedScan ScanSelected(byte[] frame,
+            IReadOnlyDictionary<TeamNumber, ImageRegion> regions)
         {
             var matches = new Dictionary<TeamNumber, ImageMatchResult>();
-            foreach (KeyValuePair<TeamNumber, ImageRegion> item in options.TeamRegions)
+            foreach (KeyValuePair<TeamNumber, ImageRegion> item in regions)
             {
                 ImageMatchResult match = Match(frame,
                     TemplateId.TeamSelectedBorderAnchor, item.Value);
                 if (match != null && match.Found) matches[item.Key] = match;
             }
             return new SelectedScan(matches);
+        }
+
+        private IReadOnlyDictionary<TeamNumber, ImageRegion> ResolveTeamRegions(
+            GameDetectionResult state)
+        {
+            GameDetectionEvidence panel = state?.Evidence?.FirstOrDefault(item =>
+                item.TemplateId == TemplateId.TeamSelectionPanelAnchor && item.Found);
+            int offset = panel?.MatchResult != null && panel.MatchResult.Y >= 65
+                ? panel.MatchResult.Y - 65 : 0;
+            if (offset == 0) return options.TeamRegions;
+
+            var regions = new Dictionary<TeamNumber, ImageRegion>();
+            foreach (KeyValuePair<TeamNumber, ImageRegion> item in options.TeamRegions)
+            {
+                int y = Math.Max(0, Math.Min(720 - item.Value.Height,
+                    item.Value.Y + offset));
+                regions[item.Key] = new ImageRegion(item.Value.X, y,
+                    item.Value.Width, item.Value.Height);
+            }
+            logger.Info($"[Farm Team Selection] PanelY={panel.MatchResult.Y}, "
+                + $"ResolvedVerticalOffset={offset}");
+            return regions;
         }
 
         private ImageMatchResult Match(byte[] frame, TemplateId id, ImageRegion region) =>
@@ -361,10 +390,26 @@ namespace ADB_Tool_Automation_Post_FB.Infrastructure.TeamSelection
             return true;
         }
 
+        private async Task<GameDetectionResult> ConfirmSelectionScreenAsync(
+            string deviceName, CancellationToken cancellationToken, Action<byte[]> capture)
+        {
+            GameDetectionResult last = null;
+            for (int observation = 1; observation <= 3; observation++)
+            {
+                cancellationToken.ThrowIfCancellationRequested();
+                byte[] frame = await client.CaptureScreenshotPngAsync(deviceName,
+                    cancellationToken);
+                capture(frame);
+                last = detector.Detect(frame);
+                if (IsSelectionScreen(last)) return last;
+                if (observation < 3)
+                    await Task.Delay(250, cancellationToken);
+            }
+            return last;
+        }
+
         private static bool IsSelectionScreen(GameDetectionResult state) =>
-            state != null && state.IsSuccessful && state.State == GameState.TeamSelection
-            && Found(state, TemplateId.TeamSelectionPanelAnchor)
-            && Found(state, TemplateId.TeamAdjustFormationButton);
+            TeamSelectionEvidence.IsConfirmed(state);
 
         private static bool HasEnabledAction(GameDetectionResult state) =>
             Found(state, TemplateId.TeamActionButtonEnabled);

@@ -334,7 +334,7 @@ namespace ADB_Tool_Automation_Post_FB.Infrastructure.GameDetection
             int popupSignals = (popupAnchor.Found ? 1 : 0)
                 + (popupIron.Found ? 1 : 0) + (gatherButton.Found ? 1 : 0);
             bool popupConfirmed = popupSignals >= 2 && (popupAnchor.Found || popupIron.Found);
-            bool teamSelectionConfirmed = teamPanel.Found && (teamAdjust.Found || teamAction.Found);
+            bool teamSelectionConfirmed = TeamSelectionEvidence.IsConfirmed(evidence);
             bool storageLimitConfirmed = storageDialog.Found && storageCancel.Found;
             bool resourceExpiryConfirmed = resourceExpiryDialog.Found && storageCancel.Found;
             bool continentMapConfirmed = continentTitle.Found

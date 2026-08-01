@@ -511,7 +511,7 @@ namespace ADB_Tool_Automation_Post_FB.UI
                 UpdateRetryCandidates(result, request, attemptVersions);
                 StatusTextBlock.Text = FormatMultiDeviceFarmResult(result)
                     + (string.IsNullOrWhiteSpace(saveWarning) ? string.Empty
-                        : Environment.NewLine + "Warning: " + saveWarning);
+                        : Environment.NewLine + "Cảnh báo: " + saveWarning);
                 foreach (MultiDeviceOneShotFarmItemResult item in result.Devices
                     .Where(item => ShouldNotifyFailure(item.Result)))
                     AppendNotificationStatus(await NotifyFailureSafelyAsync(
@@ -519,7 +519,7 @@ namespace ADB_Tool_Automation_Post_FB.UI
             }
             catch (OperationCanceledException)
             {
-                StatusTextBlock.Text = "One-Shot Farm canceled.";
+                StatusTextBlock.Text = "Đã hủy lượt farm.";
             }
             catch (Exception exception)
             {
@@ -529,8 +529,8 @@ namespace ADB_Tool_Automation_Post_FB.UI
                 retryRequest = request;
                 foreach (DeviceSelectionItem item in deviceSelections.Where(item =>
                     failedDeviceNames.Contains(item.DeviceName)))
-                    item.Status = "Failed: " + exception.Message;
-                StatusTextBlock.Text = $"Error: {exception.Message}";
+                    item.Status = "Thất bại: " + UserErrorPresenter.Present(exception).UserMessage;
+                StatusTextBlock.Text = "Lỗi: " + UserErrorPresenter.Present(exception).UserMessage;
                 AppendNotificationStatus(await NotifyExceptionSafelyAsync(
                     string.Join(",", deviceNames), exception));
             }
@@ -761,18 +761,18 @@ namespace ADB_Tool_Automation_Post_FB.UI
         private async Task RunOperationAsync(Func<CancellationToken, Task<string>> operation)
         {
             IsEnabled = false;
-            StatusTextBlock.Text = "Running...";
+            StatusTextBlock.Text = "Đang xử lý...";
             try
             {
                 StatusTextBlock.Text = await operation(lifetimeCancellation.Token);
             }
             catch (OperationCanceledException)
             {
-                StatusTextBlock.Text = "Operation canceled.";
+                StatusTextBlock.Text = "Thao tác đã được hủy.";
             }
             catch (Exception exception)
             {
-                StatusTextBlock.Text = $"Error: {exception.Message}";
+                StatusTextBlock.Text = "Lỗi: " + UserErrorPresenter.Present(exception).UserMessage;
             }
             finally
             {
@@ -1019,15 +1019,18 @@ namespace ADB_Tool_Automation_Post_FB.UI
             int cancelled = devices.Count(item => item.Stage == MultiDeviceOneShotFarmStage.Cancelled);
             string details = string.Join(Environment.NewLine, devices.Select(item =>
             {
-                string outcome = item.Result?.Outcome.ToString()
-                    ?? (string.IsNullOrWhiteSpace(item.ErrorMessage) ? "-" : item.ErrorMessage);
-                return $"- {item.DeviceName}: {item.Stage} ({outcome})";
+                string outcome = item.Result != null
+                    ? VietnameseDisplayNames.Outcome(item.Result.Outcome)
+                    : string.IsNullOrWhiteSpace(item.ErrorMessage) ? "-"
+                        : "Đã xảy ra lỗi trong quá trình xử lý.";
+                return $"- {item.DeviceName}: "
+                    + $"{VietnameseDisplayNames.Stage(item.Stage)} ({outcome})";
             }));
             string concurrency = result != null && result.AdaptiveConcurrencyEnabled
-                ? $"adaptive concurrency: {result.FinalConcurrencyLimit}/{result.MaximumConcurrency}"
-                : $"concurrency limit: {result?.MaximumConcurrency ?? 0}";
-            return $"Multi-device run: {devices.Length} device(s), {concurrency}"
-                + $"{Environment.NewLine}Completed: {completed}; Failed: {failed}; Cancelled: {cancelled}"
+                ? $"đồng thời thích ứng: {result.FinalConcurrencyLimit}/{result.MaximumConcurrency}"
+                : $"giới hạn đồng thời: {result?.MaximumConcurrency ?? 0}";
+            return $"Đã xử lý {devices.Length} thiết bị, {concurrency}"
+                + $"{Environment.NewLine}Hoàn tất: {completed}; Thất bại: {failed}; Đã hủy: {cancelled}"
                 + (string.IsNullOrWhiteSpace(details) ? string.Empty
                     : Environment.NewLine + details);
         }
@@ -1224,10 +1227,6 @@ namespace ADB_Tool_Automation_Post_FB.UI
                     "Không thể thiết lập cấp tài nguyên.",
                 ["Checking WorldMap, screenshot, roster and eligible teams."] =
                     "Đang kiểm tra bản đồ, ảnh chụp và các đội có thể sử dụng.",
-                ["Waiting for an execution slot."] =
-                    "Đang chờ đến lượt thực thi.",
-                ["One-Shot Farm started."] =
-                    "Đã bắt đầu chu kỳ farm.",
                 ["Preparing the one-shot farm workflow."] =
                     "Đang chuẩn bị chu kỳ farm.",
                 ["Checking the initial game state."] =
@@ -1246,8 +1245,6 @@ namespace ADB_Tool_Automation_Post_FB.UI
                     "Đang chọn đội farm phù hợp.",
                 ["No allowed team is ready; waiting before the next check."] =
                     "Chưa có đội được phép nào sẵn sàng; sẽ kiểm tra lại.",
-                ["Maximum ready-team wait time elapsed."] =
-                    "Đã hết thời gian chờ đội sẵn sàng.",
                 ["Watchdog detected no progress; starting recovery ladder."] =
                     "Không ghi nhận tiến triển; đang bắt đầu khôi phục thiết bị.",
                 ["Cycle failed; starting recovery ladder."] =
@@ -1303,7 +1300,8 @@ namespace ADB_Tool_Automation_Post_FB.UI
             if (value != null && value.StartsWith(
                 "Dispatching Team", StringComparison.Ordinal))
                 return value.Replace("Dispatching Team", "Đang điều Đội ");
-            return string.IsNullOrWhiteSpace(value) ? "-" : value;
+            return string.IsNullOrWhiteSpace(value) ? "-" : LooksLikeEnglishUserMessage(value)
+                ? "Đã xảy ra lỗi trong quá trình xử lý." : value;
         }
 
         public static string TerritoryColor(string value)
@@ -1399,6 +1397,15 @@ namespace ADB_Tool_Automation_Post_FB.UI
                 && translations.TryGetValue(value, out string translated)
                     ? translated
                     : value;
+
+        private static bool LooksLikeEnglishUserMessage(string value)
+        {
+            return new[] { " failed", "Failed", " error", "Error", "Waiting", "Checking",
+                " started", "Started", " cancelled", "Cancelled", " returned", "returned",
+                " no result", "No allowed", "Resource", "WorldMap", "Screenshot",
+                "Timeout", "Exception" }.Any(word => value.IndexOf(word,
+                    StringComparison.OrdinalIgnoreCase) >= 0);
+        }
     }
 
     internal sealed class DeviceFarmProgressItem : INotifyPropertyChanged

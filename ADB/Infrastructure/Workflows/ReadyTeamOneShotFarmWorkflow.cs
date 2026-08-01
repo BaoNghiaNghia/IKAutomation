@@ -64,10 +64,12 @@ namespace ADB_Tool_Automation_Post_FB.Infrastructure.Workflows
                     if (checks > 0 && watch.ElapsedMilliseconds >= maxWaitMs)
                     {
                         Report(progress, Terminal(OneShotFarmProgressStage.Failed,
-                            request, checks, "Maximum ready-team wait time elapsed."));
+                            request, checks, VietnameseUserMessageLocalizer.Default.Get(
+                                UiMessageKey.ReadyTeamWaitTimeout)));
                         return Empty(deviceName, request,
                             OneShotFarmOutcome.TeamAvailabilityWaitTimeout,
-                            $"No allowed team became ready within {maxWaitMs} ms.",
+                            VietnameseUserMessageLocalizer.Default.Get(
+                                UiMessageKey.NoTeamReadyWithinWait),
                             null, checks, watch.Elapsed);
                     }
 
@@ -79,7 +81,8 @@ namespace ADB_Tool_Automation_Post_FB.Infrastructure.Workflows
                         AllowedTeams = request.AllowedTeams,
                         DetectedTeams = detectedTeams,
                         WaitDeadline = waitDeadline,
-                        Message = $"Checking allowed teams (attempt {checks + 1})."
+                        Message = VietnameseUserMessageLocalizer.Default.Format(
+                            UiMessageKey.CheckingAllowedTeams, checks + 1)
                     });
                     WorldMapTeamAvailabilityResult check;
                     if (initialAvailability != null)
@@ -123,7 +126,9 @@ namespace ADB_Tool_Automation_Post_FB.Infrastructure.Workflows
                             ReadyTeams = check.ReadyTeams ?? new TeamNumber[0],
                             EligibleReadyTeams = eligibleReadyTeams,
                             WaitDeadline = waitDeadline,
-                            Message = $"Ready allowed team(s): {string.Join(", ", eligibleReadyTeams)}."
+                            Message = VietnameseUserMessageLocalizer.Default.Format(
+                                UiMessageKey.ReadyAllowedTeams,
+                                string.Join(", ", eligibleReadyTeams))
                         });
                         OneShotFarmRequest cycleRequest = CreateCycleRequest(request,
                             eligibleReadyTeams, dispatchedResources);
@@ -177,8 +182,9 @@ namespace ADB_Tool_Automation_Post_FB.Infrastructure.Workflows
                                 DetectedTeams = detectedTeams,
                                 ReadyTeams = check.ReadyTeams ?? new TeamNumber[0],
                                 EligibleReadyTeams = new TeamNumber[0],
-                                Message = $"No ready team observed; confirming "
-                                    + $"({consecutiveNoReadyChecks}/{options.NoReadyConfirmations})."
+                                Message = VietnameseUserMessageLocalizer.Default.Format(
+                                    UiMessageKey.ConfirmingNoReadyTeam,
+                                    consecutiveNoReadyChecks, options.NoReadyConfirmations)
                             });
                             await Task.Delay(options.PostDispatchRecheckDelayMs,
                                 cancellationToken);
@@ -189,8 +195,9 @@ namespace ADB_Tool_Automation_Post_FB.Infrastructure.Workflows
                         lastSuccessfulResult.DetectedTeams = detectedTeams;
                         lastSuccessfulResult.ReadyTeams = new TeamNumber[0];
                         lastSuccessfulResult.Duration = watch.Elapsed;
-                        lastSuccessfulResult.Message = $"{dispatchedResources.Count} team(s) "
-                            + "were dispatched; no allowed ready team remains.";
+                        lastSuccessfulResult.Message = VietnameseUserMessageLocalizer.Default.Format(
+                            UiMessageKey.DispatchedTeamsNoReadyRemaining,
+                            dispatchedResources.Count);
                         ApplyBatchSummary(lastSuccessfulResult, dispatchedResources,
                             dispatchedTeams);
                         Report(progress, Terminal(OneShotFarmProgressStage.Completed,
@@ -202,10 +209,12 @@ namespace ADB_Tool_Automation_Post_FB.Infrastructure.Workflows
                     if (remainingMs <= 0)
                     {
                         Report(progress, Terminal(OneShotFarmProgressStage.Failed,
-                            request, checks, "Maximum ready-team wait time elapsed."));
+                            request, checks, VietnameseUserMessageLocalizer.Default.Get(
+                                UiMessageKey.ReadyTeamWaitTimeout)));
                         return Empty(deviceName, request,
                             OneShotFarmOutcome.TeamAvailabilityWaitTimeout,
-                            $"No allowed team became ready within {maxWaitMs} ms.",
+                            VietnameseUserMessageLocalizer.Default.Get(
+                                UiMessageKey.NoTeamReadyWithinWait),
                             null, checks, watch.Elapsed);
                     }
 
@@ -222,7 +231,8 @@ namespace ADB_Tool_Automation_Post_FB.Infrastructure.Workflows
                         EligibleReadyTeams = new TeamNumber[0],
                         NextCheckAt = nextCheckAt,
                         WaitDeadline = waitDeadline,
-                        Message = "No allowed team is ready; waiting before the next check."
+                        Message = VietnameseUserMessageLocalizer.Default.Get(
+                            UiMessageKey.WaitingForNextTeamCheck)
                     });
                     logger.Info($"[Ready Team Gate] DeviceName='{deviceName}', Check={checks}, "
                         + $"ReadyTeams='{string.Join(",", check.ReadyTeams ?? new TeamNumber[0])}', "
@@ -236,9 +246,11 @@ namespace ADB_Tool_Automation_Post_FB.Infrastructure.Workflows
             catch (OperationCanceledException)
             {
                 Report(progress, Terminal(OneShotFarmProgressStage.Cancelled,
-                    request, checks, "One-shot farm was cancelled."));
+                    request, checks, VietnameseUserMessageLocalizer.Default.Get(
+                        UiMessageKey.OneShotCancelled)));
                 return Empty(deviceName, request, OneShotFarmOutcome.Cancelled,
-                    "One-shot farm readiness waiting was cancelled.", null,
+                    VietnameseUserMessageLocalizer.Default.Get(
+                        UiMessageKey.ReadinessWaitCancelled), null,
                     checks, watch.Elapsed);
             }
         }

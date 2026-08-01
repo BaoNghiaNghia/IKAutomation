@@ -24,6 +24,9 @@ namespace IKAutomation.FarmTeamSelection.Tests
         private static int Main()
         {
             Run("TeamSelection not ready sends no Tap", NotReady);
+            Run("Action button confirms TeamSelection without Adjust Formation", ActionOnlyConfirmsSelection);
+            Run("Team regions use baseline panel position", BaselinePanelLayout);
+            Run("Team regions follow shifted panel position", ShiftedPanelLayout);
             Run("Team4 already selected returns AlreadySelected", AlreadySelected);
             Run("Disallowed Team1 does not block Team4", Team1DoesNotBlock);
             Run("Priority is Team4 Team3 Team2 Team1", PriorityOrder);
@@ -82,6 +85,32 @@ namespace IKAutomation.FarmTeamSelection.Tests
 
         private static void NotReady()
         { Fixture f = Setup(); f.Detector.Ready = false; SelectFarmTeamResult r = Execute(f); Equal(SelectFarmTeamOutcome.TeamSelectionNotReady, r.Outcome); Equal(0, f.Client.Taps.Count); }
+
+        private static void ActionOnlyConfirmsSelection()
+        {
+            Fixture f = Successful(TeamNumber.Team3);
+            f.Detector.AdjustAvailable = () => false;
+            SelectFarmTeamResult result = Execute(f, Only(TeamNumber.Team3));
+            Equal(SelectFarmTeamOutcome.TeamSelected, result.Outcome);
+            Equal(TeamNumber.Team3, result.SelectedTeam.Value);
+        }
+
+        private static void BaselinePanelLayout()
+        {
+            Fixture f = Successful(TeamNumber.Team3);
+            f.Detector.PanelY = 65;
+            Execute(f, Only(TeamNumber.Team3));
+            Equal(290, f.Matcher.Regions[TeamNumber.Team3].Y);
+        }
+
+        private static void ShiftedPanelLayout()
+        {
+            Fixture f = Successful(TeamNumber.Team3);
+            f.Detector.PanelY = 171;
+            SelectFarmTeamResult result = Execute(f, Only(TeamNumber.Team3));
+            Equal(SelectFarmTeamOutcome.TeamSelected, result.Outcome);
+            Equal(396, f.Matcher.Regions[TeamNumber.Team3].Y);
+        }
 
         private static void AlreadySelected()
         { Fixture f = Setup(); f.Matcher.Selected.Add(TeamNumber.Team4); SelectFarmTeamResult r = Execute(f); Equal(SelectFarmTeamOutcome.AlreadySelected, r.Outcome); Equal(TeamNumber.Team4, r.SelectedTeam.Value); Equal(0, f.Client.Taps.Count); }
@@ -301,20 +330,19 @@ namespace IKAutomation.FarmTeamSelection.Tests
 
         private sealed class FakeDetector : IGameStateDetector
         {
-            private int active; public bool Ready = true; public int DelayMs, MaxActive;
+            private int active; public bool Ready = true; public int DelayMs, MaxActive, PanelY = 1;
             public Func<bool> ActionAvailable = () => true;
+            public Func<bool> AdjustAvailable = () => true;
             public async Task<GameDetectionResult> DetectAsync(string d, CancellationToken t)
             { int now = Interlocked.Increment(ref active); MaxActive = Math.Max(MaxActive, now); try { if (DelayMs > 0) await Task.Delay(DelayMs, t); return Result(); } finally { Interlocked.Decrement(ref active); } }
             public GameDetectionResult Detect(byte[] p) => Result();
             private GameDetectionResult Result()
             {
-                TemplateId[] ids = Ready
-                    ? (ActionAvailable()
-                        ? new[] { TemplateId.TeamSelectionPanelAnchor, TemplateId.TeamAdjustFormationButton, TemplateId.TeamActionButtonEnabled }
-                        : new[] { TemplateId.TeamSelectionPanelAnchor, TemplateId.TeamAdjustFormationButton })
-                    : new[] { TemplateId.TeamSelectionPanelAnchor };
+                var ids = new List<TemplateId> { TemplateId.TeamSelectionPanelAnchor };
+                if (Ready && AdjustAvailable()) ids.Add(TemplateId.TeamAdjustFormationButton);
+                if (Ready && ActionAvailable()) ids.Add(TemplateId.TeamActionButtonEnabled);
                 return new GameDetectionResult { State = GameState.TeamSelection, IsSuccessful = true,
-                    Evidence = ids.Select(id => new GameDetectionEvidence { TemplateId = id, TemplateExists = true, Found = true, MatchResult = ImageMatchResult.FoundAt(1, 1, 10, 10) }).ToArray() };
+                    Evidence = ids.Select(id => new GameDetectionEvidence { TemplateId = id, TemplateExists = true, Found = true, MatchResult = ImageMatchResult.FoundAt(1, id == TemplateId.TeamSelectionPanelAnchor ? PanelY : 1, 10, 10) }).ToArray() };
             }
         }
 

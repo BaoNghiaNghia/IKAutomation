@@ -143,6 +143,10 @@ internal static class Program
         Run("WorldMap readiness service has no default token bypass", AvailabilityHasNoNone);
         Run("One-Shot UI has per-run Stop cancellation", OneShotUiHasStop);
         Run("One-Shot UI hides manual diagnostic controls", OneShotUiIsFocused);
+        Run("Vietnamese message catalog validates placeholders", VietnameseMessageCatalogIsComplete);
+        Run("Vietnamese display names format farm values", VietnameseDisplayNamesAreComplete);
+        Run("Vietnamese error presentation hides technical exception text", VietnameseErrorPresentationIsSafe);
+        Run("Farm workflow no longer emits visible English wait messages", FarmWorkflowEnglishMessageAudit);
         Run("Multi-device runner caps concurrency at twenty-five", MultiDeviceConcurrencyIsCapped);
         Run("Adaptive gate enforces its live concurrency limit", AdaptiveGateEnforcesLiveLimit);
         Run("Adaptive gate reduces concurrency under host pressure", AdaptiveGateReducesOnPressure);
@@ -193,6 +197,62 @@ internal static class Program
         => new ResourceFarmFallbackService(h.Nav,new FakeFallback(h.Config,h.Search),h.Popup,h.Open,h.Select,h.Dispatch,
             profiles??new FakeProfiles(),new ResourceFarmFallbackOptions(),new Log())
             .RunAsync("LDPlayer",h.Request,GameState.WorldMap,null,t).GetAwaiter().GetResult();
+
+    static void VietnameseMessageCatalogIsComplete()
+    {
+        VietnameseUserMessageLocalizer.ValidateCatalog();
+        var messages = VietnameseUserMessageLocalizer.Default;
+        Eq("Đang kiểm tra các đội được phép (lần 4).", messages.Format(
+            UiMessageKey.CheckingAllowedTeams, 4), "formatted check message");
+        bool threw = false;
+        try { messages.Format(UiMessageKey.CheckingAllowedTeams); }
+        catch (ArgumentException) { threw = true; }
+        Is(threw, "missing format arguments were accepted");
+    }
+
+    static void VietnameseDisplayNamesAreComplete()
+    {
+        foreach (MultiDeviceOneShotFarmStage value in Enum.GetValues(
+            typeof(MultiDeviceOneShotFarmStage)))
+            Is(!string.IsNullOrWhiteSpace(VietnameseDisplayNames.Stage(value)), "multi stage " + value);
+        foreach (OneShotFarmProgressStage value in Enum.GetValues(
+            typeof(OneShotFarmProgressStage)))
+            Is(!string.IsNullOrWhiteSpace(VietnameseDisplayNames.Stage(value)), "progress stage " + value);
+        foreach (OneShotFarmOutcome value in Enum.GetValues(typeof(OneShotFarmOutcome)))
+            Is(!string.IsNullOrWhiteSpace(VietnameseDisplayNames.Outcome(value)), "outcome " + value);
+        foreach (ContinuousFarmDeviceState value in Enum.GetValues(typeof(ContinuousFarmDeviceState)))
+            Is(!string.IsNullOrWhiteSpace(VietnameseDisplayNames.State(value)), "state " + value);
+        Eq("Gỗ", VietnameseDisplayNames.Resource(ResourceType.Wood), "resource");
+        Eq("Đội 2", VietnameseDisplayNames.Team(TeamNumber.Team2), "team");
+        Eq("Cấp 7", VietnameseDisplayNames.Level(7), "level");
+        Eq("14 phút 59 giây", VietnameseDisplayNames.Duration(
+            TimeSpan.FromMinutes(14) + TimeSpan.FromSeconds(59)), "duration");
+    }
+
+    static void VietnameseErrorPresentationIsSafe()
+    {
+        UserErrorPresentation presentation = UserErrorPresenter.Present(
+            new InvalidOperationException("native ADB failure"));
+        Eq("Đã xảy ra lỗi trong quá trình xử lý.", presentation.UserMessage, "user error");
+        Is(presentation.TechnicalDetails.Contains("native ADB failure"), "technical detail");
+        Eq("Thao tác đã được hủy.", UserErrorPresenter.Present(
+            new OperationCanceledException()).UserMessage, "cancelled error");
+    }
+
+    static void FarmWorkflowEnglishMessageAudit()
+    {
+        string root = Path.Combine(Environment.CurrentDirectory, "ADB", "Infrastructure", "Workflows");
+        string runner = File.ReadAllText(Path.Combine(root, "MultiDeviceOneShotFarmRunner.cs"));
+        string readyGate = File.ReadAllText(Path.Combine(root, "ReadyTeamOneShotFarmWorkflow.cs"));
+        foreach (string legacy in new[]
+        {
+            "No allowed team is ready; device yielded until the next scheduled check.",
+            "Preflight passed; no allowed team is ready, waiting is required.",
+            "Waiting for an execution slot.", "One-Shot Farm started.",
+            "Maximum ready-team wait time elapsed.", "One-shot farm was cancelled."
+        })
+            Is(!runner.Contains(legacy) && !readyGate.Contains(legacy), "visible English message: " + legacy);
+    }
 
     static void MultiDeviceConcurrencyIsCapped()
     {

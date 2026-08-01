@@ -92,6 +92,7 @@
     <Compile Include="Core\GameDetection\GameStateDetectionContext.cs" />
     <Compile Include="Core\GameDetection\DetectionProfile.cs" />
     <Compile Include="Core\GameDetection\GameState.cs" />
+    <Compile Include="Core\GameDetection\TeamSelectionEvidence.cs" />
     <Compile Include="Core\GameDetection\IGameStateDetector.cs" />
     <Compile Include="Core\GameDetection\IUnknownScreenshotStore.cs" />
     <Compile Include="Core\Navigation\IWorldMapNavigationService.cs" />
@@ -196,6 +197,7 @@
     <Compile Include="Core\Workflows\OneShotFarmStep.cs" />
     <Compile Include="Core\Workflows\OneShotFarmStepResult.cs" />
     <Compile Include="Core\Workflows\OneShotFarmWorkflowOptions.cs" />
+    <Compile Include="Core\Workflows\VietnameseUserMessages.cs" />
     <Compile Include="Core\Workflows\ReadyTeamGateOptions.cs" />
     <Compile Include="Core\Workflows\ReadyTeamGateRunOptions.cs" />
     <Compile Include="Core\Workflows\ResourceFarmFallbackResult.cs" />

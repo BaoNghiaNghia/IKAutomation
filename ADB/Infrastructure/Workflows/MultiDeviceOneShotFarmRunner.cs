@@ -59,7 +59,8 @@ namespace ADB_Tool_Automation_Post_FB.Infrastructure.Workflows
                 .Distinct(StringComparer.OrdinalIgnoreCase)
                 .ToArray();
             if (devices.Length == 0)
-                throw new ArgumentException("At least one LDPlayer device must be selected.",
+                throw new ArgumentException(VietnameseUserMessageLocalizer.Default.Get(
+                    UiMessageKey.NoDeviceSelected),
                     nameof(deviceNames));
 
             PreflightResult[] preflights;
@@ -115,7 +116,7 @@ namespace ADB_Tool_Automation_Post_FB.Infrastructure.Workflows
             CancellationToken cancellationToken)
         {
             Report(progress, deviceName, MultiDeviceOneShotFarmStage.Preflight,
-                null, "Checking WorldMap, screenshot, roster and eligible teams.");
+                null, VietnameseUserMessageLocalizer.Default.Get(UiMessageKey.CheckingPreflight));
             IAdaptiveConcurrencyLease adaptiveLease = null;
             bool entered = false;
             bool succeeded = false;
@@ -135,14 +136,16 @@ namespace ADB_Tool_Automation_Post_FB.Infrastructure.Workflows
                 }
                 IWorldMapTeamAvailabilityService service = availabilityFactory();
                 if (service == null)
-                    throw new InvalidOperationException("The preflight factory returned null.");
+                    throw new InvalidOperationException(VietnameseUserMessageLocalizer.Default.Get(
+                        UiMessageKey.PreflightFactoryReturnedNull));
                 WorldMapTeamAvailabilityResult availability = await service.CheckAsync(
                     deviceName, cancellationToken);
                 if (availability == null || !availability.Success)
                 {
                     technicalFailure = true;
                     string message = availability?.Message
-                        ?? "Multi-device preflight returned no result.";
+                        ?? VietnameseUserMessageLocalizer.Default.Get(
+                            UiMessageKey.PreflightReturnedNoResult);
                     Report(progress, deviceName, MultiDeviceOneShotFarmStage.Failed,
                         null, message);
                     return FailedPreflight(deviceName, message,
@@ -156,8 +159,9 @@ namespace ADB_Tool_Automation_Post_FB.Infrastructure.Workflows
                     ? MultiDeviceOneShotFarmStage.Queued
                     : MultiDeviceOneShotFarmStage.WaitingForReadyTeam;
                 string status = eligible.Length > 0
-                    ? $"Preflight passed; eligible ready teams: {string.Join(", ", eligible)}."
-                    : "Preflight passed; no allowed team is ready, waiting is required.";
+                    ? VietnameseUserMessageLocalizer.Default.Format(
+                        UiMessageKey.PreflightEligibleTeams, string.Join(", ", eligible))
+                    : VietnameseUserMessageLocalizer.Default.Get(UiMessageKey.PreflightNoReadyTeam);
                 Report(progress, deviceName, stage, null, status);
                 succeeded = true;
                 return new PreflightResult
@@ -170,7 +174,7 @@ namespace ADB_Tool_Automation_Post_FB.Infrastructure.Workflows
             catch (OperationCanceledException)
             {
                 Report(progress, deviceName, MultiDeviceOneShotFarmStage.Cancelled,
-                    null, "Multi-device preflight cancelled.");
+                    null, VietnameseUserMessageLocalizer.Default.Get(UiMessageKey.PreflightCancelled));
                 return new PreflightResult
                 {
                     DeviceName = deviceName,
@@ -185,9 +189,10 @@ namespace ADB_Tool_Automation_Post_FB.Infrastructure.Workflows
             catch (Exception exception)
             {
                 technicalFailure = true;
+                UserErrorPresentation error = UserErrorPresenter.Present(exception);
                 Report(progress, deviceName, MultiDeviceOneShotFarmStage.Failed,
-                    null, exception.Message);
-                return FailedPreflight(deviceName, exception.Message, exception.Message);
+                    null, error.UserMessage);
+                return FailedPreflight(deviceName, error.UserMessage, error.TechnicalDetails);
             }
             finally
             {
@@ -252,7 +257,8 @@ namespace ADB_Tool_Automation_Post_FB.Infrastructure.Workflows
                     DeviceName = deviceName,
                     Success = false,
                     Outcome = OneShotFarmOutcome.NoEligibleTeam,
-                    Message = "No allowed team is ready; device yielded until the next scheduled check.",
+                    Message = VietnameseUserMessageLocalizer.Default.Get(
+                        UiMessageKey.YieldedUntilScheduledCheck),
                     DetectedTeams = availability?.AvailableTeams ?? new TeamNumber[0],
                     ReadyTeams = availability?.ReadyTeams ?? new TeamNumber[0],
                     AttemptedLevels = new int[0],
@@ -279,7 +285,8 @@ namespace ADB_Tool_Automation_Post_FB.Infrastructure.Workflows
             CancellationToken cancellationToken)
         {
             Report(progress, deviceName, MultiDeviceOneShotFarmStage.Queued,
-                null, "Waiting for an execution slot.");
+                null, VietnameseUserMessageLocalizer.Default.Get(
+                    UiMessageKey.WaitingForExecutionSlot));
             IAdaptiveConcurrencyLease adaptiveLease = null;
             bool entered = false;
             bool succeeded = false;
@@ -299,11 +306,12 @@ namespace ADB_Tool_Automation_Post_FB.Infrastructure.Workflows
                 }
                 cancellationToken.ThrowIfCancellationRequested();
                 Report(progress, deviceName, MultiDeviceOneShotFarmStage.Running,
-                    null, "One-Shot Farm started.");
+                    null, VietnameseUserMessageLocalizer.Default.Get(UiMessageKey.OneShotStarted));
 
                 IOneShotFarmWorkflow workflow = workflowFactory();
                 if (workflow == null)
-                    throw new InvalidOperationException("The workflow factory returned null.");
+                    throw new InvalidOperationException(VietnameseUserMessageLocalizer.Default.Get(
+                        UiMessageKey.WorkflowFactoryReturnedNull));
                 var deviceProgress = new Progress<OneShotFarmProgress>(value =>
                     Report(progress, deviceName, MultiDeviceOneShotFarmStage.Running,
                         value, value?.Message));
@@ -317,7 +325,7 @@ namespace ADB_Tool_Automation_Post_FB.Infrastructure.Workflows
                 succeeded = stage == MultiDeviceOneShotFarmStage.Completed;
                 technicalFailure = IsTechnicalFailure(result, stage);
                 string message = result?.Message ?? result?.ErrorMessage
-                    ?? "One-Shot Farm returned no result.";
+                    ?? VietnameseUserMessageLocalizer.Default.Get(UiMessageKey.OneShotReturnedNoResult);
                 Report(progress, deviceName, stage, null, message);
                 return new MultiDeviceOneShotFarmItemResult
                 {
@@ -330,7 +338,7 @@ namespace ADB_Tool_Automation_Post_FB.Infrastructure.Workflows
             catch (OperationCanceledException)
             {
                 Report(progress, deviceName, MultiDeviceOneShotFarmStage.Cancelled,
-                    null, "One-Shot Farm cancelled.");
+                    null, VietnameseUserMessageLocalizer.Default.Get(UiMessageKey.OneShotCancelled));
                 return new MultiDeviceOneShotFarmItemResult
                 {
                     DeviceName = deviceName,
@@ -340,13 +348,14 @@ namespace ADB_Tool_Automation_Post_FB.Infrastructure.Workflows
             catch (Exception exception)
             {
                 technicalFailure = true;
+                UserErrorPresentation error = UserErrorPresenter.Present(exception);
                 Report(progress, deviceName, MultiDeviceOneShotFarmStage.Failed,
-                    null, exception.Message);
+                    null, error.UserMessage);
                 return new MultiDeviceOneShotFarmItemResult
                 {
                     DeviceName = deviceName,
                     Stage = MultiDeviceOneShotFarmStage.Failed,
-                    ErrorMessage = exception.Message
+                    ErrorMessage = error.TechnicalDetails
                 };
             }
             finally

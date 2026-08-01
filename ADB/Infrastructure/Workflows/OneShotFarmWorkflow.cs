@@ -436,7 +436,8 @@ namespace ADB_Tool_Automation_Post_FB.Infrastructure.Workflows
             catch (OperationCanceledException)
             {
                 result.Outcome = OneShotFarmOutcome.Cancelled; result.Success = false;
-                result.Message = "One-shot farm was cancelled."; result.Duration = watch.Elapsed;
+                result.Message = VietnameseUserMessageLocalizer.Default.Get(
+                    UiMessageKey.OneShotCancelled); result.Duration = watch.Elapsed;
                 LogEnd(runId, deviceName, result); return result;
             }
             catch (Exception exception)

@@ -182,6 +182,36 @@ namespace ADB_Tool_Automation_Post_FB.Infrastructure.Navigation
                         "City navigation button was tapped but WorldMap was not verified before timeout.",
                         cityFinal.ErrorMessage, transitions);
             }
+            if (initial.State == GameState.TeamSelection
+                || initial.State == GameState.ResourcePopup)
+            {
+                int maximumBackAttempts = initial.State == GameState.TeamSelection ? 2 : 1;
+                GameDetectionResult current = initial;
+                for (int attempt = 1; attempt <= maximumBackAttempts; attempt++)
+                {
+                    if (attempt > 1 && (!current.IsSuccessful
+                        || current.State != GameState.TeamSelection))
+                        break;
+
+                    await ldPlayerClient.BackAsync(deviceName, cancellationToken);
+                    AddTransition(transitions, "Back",
+                        initial.State == GameState.TeamSelection
+                            ? "Sent a bounded Back command to close TeamSelection."
+                            : "Sent one Back command to close ResourcePopup.");
+                    current = await PollAsync(deviceName, GameState.WorldMap,
+                        transitions, cancellationToken);
+                    if (current.IsSuccessful && current.State == GameState.WorldMap)
+                        return Result(true, initial, current, attempt, watch,
+                            "WorldMap verified after closing the active overlay.", null,
+                            transitions);
+                }
+
+                return Result(false, initial, current, maximumBackAttempts, watch,
+                    initial.State == GameState.TeamSelection
+                        ? "TeamSelection could not be closed to reach WorldMap."
+                        : "ResourcePopup could not be closed to reach WorldMap.",
+                    current?.ErrorMessage, transitions);
+            }
             if (initial.State != GameState.ResourceSearchPanel && initial.State != GameState.ContinentMap)
                 return Result(false, initial, initial, 0, watch, "Unsupported initial state.", null, transitions);
 
