@@ -11,8 +11,11 @@ namespace ADB_Tool_Automation_Post_FB.Core.TeamSelection
             int teamRowCount = 4, int? teamRowHeight = null, int badgeTopPadding = 8,
             int rowVerticalTolerance = 4, int observationFrameCount = 3,
             int observationIntervalMs = 150,
-            IReadOnlyDictionary<string, int> knownUnlockedTeamCounts = null)
+            IReadOnlyDictionary<string, int> knownUnlockedTeamCounts = null,
+            int expectedWidth = 1280, int expectedHeight = 720)
         {
+            if (expectedWidth <= 0 || expectedHeight <= 0)
+                throw new ArgumentOutOfRangeException(nameof(expectedWidth));
             if (teamRosterRegion.Width < 50 || teamRosterRegion.Height < 96)
                 throw new ArgumentOutOfRangeException(nameof(teamRosterRegion),
                     "Team roster region is too small for four readiness rows.");
@@ -37,6 +40,8 @@ namespace ADB_Tool_Automation_Post_FB.Core.TeamSelection
             RowVerticalTolerance = rowVerticalTolerance;
             ObservationFrameCount = observationFrameCount;
             ObservationIntervalMs = observationIntervalMs;
+            ExpectedWidth = expectedWidth;
+            ExpectedHeight = expectedHeight;
             KnownUnlockedTeamCounts = (knownUnlockedTeamCounts
                 ?? new Dictionary<string, int>())
                 .Where(item => !string.IsNullOrWhiteSpace(item.Key)
@@ -52,6 +57,8 @@ namespace ADB_Tool_Automation_Post_FB.Core.TeamSelection
         public int RowVerticalTolerance { get; }
         public int ObservationFrameCount { get; }
         public int ObservationIntervalMs { get; }
+        public int ExpectedWidth { get; }
+        public int ExpectedHeight { get; }
         public IReadOnlyDictionary<string, int> KnownUnlockedTeamCounts { get; }
 
         public int GetKnownUnlockedTeamCount(string deviceName)

@@ -282,6 +282,11 @@ namespace ADB_Tool_Automation_Post_FB.Infrastructure.TeamSelection
                 ? "ConfiguredOverride"
                 : useCached && freshExisting.Count > 0 ? "FreshPlusCached"
                 : classification.ToString();
+            ImageRegion resolvedRoster = lastLayout == null
+                ? options.TeamRosterRegion
+                : new ImageRegion(lastLayout.Rows[0].X, lastLayout.Rows[0].Y,
+                    lastLayout.Rows[0].Width,
+                    lastLayout.Rows.Sum(row => row.Height));
             logger.Info($"[WorldMap Team Roster] DeviceName='{deviceName}', "
                 + $"ObservationFrames={verifiedFrameCount}/{options.ObservationFrameCount}, "
                 + $"Ready={ready}, ReadyTeams='{string.Join(",", readyTeams)}', "
@@ -293,10 +298,11 @@ namespace ADB_Tool_Automation_Post_FB.Infrastructure.TeamSelection
                 + $"Team4Exists={existing.Contains(TeamNumber.Team4)}, "
                 + $"Team4Locked={lockedTeams.Contains(TeamNumber.Team4)}, "
                 + $"Bounds=({match.X},{match.Y},{match.Width},{match.Height}), "
-                + $"Region=({options.TeamRosterRegion.X},{options.TeamRosterRegion.Y},"
+                + $"ConfiguredRegion=({options.TeamRosterRegion.X},{options.TeamRosterRegion.Y},"
                 + $"{options.TeamRosterRegion.Width},{options.TeamRosterRegion.Height}), "
-                + $"LockedTeams='{string.Join(",", lockedTeams)}', BusyTeams='{string.Join(",", busyTeams)}', "
-                + $"RowHeight={options.TeamRowHeight}, FreshRosterCount={freshExisting.Count}, "
+                + $"ResolvedRegion=({resolvedRoster.X},{resolvedRoster.Y},"
+                + $"{resolvedRoster.Width},{resolvedRoster.Height}), "
+                + $"ResolvedRowHeight={lastLayout?.Rows[0].Height ?? options.TeamRowHeight}, FreshRosterCount={freshExisting.Count}, "
                 + $"FreshConfirmedTeams='{string.Join(",", freshExisting.OrderBy(team => (int)team))}', "
                 + $"CachedConfirmedTeams='{string.Join(",", previousKnowledge?.ActiveTeams.OrderBy(team => (int)team) ?? Enumerable.Empty<TeamNumber>())}', "
                 + $"PreviousKnownRosterCount={previousKnownCount}, "

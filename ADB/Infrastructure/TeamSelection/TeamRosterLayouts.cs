@@ -18,11 +18,20 @@ namespace ADB_Tool_Automation_Post_FB.Infrastructure.TeamSelection
             WorldMapTeamAvailabilityOptions options)
         {
             if (options == null || frameWidth <= 0 || frameHeight <= 0) return null;
-            ImageRegion roster = options.TeamRosterRegion;
+            double scaleX = frameWidth / (double)options.ExpectedWidth;
+            double scaleY = frameHeight / (double)options.ExpectedHeight;
+            ImageRegion configured = options.TeamRosterRegion;
+            var roster = new ImageRegion(
+                (int)Math.Round(configured.X * scaleX),
+                (int)Math.Round(configured.Y * scaleY),
+                Math.Max(1, (int)Math.Round(configured.Width * scaleX)),
+                Math.Max(options.TeamRowCount,
+                    (int)Math.Round(configured.Height * scaleY)));
             if (roster.X < 0 || roster.Y < 0 || roster.X >= frameWidth || roster.Y >= frameHeight)
                 return null;
             int width = Math.Min(roster.Width, frameWidth - roster.X);
-            int rowHeight = options.TeamRowHeight;
+            int rowHeight = Math.Max(1,
+                (int)Math.Round(options.TeamRowHeight * scaleY));
             int lastBottom = roster.Y + options.TeamRowCount * rowHeight;
             if (width <= 0 || lastBottom > roster.Y + roster.Height || lastBottom > frameHeight)
                 return null;
