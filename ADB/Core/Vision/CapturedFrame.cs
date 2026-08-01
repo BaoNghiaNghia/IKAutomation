@@ -10,10 +10,13 @@ namespace ADB_Tool_Automation_Post_FB.Core.Vision
     {
         private Bitmap bitmap;
         private byte[] pngBytes;
+        private readonly Action pngEncoded;
 
-        public CapturedFrame(Bitmap bitmap, DateTimeOffset capturedAt)
+        public CapturedFrame(Bitmap bitmap, DateTimeOffset capturedAt,
+            Action pngEncoded = null)
         {
             this.bitmap = bitmap ?? throw new ArgumentNullException(nameof(bitmap));
+            this.pngEncoded = pngEncoded;
             Width = bitmap.Width;
             Height = bitmap.Height;
             CapturedAt = capturedAt;
@@ -40,6 +43,7 @@ namespace ADB_Tool_Automation_Post_FB.Core.Vision
             {
                 Bitmap.Save(stream, ImageFormat.Png);
                 pngBytes = stream.ToArray();
+                pngEncoded?.Invoke();
                 return pngBytes;
             }
         }

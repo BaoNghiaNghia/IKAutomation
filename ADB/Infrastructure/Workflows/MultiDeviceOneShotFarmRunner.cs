@@ -63,41 +63,13 @@ namespace ADB_Tool_Automation_Post_FB.Infrastructure.Workflows
                     UiMessageKey.NoDeviceSelected),
                     nameof(deviceNames));
 
-            PreflightResult[] preflights;
-            if (availabilityFactory == null)
-            {
-                preflights = devices.Select(device => new PreflightResult
-                {
-                    DeviceName = device,
-                    Success = true
-                }).ToArray();
-            }
-            else
-            {
-                Task<PreflightResult>[] preflightTasks = devices.Select(device =>
-                    Task.Run(() => RunPreflightAsync(device, request, progress,
-                        cancellationToken))).ToArray();
-                preflights = await Task.WhenAll(preflightTasks);
-            }
-
-            PreflightResult[] readyPreflights = preflights.Where(item => item.Success
-                && (!request.YieldWhenNoReadyTeam
-                    || HasEligibleReadyTeam(item.Availability, request))).ToArray();
-            MultiDeviceOneShotFarmItemResult[] waitingResults = preflights.Where(item => item.Success
-                && request.YieldWhenNoReadyTeam
-                && !HasEligibleReadyTeam(item.Availability, request))
-                .Select(item => WaitingForReadyTeam(item.DeviceName, item.Availability)).ToArray();
-            Task<MultiDeviceOneShotFarmItemResult>[] tasks = readyPreflights
-                .Select(item => Task.Run(() => RunDeviceAsync(item.DeviceName,
-                    CreatePreflightRequest(request, item.Availability), executionGate,
-                    progress, cancellationToken)))
-                .ToArray();
-            MultiDeviceOneShotFarmItemResult[] workflowResults = await Task.WhenAll(tasks);
-            MultiDeviceOneShotFarmItemResult[] results = preflights
-                .Where(item => !item.Success)
-                .Select(item => item.ItemResult)
-                .Concat(waitingResults)
-                .Concat(workflowResults)
+            // Each device is admitted as soon as its own preflight finishes. This avoids
+            // a slow/offline device holding the entire selected set behind Task.WhenAll.
+            Task<MultiDeviceOneShotFarmItemResult>[] tasks = devices.Select(device =>
+                Task.Run(() => RunAfterPreflightAsync(device, request, progress,
+                    cancellationToken))).ToArray();
+            MultiDeviceOneShotFarmItemResult[] results = await Task.WhenAll(tasks);
+            results = results
                 .OrderBy(item => Array.FindIndex(devices, device =>
                     string.Equals(device, item.DeviceName, StringComparison.OrdinalIgnoreCase)))
                 .ToArray();
@@ -107,8 +79,37 @@ namespace ADB_Tool_Automation_Post_FB.Infrastructure.Workflows
                 MaximumConcurrency = maximumConcurrency,
                 AdaptiveConcurrencyEnabled = adaptiveConcurrencyGate != null,
                 FinalConcurrencyLimit = GetConcurrencySnapshot().CurrentLimit,
+                TotalSelected = devices.Length,
+                Active = 0,
+                Queued = 0,
+                WaitingForTeam = results.Count(item => item.Stage
+                    == MultiDeviceOneShotFarmStage.WaitingForReadyTeam),
+                ScheduledForNextCheck = results.Count(item => item.Stage
+                    == MultiDeviceOneShotFarmStage.WaitingForReadyTeam),
+                Failed = results.Count(item => item.Stage == MultiDeviceOneShotFarmStage.Failed),
                 WasCancelled = cancellationToken.IsCancellationRequested
             };
+        }
+
+        private async Task<MultiDeviceOneShotFarmItemResult> RunAfterPreflightAsync(
+            string deviceName, OneShotFarmRequest request,
+            IProgress<MultiDeviceOneShotFarmProgress> progress,
+            CancellationToken cancellationToken)
+        {
+            PreflightResult preflight = availabilityFactory == null
+                ? new PreflightResult { DeviceName = deviceName, Success = true }
+                : await RunPreflightAsync(deviceName, request, progress, cancellationToken);
+            if (!preflight.Success)
+                return preflight.ItemResult;
+
+            if (availabilityFactory != null
+                && request.ReadyTeamWaitMode == ReadyTeamWaitMode.YieldToSupervisor
+                && !HasEligibleReadyTeam(preflight.Availability, request))
+                return WaitingForReadyTeam(preflight.DeviceName, preflight.Availability);
+
+            return await RunDeviceAsync(preflight.DeviceName,
+                CreatePreflightRequest(request, preflight.Availability), executionGate,
+                progress, cancellationToken);
         }
 
         private async Task<PreflightResult> RunPreflightAsync(string deviceName,
@@ -321,6 +322,8 @@ namespace ADB_Tool_Automation_Post_FB.Infrastructure.Workflows
                     ? MultiDeviceOneShotFarmStage.Completed
                     : result != null && result.Outcome == OneShotFarmOutcome.Cancelled
                         ? MultiDeviceOneShotFarmStage.Cancelled
+                        : result != null && result.Outcome == OneShotFarmOutcome.WaitingForReadyTeam
+                            ? MultiDeviceOneShotFarmStage.WaitingForReadyTeam
                         : MultiDeviceOneShotFarmStage.Failed;
                 succeeded = stage == MultiDeviceOneShotFarmStage.Completed;
                 technicalFailure = IsTechnicalFailure(result, stage);
@@ -391,7 +394,7 @@ namespace ADB_Tool_Automation_Post_FB.Infrastructure.Workflows
                 AllowTeam1 = source.AllowTeam1,
                 RequireMarchVerification = source.RequireMarchVerification,
                 RunUntilNoReadyTeams = source.RunUntilNoReadyTeams,
-                YieldWhenNoReadyTeam = source.YieldWhenNoReadyTeam,
+                ReadyTeamWaitMode = source.ReadyTeamWaitMode,
                 ReadyTeamOptions = source.ReadyTeamOptions == null
                     ? null
                     : new ReadyTeamGateRunOptions(source.ReadyTeamOptions.CheckIntervalMs,
@@ -426,6 +429,7 @@ namespace ADB_Tool_Automation_Post_FB.Infrastructure.Workflows
                 case OneShotFarmOutcome.ResourceNotFound:
                 case OneShotFarmOutcome.ResourceLevelsExhausted:
                 case OneShotFarmOutcome.NoEligibleTeam:
+                case OneShotFarmOutcome.WaitingForReadyTeam:
                 case OneShotFarmOutcome.AllCandidateStoragesFull:
                 case OneShotFarmOutcome.ResourcePlanExhausted:
                 case OneShotFarmOutcome.TeamAvailabilityWaitTimeout:

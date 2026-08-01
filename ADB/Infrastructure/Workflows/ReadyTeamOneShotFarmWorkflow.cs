@@ -164,6 +164,34 @@ namespace ADB_Tool_Automation_Post_FB.Infrastructure.Workflows
                         continue;
                     }
 
+                    if (request.ReadyTeamWaitMode == ReadyTeamWaitMode.YieldToSupervisor)
+                    {
+                        DateTimeOffset scheduledCheckAt = DateTimeOffset.UtcNow
+                            .AddMilliseconds(checkIntervalMs);
+                        string message = VietnameseUserMessageLocalizer.Default.Get(
+                            UiMessageKey.YieldedUntilScheduledCheck);
+                        Report(progress, new OneShotFarmProgress
+                        {
+                            Stage = OneShotFarmProgressStage.WaitingForReadyTeam,
+                            ReportedAt = DateTimeOffset.UtcNow,
+                            TeamAvailabilityChecks = checks,
+                            AllowedTeams = effectiveAllowedTeams,
+                            DetectedTeams = detectedTeams,
+                            ReadyTeams = check.ReadyTeams ?? new TeamNumber[0],
+                            EligibleReadyTeams = new TeamNumber[0],
+                            NextCheckAt = scheduledCheckAt,
+                            WaitDeadline = waitDeadline,
+                            Message = message
+                        });
+                        OneShotFarmResult waiting = Empty(deviceName, request,
+                            OneShotFarmOutcome.WaitingForReadyTeam, message, null,
+                            checks, watch.Elapsed);
+                        waiting.NextCheckAt = scheduledCheckAt;
+                        waiting.DetectedTeams = detectedTeams;
+                        waiting.ReadyTeams = check.ReadyTeams ?? new TeamNumber[0];
+                        return waiting;
+                    }
+
                     if (lastSuccessfulResult != null)
                     {
                         consecutiveNoReadyChecks++;
@@ -283,6 +311,7 @@ namespace ADB_Tool_Automation_Post_FB.Infrastructure.Workflows
                 AllowTeam1 = source.AllowTeam1,
                 RequireMarchVerification = source.RequireMarchVerification,
                 RunUntilNoReadyTeams = source.RunUntilNoReadyTeams,
+                ReadyTeamWaitMode = source.ReadyTeamWaitMode,
                 ReadyTeamOptions = source.ReadyTeamOptions,
                 RunId = source.RunId
             };

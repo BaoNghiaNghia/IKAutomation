@@ -1,4 +1,5 @@
 using ADB_Tool_Automation_Post_FB.Core.Abstractions;
+using ADB_Tool_Automation_Post_FB.Core.Diagnostics;
 using ADB_Tool_Automation_Post_FB.Core.Vision;
 using Auto_LDPlayer;
 using Auto_LDPlayer.Enums;
@@ -6,8 +7,8 @@ using System;
 using System.Collections.Concurrent;
 using System.Collections.Generic;
 using System.Configuration;
+using System.Diagnostics;
 using System.Drawing;
-using System.Drawing.Imaging;
 using System.Globalization;
 using System.IO;
 using System.Linq;
@@ -42,6 +43,35 @@ namespace ADB_Tool_Automation_Post_FB.Infrastructure.LDPlayer
             ReadPositiveSetting("Operations.MaxConcurrentScreenshots", 4));
         private static readonly int AdbHealthTtlMilliseconds =
             ReadPositiveSetting("Operations.AdbHealthTtlMs", 3000);
+        private static long framesCaptured;
+        private static long framesEncodedToPng;
+        private static long screenshotGateWaitMs;
+        private static long screenShootDurationMs;
+        private static long adbHealthChecks;
+        private static long adbHealthCacheHits;
+        private static long normalBitmapCaptures;
+        private static long recoveredFileCaptures;
+        private static long recoveryDirectoryScans;
+        private static long screenshotRetries;
+        private static long screenshotFailures;
+
+        public static ScreenshotCaptureMetrics GetScreenshotCaptureMetrics()
+        {
+            return new ScreenshotCaptureMetrics
+            {
+                FramesCaptured = Interlocked.Read(ref framesCaptured),
+                FramesEncodedToPng = Interlocked.Read(ref framesEncodedToPng),
+                ScreenshotGateWaitMs = Interlocked.Read(ref screenshotGateWaitMs),
+                ScreenShootDurationMs = Interlocked.Read(ref screenShootDurationMs),
+                AdbHealthChecks = Interlocked.Read(ref adbHealthChecks),
+                AdbHealthCacheHits = Interlocked.Read(ref adbHealthCacheHits),
+                NormalBitmapCaptures = Interlocked.Read(ref normalBitmapCaptures),
+                RecoveredFileCaptures = Interlocked.Read(ref recoveredFileCaptures),
+                RecoveryDirectoryScans = Interlocked.Read(ref recoveryDirectoryScans),
+                ScreenshotRetries = Interlocked.Read(ref screenshotRetries),
+                ScreenshotFailures = Interlocked.Read(ref screenshotFailures)
+            };
+        }
 
         private static int ReadPositiveSetting(string key, int fallback)
         {
@@ -171,6 +201,7 @@ namespace ADB_Tool_Automation_Post_FB.Infrastructure.LDPlayer
                     for (int attempt = 1; attempt <= ScreenshotReadyAttempts; attempt++)
                     {
                         cancellationToken.ThrowIfCancellationRequested();
+                        Interlocked.Increment(ref adbHealthChecks);
                         adbState = Auto_LDPlayer.LDPlayer.Adb(
                             LDType.Name, normalizedDeviceName, "get-state", 3000, 1);
 
@@ -181,6 +212,8 @@ namespace ADB_Tool_Automation_Post_FB.Infrastructure.LDPlayer
                             await Task.Delay(300, cancellationToken);
                     }
                 }
+                else
+                    Interlocked.Increment(ref adbHealthCacheHits);
 
                 if (!string.Equals(adbState?.Trim(), "device", StringComparison.OrdinalIgnoreCase))
                 {
@@ -199,6 +232,8 @@ namespace ADB_Tool_Automation_Post_FB.Infrastructure.LDPlayer
                     cancellationToken.ThrowIfCancellationRequested();
                     if (attempt > 1)
                     {
+                        Interlocked.Increment(ref screenshotRetries);
+                        Interlocked.Increment(ref adbHealthChecks);
                         string retryAdbState = Auto_LDPlayer.LDPlayer.Adb(
                             LDType.Name,
                             normalizedDeviceName,
@@ -221,40 +256,48 @@ namespace ADB_Tool_Automation_Post_FB.Infrastructure.LDPlayer
                     string screenshotFileName = $"ikautomation_{Guid.NewGuid():N}.png";
                     string generatedFilePrefix = Path.GetFileNameWithoutExtension(
                         screenshotFileName);
+                    Bitmap screenshot;
+                    var gateWait = Stopwatch.StartNew();
+                    await ScreenshotGate.WaitAsync(cancellationToken);
+                    gateWait.Stop();
+                    Interlocked.Add(ref screenshotGateWaitMs, gateWait.ElapsedMilliseconds);
                     try
                     {
-                        Bitmap screenshot;
-                        await ScreenshotGate.WaitAsync(cancellationToken);
+                        var screenShootWatch = Stopwatch.StartNew();
                         try
                         {
                             screenshot = Auto_LDPlayer.LDPlayer.ScreenShoot(
-                                LDType.Name,
-                                normalizedDeviceName,
-                                true,
-                                screenshotFileName);
+                                LDType.Name, normalizedDeviceName, true, screenshotFileName);
                         }
                         finally
                         {
-                            ScreenshotGate.Release();
+                            screenShootWatch.Stop();
+                            Interlocked.Add(ref screenShootDurationMs,
+                                screenShootWatch.ElapsedMilliseconds);
                         }
-                        if (screenshot != null)
-                        {
-                            return new CapturedFrame(screenshot, DateTimeOffset.UtcNow);
-                        }
-
-                        // Auto_LDPlayer 1.1.0 can pull a valid PNG but return null when
-                        // an LDPlayer instance name contains spaces (for example "May 1").
-                        // Its unquoted local path is truncated to a file such as
-                        // "ikautomation_<id>Name_May". Recover only the uniquely prefixed
-                        // artifact produced by this capture call, then remove it.
-                        byte[] recovered = TryRecoverGeneratedScreenshot(
-                            generatedFilePrefix, cancellationToken);
-                        if (recovered != null)
-                            return DecodeFrame(recovered);
                     }
                     finally
                     {
-                        DeleteGeneratedScreenshotArtifacts(generatedFilePrefix);
+                        ScreenshotGate.Release();
+                    }
+                    if (screenshot != null)
+                    {
+                        Interlocked.Increment(ref framesCaptured);
+                        Interlocked.Increment(ref normalBitmapCaptures);
+                        return new CapturedFrame(screenshot, DateTimeOffset.UtcNow,
+                            OnFrameEncodedToPng);
+                    }
+
+                    // Auto_LDPlayer can pull a valid artifact but return null when an
+                    // instance name contains spaces. Recovery is deliberately outside
+                    // ScreenshotGate and is never attempted after a normal Bitmap capture.
+                    CapturedFrame recovered = TryRecoverGeneratedScreenshot(
+                        generatedFilePrefix, cancellationToken);
+                    if (recovered != null)
+                    {
+                        Interlocked.Increment(ref framesCaptured);
+                        Interlocked.Increment(ref recoveredFileCaptures);
+                        return recovered;
                     }
 
                     if (attempt < ScreenshotCaptureAttempts)
@@ -280,6 +323,7 @@ namespace ADB_Tool_Automation_Post_FB.Infrastructure.LDPlayer
             }
             catch (Exception ex)
             {
+                Interlocked.Increment(ref screenshotFailures);
                 HealthyDevices.TryRemove(normalizedDeviceName, out DateTimeOffset ignoredHealth);
                 throw new InvalidOperationException(
                     $"Failed to capture PNG screenshot from LDPlayer device '{deviceName}': {ex.Message}",
@@ -295,25 +339,12 @@ namespace ADB_Tool_Automation_Post_FB.Infrastructure.LDPlayer
                     < TimeSpan.FromMilliseconds(AdbHealthTtlMilliseconds);
         }
 
-        private static byte[] EncodePng(Bitmap screenshot,
-            CancellationToken cancellationToken)
+        private static void OnFrameEncodedToPng()
         {
-            cancellationToken.ThrowIfCancellationRequested();
-            using (var stream = new MemoryStream())
-            {
-                screenshot.Save(stream, ImageFormat.Png);
-                return stream.ToArray();
-            }
+            Interlocked.Increment(ref framesEncodedToPng);
         }
 
-        private static CapturedFrame DecodeFrame(byte[] png)
-        {
-            using (var stream = new MemoryStream(png, writable: false))
-            using (var source = new Bitmap(stream))
-                return new CapturedFrame(new Bitmap(source), DateTimeOffset.UtcNow);
-        }
-
-        private static byte[] TryRecoverGeneratedScreenshot(string filePrefix,
+        private static CapturedFrame TryRecoverGeneratedScreenshot(string filePrefix,
             CancellationToken cancellationToken)
         {
             cancellationToken.ThrowIfCancellationRequested();
@@ -321,40 +352,40 @@ namespace ADB_Tool_Automation_Post_FB.Infrastructure.LDPlayer
             string[] matches;
             try
             {
+                Interlocked.Increment(ref recoveryDirectoryScans);
                 matches = Directory.GetFiles(currentDirectory, filePrefix + "*");
             }
             catch (IOException) { return null; }
             catch (UnauthorizedAccessException) { return null; }
 
-            foreach (string path in matches.OrderByDescending(File.GetLastWriteTimeUtc))
-            {
-                cancellationToken.ThrowIfCancellationRequested();
-                try
-                {
-                    using (var screenshot = new Bitmap(path))
-                        return EncodePng(screenshot, cancellationToken);
-                }
-                catch (ArgumentException) { }
-                catch (IOException) { }
-                catch (UnauthorizedAccessException) { }
-            }
-            return null;
-        }
-
-        private static void DeleteGeneratedScreenshotArtifacts(string filePrefix)
-        {
             try
             {
-                foreach (string path in Directory.GetFiles(
-                    Environment.CurrentDirectory, filePrefix + "*"))
+                foreach (string path in matches.OrderByDescending(File.GetLastWriteTimeUtc))
                 {
-                    try { File.Delete(path); }
+                    cancellationToken.ThrowIfCancellationRequested();
+                    try
+                    {
+                        using (var screenshot = new Bitmap(path))
+                            return new CapturedFrame(new Bitmap(screenshot),
+                                DateTimeOffset.UtcNow, OnFrameEncodedToPng);
+                    }
+                    catch (ArgumentException) { }
                     catch (IOException) { }
                     catch (UnauthorizedAccessException) { }
                 }
             }
-            catch (IOException) { }
-            catch (UnauthorizedAccessException) { }
+            finally { DeleteGeneratedScreenshotArtifacts(matches); }
+            return null;
+        }
+
+        private static void DeleteGeneratedScreenshotArtifacts(IEnumerable<string> artifacts)
+        {
+            foreach (string path in artifacts ?? Enumerable.Empty<string>())
+            {
+                try { File.Delete(path); }
+                catch (IOException) { }
+                catch (UnauthorizedAccessException) { }
+            }
         }
 
         public Task TapAsync(string deviceName, int x, int y, CancellationToken cancellationToken)

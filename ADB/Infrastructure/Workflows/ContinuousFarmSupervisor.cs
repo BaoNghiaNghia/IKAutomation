@@ -47,9 +47,9 @@ namespace ADB_Tool_Automation_Post_FB.Infrastructure.Workflows
             IProgress<ContinuousFarmSupervisorProgress> progress,
             CancellationToken cancellationToken)
         {
-            request.YieldWhenNoReadyTeam = true;
             cancellationToken.ThrowIfCancellationRequested();
             if (request == null) throw new ArgumentNullException(nameof(request));
+            request.ReadyTeamWaitMode = ReadyTeamWaitMode.YieldToSupervisor;
             string[] devices = (deviceNames ?? new string[0])
                 .Where(name => !string.IsNullOrWhiteSpace(name)).Select(name => name.Trim())
                 .Distinct(StringComparer.OrdinalIgnoreCase).ToArray();

@@ -21,6 +21,7 @@ namespace IKAutomation.Vision.Tests
                 Test("Registry shares one template byte instance", RegistrySharesTemplateBytes),
                 Test("Matcher finds generated template", MatcherFindsGeneratedTemplate),
                 Test("Frame matcher reuses decoded screenshot", FrameMatcherReusesDecodedScreenshot),
+                Test("Captured frame encodes PNG once on demand", CapturedFrameEncodesPngOnce),
                 Test("Matcher translates ROI coordinates", MatcherTranslatesRoiCoordinates),
                 Test("Matcher returns not found", MatcherReturnsNotFound),
                 Test("Matcher rejects empty bytes", MatcherRejectsEmptyBytes),
@@ -157,6 +158,22 @@ namespace IKAutomation.Vision.Tests
                 AssertNear(47, result.X, 1, "Direct frame ROI X offset was not applied.");
                 AssertNear(31, result.Y, 1, "Direct frame ROI Y offset was not applied.");
                 AssertTrue(!frame.HasEncodedPng, "Direct matching must not encode PNG.");
+            }
+        }
+
+        private static void CapturedFrameEncodesPngOnce()
+        {
+            int encoded = 0;
+            using (var frame = new CapturedFrame(new Bitmap(16, 16), DateTimeOffset.UtcNow,
+                () => encoded++))
+            {
+                AssertTrue(!frame.HasEncodedPng, "Frame must begin without PNG bytes.");
+                byte[] first = frame.GetPngBytes();
+                byte[] second = frame.GetPngBytes();
+                AssertTrue(first.Length > 8 && first[0] == 137 && first[1] == 80,
+                    "PNG compatibility bytes are invalid.");
+                AssertTrue(ReferenceEquals(first, second), "PNG bytes must be cached.");
+                AssertEqual(1, encoded, "PNG encoding callback count.");
             }
         }
 

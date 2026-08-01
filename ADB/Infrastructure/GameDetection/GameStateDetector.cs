@@ -84,6 +84,9 @@ namespace ADB_Tool_Automation_Post_FB.Infrastructure.GameDetection
                     TemplateId.ResourceSearchPanelAnchor, TemplateId.TeamSelectionPanelAnchor) }
             };
 
+        private static readonly ConcurrentDictionary<TemplateId, Lazy<byte[]>> StableCenterTemplates =
+            new ConcurrentDictionary<TemplateId, Lazy<byte[]>>();
+
         private readonly ILdPlayerClient ldPlayerClient;
         private readonly ITemplateRegistry templateRegistry;
         private readonly IImageMatcher imageMatcher;
@@ -561,7 +564,7 @@ namespace ADB_Tool_Automation_Post_FB.Infrastructure.GameDetection
                 bool usedStableContinentMapAnchor = false;
                 if (templateId == TemplateId.WorldMapAnchor && (match == null || !match.Found))
                 {
-                    byte[] stableTemplate = TryCreateStableCenterTemplate(template) ?? template;
+                    byte[] stableTemplate = GetStableCenterTemplate(templateId, template) ?? template;
                     var lowerLeftRegion = new ImageRegion(
                         0, screenshotHeight / 2,
                         screenshotWidth / 2, screenshotHeight - screenshotHeight / 2);
@@ -571,14 +574,14 @@ namespace ADB_Tool_Automation_Post_FB.Infrastructure.GameDetection
                 if (templateId == TemplateId.CityToWorldMapButton
                     && (match == null || !match.Found))
                 {
-                    byte[] stableTemplate = TryCreateStableCenterTemplate(template) ?? template;
+                    byte[] stableTemplate = GetStableCenterTemplate(templateId, template) ?? template;
                     match = Find(frame, stableTemplate, searchRegion);
                     usedStableCityMapButton = match != null && match.Found;
                 }
                 if (templateId == TemplateId.WorldMapPinButton
                     && (match == null || !match.Found))
                 {
-                    byte[] stableTemplate = TryCreateStableCenterTemplate(template) ?? template;
+                    byte[] stableTemplate = GetStableCenterTemplate(templateId, template) ?? template;
                     match = Find(frame, stableTemplate, searchRegion);
                     usedStableWorldMapPinButton = match != null && match.Found;
                 }
@@ -587,7 +590,7 @@ namespace ADB_Tool_Automation_Post_FB.Infrastructure.GameDetection
                         || templateId == TemplateId.ContinentMapSearchTargetPin)
                     && (match == null || !match.Found))
                 {
-                    byte[] stableTemplate = TryCreateStableCenterTemplate(template) ?? template;
+                    byte[] stableTemplate = GetStableCenterTemplate(templateId, template) ?? template;
                     match = Find(frame, stableTemplate, searchRegion);
                     usedStableContinentMapAnchor = match != null && match.Found;
                 }
@@ -673,6 +676,13 @@ namespace ADB_Tool_Automation_Post_FB.Infrastructure.GameDetection
             {
                 return null;
             }
+        }
+
+        private static byte[] GetStableCenterTemplate(TemplateId templateId, byte[] templateBytes)
+        {
+            return StableCenterTemplates.GetOrAdd(templateId,
+                _ => new Lazy<byte[]>(() => TryCreateStableCenterTemplate(templateBytes),
+                    LazyThreadSafetyMode.ExecutionAndPublication)).Value;
         }
 
         private static GameDetectionEvidence ErrorEvidence(

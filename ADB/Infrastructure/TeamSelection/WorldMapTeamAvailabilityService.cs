@@ -28,8 +28,8 @@ namespace ADB_Tool_Automation_Post_FB.Infrastructure.TeamSelection
         private readonly IDeviceOperationLock operationLock;
         private readonly WorldMapTeamAvailabilityOptions options;
         private readonly IDiagnosticLogger logger;
-        private readonly ConcurrentDictionary<string, int> knownRosterCounts =
-            new ConcurrentDictionary<string, int>(StringComparer.OrdinalIgnoreCase);
+        private readonly ConcurrentDictionary<string, RosterKnowledge> knownRosters =
+            new ConcurrentDictionary<string, RosterKnowledge>(StringComparer.OrdinalIgnoreCase);
 
         public WorldMapTeamAvailabilityService(IWorldMapNavigationService navigation,
             IGameStateDetector detector, ILdPlayerClient client,
@@ -89,10 +89,10 @@ namespace ADB_Tool_Automation_Post_FB.Infrastructure.TeamSelection
         {
             if (string.IsNullOrWhiteSpace(deviceName))
             {
-                knownRosterCounts.Clear();
+                knownRosters.Clear();
                 return;
             }
-            knownRosterCounts.TryRemove(deviceName.Trim(), out int ignored);
+            knownRosters.TryRemove(deviceName.Trim(), out RosterKnowledge ignored);
         }
 
         private async Task<WorldMapTeamAvailabilityResult> CheckCoreAsync(string deviceName,
@@ -112,6 +112,7 @@ namespace ADB_Tool_Automation_Post_FB.Infrastructure.TeamSelection
             var readyMatchesByTeam = new Dictionary<TeamNumber, ImageMatchResult>();
             int verifiedFrameCount = 0;
             GameDetectionResult lastState = null;
+            int rosterTop = options.TeamRosterRegion.Y;
             for (int frame = 0; frame < ObservationFrameCount; frame++)
             {
                 if (frame > 0)
@@ -126,7 +127,6 @@ namespace ADB_Tool_Automation_Post_FB.Infrastructure.TeamSelection
                     continue;
 
                 verifiedFrameCount++;
-                int rosterTop = options.TeamRosterRegion.Y;
                 var badgeRequests = teams.Select((team, index) => new ImageMatchRequest(
                     registry.LoadBytes(BadgeTemplate(team)), RosterRowRegion(
                         rosterTop + (index * rowHeight), rowHeight))).ToArray();
@@ -175,32 +175,40 @@ namespace ADB_Tool_Automation_Post_FB.Infrastructure.TeamSelection
                     + "readiness was not inferred.", lastState?.ErrorMessage,
                     lastState?.State ?? GameState.Unknown);
 
+            int badgeTeamCount = badgeMatches.Keys
+                .Select(team => (int)team)
+                .DefaultIfEmpty(0)
+                .Max();
             int freshTeamCount = badgeMatches.Keys
                 .Concat(readyMatchesByTeam.Keys)
                 .Select(team => (int)team)
                 .DefaultIfEmpty(0)
                 .Max();
-            int previousKnownCount;
-            knownRosterCounts.TryGetValue(deviceName, out previousKnownCount);
+            TeamRosterEvidenceSource freshSource = badgeTeamCount > 0
+                ? TeamRosterEvidenceSource.FreshBadges
+                : freshTeamCount > 0
+                    ? TeamRosterEvidenceSource.FreshRowEvidence
+                    : TeamRosterEvidenceSource.Unknown;
+            RosterKnowledge previousKnowledge;
+            knownRosters.TryGetValue(deviceName, out previousKnowledge);
+            int previousKnownCount = previousKnowledge?.HighestConfirmedTeamCount ?? 0;
             if (freshTeamCount > 0)
             {
-                knownRosterCounts.AddOrUpdate(deviceName, freshTeamCount,
-                    (_, known) => Math.Max(known, freshTeamCount));
+                knownRosters.AddOrUpdate(deviceName,
+                    new RosterKnowledge(freshTeamCount, DateTimeOffset.UtcNow, freshSource),
+                    (_, known) => known.HighestConfirmedTeamCount >= freshTeamCount
+                        ? known : new RosterKnowledge(freshTeamCount, DateTimeOffset.UtcNow,
+                            freshSource));
             }
-            int knownTeamCount;
-            knownRosterCounts.TryGetValue(deviceName, out knownTeamCount);
+            RosterKnowledge currentKnowledge;
+            knownRosters.TryGetValue(deviceName, out currentKnowledge);
+            int knownTeamCount = currentKnowledge?.HighestConfirmedTeamCount ?? 0;
             int detectedTeamCount = Math.Max(freshTeamCount, knownTeamCount);
-            if (detectedTeamCount == 0)
-            {
-                // Every account has at least Team1. On a one-team account the
-                // only row contains a timer while it is gathering, so neither
-                // a ready label nor a stable numbered badge may match. A fresh,
-                // verified WorldMap frame is therefore sufficient to classify
-                // this as a valid one-team roster with no ready team. Returning
-                // a technical failure here would bypass the bounded readiness
-                // wait and incorrectly stop continuous farming.
-                detectedTeamCount = 1;
-            }
+            TeamRosterEvidenceSource rosterSource = freshTeamCount > 0
+                ? freshSource
+                : knownTeamCount > 0
+                    ? TeamRosterEvidenceSource.CachedKnownCount
+                    : TeamRosterEvidenceSource.Unknown;
 
             // Team rows are contiguous from Team1. The highest freshly verified
             // badge or ready row establishes the roster size, including accounts
@@ -225,7 +233,8 @@ namespace ADB_Tool_Automation_Post_FB.Infrastructure.TeamSelection
                 + $"Region=({options.TeamRosterRegion.X},{options.TeamRosterRegion.Y},"
                 + $"{options.TeamRosterRegion.Width},{options.TeamRosterRegion.Height}), "
                 + $"RowHeight={rowHeight}, FreshRosterCount={freshTeamCount}, "
-                + $"PreviousKnownRosterCount={previousKnownCount}, Cancellation=false");
+                + $"PreviousKnownRosterCount={previousKnownCount}, "
+                + $"RosterSource='{rosterSource}', Cancellation=false");
             return new WorldMapTeamAvailabilityResult
             {
                 Success = true,
@@ -235,6 +244,8 @@ namespace ADB_Tool_Automation_Post_FB.Infrastructure.TeamSelection
                 FinalState = GameState.WorldMap,
                 ReadyMatch = match,
                 ReadyMatches = readyMatches.AsReadOnly(),
+                RosterEvidenceSource = rosterSource,
+                IsRosterUncertain = rosterSource == TeamRosterEvidenceSource.Unknown,
                 Message = ready
                     ? $"Detected {availableTeams.Count} team(s); ready teams: "
                         + $"{string.Join(", ", readyTeams)}."
@@ -330,7 +341,24 @@ namespace ADB_Tool_Automation_Post_FB.Infrastructure.TeamSelection
                 Message = message,
                 ErrorMessage = error ?? message,
                 ReadyMatch = ImageMatchResult.NotFound(),
-                ReadyMatches = new ImageMatchResult[0]
+                ReadyMatches = new ImageMatchResult[0],
+                RosterEvidenceSource = TeamRosterEvidenceSource.Unknown,
+                IsRosterUncertain = true
             };
+
+        private sealed class RosterKnowledge
+        {
+            public RosterKnowledge(int highestConfirmedTeamCount,
+                DateTimeOffset lastConfirmedAt, TeamRosterEvidenceSource evidenceSource)
+            {
+                HighestConfirmedTeamCount = highestConfirmedTeamCount;
+                LastConfirmedAt = lastConfirmedAt;
+                EvidenceSource = evidenceSource;
+            }
+
+            public int HighestConfirmedTeamCount { get; }
+            public DateTimeOffset LastConfirmedAt { get; }
+            public TeamRosterEvidenceSource EvidenceSource { get; }
+        }
     }
 }

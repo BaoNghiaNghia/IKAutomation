@@ -6,6 +6,7 @@
   </PropertyGroup>
   <ItemGroup>
     <Compile Include="..\..\ADB\Core\Abstractions\ILdPlayerClient.cs" Link="Production\ILdPlayerClient.cs" />
+    <Compile Include="..\..\ADB\Core\Abstractions\IFrameCapturingLdPlayerClient.cs" Link="Production\IFrameCapturingLdPlayerClient.cs" />
     <Compile Include="..\..\ADB\Core\Concurrency\*.cs" Link="Production\Concurrency\%(Filename)%(Extension)" />
     <Compile Include="..\..\ADB\Core\Diagnostics\IDiagnosticLogger.cs" Link="Production\IDiagnosticLogger.cs" />
     <Compile Include="..\..\ADB\Core\GameDetection\*.cs" Link="Production\GameDetection\%(Filename)%(Extension)" />

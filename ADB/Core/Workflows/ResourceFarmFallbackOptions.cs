@@ -19,6 +19,10 @@ namespace ADB_Tool_Automation_Post_FB.Core.Workflows
         public int RecoveryPollIntervalMs { get; set; } = 250;
         public int RecoveryTimeoutSeconds { get; set; } = 8;
         public int MaxSearchAreaRecoveryAttempts { get; set; } = 3;
+        public int MaxAreaRepositionsPerResource { get; set; } = 2;
+        public int MaxAreaRepositionsPerFarmRun { get; set; } = 4;
+        public int RepositionTimeoutMs { get; set; } = 120000;
+        public int RepositionCooldownMs { get; set; } = 1000;
         public bool StopOnFirstMarchStarted { get; set; } = true;
         public bool SaveAttemptScreenshots { get; set; } = true;
         public string ScreenshotDirectory { get; set; } = "Diagnostics/ResourceFarmFallback";
@@ -40,6 +44,10 @@ namespace ADB_Tool_Automation_Post_FB.Core.Workflows
             if (RecoveryPollIntervalMs < 50 || RecoveryPollIntervalMs > 5000) throw new ArgumentOutOfRangeException(nameof(RecoveryPollIntervalMs));
             if (RecoveryTimeoutSeconds < 1 || RecoveryTimeoutSeconds > 60) throw new ArgumentOutOfRangeException(nameof(RecoveryTimeoutSeconds));
             if (MaxSearchAreaRecoveryAttempts < 0 || MaxSearchAreaRecoveryAttempts > 3) throw new ArgumentOutOfRangeException(nameof(MaxSearchAreaRecoveryAttempts));
+            if (MaxAreaRepositionsPerResource < 0 || MaxAreaRepositionsPerResource > 2) throw new ArgumentOutOfRangeException(nameof(MaxAreaRepositionsPerResource));
+            if (MaxAreaRepositionsPerFarmRun < 0 || MaxAreaRepositionsPerFarmRun > 4) throw new ArgumentOutOfRangeException(nameof(MaxAreaRepositionsPerFarmRun));
+            if (RepositionTimeoutMs < 1000 || RepositionTimeoutMs > 120000) throw new ArgumentOutOfRangeException(nameof(RepositionTimeoutMs));
+            if (RepositionCooldownMs < 0 || RepositionCooldownMs > 10000) throw new ArgumentOutOfRangeException(nameof(RepositionCooldownMs));
             if (AttemptsPerLevel < 1 || AttemptsPerLevel > 3) throw new ArgumentOutOfRangeException(nameof(AttemptsPerLevel));
             if (string.IsNullOrWhiteSpace(ScreenshotDirectory)) throw new ArgumentException("ScreenshotDirectory is required.");
         }

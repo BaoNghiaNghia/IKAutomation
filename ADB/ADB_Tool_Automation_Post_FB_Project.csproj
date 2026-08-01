@@ -85,6 +85,7 @@
     <Compile Include="Core\Diagnostics\DeviceDiagnosticResult.cs" />
     <Compile Include="Core\Diagnostics\IDeviceDiagnosticService.cs" />
     <Compile Include="Core\Diagnostics\IDiagnosticLogger.cs" />
+    <Compile Include="Core\ScreenshotCaptureMetrics.cs" />
     <Compile Include="Core\Diagnostics\ScreenshotCaptureResult.cs" />
     <Compile Include="Core\GameDetection\GameDetectionEvidence.cs" />
     <Compile Include="Core\GameDetection\GameDetectionOptions.cs" />

@@ -67,11 +67,19 @@ namespace ADB_Tool_Automation_Post_FB.Infrastructure.Workflows
                 if (validation != null) return Complete(result, ResourceFarmFallbackOutcome.Failed,
                     watch, "Resource fallback request is invalid.", validation);
 
+                var repositionsByResource = new Dictionary<ResourceType, int>();
+                int totalRepositions = 0;
+                ResourceType? retryResourceAfterReposition = null;
                 for (int searchAreaAttempt = 0; ; searchAreaAttempt++)
                 {
                     var attemptedThisPass = new HashSet<ResourceType>();
                     bool searchAreaRecoveryRequested = false;
-                    foreach (ResourceType resource in request.ResourcePriority)
+                    IEnumerable<ResourceType> passResources = retryResourceAfterReposition.HasValue
+                        ? new[] { retryResourceAfterReposition.Value }.Concat(request.ResourcePriority
+                            .Where(resource => resource != retryResourceAfterReposition.Value))
+                        : request.ResourcePriority;
+                    retryResourceAfterReposition = null;
+                    foreach (ResourceType resource in passResources)
                     {
                     cancellationToken.ThrowIfCancellationRequested();
                     if (attemptedThisPass.Contains(resource) || storageFull.Contains(resource)) continue;
@@ -134,6 +142,7 @@ namespace ADB_Tool_Automation_Post_FB.Infrastructure.Workflows
                         if (searchAreaReason.HasValue)
                         {
                             searchAreaRecoveryRequested = true;
+                            retryResourceAfterReposition = resource;
                             Log(runId, deviceName, resource, level.LocatedLevel,
                                 "SearchAreaRecovery", searchAreaReason.Value.ToString());
                             break;
@@ -258,14 +267,33 @@ namespace ADB_Tool_Automation_Post_FB.Infrastructure.Workflows
                         return Complete(result, ResourceFarmFallbackOutcome.AllCandidateStoragesFull, watch,
                             "Storage is full for every candidate resource.", null);
 
+                    if (searchAreaRecoveryRequested
+                        && (totalRepositions >= options.MaxAreaRepositionsPerFarmRun
+                            || (retryResourceAfterReposition.HasValue
+                                && repositionsByResource.TryGetValue(
+                                    retryResourceAfterReposition.Value, out int resourceRepositions)
+                                && resourceRepositions >= options.MaxAreaRepositionsPerResource)))
+                        return Complete(result, ResourceFarmFallbackOutcome.SearchAreaExhausted, watch,
+                            "Đã thử số lần chuyển khu vực tối đa nhưng vẫn chưa tìm thấy tài nguyên.", null);
+
                     if (searchAreaAttempt >= options.MaxSearchAreaRecoveryAttempts)
                         return Complete(result, ResourceFarmFallbackOutcome.ResourcePlanExhausted, watch,
                             searchAreaRecoveryRequested
-                                ? "The verified toast requires a different map resource area, "
-                                    + "and the bounded search-area recovery plan was exhausted."
+                                ? "Đã thử số lần chuyển khu vực tối đa nhưng vẫn chưa tìm thấy tài nguyên."
                                 : "The four-resource plan was exhausted without a march.", null);
 
-                    NavigationResult reposition;
+                    NavigationResult ensuredWorldMap = await navigation.EnsureWorldMapAsync(
+                        deviceName, cancellationToken);
+                    result.FinalState = ensuredWorldMap.FinalState;
+                    if (!ensuredWorldMap.Success || ensuredWorldMap.FinalState != GameState.WorldMap)
+                        return Complete(result, ResourceFarmFallbackOutcome.SearchAreaRecoveryFailed, watch,
+                            "Không thể trở về bản đồ thế giới trước khi chuyển khu vực tìm tài nguyên.",
+                            ensuredWorldMap.ErrorMessage ?? ensuredWorldMap.Message);
+
+                    if (options.RepositionCooldownMs > 0)
+                        await Task.Delay(options.RepositionCooldownMs, cancellationToken);
+
+                    Task<NavigationResult> repositionTask;
                     var progressNavigation =
                         navigation as IWorldMapNavigationProgressService;
                     if (progressNavigation != null)
@@ -288,27 +316,41 @@ namespace ADB_Tool_Automation_Post_FB.Infrastructure.Workflows
                                     searchAreaAttempt + 1,
                                     transition.Message);
                             });
-                        reposition = await progressNavigation
+                        repositionTask = progressNavigation
                             .RepositionToAllianceTerritoryAsync(
                                 deviceName, navigationProgress,
                                 cancellationToken);
                     }
                     else
                     {
-                        reposition = await navigation
+                        repositionTask = navigation
                             .RepositionToAllianceTerritoryAsync(
                                 deviceName, cancellationToken);
                     }
+                    Task completed = await Task.WhenAny(repositionTask,
+                        Task.Delay(options.RepositionTimeoutMs, cancellationToken));
+                    cancellationToken.ThrowIfCancellationRequested();
+                    if (completed != repositionTask)
+                        return Complete(result, ResourceFarmFallbackOutcome.RepositionTimeout, watch,
+                            "Chuyển khu vực bản đồ đã quá thời gian chờ cho phép.", null);
+                    NavigationResult reposition = await repositionTask;
                     result.TerritoryColorSummary =
                         GetTerritoryColorSummary(reposition);
                     ReportColor(progress, searchAreaAttempt + 1,
                         result.TerritoryColorSummary);
                     result.FinalState = reposition.FinalState;
                     result.RecoveryTransitions++;
+                    totalRepositions++;
+                    if (retryResourceAfterReposition.HasValue)
+                    {
+                        int count;
+                        repositionsByResource.TryGetValue(retryResourceAfterReposition.Value, out count);
+                        repositionsByResource[retryResourceAfterReposition.Value] = count + 1;
+                    }
                     LogRecovery(runId, deviceName, reposition.Success ? "Repositioned" : "Failed");
                     if (!reposition.Success || reposition.FinalState != GameState.WorldMap)
-                        return Complete(result, ResourceFarmFallbackOutcome.RecoveryFailed, watch,
-                            "Search area recovery failed before retrying the resource plan.",
+                        return Complete(result, ResourceFarmFallbackOutcome.SearchAreaRecoveryFailed, watch,
+                            "Vị trí hiện tại không phù hợp để khai thác tài nguyên; đang chuyển sang khu vực bản đồ khác.",
                             reposition.ErrorMessage ?? reposition.Message);
                 }
             }

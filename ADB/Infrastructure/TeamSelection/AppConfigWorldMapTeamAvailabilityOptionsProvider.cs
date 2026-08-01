@@ -12,7 +12,7 @@ namespace ADB_Tool_Automation_Post_FB.Infrastructure.TeamSelection
                 Int("TeamRosterRegion.X", 0), Int("TeamRosterRegion.Y", 290),
                 Int("TeamRosterRegion.Width", 150),
             Int("TeamRosterRegion.Height", 280)),
-            Int("TeamRowCount", 4), Int("TeamRowHeight", 70), Int("BadgeTopPadding", 8));
+            Int("TeamRowCount", 4), NullableInt("TeamRowHeight"), Int("BadgeTopPadding", 8));
 
         private static string Key(string name) => "WorldMapTeamAvailability." + name;
 
@@ -20,6 +20,17 @@ namespace ADB_Tool_Automation_Post_FB.Infrastructure.TeamSelection
         {
             string value = ConfigurationManager.AppSettings[Key(name)];
             if (string.IsNullOrWhiteSpace(value)) return fallback;
+            if (!int.TryParse(value, NumberStyles.Integer,
+                CultureInfo.InvariantCulture, out int parsed))
+                throw new ConfigurationErrorsException(
+                    $"Configuration value '{Key(name)}' must be an integer.");
+            return parsed;
+        }
+
+        private static int? NullableInt(string name)
+        {
+            string value = ConfigurationManager.AppSettings[Key(name)];
+            if (string.IsNullOrWhiteSpace(value)) return null;
             if (!int.TryParse(value, NumberStyles.Integer,
                 CultureInfo.InvariantCulture, out int parsed))
                 throw new ConfigurationErrorsException(

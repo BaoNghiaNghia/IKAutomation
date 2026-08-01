@@ -50,5 +50,11 @@ namespace ADB_Tool_Automation_Post_FB.Core.Workflows
         public bool WasCancelled { get; set; }
         public bool AdaptiveConcurrencyEnabled { get; set; }
         public int FinalConcurrencyLimit { get; set; }
+        public int TotalSelected { get; set; }
+        public int Active { get; set; }
+        public int Queued { get; set; }
+        public int WaitingForTeam { get; set; }
+        public int ScheduledForNextCheck { get; set; }
+        public int Failed { get; set; }
     }
 }

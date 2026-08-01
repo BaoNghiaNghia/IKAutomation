@@ -7,6 +7,7 @@ namespace ADB_Tool_Automation_Post_FB.Core.Workflows
         ResourcePopupNotReady, TeamSelectionFailed, TeamSelectionNotReady,
         TeamDispatchFailed, AllCandidateStoragesFull, ResourcePlanExhausted,
         RecoveryFailed, TeamAvailabilityCheckFailed, TeamAvailabilityWaitTimeout,
+        WaitingForReadyTeam,
         PreconditionFailed, Failed, Cancelled
     }
 }

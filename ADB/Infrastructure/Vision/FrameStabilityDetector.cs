@@ -22,8 +22,20 @@ namespace ADB_Tool_Automation_Post_FB.Infrastructure.Vision
         public FrameComparisonResult Compare(byte[] previousPng, byte[] currentPng,
             ImageRegion? region = null)
         {
-            using (Bitmap previous = Decode(previousPng, nameof(previousPng)))
-            using (Bitmap current = Decode(currentPng, nameof(currentPng)))
+            using (var previousFrame = new CapturedFrame(
+                Decode(previousPng, nameof(previousPng)), DateTimeOffset.UtcNow))
+            using (var currentFrame = new CapturedFrame(
+                Decode(currentPng, nameof(currentPng)), DateTimeOffset.UtcNow))
+                return Compare(previousFrame, currentFrame, region);
+        }
+
+        public FrameComparisonResult Compare(CapturedFrame previousFrame,
+            CapturedFrame currentFrame, ImageRegion? region = null)
+        {
+            if (previousFrame == null) throw new ArgumentNullException(nameof(previousFrame));
+            if (currentFrame == null) throw new ArgumentNullException(nameof(currentFrame));
+            Bitmap previous = previousFrame.Bitmap;
+            Bitmap current = currentFrame.Bitmap;
             {
                 if (previous.Width != current.Width || previous.Height != current.Height)
                     throw new ArgumentException("Frames must have the same dimensions.");

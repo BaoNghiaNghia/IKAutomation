@@ -6,6 +6,7 @@ using ADB_Tool_Automation_Post_FB.Core.ResourceSearch;
 using ADB_Tool_Automation_Post_FB.Core.ResourcePopup;
 using ADB_Tool_Automation_Post_FB.Core.Vision;
 using System;
+using System.Collections.Concurrent;
 using System.Collections.Generic;
 using System.Diagnostics;
 using System.Drawing;
@@ -40,6 +41,8 @@ namespace ADB_Tool_Automation_Post_FB.Infrastructure.ResourceSearch
         private readonly IResourceSearchDiagnosticStore diagnosticStore;
         private readonly IDiagnosticLogger logger;
         private readonly IResourcePopupVerificationService popupVerificationService;
+        private readonly ConcurrentDictionary<string, GameState> lastKnownStates =
+            new ConcurrentDictionary<string, GameState>(StringComparer.OrdinalIgnoreCase);
 
         public ResourceSearchExecutionService(
             IResourceSearchConfigurationService configurationService,
@@ -99,6 +102,9 @@ namespace ADB_Tool_Automation_Post_FB.Infrastructure.ResourceSearch
             var observations = new List<ResourceSearchObservation>();
             var result = NewResult(observations);
             var context = new ObservationContext { BurstTimestamp = DateTimeOffset.Now };
+            GameState knownState;
+            if (lastKnownStates.TryGetValue(deviceName, out knownState))
+                context.LastKnownState = knownState;
             try
             {
                 LogStart(deviceName, request);
@@ -108,6 +114,7 @@ namespace ADB_Tool_Automation_Post_FB.Infrastructure.ResourceSearch
                         deviceName, request.Configuration, cancellationToken);
                     result.InitialState = result.ConfigurationResult.InitialState;
                     result.FinalState = result.ConfigurationResult.FinalState;
+                    RememberKnownState(deviceName, result.FinalState, context);
                     if (!result.ConfigurationResult.Success)
                         return await CompleteAsync(deviceName, result, context, ResourceSearchOutcome.Failed,
                             "Search configuration failed; Search was not tapped.",
@@ -118,6 +125,7 @@ namespace ADB_Tool_Automation_Post_FB.Infrastructure.ResourceSearch
                     GameDetectionResult current = await detector.DetectAsync(deviceName, cancellationToken);
                     result.InitialState = current.State;
                     result.FinalState = current.State;
+                    RememberKnownState(deviceName, current.State, context);
                     if (!current.IsSuccessful || !IsPanelConfirmed(current))
                         return await CompleteAsync(deviceName, result, context, ResourceSearchOutcome.Failed,
                             "Current screen is not a verified ResourceSearchPanel; Search was not tapped.",
@@ -128,12 +136,21 @@ namespace ADB_Tool_Automation_Post_FB.Infrastructure.ResourceSearch
                 for (int attempt = 1; attempt <= options.MaxSearchTapAttempts; attempt++)
                 {
                     cancellationToken.ThrowIfCancellationRequested();
+                    if (attempt > 1)
+                    {
+                        int retryDelayMs = 600 + ((attempt * 73) % 151);
+                        await Task.Delay(retryDelayMs, cancellationToken);
+                    }
                     context.ResetToastEvidence();
-                    byte[] beforeTap = await ldPlayerClient.CaptureScreenshotPngAsync(deviceName, cancellationToken);
+                    CapturedFrame beforeTap = await CaptureFrameAsync(deviceName, cancellationToken);
+                    try
+                    {
                     string resolutionError = ValidateResolution(beforeTap);
                     if (resolutionError != null)
+                    {
                         return await CompleteAsync(deviceName, result, context, ResourceSearchOutcome.Failed,
                             "Search screenshot resolution is invalid.", resolutionError, watch, cancellationToken);
+                    }
 
                     ImageMatchResult button = Match(beforeTap, TemplateId.SearchButtonEnabled, null);
                     if (!HasBounds(button))
@@ -144,11 +161,15 @@ namespace ADB_Tool_Automation_Post_FB.Infrastructure.ResourceSearch
                             watch, cancellationToken);
                     }
 
-                    GameDetectionResult beforeTapState = detector.Detect(beforeTap);
+                    GameDetectionResult beforeTapState = Detect(beforeTap, deviceName,
+                        new GameStateDetectionContext(GameState.ResourceSearchPanel,
+                            context.LastKnownState));
                     if (!beforeTapState.IsSuccessful || !IsPanelConfirmed(beforeTapState))
+                    {
                         return await CompleteAsync(deviceName, result, context, ResourceSearchOutcome.Failed,
                             "ResourceSearchPanel was not verified on the fresh pre-Tap screenshot.",
                             beforeTapState.ErrorMessage, watch, cancellationToken);
+                    }
 
                     result.SearchButtonVerified = true;
                     int tapX = button.CenterX;
@@ -160,9 +181,15 @@ namespace ADB_Tool_Automation_Post_FB.Infrastructure.ResourceSearch
                     result.SearchTapCount++;
                     if (searchResultWatch == null)
                         searchResultWatch = Stopwatch.StartNew();
-                    context.PreviousFrame = beforeTap;
+                    context.ReplacePreviousFrame(beforeTap);
+                    beforeTap = null;
                     context.PreviousPanelConfirmed = true;
                     context.LastPanelConfirmed = true;
+                    }
+                    finally
+                    {
+                        if (beforeTap != null) beforeTap.Dispose();
+                    }
 
                     int fastWindowMs = Math.Min(options.NotFoundObservationWindowMs,
                         options.SearchTapVerificationTimeoutSeconds * 1000);
@@ -236,6 +263,10 @@ namespace ADB_Tool_Automation_Post_FB.Infrastructure.ResourceSearch
                     ResourceSearchOutcome.TechnicalFailure,
                     "Resource search execution failed.", exception.Message, watch, cancellationToken);
             }
+            finally
+            {
+                context.Dispose();
+            }
         }
 
         private async Task<ObservationDecision> ObserveFrameAsync(string deviceName,
@@ -244,30 +275,34 @@ namespace ADB_Tool_Automation_Post_FB.Infrastructure.ResourceSearch
             ObservationContext context, CancellationToken cancellationToken)
         {
             cancellationToken.ThrowIfCancellationRequested();
-            byte[] frame = await ldPlayerClient.CaptureScreenshotPngAsync(deviceName, cancellationToken);
-            context.LastFrame = frame;
+            CapturedFrame frame = await CaptureFrameAsync(deviceName, cancellationToken);
+            try
+            {
             string resolutionError = ValidateResolution(frame);
             if (resolutionError != null)
+            {
                 return ObservationDecision.Decided(ResourceSearchOutcome.Failed,
                     "Observation frame resolution is invalid.", resolutionError);
+            }
 
             await TrySaveBurstFrameAsync(deviceName, frame, context, cancellationToken);
-            GameDetectionResult detection = detector.Detect(frame);
+            GameDetectionResult detection = Detect(frame, deviceName,
+                new GameStateDetectionContext(GameState.ResourceSearchPanel,
+                    context.LastKnownState));
             cancellationToken.ThrowIfCancellationRequested();
             if (detection == null || !detection.IsSuccessful)
+            {
                 return ObservationDecision.Decided(ResourceSearchOutcome.Failed,
                     "Game state detection failed during search observation.", detection?.ErrorMessage);
+            }
 
-            ImageMatchResult toastAnchor = Match(frame, TemplateId.ResourceNotFoundToastAnchor, options.ToastRegion);
-            ImageMatchResult actionAnchor = Match(frame, TemplateId.ResourceNotFoundToastActionAnchor, options.ToastRegion);
-            ImageMatchResult shortAnchor = MatchOptional(frame,
-                TemplateId.ResourceNotFoundToastShortAnchor, options.ToastRegion);
-            ImageMatchResult otherRegionAnchor = MatchOptional(frame,
-                TemplateId.ResourceNotFoundToastOtherRegionAnchor, options.ToastRegion);
-            ImageMatchResult targetLevelTooLowAnchor = MatchOptional(frame,
-                TemplateId.ResourceTargetLevelTooLowToastAnchor, options.ToastRegion);
-            ImageMatchResult seasonMapAnchor = MatchOptional(frame,
-                TemplateId.ResourceTargetLevelSeasonMapToastAnchor, options.ToastRegion);
+            IReadOnlyList<ImageMatchResult> toastMatches = MatchToastAnchors(frame);
+            ImageMatchResult toastAnchor = toastMatches[0];
+            ImageMatchResult actionAnchor = toastMatches[1];
+            ImageMatchResult shortAnchor = toastMatches[2];
+            ImageMatchResult otherRegionAnchor = toastMatches[3];
+            ImageMatchResult targetLevelTooLowAnchor = toastMatches[4];
+            ImageMatchResult seasonMapAnchor = toastMatches[5];
             bool panelConfirmed = IsPanelConfirmed(detection);
             double? difference = null;
             bool stable = false;
@@ -292,6 +327,7 @@ namespace ADB_Tool_Automation_Post_FB.Infrastructure.ResourceSearch
 
             result.PanelClosed = !panelConfirmed;
             result.FinalState = detection.State;
+            RememberKnownState(deviceName, detection.State, context);
             bool legacyPairClose = AreToastAnchorsClose(toastAnchor, actionAnchor);
             bool alternatePairClose = AreToastAnchorsClose(shortAnchor, otherRegionAnchor);
             bool targetLevelPairClose = AreToastAnchorsClose(
@@ -310,11 +346,13 @@ namespace ADB_Tool_Automation_Post_FB.Infrastructure.ResourceSearch
             bool alternateConfirmed = alternatePairClose
                 || (context.ShortAnchorSeen && context.OtherRegionAnchorSeen
                     && !context.AlternatePairTooFarSeen);
-            string matchedVariant = legacyPairClose
-                ? LegacyMoveAreaVariant
-                : alternateConfirmed
-                    ? SearchOtherRegionVariant
-                    : targetLevelPairClose ? TargetLevelTooLowVariant : null;
+            bool seasonMapRestriction = HasBounds(seasonMapAnchor)
+                && !HasBounds(targetLevelTooLowAnchor);
+            string matchedVariant = seasonMapRestriction
+                ? "SeasonMapRestriction"
+                : targetLevelPairClose ? TargetLevelTooLowVariant
+                : alternateConfirmed ? SearchOtherRegionVariant
+                : legacyPairClose ? LegacyMoveAreaVariant : null;
             bool toastVerified = matchedVariant != null && panelConfirmedNowOrAdjacent;
 
             if (result.CameraMovementObserved && !panelConfirmed
@@ -358,11 +396,13 @@ namespace ADB_Tool_Automation_Post_FB.Infrastructure.ResourceSearch
                 result.NotFoundObserved = true;
                 result.NotFoundToastVerified = true;
                 result.MatchedNotFoundVariant = matchedVariant;
-                result.FailureReason = matchedVariant == SearchOtherRegionVariant
-                    ? ResourceSearchFailureReason.SearchOtherRegion
+                result.FailureReason = matchedVariant == "SeasonMapRestriction"
+                    ? ResourceSearchFailureReason.SeasonMapRestriction
                     : matchedVariant == TargetLevelTooLowVariant
                         ? ResourceSearchFailureReason.TargetLevelTooLow
-                        : ResourceSearchFailureReason.ResourceUnavailable;
+                        : matchedVariant == SearchOtherRegionVariant
+                            ? ResourceSearchFailureReason.SearchOtherRegion
+                            : ResourceSearchFailureReason.ResourceUnavailable;
                 result.ShouldRepositionMap = result.FailureReason
                     == ResourceSearchFailureReason.SearchOtherRegion;
                 result.ShouldTryLowerLevel = result.FailureReason
@@ -371,6 +411,9 @@ namespace ADB_Tool_Automation_Post_FB.Infrastructure.ResourceSearch
             LogObservation(deviceName, result, context, observation,
                 toastAnchor, actionAnchor, shortAnchor, otherRegionAnchor,
                 targetLevelTooLowAnchor, seasonMapAnchor);
+
+            context.ReplacePreviousFrame(frame);
+            frame = null;
 
             if (toastVerified)
             {
@@ -422,8 +465,12 @@ namespace ADB_Tool_Automation_Post_FB.Infrastructure.ResourceSearch
 
             context.PreviousPanelConfirmed = panelConfirmed;
             context.LastPanelConfirmed = panelConfirmed;
-            context.PreviousFrame = frame;
             return ObservationDecision.Pending();
+            }
+            finally
+            {
+                if (frame != null) frame.Dispose();
+            }
         }
 
         private async Task<ObservationDecision> VerifyPopupAsync(string deviceName,
@@ -483,13 +530,13 @@ namespace ADB_Tool_Automation_Post_FB.Infrastructure.ResourceSearch
             result.Message = message;
             result.ErrorMessage = error;
             result.Duration = watch.Elapsed;
-            if (options.SaveResultScreenshots && context.LastFrame != null
+            if (options.SaveResultScreenshots && context.PreviousFrame != null
                 && outcome != ResourceSearchOutcome.Cancelled)
             {
                 try
                 {
                     result.DiagnosticScreenshotPath = await diagnosticStore.SaveResultAsync(
-                        deviceName, outcome, context.LastFrame, cancellationToken);
+                        deviceName, outcome, context.PreviousFrame.GetPngBytes(), cancellationToken);
                 }
                 catch (OperationCanceledException) { throw; }
                 catch (Exception exception)
@@ -508,7 +555,7 @@ namespace ADB_Tool_Automation_Post_FB.Infrastructure.ResourceSearch
             return result;
         }
 
-        private async Task TrySaveBurstFrameAsync(string deviceName, byte[] frame,
+        private async Task TrySaveBurstFrameAsync(string deviceName, CapturedFrame frame,
             ObservationContext context, CancellationToken cancellationToken)
         {
             if (!options.SaveObservationBurst || context.BurstFrameCount >= options.MaxObservationBurstFrames)
@@ -517,7 +564,7 @@ namespace ADB_Tool_Automation_Post_FB.Infrastructure.ResourceSearch
             try
             {
                 await diagnosticStore.SaveObservationAsync(deviceName, context.BurstTimestamp,
-                    context.BurstFrameCount, frame, cancellationToken);
+                    context.BurstFrameCount, frame.GetPngBytes(), cancellationToken);
             }
             catch (OperationCanceledException) { throw; }
             catch (Exception exception)
@@ -527,24 +574,75 @@ namespace ADB_Tool_Automation_Post_FB.Infrastructure.ResourceSearch
             }
         }
 
-        private ImageMatchResult Match(byte[] screenshot, TemplateId id, ImageRegion? region)
+        private async Task<CapturedFrame> CaptureFrameAsync(string deviceName,
+            CancellationToken cancellationToken)
         {
-            return imageMatcher.Find(screenshot, templateRegistry.LoadBytes(id), region);
+            var frameClient = ldPlayerClient as IFrameCapturingLdPlayerClient;
+            if (frameClient != null)
+                return await frameClient.CaptureFrameAsync(deviceName, cancellationToken);
+
+            byte[] png = await ldPlayerClient.CaptureScreenshotPngAsync(deviceName,
+                cancellationToken);
+            using (var stream = new MemoryStream(png, writable: false))
+            using (var source = new Bitmap(stream))
+                return new CapturedFrame(new Bitmap(source), DateTimeOffset.UtcNow);
         }
 
-        private ImageMatchResult MatchOptional(byte[] screenshot, TemplateId id, ImageRegion? region)
+        private GameDetectionResult Detect(CapturedFrame frame, string deviceName,
+            GameStateDetectionContext context)
         {
-            try
+            var frameDetector = detector as IFrameGameStateDetector;
+            return frameDetector != null
+                ? frameDetector.Detect(frame, deviceName, context)
+                : detector.Detect(frame.GetPngBytes());
+        }
+
+        private void RememberKnownState(string deviceName, GameState state, ObservationContext context)
+        {
+            if (state == GameState.Unknown) return;
+            context.LastKnownState = state;
+            lastKnownStates[deviceName] = state;
+        }
+
+        private ImageMatchResult Match(CapturedFrame frame, TemplateId id, ImageRegion? region)
+        {
+            byte[] template = templateRegistry.LoadBytes(id);
+            var frameMatcher = imageMatcher as IFrameImageMatcher;
+            return frameMatcher != null
+                ? frameMatcher.Find(frame, template, region)
+                : imageMatcher.Find(frame.GetPngBytes(), template, region);
+        }
+
+        private IReadOnlyList<ImageMatchResult> MatchToastAnchors(CapturedFrame frame)
+        {
+            TemplateId[] ids = { TemplateId.ResourceNotFoundToastAnchor,
+                TemplateId.ResourceNotFoundToastActionAnchor,
+                TemplateId.ResourceNotFoundToastShortAnchor,
+                TemplateId.ResourceNotFoundToastOtherRegionAnchor,
+                TemplateId.ResourceTargetLevelTooLowToastAnchor,
+                TemplateId.ResourceTargetLevelSeasonMapToastAnchor };
+            var requests = new List<ImageMatchRequest>();
+            var indexes = new List<int>();
+            var results = Enumerable.Repeat(ImageMatchResult.NotFound(), ids.Length).ToArray();
+            for (int index = 0; index < ids.Length; index++)
             {
-                if (!templateRegistry.Exists(id)) return ImageMatchResult.NotFound();
-                return Match(screenshot, id, region) ?? ImageMatchResult.NotFound();
+                if (index > 1 && !templateRegistry.Exists(ids[index])) continue;
+                requests.Add(new ImageMatchRequest(templateRegistry.LoadBytes(ids[index]), options.ToastRegion));
+                indexes.Add(index);
             }
-            catch (Exception exception)
+            IReadOnlyList<ImageMatchResult> matched;
+            var frameMatcher = imageMatcher as IFrameImageMatcher;
+            if (frameMatcher != null) matched = frameMatcher.FindMany(frame, requests);
+            else
             {
-                logger.Info($"[Resource Search Execution] OptionalTemplate='{id}', "
-                    + $"Available=false, Error='{exception.Message}'");
-                return ImageMatchResult.NotFound();
+                var batchMatcher = imageMatcher as IBatchImageMatcher;
+                matched = batchMatcher != null ? batchMatcher.FindMany(frame.GetPngBytes(), requests)
+                    : requests.Select(request => imageMatcher.Find(frame.GetPngBytes(), request.TemplatePng,
+                        request.SearchRegion)).ToArray();
             }
+            for (int index = 0; index < indexes.Count; index++)
+                results[indexes[index]] = matched[index] ?? ImageMatchResult.NotFound();
+            return results;
         }
 
         private string ValidateTemplates()
@@ -573,20 +671,11 @@ namespace ADB_Tool_Automation_Post_FB.Infrastructure.ResourceSearch
             return null;
         }
 
-        private string ValidateResolution(byte[] png)
+        private string ValidateResolution(CapturedFrame frame)
         {
-            try
-            {
-                using (var stream = new MemoryStream(png, writable: false))
-                using (Image image = Image.FromStream(stream, false, true))
-                    return image.Width == options.ExpectedWidth && image.Height == options.ExpectedHeight
-                        ? null
-                        : $"Expected {options.ExpectedWidth}x{options.ExpectedHeight}, actual {image.Width}x{image.Height}.";
-            }
-            catch (Exception exception)
-            {
-                return "Screenshot could not be decoded: " + exception.Message;
-            }
+            if (frame == null) return "Screenshot frame was not captured.";
+            return frame.Width == options.ExpectedWidth && frame.Height == options.ExpectedHeight
+                ? null : $"Expected {options.ExpectedWidth}x{options.ExpectedHeight}, actual {frame.Width}x{frame.Height}.";
         }
 
         private static bool IsPanelConfirmed(GameDetectionResult result)
@@ -680,10 +769,10 @@ namespace ADB_Tool_Automation_Post_FB.Infrastructure.ResourceSearch
                 + $"UnknownFrameCount={context.UnknownFrameCount}, NotFoundLatch={result.NotFoundObserved}");
         }
 
-        private sealed class ObservationContext
+        private sealed class ObservationContext : IDisposable
         {
-            public byte[] PreviousFrame;
-            public byte[] LastFrame;
+            public CapturedFrame PreviousFrame;
+            public GameState LastKnownState = GameState.Unknown;
             public bool PreviousPanelConfirmed;
             public bool LastPanelConfirmed;
             public int OpenPanelObservationCount;
@@ -727,6 +816,20 @@ namespace ADB_Tool_Automation_Post_FB.Infrastructure.ResourceSearch
                     ToastEvidence.FirstSeenFrame = frame;
                 if (HasPartialToastEvidence)
                     ToastEvidence.LastSeenFrame = frame;
+            }
+
+            public void ReplacePreviousFrame(CapturedFrame frame)
+            {
+                CapturedFrame previous = PreviousFrame;
+                PreviousFrame = frame;
+                previous?.Dispose();
+            }
+
+            public void Dispose()
+            {
+                CapturedFrame previous = PreviousFrame;
+                PreviousFrame = null;
+                previous?.Dispose();
             }
         }
 

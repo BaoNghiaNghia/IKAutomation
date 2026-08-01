@@ -5,6 +5,12 @@ using ADB_Tool_Automation_Post_FB.Core.StorageLimit;
 
 namespace ADB_Tool_Automation_Post_FB.Core.Workflows
 {
+    public enum ReadyTeamWaitMode
+    {
+        InlineWait,
+        YieldToSupervisor
+    }
+
     public sealed class OneShotFarmRequest
     {
         public OneShotFarmRequest()
@@ -19,6 +25,7 @@ namespace ADB_Tool_Automation_Post_FB.Core.Workflows
             TeamPriority = new[] { TeamNumber.Team4, TeamNumber.Team3, TeamNumber.Team2, TeamNumber.Team1 };
             AllowTeam1 = true;
             RequireMarchVerification = true;
+            ReadyTeamWaitMode = ReadyTeamWaitMode.InlineWait;
         }
         public ResourceType ResourceType { get; set; }
         public int TargetLevel { get; set; }
@@ -34,7 +41,14 @@ namespace ADB_Tool_Automation_Post_FB.Core.Workflows
         public bool AllowTeam1 { get; set; }
         public bool RequireMarchVerification { get; set; }
         public bool RunUntilNoReadyTeams { get; set; }
-        public bool YieldWhenNoReadyTeam { get; set; }
+        public ReadyTeamWaitMode ReadyTeamWaitMode { get; set; }
+        // Compatibility for callers persisted before the explicit wait mode.
+        public bool YieldWhenNoReadyTeam
+        {
+            get { return ReadyTeamWaitMode == ReadyTeamWaitMode.YieldToSupervisor; }
+            set { ReadyTeamWaitMode = value
+                ? ReadyTeamWaitMode.YieldToSupervisor : ReadyTeamWaitMode.InlineWait; }
+        }
         public ReadyTeamGateRunOptions ReadyTeamOptions { get; set; }
         public WorldMapTeamAvailabilityResult InitialTeamAvailability { get; set; }
         public string RunId { get; set; }
