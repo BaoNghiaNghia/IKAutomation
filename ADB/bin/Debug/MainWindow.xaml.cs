@@ -266,8 +266,10 @@ namespace ADB_Tool_Automation_Post_FB
             DeviceDiagnosticButton.Background = isOpen
                 ? FarmControlOpenBrush : FarmControlClosedBrush;
             DeviceDiagnosticButton.BorderBrush = DeviceDiagnosticButton.Background;
-            DeviceDiagnosticButton.Content = isOpen
-                ? "IK Device Diagnostic • Đang mở" : "IK Device Diagnostic";
+            DeviceDiagnosticButton.Content = "Farm Control";
+            DeviceDiagnosticButton.ToolTip = isOpen
+                ? "IKAutomation - Farm Control đang mở"
+                : "Mở IKAutomation - Farm Control";
         }
 
         // ---------------- UI Event Handlers ---------------- //
