@@ -178,6 +178,7 @@ namespace ADB_Tool_Automation_Post_FB.Infrastructure.Workflows
 
                     result.LastCompletedStep = OneShotFarmStep.VerifyResourcePopup;
 
+                    ReportStep(progress, OneShotFarmStep.OpenTeamSelection, clearTerritoryColor: true);
                     OpenTeamSelectionResult opened = openTeam is IResourceAwareOpenTeamSelectionService resourceAwareOpen
                         ? await resourceAwareOpen.OpenAsync(deviceName, resource, cancellationToken)
                         : await openTeam.OpenAsync(deviceName, cancellationToken);
@@ -192,9 +193,11 @@ namespace ADB_Tool_Automation_Post_FB.Infrastructure.Workflows
                             opened.Message, opened.ErrorMessage);
                     }
 
+                    ReportStep(progress, OneShotFarmStep.SelectTeam, clearTerritoryColor: true);
                     SelectFarmTeamResult selected = await selectTeam.SelectAsync(deviceName,
                         new TeamSelectionRequest { AllowedTeams = request.AllowedTeams,
-                            Priority = request.TeamPriority, AllowTeam1 = request.AllowTeam1 }, cancellationToken);
+                            Priority = request.TeamPriority, AllowTeam1 = request.AllowTeam1,
+                            RunId = runId }, cancellationToken);
                     attempt.SelectTeamResult = selected; result.FinalState = selected.FinalState;
                     if (selected.Outcome == SelectFarmTeamOutcome.Cancelled)
                         throw new OperationCanceledException(cancellationToken);
@@ -455,6 +458,26 @@ namespace ADB_Tool_Automation_Post_FB.Infrastructure.Workflows
                 {
                     RecoveryAttempt = recoveryAttempt,
                     TerritoryColorSummary = summary
+                });
+            }
+            catch
+            {
+                // Progress reporting must never alter device recovery.
+            }
+        }
+
+        private static void ReportStep(
+            IProgress<ResourceFarmFallbackProgress> progress,
+            OneShotFarmStep step,
+            bool clearTerritoryColor)
+        {
+            if (progress == null) return;
+            try
+            {
+                progress.Report(new ResourceFarmFallbackProgress
+                {
+                    CurrentStep = step,
+                    ClearTerritoryColor = clearTerritoryColor
                 });
             }
             catch

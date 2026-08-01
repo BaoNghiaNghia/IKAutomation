@@ -1,0 +1,28 @@
+using ADB_Tool_Automation_Post_FB.Core.Vision;
+
+namespace ADB_Tool_Automation_Post_FB.Core.TeamSelection
+{
+    public enum TeamRowState
+    {
+        Missing,
+        Ready,
+        Busy,
+        Locked,
+        Unknown
+    }
+
+    public sealed class TeamRowObservation
+    {
+        public TeamNumber Team { get; set; }
+        public bool BadgeFound { get; set; }
+        public ImageRegion BadgeBounds { get; set; }
+        public ImageRegion RowBounds { get; set; }
+        public bool IsVisible { get; set; }
+        public bool IsReady { get; set; }
+        public bool IsBusy { get; set; }
+        public bool IsLocked { get; set; }
+        public bool IsSelected { get; set; }
+        public TeamRowState State { get; set; }
+        public string EvidenceSource { get; set; }
+    }
+}

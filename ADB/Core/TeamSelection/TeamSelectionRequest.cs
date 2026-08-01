@@ -14,5 +14,6 @@ namespace ADB_Tool_Automation_Post_FB.Core.TeamSelection
         public IReadOnlyList<TeamNumber> AllowedTeams { get; set; }
         public IReadOnlyList<TeamNumber> Priority { get; set; }
         public bool AllowTeam1 { get; set; }
+        public string RunId { get; set; }
     }
 }

@@ -331,7 +331,8 @@ namespace ADB_Tool_Automation_Post_FB.Infrastructure.Workflows
                     OneShotFarmStep.SelectTeam, request, null, "Selecting an eligible farm team.");
                 token.ThrowIfCancellationRequested(); started = Start(runId, deviceName, OneShotFarmStep.SelectTeam);
                 SelectFarmTeamResult selected = await selectTeam.SelectAsync(deviceName, new TeamSelectionRequest
-                { AllowedTeams = request.AllowedTeams, Priority = request.TeamPriority, AllowTeam1 = request.AllowTeam1 }, token);
+                { AllowedTeams = request.AllowedTeams, Priority = request.TeamPriority,
+                    AllowTeam1 = request.AllowTeam1, RunId = request.RunId }, token);
                 result.SelectTeamResult = selected; result.FinalState = selected.FinalState;
                 if (selected.Outcome == SelectFarmTeamOutcome.Cancelled) throw new OperationCanceledException(token);
                 if (selected.Outcome == SelectFarmTeamOutcome.NoEligibleTeam)
@@ -757,8 +758,9 @@ namespace ADB_Tool_Automation_Post_FB.Infrastructure.Workflows
             OneShotFarmRequest request,
             ResourceFarmFallbackProgress value)
         {
-            if (progress == null || value == null
-                || string.IsNullOrWhiteSpace(value.TerritoryColorSummary)) return;
+            if (progress == null || value == null) return;
+            bool hasColor = !string.IsNullOrWhiteSpace(value.TerritoryColorSummary);
+            if (!hasColor && !value.ClearTerritoryColor && !value.CurrentStep.HasValue) return;
             try
             {
                 progress.Report(new OneShotFarmProgress
@@ -766,11 +768,16 @@ namespace ADB_Tool_Automation_Post_FB.Infrastructure.Workflows
                     Stage = OneShotFarmProgressStage.RunningFarmStep,
                     ReportedAt = DateTimeOffset.UtcNow,
                     AllowedTeams = request?.AllowedTeams ?? new TeamNumber[0],
-                    CurrentStep = OneShotFarmStep.ResourceFarmFallback,
+                    CurrentStep = value.CurrentStep ?? OneShotFarmStep.ResourceFarmFallback,
                     CurrentResource = request == null
                         ? (ResourceType?)null : request.ResourceType,
-                    Message = "Running the resource and level fallback plan.",
-                    TerritoryColorSummary = value.TerritoryColorSummary
+                    Message = value.CurrentStep == OneShotFarmStep.OpenTeamSelection
+                        ? "Opening team selection."
+                        : value.CurrentStep == OneShotFarmStep.SelectTeam
+                            ? "Selecting an eligible farm team."
+                            : "Running the resource and level fallback plan.",
+                    TerritoryColorSummary = value.ClearTerritoryColor
+                        ? null : value.TerritoryColorSummary
                 });
             }
             catch (Exception exception)

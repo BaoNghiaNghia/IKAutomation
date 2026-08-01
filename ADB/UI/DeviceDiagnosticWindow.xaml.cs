@@ -1498,6 +1498,10 @@ namespace ADB_Tool_Automation_Post_FB.UI
             else if (progress.CurrentStep == OneShotFarmStep.ResourceFarmFallback)
                 TerritoryColor =
                     "Màu vùng — đang chờ kiểm tra khi hệ thống đổi vị trí X/Y.";
+            else if (progress.CurrentStep == OneShotFarmStep.OpenTeamSelection
+                || progress.CurrentStep == OneShotFarmStep.SelectTeam
+                || progress.CurrentStep == OneShotFarmStep.DispatchTeam)
+                TerritoryColor = string.Empty;
             nextCheckAt = progress.NextCheckAt;
             waitDeadline = progress.WaitDeadline;
             IReadOnlyList<TeamNumber> allowed = progress.AllowedTeams ?? new TeamNumber[0];

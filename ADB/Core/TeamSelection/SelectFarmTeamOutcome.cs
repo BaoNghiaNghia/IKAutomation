@@ -7,6 +7,9 @@ namespace ADB_Tool_Automation_Post_FB.Core.TeamSelection
         NoEligibleTeam,
         TeamSelectionNotReady,
         SelectionTimeout,
+        ExpectedTeamNotVisible,
+        WrongTeamSelected,
+        TeamSelectionMismatch,
         Failed,
         Cancelled
     }

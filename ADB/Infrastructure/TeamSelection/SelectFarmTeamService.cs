@@ -74,7 +74,7 @@ namespace ADB_Tool_Automation_Post_FB.Infrastructure.TeamSelection
             byte[] lastFrame = null;
             try
             {
-                logger.Info($"[Farm Team Selection] DeviceName='{deviceName}', Allowed='{Join(request.AllowedTeams)}', Priority='{Join(request.Priority)}', Cancellation=false, Phase='Starting'");
+                logger.Info($"[Farm Team Selection] RunId='{request.RunId ?? string.Empty}', DeviceName='{deviceName}', Allowed='{Join(request.AllowedTeams)}', Priority='{Join(request.Priority)}', Cancellation=false, Phase='Starting'");
                 if (!RequiredScreenTemplatesExist(out string screenTemplateError)
                     || !registry.Exists(TemplateId.TeamSelectedBorderAnchor))
                 {
@@ -105,30 +105,38 @@ namespace ADB_Tool_Automation_Post_FB.Infrastructure.TeamSelection
                         freshState.ErrorMessage, lastFrame, watch, cancellationToken);
 
                 IReadOnlyDictionary<TeamNumber, ImageRegion> initialRegions =
-                    ResolveTeamRegions(freshState);
+                    ResolveTeamRegions(lastFrame, freshState);
+                result.VisibleTeams = initialRegions.Keys.OrderBy(item => (int)item).ToArray();
                 SelectedScan selected = ScanSelected(lastFrame, initialRegions);
                 if (selected.IsAmbiguous)
                     return await CompleteAsync(deviceName, result, SelectFarmTeamOutcome.Failed,
                         "Selected border appeared in multiple team ROIs; no Tap was sent.",
                         "Ambiguous selected-team evidence.", lastFrame, watch, cancellationToken);
 
-                TeamNumber? allowedSelected = FirstByPriority(selected.Teams,
-                    request.Priority, request.AllowedTeams, request.AllowTeam1);
-                if (allowedSelected.HasValue && HasEnabledAction(freshState))
+                TeamNumber? expectedTeam = request.Priority.Where(team =>
+                        request.AllowedTeams.Contains(team)
+                        && (request.AllowTeam1 || team != TeamNumber.Team1))
+                    .Select(team => (TeamNumber?)team).FirstOrDefault();
+                result.ExpectedTeam = expectedTeam;
+                if (expectedTeam.HasValue && selected.Teams.Contains(expectedTeam.Value)
+                    && HasEnabledAction(freshState))
                 {
-                    result.SelectedTeam = allowedSelected;
+                    result.SelectedTeam = expectedTeam;
+                    result.ActualSelectedTeam = expectedTeam;
                     result.SelectedStateVerified = true;
                     attempts.Add(new TeamSelectionAttempt
                     {
-                        TeamNumber = allowedSelected.Value,
+                        TeamNumber = expectedTeam.Value,
                         AlreadySelected = true,
                         SelectedVerified = true,
-                        SelectedBorderMatch = selected.Matches[allowedSelected.Value],
+                        SelectedBorderMatch = selected.Matches[expectedTeam.Value],
                         Message = "Allowed team was already selected; no Tap was sent."
                     });
                     return Complete(result, SelectFarmTeamOutcome.AlreadySelected,
-                        $"{allowedSelected.Value} was already selected.", null, watch);
+                        $"{expectedTeam.Value} was already selected.", null, watch);
                 }
+                result.ActualSelectedTeam = selected.Teams.Count == 1
+                    ? (TeamNumber?)selected.Teams[0] : null;
 
                 DateTimeOffset selectionDeadline = DateTimeOffset.UtcNow.AddSeconds(
                     options.SelectionTimeoutSeconds);
@@ -157,7 +165,31 @@ namespace ADB_Tool_Automation_Post_FB.Infrastructure.TeamSelection
                         continue;
                     }
 
-                    ImageRegion teamRegion = initialRegions[team];
+                    RosterFrame visible = await EnsureTeamVisibleAsync(deviceName, team,
+                        lastFrame, freshState, cancellationToken);
+                    lastFrame = visible.Frame;
+                    freshState = visible.State;
+                    initialRegions = visible.Regions;
+                    result.ScrollAttempts += visible.ScrollAttempts;
+                    result.VisibleTeams = initialRegions.Keys.OrderBy(item => (int)item).ToArray();
+                    if (!initialRegions.TryGetValue(team, out ImageRegion teamRegion))
+                    {
+                        attempts.Add(new TeamSelectionAttempt
+                        {
+                            TeamNumber = team,
+                            ScrollAttempt = result.ScrollAttempts,
+                            Message = "Expected numbered team badge is not visible after bounded scrolling."
+                        });
+                        if (request.Priority.Count == 1)
+                        {
+                            result.FailureReason = "ExpectedTeamNotVisible";
+                            return await CompleteAsync(deviceName, result,
+                                SelectFarmTeamOutcome.ExpectedTeamNotVisible,
+                                "Không tìm thấy đội dự kiến trong danh sách đội sau khi cuộn giới hạn.",
+                                null, lastFrame, watch, cancellationToken);
+                        }
+                        continue;
+                    }
                     ImageMatchResult preliminaryBadge = Match(lastFrame, badgeId, teamRegion);
                     bool preliminaryDisabled = IsDisabled(lastFrame, teamRegion);
                     if (!HasBounds(preliminaryBadge) || preliminaryDisabled)
@@ -198,9 +230,16 @@ namespace ADB_Tool_Automation_Post_FB.Infrastructure.TeamSelection
                                 state.ErrorMessage, lastFrame, watch, cancellationToken);
 
                         IReadOnlyDictionary<TeamNumber, ImageRegion> currentRegions =
-                            ResolveTeamRegions(state);
-                        teamRegion = currentRegions[team];
+                            ResolveTeamRegions(lastFrame, state);
+                        result.VisibleTeams = currentRegions.Keys.OrderBy(item => (int)item).ToArray();
+                        if (!currentRegions.TryGetValue(team, out teamRegion))
+                        {
+                            result.FailureReason = "ExpectedTeamNotVisible";
+                            break;
+                        }
                         SelectedScan currentSelected = ScanSelected(lastFrame, currentRegions);
+                        result.ActualSelectedTeam = currentSelected.Teams.Count == 1
+                            ? (TeamNumber?)currentSelected.Teams[0] : null;
                         if (currentSelected.IsAmbiguous)
                             return await CompleteAsync(deviceName, result,
                                 SelectFarmTeamOutcome.Failed,
@@ -231,7 +270,7 @@ namespace ADB_Tool_Automation_Post_FB.Infrastructure.TeamSelection
                             break;
                         }
 
-                        ImageRegion region = ResolveTeamRegions(state)[team];
+                        ImageRegion region = teamRegion;
                         ImageMatchResult badge = Match(lastFrame, badgeId, region);
                         bool disabled = IsDisabled(lastFrame, region);
                         var attempt = new TeamSelectionAttempt
@@ -239,7 +278,11 @@ namespace ADB_Tool_Automation_Post_FB.Infrastructure.TeamSelection
                             TeamNumber = team,
                             BadgeFound = HasBounds(badge),
                             BadgeMatch = badge,
-                            DisabledDetected = disabled
+                            DisabledDetected = disabled,
+                            RowBounds = region,
+                            TapAttempt = attemptNumber,
+                            ScrollAttempt = result.ScrollAttempts,
+                            SelectedBefore = result.ActualSelectedTeam
                         };
                         attempts.Add(attempt);
                         LogMatch(deviceName, team, attemptNumber, region, badge, disabled);
@@ -254,10 +297,15 @@ namespace ADB_Tool_Automation_Post_FB.Infrastructure.TeamSelection
                             break;
                         }
 
-                        await client.TapAsync(deviceName, badge.CenterX, badge.CenterY, cancellationToken);
+                        int tapX = Math.Min(region.X + region.Width - 8,
+                            Math.Max(badge.X + badge.Width + 8,
+                                region.X + (region.Width * 3 / 4)));
+                        int tapY = Math.Max(region.Y + 4,
+                            Math.Min(region.Y + region.Height - 4, badge.CenterY));
+                        await client.TapAsync(deviceName, tapX, tapY, cancellationToken);
                         result.TeamTapCount++;
                         attempt.TapSent = true;
-                        logger.Info($"[Farm Team Selection] DeviceName='{deviceName}', Team='{team}', Attempt={attemptNumber}, BadgeBounds=({badge.X},{badge.Y},{badge.Width},{badge.Height}), Tap=({badge.CenterX},{badge.CenterY}), Cancellation=false");
+                        logger.Info($"[Team Selection Mapping] RunId='{request.RunId ?? string.Empty}', DeviceName='{deviceName}', ExpectedTeam='{team}', VisibleTeams='{Join(result.VisibleTeams)}', SelectedBefore='{result.ActualSelectedTeam}', BadgeBounds=({badge.X},{badge.Y},{badge.Width},{badge.Height}), RowBounds=({region.X},{region.Y},{region.Width},{region.Height}), ScrollAttempt={result.ScrollAttempts}, TapAttempt={attemptNumber}, TapCoordinates=({tapX},{tapY}), NextAction='VerifyExactTeam'");
 
                         DateTimeOffset observationDeadline = DateTimeOffset.UtcNow.AddMilliseconds(
                             Math.Max(options.TapRetryDelayMs, options.PollIntervalMs * 2));
@@ -271,8 +319,14 @@ namespace ADB_Tool_Automation_Post_FB.Infrastructure.TeamSelection
                             lastFrame = await client.CaptureScreenshotPngAsync(deviceName, cancellationToken);
                             GameDetectionResult observedState = detector.Detect(lastFrame);
                             if (!IsSelectionScreen(observedState)) continue;
-                            SelectedScan observed = ScanSelected(lastFrame,
-                                ResolveTeamRegions(observedState));
+                            IReadOnlyDictionary<TeamNumber, ImageRegion> observedRegions =
+                                ResolveTeamRegions(lastFrame, observedState);
+                            SelectedScan observed = ScanSelected(lastFrame, observedRegions);
+                            result.SelectionVerificationFrames++;
+                            result.VisibleTeams = observedRegions.Keys.OrderBy(item => (int)item).ToArray();
+                            result.ActualSelectedTeam = observed.Teams.Count == 1
+                                ? (TeamNumber?)observed.Teams[0] : null;
+                            attempt.SelectedAfter = result.ActualSelectedTeam;
                             if (observed.IsAmbiguous)
                                 return await CompleteAsync(deviceName, result,
                                     SelectFarmTeamOutcome.Failed,
@@ -292,6 +346,7 @@ namespace ADB_Tool_Automation_Post_FB.Infrastructure.TeamSelection
                                 attempt.SelectedBorderMatch = observed.Matches[team];
                                 attempt.Message = "Team selected border was verified in the target ROI.";
                                 result.SelectedTeam = team;
+                                result.ActualSelectedTeam = team;
                                 result.SelectedStateVerified = true;
                                 result.FinalState = GameState.TeamSelection;
                                 return Complete(result, SelectFarmTeamOutcome.TeamSelected,
@@ -311,11 +366,26 @@ namespace ADB_Tool_Automation_Post_FB.Infrastructure.TeamSelection
                     }
                 }
 
-                SelectFarmTeamOutcome outcome = DateTimeOffset.UtcNow >= selectionDeadline
+                bool wrongTeam = result.ActualSelectedTeam.HasValue
+                    && (!result.ExpectedTeam.HasValue
+                        || result.ActualSelectedTeam.Value != result.ExpectedTeam.Value);
+                SelectFarmTeamOutcome outcome = wrongTeam
+                    ? SelectFarmTeamOutcome.WrongTeamSelected
+                    : DateTimeOffset.UtcNow >= selectionDeadline
                     ? SelectFarmTeamOutcome.SelectionTimeout
                     : SelectFarmTeamOutcome.NoEligibleTeam;
+                if (wrongTeam)
+                {
+                    result.FailureReason = "WrongTeamSelected";
+                    await client.BackAsync(deviceName, cancellationToken);
+                    GameDetectionResult cleanup = await detector.DetectAsync(deviceName,
+                        cancellationToken);
+                    result.FinalState = cleanup.State;
+                }
                 return await CompleteAsync(deviceName, result, outcome,
-                    outcome == SelectFarmTeamOutcome.SelectionTimeout
+                    outcome == SelectFarmTeamOutcome.WrongTeamSelected
+                        ? "Đội đang được chọn không khớp đội dự kiến; đã dừng trước lệnh thu thập."
+                    : outcome == SelectFarmTeamOutcome.SelectionTimeout
                         ? "Farm team selection timed out without a verified team."
                         : "No eligible team could be selected and verified.",
                     null, lastFrame, watch, cancellationToken);
@@ -342,31 +412,61 @@ namespace ADB_Tool_Automation_Post_FB.Infrastructure.TeamSelection
             {
                 ImageMatchResult match = Match(frame,
                     TemplateId.TeamSelectedBorderAnchor, item.Value);
-                if (match != null && match.Found) matches[item.Key] = match;
+                if (HasBounds(match) && Overlaps(item.Value, match)) matches[item.Key] = match;
             }
             return new SelectedScan(matches);
         }
 
         private IReadOnlyDictionary<TeamNumber, ImageRegion> ResolveTeamRegions(
-            GameDetectionResult state)
+            byte[] frame, GameDetectionResult state)
         {
-            GameDetectionEvidence panel = state?.Evidence?.FirstOrDefault(item =>
-                item.TemplateId == TemplateId.TeamSelectionPanelAnchor && item.Found);
-            int offset = panel?.MatchResult != null && panel.MatchResult.Y >= 65
-                ? panel.MatchResult.Y - 65 : 0;
-            if (offset == 0) return options.TeamRegions;
+            TeamNumber[] teams = { TeamNumber.Team1, TeamNumber.Team2,
+                TeamNumber.Team3, TeamNumber.Team4 };
+            var requests = teams.Select(team => new ImageMatchRequest(
+                registry.LoadBytes(BadgeId(team).Value),
+                options.TeamSelectionRosterRegion)).ToArray();
+            IReadOnlyList<ImageMatchResult> results = matcher is IBatchImageMatcher batch
+                ? batch.FindMany(frame, requests)
+                : requests.Select(item => matcher.Find(frame, item.TemplatePng,
+                    item.SearchRegion)).ToArray();
+            var badges = new Dictionary<TeamNumber, ImageMatchResult>();
+            for (int index = 0; index < teams.Length; index++)
+                if (HasBounds(results[index])) badges[teams[index]] = results[index];
+            return TeamSelectionRosterLayoutResolver.Resolve(badges,
+                options.TeamSelectionRosterRegion, options.ExpectedWidth,
+                options.ExpectedHeight).Rows;
+        }
 
-            var regions = new Dictionary<TeamNumber, ImageRegion>();
-            foreach (KeyValuePair<TeamNumber, ImageRegion> item in options.TeamRegions)
+        private async Task<RosterFrame> EnsureTeamVisibleAsync(string deviceName,
+            TeamNumber expectedTeam, byte[] frame, GameDetectionResult state,
+            CancellationToken token)
+        {
+            IReadOnlyDictionary<TeamNumber, ImageRegion> regions =
+                ResolveTeamRegions(frame, state);
+            int scrolls = 0;
+            while (!regions.ContainsKey(expectedTeam)
+                && scrolls < options.MaxRosterScrollAttempts)
             {
-                int y = Math.Max(0, Math.Min(720 - item.Value.Height,
-                    item.Value.Y + offset));
-                regions[item.Key] = new ImageRegion(item.Value.X, y,
-                    item.Value.Width, item.Value.Height);
+                token.ThrowIfCancellationRequested();
+                TeamNumber[] visible = regions.Keys.OrderBy(item => (int)item).ToArray();
+                bool searchBelow = visible.Length == 0
+                    || (int)expectedTeam > (int)visible.Max();
+                ImageRegion list = options.TeamSelectionRosterRegion;
+                double x = (list.X + list.Width / 2d) / options.ExpectedWidth;
+                double startY = (list.Y + list.Height * (searchBelow ? .75 : .25))
+                    / options.ExpectedHeight;
+                double endY = (list.Y + list.Height * (searchBelow ? .25 : .75))
+                    / options.ExpectedHeight;
+                await client.SwipeByPercentAsync(deviceName, x, startY, x, endY,
+                    options.RosterScrollDurationMs, token);
+                scrolls++;
+                await Task.Delay(options.PollIntervalMs, token);
+                frame = await client.CaptureScreenshotPngAsync(deviceName, token);
+                state = detector.Detect(frame);
+                if (!IsSelectionScreen(state)) break;
+                regions = ResolveTeamRegions(frame, state);
             }
-            logger.Info($"[Farm Team Selection] PanelY={panel.MatchResult.Y}, "
-                + $"ResolvedVerticalOffset={offset}");
-            return regions;
+            return new RosterFrame(frame, state, regions, scrolls);
         }
 
         private ImageMatchResult Match(byte[] frame, TemplateId id, ImageRegion region) =>
@@ -503,7 +603,8 @@ namespace ADB_Tool_Automation_Post_FB.Infrastructure.TeamSelection
                 InitialState = GameState.Unknown,
                 FinalState = GameState.Unknown,
                 Attempts = attempts,
-                AttemptedTeams = attemptedTeams
+                AttemptedTeams = attemptedTeams,
+                VisibleTeams = new TeamNumber[0]
             };
 
         private static SelectFarmTeamResult Empty(SelectFarmTeamOutcome outcome, string error) =>
@@ -516,11 +617,15 @@ namespace ADB_Tool_Automation_Post_FB.Infrastructure.TeamSelection
                 Message = error,
                 ErrorMessage = error,
                 Attempts = new TeamSelectionAttempt[0],
-                AttemptedTeams = new TeamNumber[0]
+                AttemptedTeams = new TeamNumber[0],
+                VisibleTeams = new TeamNumber[0]
             };
 
         private static bool HasBounds(ImageMatchResult match) =>
             match != null && match.Found && match.Width > 0 && match.Height > 0;
+        private static bool Overlaps(ImageRegion region, ImageMatchResult match) =>
+            match.X < region.X + region.Width && match.X + match.Width > region.X
+            && match.Y < region.Y + region.Height && match.Y + match.Height > region.Y;
         private static string Join(IEnumerable<TeamNumber> teams) =>
             string.Join(",", teams.Select(team => ((int)team).ToString()));
 
@@ -542,6 +647,23 @@ namespace ADB_Tool_Automation_Post_FB.Infrastructure.TeamSelection
             public IReadOnlyDictionary<TeamNumber, ImageMatchResult> Matches { get; }
             public IReadOnlyList<TeamNumber> Teams { get; }
             public bool IsAmbiguous => Teams.Count > 1;
+        }
+
+        private sealed class RosterFrame
+        {
+            public RosterFrame(byte[] frame, GameDetectionResult state,
+                IReadOnlyDictionary<TeamNumber, ImageRegion> regions, int scrollAttempts)
+            {
+                Frame = frame;
+                State = state;
+                Regions = regions;
+                ScrollAttempts = scrollAttempts;
+            }
+
+            public byte[] Frame { get; }
+            public GameDetectionResult State { get; }
+            public IReadOnlyDictionary<TeamNumber, ImageRegion> Regions { get; }
+            public int ScrollAttempts { get; }
         }
     }
 }

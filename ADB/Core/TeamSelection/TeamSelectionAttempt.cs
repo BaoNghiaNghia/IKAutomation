@@ -12,6 +12,11 @@ namespace ADB_Tool_Automation_Post_FB.Core.TeamSelection
         public bool SelectedVerified { get; set; }
         public ImageMatchResult BadgeMatch { get; set; }
         public ImageMatchResult SelectedBorderMatch { get; set; }
+        public ImageRegion RowBounds { get; set; }
+        public int ScrollAttempt { get; set; }
+        public int TapAttempt { get; set; }
+        public TeamNumber? SelectedBefore { get; set; }
+        public TeamNumber? SelectedAfter { get; set; }
         public string Message { get; set; }
     }
 }

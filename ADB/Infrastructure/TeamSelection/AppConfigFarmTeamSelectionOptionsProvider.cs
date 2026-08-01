@@ -22,7 +22,12 @@ namespace ADB_Tool_Automation_Post_FB.Infrastructure.TeamSelection
                     { TeamNumber.Team2, Region(2, 0, 145, 235, 145) },
                     { TeamNumber.Team3, Region(3, 0, 290, 235, 145) },
                     { TeamNumber.Team4, Region(4, 0, 435, 235, 155) }
-                });
+                },
+                maxRosterScrollAttempts: Int("MaxRosterScrollAttempts", 3),
+                rosterScrollDurationMs: Int("RosterScrollDurationMs", 350),
+                teamSelectionRosterRegion: new ImageRegion(
+                    Int("RosterRegion.X", 0), Int("RosterRegion.Y", 0),
+                    Int("RosterRegion.Width", 300), Int("RosterRegion.Height", 590)));
         }
 
         public static TeamSelectionRequest LoadRequest()

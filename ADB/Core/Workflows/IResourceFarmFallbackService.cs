@@ -17,5 +17,7 @@ namespace ADB_Tool_Automation_Post_FB.Core.Workflows
     {
         public int RecoveryAttempt { get; set; }
         public string TerritoryColorSummary { get; set; }
+        public OneShotFarmStep? CurrentStep { get; set; }
+        public bool ClearTerritoryColor { get; set; }
     }
 }

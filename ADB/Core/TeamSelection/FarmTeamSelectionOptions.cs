@@ -1,6 +1,7 @@
 using ADB_Tool_Automation_Post_FB.Core.Vision;
 using System;
 using System.Collections.Generic;
+using System.Linq;
 
 namespace ADB_Tool_Automation_Post_FB.Core.TeamSelection
 {
@@ -10,7 +11,9 @@ namespace ADB_Tool_Automation_Post_FB.Core.TeamSelection
             int maxSelectionAttemptsPerTeam, int tapRetryDelayMs,
             bool saveFailureScreenshots, string failureScreenshotDirectory,
             IReadOnlyDictionary<TeamNumber, ImageRegion> teamRegions,
-            int expectedWidth = 1280, int expectedHeight = 720)
+            int expectedWidth = 1280, int expectedHeight = 720,
+            int maxRosterScrollAttempts = 3, int rosterScrollDurationMs = 350,
+            ImageRegion? teamSelectionRosterRegion = null)
         {
             if (pollIntervalMs <= 0) throw new ArgumentOutOfRangeException(nameof(pollIntervalMs));
             if (selectionTimeoutSeconds <= 0) throw new ArgumentOutOfRangeException(nameof(selectionTimeoutSeconds));
@@ -18,6 +21,10 @@ namespace ADB_Tool_Automation_Post_FB.Core.TeamSelection
             if (tapRetryDelayMs <= 0) throw new ArgumentOutOfRangeException(nameof(tapRetryDelayMs));
             if (string.IsNullOrWhiteSpace(failureScreenshotDirectory)) throw new ArgumentException("Failure screenshot directory is required.", nameof(failureScreenshotDirectory));
             if (teamRegions == null) throw new ArgumentNullException(nameof(teamRegions));
+            if (maxRosterScrollAttempts < 0 || maxRosterScrollAttempts > 5)
+                throw new ArgumentOutOfRangeException(nameof(maxRosterScrollAttempts));
+            if (rosterScrollDurationMs <= 0)
+                throw new ArgumentOutOfRangeException(nameof(rosterScrollDurationMs));
             foreach (TeamNumber team in new[] { TeamNumber.Team1, TeamNumber.Team2, TeamNumber.Team3, TeamNumber.Team4 })
             {
                 if (!teamRegions.TryGetValue(team, out ImageRegion region))
@@ -34,6 +41,12 @@ namespace ADB_Tool_Automation_Post_FB.Core.TeamSelection
             SaveFailureScreenshots = saveFailureScreenshots;
             FailureScreenshotDirectory = failureScreenshotDirectory.Trim();
             TeamRegions = teamRegions;
+            ExpectedWidth = expectedWidth;
+            ExpectedHeight = expectedHeight;
+            MaxRosterScrollAttempts = maxRosterScrollAttempts;
+            RosterScrollDurationMs = rosterScrollDurationMs;
+            TeamSelectionRosterRegion = teamSelectionRosterRegion
+                ?? Union(teamRegions, expectedWidth, expectedHeight);
         }
 
         public int PollIntervalMs { get; }
@@ -43,5 +56,20 @@ namespace ADB_Tool_Automation_Post_FB.Core.TeamSelection
         public bool SaveFailureScreenshots { get; }
         public string FailureScreenshotDirectory { get; }
         public IReadOnlyDictionary<TeamNumber, ImageRegion> TeamRegions { get; }
+        public int ExpectedWidth { get; }
+        public int ExpectedHeight { get; }
+        public int MaxRosterScrollAttempts { get; }
+        public int RosterScrollDurationMs { get; }
+        public ImageRegion TeamSelectionRosterRegion { get; }
+
+        private static ImageRegion Union(IReadOnlyDictionary<TeamNumber, ImageRegion> regions,
+            int width, int height)
+        {
+            int left = regions.Values.Min(item => item.X);
+            int top = regions.Values.Min(item => item.Y);
+            int right = Math.Min(width, regions.Values.Max(item => item.X + item.Width));
+            int bottom = Math.Min(height, regions.Values.Max(item => item.Y + item.Height));
+            return new ImageRegion(left, top, right - left, bottom - top);
+        }
     }
 }

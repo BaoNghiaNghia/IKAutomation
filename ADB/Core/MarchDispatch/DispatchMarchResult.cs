@@ -12,6 +12,9 @@ namespace ADB_Tool_Automation_Post_FB.Core.MarchDispatch
         public DispatchMarchOutcome Outcome { get; set; }
         public bool Success { get; set; }
         public TeamNumber ExpectedTeam { get; set; }
+        public TeamNumber? ActualSelectedTeam { get; set; }
+        public IReadOnlyList<TeamNumber> VisibleTeams { get; set; }
+        public string FailureReason { get; set; }
         public TeamNumber? DispatchedTeam { get; set; }
         public GameState InitialState { get; set; }
         public GameState FinalState { get; set; }

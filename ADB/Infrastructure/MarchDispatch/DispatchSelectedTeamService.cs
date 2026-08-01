@@ -7,6 +7,7 @@ using ADB_Tool_Automation_Post_FB.Core.ResourceSearch;
 using ADB_Tool_Automation_Post_FB.Core.TeamSelection;
 using ADB_Tool_Automation_Post_FB.Core.StorageLimit;
 using ADB_Tool_Automation_Post_FB.Core.Vision;
+using ADB_Tool_Automation_Post_FB.Infrastructure.TeamSelection;
 using System;
 using System.Collections.Generic;
 using System.Diagnostics;
@@ -123,31 +124,38 @@ namespace ADB_Tool_Automation_Post_FB.Infrastructure.MarchDispatch
                 }
                 result.TeamSelectionVerified = true;
 
-                ImageRegion teamRegion = teamOptions.TeamRegions[request.ExpectedTeam];
                 ImageRegion timerRegion = options.TeamTimerRegions[request.ExpectedTeam];
                 TemplateId badgeId = BadgeId(request.ExpectedTeam);
                 lastFrame = await client.CaptureScreenshotPngAsync(deviceName, cancellationToken);
                 Verification precheck = VerifySelection(lastFrame, request.ExpectedTeam, badgeId);
+                result.ActualSelectedTeam = precheck.ActualSelectedTeam;
+                result.VisibleTeams = precheck.VisibleTeams;
                 logger.Info($"[March Dispatch] DeviceName='{deviceName}', TeamSelectionVerified={result.TeamSelectionVerified}, ExpectedTeam='{request.ExpectedTeam}', ExpectedBadgeFound={precheck.BadgeFound}, ExpectedSelected={precheck.SelectedFound}, AmbiguousSelection={precheck.Ambiguous}");
                 if (precheck.Ambiguous)
                     return await CompleteAsync(deviceName, result, DispatchMarchOutcome.VerificationIndeterminate,
                         "Selected border appeared in multiple team ROIs; no Tap was sent.",
                         "Ambiguous selected-team evidence.", lastFrame, watch, cancellationToken);
                 if (!precheck.SelectedFound)
+                {
+                    result.FailureReason = "WrongTeamSelected";
                     return await CompleteAsync(deviceName, result, DispatchMarchOutcome.ExpectedTeamNotSelected,
-                        "Expected team is not selected; no Tap was sent.", null,
+                        "Đội dự kiến chưa được chọn chính xác; chưa thực hiện lệnh thu thập.", null,
                         lastFrame, watch, cancellationToken);
+                }
+                ImageRegion teamRegion = precheck.ExpectedRowBounds;
                 result.ExpectedTeamSelectedBeforeTap = true;
 
                 byte[] beforeDispatch = await client.CaptureScreenshotPngAsync(deviceName, cancellationToken);
                 GameDetectionResult freshState = detector.Detect(beforeDispatch);
                 Verification freshSelection = VerifySelection(beforeDispatch, request.ExpectedTeam, badgeId);
+                result.ActualSelectedTeam = freshSelection.ActualSelectedTeam;
+                result.VisibleTeams = freshSelection.VisibleTeams;
                 ImageMatchResult action = Match(beforeDispatch, TemplateId.TeamActionButtonEnabled, null);
                 logger.Info($"[March Dispatch] DeviceName='{deviceName}', FreshState='{freshState.State}', ExpectedBadgeFound={freshSelection.BadgeFound}, ExpectedSelected={freshSelection.SelectedFound}, ActionButtonFound={HasBounds(action)}, ActionButtonBounds={(HasBounds(action) ? $"({action.X},{action.Y},{action.Width},{action.Height})" : string.Empty)}");
                 if (!IsReady(freshState) || freshSelection.Ambiguous
                     || !freshSelection.SelectedFound)
                     return await CompleteAsync(deviceName, result, DispatchMarchOutcome.ExpectedTeamNotSelected,
-                        "Expected team selection changed before dispatch; no Tap was sent.", null,
+                        "Đội dự kiến chưa được chọn chính xác; chưa thực hiện lệnh thu thập.", null,
                         beforeDispatch, watch, cancellationToken);
                 if (!HasBounds(action))
                     return await CompleteAsync(deviceName, result, DispatchMarchOutcome.ActionButtonUnavailable,
@@ -404,17 +412,41 @@ namespace ADB_Tool_Automation_Post_FB.Infrastructure.MarchDispatch
 
         private Verification VerifySelection(byte[] frame, TeamNumber expectedTeam, TemplateId badgeId)
         {
-            ImageRegion expectedRegion = teamOptions.TeamRegions[expectedTeam];
-            bool badge = HasBounds(Match(frame, badgeId, expectedRegion));
+            TeamNumber[] teams = { TeamNumber.Team1, TeamNumber.Team2,
+                TeamNumber.Team3, TeamNumber.Team4 };
+            var badgeRequests = teams.Where(team => registry.Exists(BadgeId(team)))
+                .Select(team => new KeyValuePair<TeamNumber, ImageMatchRequest>(team,
+                    new ImageMatchRequest(registry.LoadBytes(BadgeId(team)),
+                        teamOptions.TeamSelectionRosterRegion))).ToArray();
+            IReadOnlyList<ImageMatchResult> badgeResults = matcher is IBatchImageMatcher batch
+                ? batch.FindMany(frame, badgeRequests.Select(item => item.Value).ToArray())
+                : badgeRequests.Select(item => matcher.Find(frame,
+                    item.Value.TemplatePng, item.Value.SearchRegion)).ToArray();
+            var badges = new Dictionary<TeamNumber, ImageMatchResult>();
+            for (int index = 0; index < badgeRequests.Length; index++)
+                if (HasBounds(badgeResults[index]))
+                    badges[badgeRequests[index].Key] = badgeResults[index];
+            TeamSelectionRosterLayout layout = TeamSelectionRosterLayoutResolver.Resolve(
+                badges, teamOptions.TeamSelectionRosterRegion,
+                teamOptions.ExpectedWidth, teamOptions.ExpectedHeight);
+            bool badge = layout.Rows.TryGetValue(expectedTeam,
+                out ImageRegion expectedRegion);
             var selected = new List<TeamNumber>();
-            foreach (KeyValuePair<TeamNumber, ImageRegion> item in teamOptions.TeamRegions)
-                if (Match(frame, TemplateId.TeamSelectedBorderAnchor, item.Value).Found)
+            foreach (KeyValuePair<TeamNumber, ImageRegion> item in layout.Rows)
+            {
+                ImageMatchResult selectedMatch = Match(frame,
+                    TemplateId.TeamSelectedBorderAnchor, item.Value);
+                if (HasBounds(selectedMatch) && Overlaps(item.Value, selectedMatch))
                     selected.Add(item.Key);
+            }
             return new Verification
             {
                 BadgeFound = badge,
                 SelectedFound = selected.Count == 1 && selected[0] == expectedTeam,
-                Ambiguous = selected.Count > 1
+                Ambiguous = selected.Count > 1,
+                ActualSelectedTeam = selected.Count == 1 ? (TeamNumber?)selected[0] : null,
+                VisibleTeams = layout.VisibleTeams,
+                ExpectedRowBounds = expectedRegion
             };
         }
 
@@ -424,6 +456,9 @@ namespace ADB_Tool_Automation_Post_FB.Infrastructure.MarchDispatch
             registry.Exists(id) && Match(frame, id, region).Found;
         private static bool HasBounds(ImageMatchResult match) =>
             match != null && match.Found && match.Width > 0 && match.Height > 0;
+        private static bool Overlaps(ImageRegion region, ImageMatchResult match) =>
+            match.X < region.X + region.Width && match.X + match.Width > region.X
+            && match.Y < region.Y + region.Height && match.Y + match.Height > region.Y;
 
         private bool RequiredTemplatesExist(TeamNumber team, out string error)
         {
@@ -560,6 +595,7 @@ namespace ADB_Tool_Automation_Post_FB.Infrastructure.MarchDispatch
             InitialState = GameState.Unknown,
             FinalState = GameState.Unknown,
             Observations = observations
+            ,VisibleTeams = new TeamNumber[0]
         };
         private static DispatchMarchResult Empty(DispatchMarchRequest request,
             DispatchMarchOutcome outcome, string error) => new DispatchMarchResult
@@ -572,6 +608,7 @@ namespace ADB_Tool_Automation_Post_FB.Infrastructure.MarchDispatch
             Message = error,
             ErrorMessage = error,
             Observations = new MarchDispatchObservation[0]
+            ,VisibleTeams = new TeamNumber[0]
         };
 
         private sealed class Verification
@@ -579,6 +616,9 @@ namespace ADB_Tool_Automation_Post_FB.Infrastructure.MarchDispatch
             public bool BadgeFound { get; set; }
             public bool SelectedFound { get; set; }
             public bool Ambiguous { get; set; }
+            public TeamNumber? ActualSelectedTeam { get; set; }
+            public IReadOnlyList<TeamNumber> VisibleTeams { get; set; }
+            public ImageRegion ExpectedRowBounds { get; set; }
         }
     }
 }

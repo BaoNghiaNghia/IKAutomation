@@ -22,6 +22,7 @@
     <Compile Include="..\..\ADB\Infrastructure\MarchDispatch\DispatchSelectedTeamService.cs" Link="Production\DispatchSelectedTeamService.cs" />
     <Compile Include="..\..\ADB\Infrastructure\MarchDispatch\AppConfigDispatchSelectedTeamOptionsProvider.cs" Link="Production\AppConfigDispatchSelectedTeamOptionsProvider.cs" />
     <Compile Include="..\..\ADB\Infrastructure\MarchDispatch\TeamMarchTimerDetector.cs" Link="Production\TeamMarchTimerDetector.cs" />
+    <Compile Include="..\..\ADB\Infrastructure\TeamSelection\TeamRosterLayouts.cs" Link="Production\TeamRosterLayouts.cs" />
     <Compile Include="..\..\ADB\Infrastructure\TeamSelection\AppConfigWorldMapTeamAvailabilityOptionsProvider.cs" Link="Production\AppConfigWorldMapTeamAvailabilityOptionsProvider.cs" />
     <Compile Include="..\..\ADB\Infrastructure\StorageLimit\StorageLimitDialogService.cs" Link="Production\StorageLimitDialogService.cs" />
   </ItemGroup>

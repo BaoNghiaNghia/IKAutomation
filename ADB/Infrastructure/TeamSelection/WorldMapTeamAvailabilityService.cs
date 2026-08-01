@@ -99,20 +99,18 @@ namespace ADB_Tool_Automation_Post_FB.Infrastructure.TeamSelection
             CancellationToken cancellationToken)
         {
             cancellationToken.ThrowIfCancellationRequested();
-            byte[] readyTemplate = registry.LoadBytes(TemplateId.WorldMapTeamReadyAnchor);
-            var availableTeams = new List<TeamNumber>();
-            var readyTeams = new List<TeamNumber>();
-            var readyMatches = new List<ImageMatchResult>();
             TeamNumber[] teams =
             {
                 TeamNumber.Team1, TeamNumber.Team2, TeamNumber.Team3, TeamNumber.Team4
             };
-            int rowHeight = options.TeamRowHeight;
             var badgeMatches = new Dictionary<TeamNumber, ImageMatchResult>();
             var readyMatchesByTeam = new Dictionary<TeamNumber, ImageMatchResult>();
+            var busyTeamsFresh = new HashSet<TeamNumber>();
+            var lockedTeamsFresh = new HashSet<TeamNumber>();
+            var rowEvidenceTeams = new HashSet<TeamNumber>();
             int verifiedFrameCount = 0;
             GameDetectionResult lastState = null;
-            int rosterTop = options.TeamRosterRegion.Y;
+            WorldMapTeamRosterLayout lastLayout = null;
             for (int frame = 0; frame < ObservationFrameCount; frame++)
             {
                 if (frame > 0)
@@ -120,10 +118,12 @@ namespace ADB_Tool_Automation_Post_FB.Infrastructure.TeamSelection
 
                 using (CapturedFrame screenshot = await CaptureFrameAsync(deviceName, cancellationToken))
                 {
-                RosterRowLayout layout = ResolveRowLayout(screenshot);
+                WorldMapTeamRosterLayout layout = WorldMapTeamRosterLayoutResolver.Resolve(
+                    screenshot.Width, screenshot.Height, options);
                 if (layout == null)
                     return Failed("Team roster region falls outside the captured frame.",
                         state: GameState.WorldMap);
+                lastLayout = layout;
                 lastState = Detect(screenshot, deviceName,
                     new GameStateDetectionContext(GameState.WorldMap, GameState.WorldMap));
                 if (lastState == null || !lastState.IsSuccessful
@@ -134,7 +134,6 @@ namespace ADB_Tool_Automation_Post_FB.Infrastructure.TeamSelection
                 var badgeRequests = teams.Select((team, index) => new ImageMatchRequest(
                     registry.LoadBytes(BadgeTemplate(team)), layout.Rows[index])).ToArray();
                 IReadOnlyList<ImageMatchResult> badgeResults = FindMany(screenshot, badgeRequests);
-                var badgesInFrame = new Dictionary<TeamNumber, ImageMatchResult>();
                 for (int index = 0; index < teams.Length; index++)
                 {
                     TeamNumber team = teams[index];
@@ -142,30 +141,39 @@ namespace ADB_Tool_Automation_Post_FB.Infrastructure.TeamSelection
                     if (IsMatchInsideRow(badgeMatch, layout.Rows[index]))
                     {
                         badgeMatches[team] = badgeMatch;
-                        badgesInFrame[team] = badgeMatch;
+                        rowEvidenceTeams.Add(team);
                     }
                 }
 
-                // Merge two close observations. A moving map unit can cover one
-                // "Sẵn sàng" label for a single frame; a positive match is latched
-                // for this check, while no input is sent between observations.
-                var readyRequests = new List<ImageMatchRequest>(teams.Length);
-                var readyRequestTeams = new List<TeamNumber>(teams.Length);
+                var statusRequests = new List<ImageMatchRequest>();
+                var statusSignals = new List<Tuple<TeamNumber, string>>();
                 for (int index = 0; index < teams.Length; index++)
                 {
                     TeamNumber team = teams[index];
                     ImageRegion rowRegion = layout.Rows[index];
-                    readyRequests.Add(new ImageMatchRequest(readyTemplate, rowRegion));
-                    readyRequestTeams.Add(team);
+                    AddStatusRequest(statusRequests, statusSignals, team, "Ready",
+                        TemplateId.WorldMapTeamReadyAnchor, rowRegion);
+                    AddStatusRequest(statusRequests, statusSignals, team, "Locked",
+                        TemplateId.TeamDisabledAnchor, rowRegion);
+                    AddStatusRequest(statusRequests, statusSignals, team, "Busy",
+                        TemplateId.TeamBusyStatusAnchor, rowRegion);
+                    AddStatusRequest(statusRequests, statusSignals, team, "Timer",
+                        TemplateId.TeamMarchTimerAnchor, rowRegion);
                 }
-                IReadOnlyList<ImageMatchResult> readyResults = readyRequests.Count == 0
-                    ? new ImageMatchResult[0] : FindMany(screenshot, readyRequests);
-                for (int index = 0; index < readyResults.Count; index++)
+                IReadOnlyList<ImageMatchResult> statusResults = statusRequests.Count == 0
+                    ? new ImageMatchResult[0] : FindMany(screenshot, statusRequests);
+                for (int index = 0; index < statusResults.Count; index++)
                 {
-                    TeamNumber team = readyRequestTeams[index];
-                    ImageMatchResult rowMatch = readyResults[index] ?? ImageMatchResult.NotFound();
+                    TeamNumber team = statusSignals[index].Item1;
+                    string signal = statusSignals[index].Item2;
+                    ImageMatchResult rowMatch = statusResults[index] ?? ImageMatchResult.NotFound();
                     if (IsMatchInsideRow(rowMatch, layout.Rows[(int)team - 1]))
-                        readyMatchesByTeam[team] = rowMatch;
+                    {
+                        if (signal == "Ready") readyMatchesByTeam[team] = rowMatch;
+                        else if (signal == "Locked") lockedTeamsFresh.Add(team);
+                        else busyTeamsFresh.Add(team);
+                        rowEvidenceTeams.Add(team);
+                    }
                 }
                 }
             }
@@ -175,59 +183,78 @@ namespace ADB_Tool_Automation_Post_FB.Infrastructure.TeamSelection
                     + "readiness was not inferred.", lastState?.ErrorMessage,
                     lastState?.State ?? GameState.Unknown);
 
-            int badgeTeamCount = badgeMatches.Keys
-                .Select(team => (int)team)
-                .DefaultIfEmpty(0)
-                .Max();
-            int freshTeamCount = badgeMatches.Keys
-                .Concat(readyMatchesByTeam.Keys)
-                .Select(team => (int)team)
-                .DefaultIfEmpty(0)
-                .Max();
-            TeamRosterEvidenceSource freshSource = badgeTeamCount > 0
+            var freshExisting = new HashSet<TeamNumber>(rowEvidenceTeams);
+            freshExisting.ExceptWith(lockedTeamsFresh);
+            int highestFreshActiveRow = freshExisting.Select(team => (int)team)
+                .DefaultIfEmpty(0).Max();
+            for (int number = 1; number <= highestFreshActiveRow; number++)
+            {
+                TeamNumber team = (TeamNumber)number;
+                if (!lockedTeamsFresh.Contains(team)) freshExisting.Add(team);
+            }
+            TeamRosterEvidenceSource freshSource = badgeMatches.Count > 0
                 ? TeamRosterEvidenceSource.FreshBadges
-                : freshTeamCount > 0
+                : freshExisting.Count > 0
                     ? TeamRosterEvidenceSource.FreshRowEvidence
                     : TeamRosterEvidenceSource.Unknown;
             RosterKnowledge previousKnowledge;
             knownRosters.TryGetValue(deviceName, out previousKnowledge);
-            int previousKnownCount = previousKnowledge?.HighestConfirmedTeamCount ?? 0;
-            if (freshTeamCount > 0)
+            int previousKnownCount = previousKnowledge?.ActiveTeams.Count ?? 0;
+            if (freshExisting.Count > 0)
             {
                 knownRosters.AddOrUpdate(deviceName,
-                    new RosterKnowledge(freshTeamCount, DateTimeOffset.UtcNow, freshSource),
-                    (_, known) => known.HighestConfirmedTeamCount >= freshTeamCount
-                        ? known : new RosterKnowledge(freshTeamCount, DateTimeOffset.UtcNow,
-                            freshSource));
+                    new RosterKnowledge(freshExisting, DateTimeOffset.UtcNow, freshSource),
+                    (_, known) => UpdateKnowledge(known, freshExisting,
+                        lockedTeamsFresh, freshSource));
             }
             RosterKnowledge currentKnowledge;
             knownRosters.TryGetValue(deviceName, out currentKnowledge);
-            int knownTeamCount = currentKnowledge?.HighestConfirmedTeamCount ?? 0;
-            int detectedTeamCount = Math.Max(freshTeamCount, knownTeamCount);
-            TeamRosterEvidenceSource rosterSource = freshTeamCount > 0
-                ? freshSource
-                : knownTeamCount > 0
-                    ? TeamRosterEvidenceSource.CachedKnownCount
-                    : TeamRosterEvidenceSource.Unknown;
-            TeamRosterClassification classification = freshTeamCount > 0
-                ? freshTeamCount == 1 && badgeMatches.ContainsKey(TeamNumber.Team1)
+            bool useCached = currentKnowledge != null
+                && freshExisting.Count < currentKnowledge.ActiveTeams.Count;
+            HashSet<TeamNumber> existing = useCached || freshExisting.Count == 0
+                ? new HashSet<TeamNumber>(currentKnowledge?.ActiveTeams
+                    ?? Enumerable.Empty<TeamNumber>())
+                : freshExisting;
+            TeamRosterEvidenceSource rosterSource = useCached || (freshExisting.Count == 0
+                    && existing.Count > 0)
+                ? TeamRosterEvidenceSource.CachedKnownCount : freshSource;
+            TeamRosterClassification classification = rosterSource
+                    == TeamRosterEvidenceSource.CachedKnownCount
+                ? TeamRosterClassification.CachedConfirmed
+                : freshExisting.Count > 0
+                ? freshExisting.Count == 1 && badgeMatches.ContainsKey(TeamNumber.Team1)
                     ? TeamRosterClassification.ExplicitSingleTeam
                     : TeamRosterClassification.FreshConfirmed
-                : knownTeamCount > 0 ? TeamRosterClassification.CachedConfirmed
-                    : TeamRosterClassification.Uncertain;
+                : TeamRosterClassification.Uncertain;
 
-            // Team rows are contiguous from Team1. The highest freshly verified
-            // badge or ready row establishes the roster size, including accounts
-            // with fewer than four teams and frames where one badge is obscured.
-            foreach (TeamNumber team in teams.Take(detectedTeamCount))
+            var availableTeams = existing.OrderBy(team => (int)team).ToList();
+            var readyTeams = readyMatchesByTeam.Keys.Where(existing.Contains)
+                .OrderBy(team => (int)team).ToList();
+            var busyTeams = busyTeamsFresh.Where(existing.Contains)
+                .OrderBy(team => (int)team).ToList();
+            var lockedTeams = lockedTeamsFresh.OrderBy(team => (int)team).ToList();
+            var readyMatches = readyTeams.Select(team => readyMatchesByTeam[team]).ToList();
+            var rowObservations = teams.Select(team => new TeamRowObservation
             {
-                availableTeams.Add(team);
-                if (readyMatchesByTeam.TryGetValue(team, out ImageMatchResult readyMatch))
-                {
-                    readyTeams.Add(team);
-                    readyMatches.Add(readyMatch);
-                }
-            }
+                Team = team,
+                BadgeFound = badgeMatches.ContainsKey(team),
+                BadgeBounds = badgeMatches.TryGetValue(team, out ImageMatchResult badge)
+                    ? new ImageRegion(badge.X, badge.Y, badge.Width, badge.Height) : default(ImageRegion),
+                RowBounds = lastLayout?.Rows[(int)team - 1] ?? default(ImageRegion),
+                IsVisible = rowEvidenceTeams.Contains(team),
+                IsReady = readyTeams.Contains(team),
+                IsBusy = busyTeams.Contains(team),
+                IsLocked = lockedTeams.Contains(team),
+                State = lockedTeams.Contains(team) ? TeamRowState.Locked
+                    : readyTeams.Contains(team) ? TeamRowState.Ready
+                    : busyTeams.Contains(team) ? TeamRowState.Busy
+                    : existing.Contains(team) ? TeamRowState.Unknown : TeamRowState.Missing,
+                EvidenceSource = lockedTeams.Contains(team) ? "LockedAnchor"
+                    : badgeMatches.ContainsKey(team) ? "NumberedBadge"
+                    : busyTeams.Contains(team) ? "BusyStructure"
+                    : readyTeams.Contains(team) ? "ReadyLabel"
+                    : existing.Contains(team) ? "CachedConfirmed" : "None"
+            }).ToArray();
 
             ImageMatchResult match = readyMatches.FirstOrDefault()
                 ?? ImageMatchResult.NotFound();
@@ -238,7 +265,8 @@ namespace ADB_Tool_Automation_Post_FB.Infrastructure.TeamSelection
                 + $"Bounds=({match.X},{match.Y},{match.Width},{match.Height}), "
                 + $"Region=({options.TeamRosterRegion.X},{options.TeamRosterRegion.Y},"
                 + $"{options.TeamRosterRegion.Width},{options.TeamRosterRegion.Height}), "
-                + $"RowHeight={rowHeight}, FreshRosterCount={freshTeamCount}, "
+                + $"LockedTeams='{string.Join(",", lockedTeams)}', BusyTeams='{string.Join(",", busyTeams)}', "
+                + $"RowHeight={options.TeamRowHeight}, FreshRosterCount={freshExisting.Count}, "
                 + $"PreviousKnownRosterCount={previousKnownCount}, "
                 + $"RosterSource='{rosterSource}', Cancellation=false");
             return new WorldMapTeamAvailabilityResult
@@ -246,18 +274,56 @@ namespace ADB_Tool_Automation_Post_FB.Infrastructure.TeamSelection
                 Success = true,
                 AnyReadyTeam = ready,
                 AvailableTeams = availableTeams.AsReadOnly(),
+                ExistingTeams = availableTeams.AsReadOnly(),
                 ReadyTeams = readyTeams.AsReadOnly(),
+                BusyTeams = busyTeams.AsReadOnly(),
+                LockedTeams = lockedTeams.AsReadOnly(),
+                RowObservations = rowObservations,
+                ConfirmedRosterCount = availableTeams.Count,
                 FinalState = GameState.WorldMap,
                 ReadyMatch = match,
                 ReadyMatches = readyMatches.AsReadOnly(),
                 RosterEvidenceSource = rosterSource,
                 RosterClassification = classification,
                 IsRosterUncertain = rosterSource == TeamRosterEvidenceSource.Unknown,
+                RosterSource = classification.ToString(),
                 Message = ready
                     ? $"Detected {availableTeams.Count} team(s); ready teams: "
                         + $"{string.Join(", ", readyTeams)}."
                     : $"Detected {availableTeams.Count} team(s); no team is ready."
             };
+        }
+
+        private void AddStatusRequest(ICollection<ImageMatchRequest> requests,
+            ICollection<Tuple<TeamNumber, string>> signals, TeamNumber team,
+            string signal, TemplateId template, ImageRegion region)
+        {
+            if (!registry.Exists(template)) return;
+            requests.Add(new ImageMatchRequest(registry.LoadBytes(template), region));
+            signals.Add(Tuple.Create(team, signal));
+        }
+
+        private static RosterKnowledge UpdateKnowledge(RosterKnowledge known,
+            HashSet<TeamNumber> fresh, HashSet<TeamNumber> locked,
+            TeamRosterEvidenceSource source)
+        {
+            if (fresh.Count > known.ActiveTeams.Count)
+                return new RosterKnowledge(fresh, DateTimeOffset.UtcNow, source);
+            if (fresh.SetEquals(known.ActiveTeams))
+                return new RosterKnowledge(fresh, DateTimeOffset.UtcNow, source);
+            if (fresh.Count >= known.ActiveTeams.Count) return known;
+
+            TeamNumber[] missing = known.ActiveTeams.Where(team => !fresh.Contains(team)).ToArray();
+            bool strongContradiction = missing.Length > 0
+                && missing.All(locked.Contains);
+            if (!strongContradiction) return known;
+            int confirmations = known.PendingActiveTeams != null
+                    && known.PendingActiveTeams.SetEquals(fresh)
+                ? known.StrongContradictionConfirmations + 1 : 1;
+            return confirmations >= 3
+                ? new RosterKnowledge(fresh, DateTimeOffset.UtcNow, source)
+                : new RosterKnowledge(known.ActiveTeams, known.LastConfirmedAt,
+                    known.EvidenceSource, fresh, confirmations);
         }
 
         private async Task<CapturedFrame> CaptureFrameAsync(string deviceName,
@@ -343,7 +409,11 @@ namespace ADB_Tool_Automation_Post_FB.Infrastructure.TeamSelection
                 Success = false,
                 AnyReadyTeam = false,
                 AvailableTeams = new TeamNumber[0],
+                ExistingTeams = new TeamNumber[0],
                 ReadyTeams = new TeamNumber[0],
+                BusyTeams = new TeamNumber[0],
+                LockedTeams = new TeamNumber[0],
+                RowObservations = new TeamRowObservation[0],
                 FinalState = state,
                 Message = message,
                 ErrorMessage = error ?? message,
@@ -356,37 +426,27 @@ namespace ADB_Tool_Automation_Post_FB.Infrastructure.TeamSelection
 
         private sealed class RosterKnowledge
         {
-            public RosterKnowledge(int highestConfirmedTeamCount,
-                DateTimeOffset lastConfirmedAt, TeamRosterEvidenceSource evidenceSource)
+            public RosterKnowledge(IEnumerable<TeamNumber> activeTeams,
+                DateTimeOffset lastConfirmedAt, TeamRosterEvidenceSource evidenceSource,
+                IEnumerable<TeamNumber> pendingActiveTeams = null,
+                int strongContradictionConfirmations = 0)
             {
-                HighestConfirmedTeamCount = highestConfirmedTeamCount;
+                ActiveTeams = new HashSet<TeamNumber>(activeTeams ?? Enumerable.Empty<TeamNumber>());
                 LastConfirmedAt = lastConfirmedAt;
                 EvidenceSource = evidenceSource;
+                PendingActiveTeams = pendingActiveTeams == null ? null
+                    : new HashSet<TeamNumber>(pendingActiveTeams);
+                StrongContradictionConfirmations = strongContradictionConfirmations;
             }
 
-            public int HighestConfirmedTeamCount { get; }
+            public HashSet<TeamNumber> ActiveTeams { get; }
+            public int HighestConfirmedTeamCount => ActiveTeams.Count;
             public DateTimeOffset LastConfirmedAt { get; }
             public TeamRosterEvidenceSource EvidenceSource { get; }
+            public HashSet<TeamNumber> PendingActiveTeams { get; }
+            public int StrongContradictionConfirmations { get; }
             public string EvidenceStrength => EvidenceSource == TeamRosterEvidenceSource.FreshBadges
                 ? "Strong" : "RowEvidence";
-        }
-
-        private RosterRowLayout ResolveRowLayout(CapturedFrame frame)
-        {
-            if (frame == null || options.TeamRosterRegion.X >= frame.Width
-                || options.TeamRosterRegion.Y >= frame.Height) return null;
-            int width = Math.Min(options.TeamRosterRegion.Width,
-                frame.Width - options.TeamRosterRegion.X);
-            int top = options.TeamRosterRegion.Y;
-            int rowHeight = options.TeamRowHeight;
-            int lastBottom = top + (options.TeamRowCount * rowHeight);
-            if (width <= 0 || lastBottom > options.TeamRosterRegion.Y
-                + options.TeamRosterRegion.Height || lastBottom > frame.Height) return null;
-            var rows = new ImageRegion[options.TeamRowCount];
-            for (int index = 0; index < rows.Length; index++)
-                rows[index] = new ImageRegion(options.TeamRosterRegion.X,
-                    top + (index * rowHeight), width, rowHeight);
-            return new RosterRowLayout(rows);
         }
 
         private bool IsMatchInsideRow(ImageMatchResult match, ImageRegion row)
@@ -398,10 +458,5 @@ namespace ADB_Tool_Automation_Post_FB.Infrastructure.TeamSelection
                 && match.Y + match.Height <= row.Y + row.Height + tolerance;
         }
 
-        private sealed class RosterRowLayout
-        {
-            public RosterRowLayout(ImageRegion[] rows) { Rows = rows; }
-            public ImageRegion[] Rows { get; }
-        }
     }
 }

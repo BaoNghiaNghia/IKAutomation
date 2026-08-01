@@ -1,0 +1,82 @@
+using ADB_Tool_Automation_Post_FB.Core.TeamSelection;
+using ADB_Tool_Automation_Post_FB.Core.Vision;
+using System;
+using System.Collections.Generic;
+using System.Linq;
+
+namespace ADB_Tool_Automation_Post_FB.Infrastructure.TeamSelection
+{
+    public sealed class WorldMapTeamRosterLayout
+    {
+        public WorldMapTeamRosterLayout(IReadOnlyList<ImageRegion> rows) { Rows = rows; }
+        public IReadOnlyList<ImageRegion> Rows { get; }
+    }
+
+    public static class WorldMapTeamRosterLayoutResolver
+    {
+        public static WorldMapTeamRosterLayout Resolve(int frameWidth, int frameHeight,
+            WorldMapTeamAvailabilityOptions options)
+        {
+            if (options == null || frameWidth <= 0 || frameHeight <= 0) return null;
+            ImageRegion roster = options.TeamRosterRegion;
+            if (roster.X < 0 || roster.Y < 0 || roster.X >= frameWidth || roster.Y >= frameHeight)
+                return null;
+            int width = Math.Min(roster.Width, frameWidth - roster.X);
+            int rowHeight = options.TeamRowHeight;
+            int lastBottom = roster.Y + options.TeamRowCount * rowHeight;
+            if (width <= 0 || lastBottom > roster.Y + roster.Height || lastBottom > frameHeight)
+                return null;
+            var rows = new List<ImageRegion>(options.TeamRowCount);
+            for (int index = 0; index < options.TeamRowCount; index++)
+                rows.Add(new ImageRegion(roster.X, roster.Y + index * rowHeight,
+                    width, rowHeight));
+            return new WorldMapTeamRosterLayout(rows.AsReadOnly());
+        }
+    }
+
+    public sealed class TeamSelectionRosterLayout
+    {
+        public TeamSelectionRosterLayout(
+            IReadOnlyDictionary<TeamNumber, ImageMatchResult> badges,
+            IReadOnlyDictionary<TeamNumber, ImageRegion> rows)
+        { BadgeMatches = badges; Rows = rows; }
+
+        public IReadOnlyDictionary<TeamNumber, ImageMatchResult> BadgeMatches { get; }
+        public IReadOnlyDictionary<TeamNumber, ImageRegion> Rows { get; }
+        public IReadOnlyList<TeamNumber> VisibleTeams => Rows.Keys.OrderBy(item => (int)item).ToArray();
+    }
+
+    public static class TeamSelectionRosterLayoutResolver
+    {
+        public static TeamSelectionRosterLayout Resolve(
+            IReadOnlyDictionary<TeamNumber, ImageMatchResult> badgeMatches,
+            ImageRegion rosterRegion, int frameWidth, int frameHeight)
+        {
+            var valid = (badgeMatches ?? new Dictionary<TeamNumber, ImageMatchResult>())
+                .Where(item => HasBounds(item.Value))
+                .OrderBy(item => item.Value.CenterY).ToArray();
+            var badges = valid.ToDictionary(item => item.Key, item => item.Value);
+            var rows = new Dictionary<TeamNumber, ImageRegion>();
+            int left = Math.Max(0, rosterRegion.X);
+            int right = Math.Min(frameWidth, rosterRegion.X + rosterRegion.Width);
+            int topLimit = Math.Max(0, rosterRegion.Y);
+            int bottomLimit = Math.Min(frameHeight, rosterRegion.Y + rosterRegion.Height);
+            for (int index = 0; index < valid.Length; index++)
+            {
+                ImageMatchResult badge = valid[index].Value;
+                int top = index == 0 ? Math.Max(topLimit, badge.Y - badge.Height * 2)
+                    : Math.Max(topLimit, (valid[index - 1].Value.CenterY + badge.CenterY) / 2);
+                int bottom = index == valid.Length - 1
+                    ? Math.Min(bottomLimit, badge.Y + badge.Height * 3)
+                    : Math.Min(bottomLimit, (badge.CenterY + valid[index + 1].Value.CenterY) / 2);
+                if (bottom <= top) continue;
+                rows[valid[index].Key] = new ImageRegion(left, top,
+                    Math.Max(1, right - left), bottom - top);
+            }
+            return new TeamSelectionRosterLayout(badges, rows);
+        }
+
+        private static bool HasBounds(ImageMatchResult match) => match != null
+            && match.Found && match.Width > 0 && match.Height > 0;
+    }
+}

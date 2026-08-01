@@ -168,6 +168,7 @@
     <Compile Include="Core\TeamSelection\TeamSelectionAttempt.cs" />
     <Compile Include="Core\TeamSelection\TeamSelectionRequest.cs" />
     <Compile Include="Core\TeamSelection\TeamSelectionObservation.cs" />
+    <Compile Include="Core\TeamSelection\TeamRowObservation.cs" />
     <Compile Include="Core\TeamSelection\WorldMapTeamAvailabilityOptions.cs" />
     <Compile Include="Core\TeamSelection\WorldMapTeamAvailabilityResult.cs" />
     <Compile Include="Core\Vision\IImageMatcher.cs" />
@@ -272,6 +273,7 @@
     <Compile Include="Infrastructure\TeamSelection\SelectFarmTeamService.cs" />
     <Compile Include="Infrastructure\TeamSelection\SelectFarmTeamServiceFactory.cs" />
     <Compile Include="Infrastructure\TeamSelection\WorldMapTeamAvailabilityService.cs" />
+    <Compile Include="Infrastructure\TeamSelection\TeamRosterLayouts.cs" />
     <Compile Include="Infrastructure\Vision\FrameStabilityDetector.cs" />
     <Compile Include="Infrastructure\Vision\KAutoImageMatcher.cs" />
     <Compile Include="Infrastructure\Vision\TemplateMatchDiagnosticService.cs" />
