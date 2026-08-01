@@ -44,7 +44,8 @@
 
             <Button x:Name="DeviceDiagnosticButton"
                     Grid.Column="1"
-                    Content="IK Device Diagnostic"
+                    Content="Farm Control"
+                    ToolTip="Mở IKAutomation - Farm Control"
                     Click="Button_Click_DeviceDiagnostic"
                     Height="50"
                     Margin="6,0,0,0"
