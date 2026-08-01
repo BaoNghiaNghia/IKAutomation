@@ -129,13 +129,13 @@ namespace ADB_Tool_Automation_Post_FB.Infrastructure.Workflows
                         attempt.SearchLevelsExhausted = true;
                         AddUnique(exhausted, resource);
                         attempt.Message = level.Message; attempt.Duration = attemptWatch.Elapsed;
-                        string searchAreaVariant =
-                            GetSearchAreaRecoveryVariant(level);
-                        if (searchAreaVariant != null)
+                        ResourceSearchFailureReason? searchAreaReason =
+                            GetSearchAreaRecoveryReason(level);
+                        if (searchAreaReason.HasValue)
                         {
                             searchAreaRecoveryRequested = true;
                             Log(runId, deviceName, resource, level.LocatedLevel,
-                                "SearchAreaRecovery", searchAreaVariant);
+                                "SearchAreaRecovery", searchAreaReason.Value.ToString());
                             break;
                         }
                         if (options.SwitchWhenLevelsExhausted) continue;
@@ -375,25 +375,17 @@ namespace ADB_Tool_Automation_Post_FB.Infrastructure.Workflows
             if (!items.Contains(resource)) items.Add(resource);
         }
 
-        private static string GetSearchAreaRecoveryVariant(
+        private static ResourceSearchFailureReason? GetSearchAreaRecoveryReason(
             ResourceLevelFallbackResult result)
         {
             if (result?.Attempts == null)
                 return null;
 
             return result.Attempts
-                .Select(attempt => attempt.MatchedNotFoundVariant)
-                .FirstOrDefault(IsSearchAreaRecoveryVariant);
-        }
-
-        private static bool IsSearchAreaRecoveryVariant(string variant)
-        {
-            return string.Equals(
-                    variant, "TargetLevelTooLow", StringComparison.Ordinal)
-                || string.Equals(
-                    variant, "SearchOtherRegion", StringComparison.Ordinal)
-                || string.Equals(
-                    variant, "LegacyMoveArea", StringComparison.Ordinal);
+                .Where(attempt => attempt.FailureReason
+                    == ResourceSearchFailureReason.SearchOtherRegion)
+                .Select(attempt => (ResourceSearchFailureReason?)attempt.FailureReason)
+                .FirstOrDefault();
         }
 
         private static string GetTerritoryColorSummary(NavigationResult result)

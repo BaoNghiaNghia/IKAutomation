@@ -21,8 +21,6 @@ namespace ADB_Tool_Automation_Post_FB.Infrastructure.ResourceSearch
         private const string LegacyMoveAreaVariant = "LegacyMoveArea";
         private const string SearchOtherRegionVariant = "SearchOtherRegion";
         private const string TargetLevelTooLowVariant = "TargetLevelTooLow";
-        private const string VerifiedRetryPanelStayedOpenVariant = "VerifiedRetryPanelStayedOpen";
-        private const string PartialToastPanelStayedOpenVariant = "PartialToastPanelStayedOpen";
 
         private static readonly TemplateId[] RequiredTemplates =
         {
@@ -130,6 +128,7 @@ namespace ADB_Tool_Automation_Post_FB.Infrastructure.ResourceSearch
                 for (int attempt = 1; attempt <= options.MaxSearchTapAttempts; attempt++)
                 {
                     cancellationToken.ThrowIfCancellationRequested();
+                    context.ResetToastEvidence();
                     byte[] beforeTap = await ldPlayerClient.CaptureScreenshotPngAsync(deviceName, cancellationToken);
                     string resolutionError = ValidateResolution(beforeTap);
                     if (resolutionError != null)
@@ -138,9 +137,12 @@ namespace ADB_Tool_Automation_Post_FB.Infrastructure.ResourceSearch
 
                     ImageMatchResult button = Match(beforeTap, TemplateId.SearchButtonEnabled, null);
                     if (!HasBounds(button))
+                    {
+                        result.FailureReason = ResourceSearchFailureReason.SearchButtonUnavailable;
                         return await CompleteAsync(deviceName, result, context, ResourceSearchOutcome.SearchButtonUnavailable,
                             "SearchButtonEnabled was not found with valid bounds; no Tap was sent.", null,
                             watch, cancellationToken);
+                    }
 
                     GameDetectionResult beforeTapState = detector.Detect(beforeTap);
                     if (!beforeTapState.IsSuccessful || !IsPanelConfirmed(beforeTapState))
@@ -181,9 +183,18 @@ namespace ADB_Tool_Automation_Post_FB.Infrastructure.ResourceSearch
                     {
                         if (attempt < options.MaxSearchTapAttempts)
                             continue;
+                        if (context.HasPartialToastEvidence)
+                        {
+                            result.FailureReason = ResourceSearchFailureReason.ToastAmbiguous;
+                            result.ShouldRetrySearch = true;
+                            return await CompleteAsync(deviceName, result, context,
+                                ResourceSearchOutcome.ResourceNotFound,
+                                "Chưa xác định rõ thông báo tìm kiếm; đang kiểm tra lại.",
+                                null, watch, cancellationToken);
+                        }
                         return await CompleteAsync(deviceName, result, context,
                             ResourceSearchOutcome.SearchTapNotApplied,
-                            "Search was tapped with fresh bounds, but the panel did not change after all bounded retries.",
+                            "Thao tác tìm kiếm chưa có hiệu lực; đang thử lại.",
                             null, watch, cancellationToken);
                     }
 
@@ -286,9 +297,22 @@ namespace ADB_Tool_Automation_Post_FB.Infrastructure.ResourceSearch
             bool targetLevelPairClose = AreToastAnchorsClose(
                 targetLevelTooLowAnchor, seasonMapAnchor);
             bool panelConfirmedNowOrAdjacent = panelConfirmed || context.PreviousPanelConfirmed;
+            context.MainAnchorSeen |= HasBounds(toastAnchor);
+            context.ActionAnchorSeen |= HasBounds(actionAnchor);
+            context.ShortAnchorSeen |= HasBounds(shortAnchor);
+            context.OtherRegionAnchorSeen |= HasBounds(otherRegionAnchor);
+            context.TargetLevelTooLowSeen |= HasBounds(targetLevelTooLowAnchor);
+            context.SeasonMapSeen |= HasBounds(seasonMapAnchor);
+            context.AlternatePairTooFarSeen |= HasBounds(shortAnchor)
+                && HasBounds(otherRegionAnchor) && !alternatePairClose;
+            context.UpdateToastEvidence(result.ObservedFrameCount + 1);
+            result.ToastEvidence = context.ToastEvidence;
+            bool alternateConfirmed = alternatePairClose
+                || (context.ShortAnchorSeen && context.OtherRegionAnchorSeen
+                    && !context.AlternatePairTooFarSeen);
             string matchedVariant = legacyPairClose
                 ? LegacyMoveAreaVariant
-                : alternatePairClose
+                : alternateConfirmed
                     ? SearchOtherRegionVariant
                     : targetLevelPairClose ? TargetLevelTooLowVariant : null;
             bool toastVerified = matchedVariant != null && panelConfirmedNowOrAdjacent;
@@ -334,6 +358,15 @@ namespace ADB_Tool_Automation_Post_FB.Infrastructure.ResourceSearch
                 result.NotFoundObserved = true;
                 result.NotFoundToastVerified = true;
                 result.MatchedNotFoundVariant = matchedVariant;
+                result.FailureReason = matchedVariant == SearchOtherRegionVariant
+                    ? ResourceSearchFailureReason.SearchOtherRegion
+                    : matchedVariant == TargetLevelTooLowVariant
+                        ? ResourceSearchFailureReason.TargetLevelTooLow
+                        : ResourceSearchFailureReason.ResourceUnavailable;
+                result.ShouldRepositionMap = result.FailureReason
+                    == ResourceSearchFailureReason.SearchOtherRegion;
+                result.ShouldTryLowerLevel = result.FailureReason
+                    == ResourceSearchFailureReason.TargetLevelTooLow;
             }
             LogObservation(deviceName, result, context, observation,
                 toastAnchor, actionAnchor, shortAnchor, otherRegionAnchor,
@@ -433,6 +466,20 @@ namespace ADB_Tool_Automation_Post_FB.Infrastructure.ResourceSearch
         {
             result.Outcome = outcome;
             result.Success = outcome == ResourceSearchOutcome.ResourceLocated;
+            result.PanelRemainedOpen = context.LastPanelConfirmed;
+            result.MovementDetected = result.CameraMovementObserved;
+            result.ShouldRetrySearch = result.ShouldRetrySearch
+                || outcome == ResourceSearchOutcome.SearchTapNotApplied;
+            if (result.FailureReason == ResourceSearchFailureReason.None)
+            {
+                result.FailureReason = outcome == ResourceSearchOutcome.SearchTapNotApplied
+                    ? ResourceSearchFailureReason.SearchTapNotApplied
+                    : outcome == ResourceSearchOutcome.SearchTransitionTimeout
+                        ? ResourceSearchFailureReason.SearchTransitionTimeout
+                        : outcome == ResourceSearchOutcome.TechnicalFailure
+                            ? ResourceSearchFailureReason.TechnicalFailure
+                            : ResourceSearchFailureReason.None;
+            }
             result.Message = message;
             result.ErrorMessage = error;
             result.Duration = watch.Elapsed;
@@ -578,6 +625,7 @@ namespace ADB_Tool_Automation_Post_FB.Infrastructure.ResourceSearch
                 Outcome = ResourceSearchOutcome.Failed,
                 InitialState = GameState.Unknown,
                 FinalState = GameState.Unknown,
+                ToastEvidence = new ResourceSearchToastEvidence(),
                 Observations = observations.AsReadOnly()
             };
 
@@ -591,6 +639,7 @@ namespace ADB_Tool_Automation_Post_FB.Infrastructure.ResourceSearch
                 Duration = watch.Elapsed,
                 Message = message,
                 ErrorMessage = outcome == ResourceSearchOutcome.Failed ? message : null,
+                ToastEvidence = new ResourceSearchToastEvidence(),
                 Observations = new ResourceSearchObservation[0]
             };
 
@@ -642,6 +691,43 @@ namespace ADB_Tool_Automation_Post_FB.Infrastructure.ResourceSearch
             public int UnknownFrameCount;
             public int BurstFrameCount;
             public DateTimeOffset BurstTimestamp;
+            public bool MainAnchorSeen;
+            public bool ActionAnchorSeen;
+            public bool ShortAnchorSeen;
+            public bool OtherRegionAnchorSeen;
+            public bool TargetLevelTooLowSeen;
+            public bool SeasonMapSeen;
+            public bool AlternatePairTooFarSeen;
+            public ResourceSearchToastEvidence ToastEvidence = new ResourceSearchToastEvidence();
+
+            public bool HasPartialToastEvidence => MainAnchorSeen || ActionAnchorSeen
+                || ShortAnchorSeen || OtherRegionAnchorSeen || TargetLevelTooLowSeen || SeasonMapSeen;
+
+            public void ResetToastEvidence()
+            {
+                MainAnchorSeen = false;
+                ActionAnchorSeen = false;
+                ShortAnchorSeen = false;
+                OtherRegionAnchorSeen = false;
+                TargetLevelTooLowSeen = false;
+                SeasonMapSeen = false;
+                AlternatePairTooFarSeen = false;
+                ToastEvidence = new ResourceSearchToastEvidence();
+            }
+
+            public void UpdateToastEvidence(int frame)
+            {
+                ToastEvidence.MainAnchorSeen = MainAnchorSeen;
+                ToastEvidence.ActionAnchorSeen = ActionAnchorSeen;
+                ToastEvidence.ShortAnchorSeen = ShortAnchorSeen;
+                ToastEvidence.OtherRegionAnchorSeen = OtherRegionAnchorSeen;
+                ToastEvidence.TargetLevelTooLowSeen = TargetLevelTooLowSeen;
+                ToastEvidence.SeasonMapSeen = SeasonMapSeen;
+                if (HasPartialToastEvidence && ToastEvidence.FirstSeenFrame == 0)
+                    ToastEvidence.FirstSeenFrame = frame;
+                if (HasPartialToastEvidence)
+                    ToastEvidence.LastSeenFrame = frame;
+            }
         }
 
         private sealed class ObservationDecision

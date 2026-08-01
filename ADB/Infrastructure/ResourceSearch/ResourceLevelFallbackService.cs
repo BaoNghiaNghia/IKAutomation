@@ -170,10 +170,18 @@ namespace ADB_Tool_Automation_Post_FB.Infrastructure.ResourceSearch
                             {
                                 attempt.SearchOutcome = ResourceSearchOutcome.ResourceNotFound;
                                 attempt.MatchedNotFoundVariant = notFound.Variant;
+                                attempt.FailureReason = notFound.FailureReason;
                                 attempt.Message = $"ResourceNotFound toast variant '{notFound.Variant}' "
                                     + "was verified while configuring the next level.";
                                 attempt.ErrorMessage = null;
                                 LogAttempt(deviceName, runId, attempt);
+                                if (notFound.FailureReason
+                                    == ResourceSearchFailureReason.SearchOtherRegion)
+                                    return await CompleteAsync(deviceName, runId, result,
+                                        ResourceLevelFallbackOutcome.ResourceLevelsExhausted,
+                                        attempt.Message, null, watch,
+                                        "search-area-change-required", token,
+                                        options.SaveExhaustedScreenshot);
                                 return await CompleteAsync(deviceName, runId, result,
                                     ResourceLevelFallbackOutcome.ResourceLevelsExhausted,
                                     attempt.Message + " Switching to the next resource.", null,
@@ -201,6 +209,7 @@ namespace ADB_Tool_Automation_Post_FB.Infrastructure.ResourceSearch
                             new ResourceSearchExecutionRequest { Configuration = request, ConfigureBeforeSearch = false }, token);
                         attempt.SearchResult = searched; attempt.SearchOutcome = searched.Outcome;
                         attempt.MatchedNotFoundVariant = searched.MatchedNotFoundVariant;
+                        attempt.FailureReason = searched.FailureReason;
                         attempt.Duration = attemptWatch.Elapsed; attempt.Message = searched.Message;
                         attempt.ErrorMessage = searched.ErrorMessage; result.FinalState = searched.FinalState;
                         LogAttempt(deviceName, runId, attempt);
@@ -217,10 +226,10 @@ namespace ADB_Tool_Automation_Post_FB.Infrastructure.ResourceSearch
                                 searched.Message, searched.ErrorMessage, watch,
                                 $"level-{level}_searchfailed", token, true);
 
-                        if (RequiresSearchAreaChange(
-                            searched.MatchedNotFoundVariant))
+                        if (searched.FailureReason
+                            == ResourceSearchFailureReason.SearchOtherRegion)
                         {
-                            attempt.Message = "The verified not-found toast requests a "
+                            attempt.Message = "The verified search-area toast requests a "
                                 + "different map resource area. Skipping lower levels so "
                                 + "the workflow can reposition with the map-pin button.";
                             return await CompleteAsync(deviceName, runId, result,
@@ -277,21 +286,24 @@ namespace ADB_Tool_Automation_Post_FB.Infrastructure.ResourceSearch
             ImageMatchResult legacyEnd = MatchOptionalResult(screenshot,
                 TemplateId.ResourceNotFoundToastActionAnchor, options.ToastRegion);
             if (IsToastPair(legacyStart, legacyEnd))
-                return new NotFoundToastObservation(true, "LegacyMoveArea");
+                return new NotFoundToastObservation(true, "LegacyMoveArea",
+                    ResourceSearchFailureReason.ResourceUnavailable);
 
             ImageMatchResult shortAnchor = MatchOptionalResult(screenshot,
                 TemplateId.ResourceNotFoundToastShortAnchor, options.ToastRegion);
             ImageMatchResult otherRegion = MatchOptionalResult(screenshot,
                 TemplateId.ResourceNotFoundToastOtherRegionAnchor, options.ToastRegion);
             if (IsToastPair(shortAnchor, otherRegion))
-                return new NotFoundToastObservation(true, "SearchOtherRegion");
+                return new NotFoundToastObservation(true, "SearchOtherRegion",
+                    ResourceSearchFailureReason.SearchOtherRegion);
 
             ImageMatchResult targetLevelTooLow = MatchOptionalResult(screenshot,
                 TemplateId.ResourceTargetLevelTooLowToastAnchor, options.ToastRegion);
             ImageMatchResult seasonMap = MatchOptionalResult(screenshot,
                 TemplateId.ResourceTargetLevelSeasonMapToastAnchor, options.ToastRegion);
             return IsToastPair(targetLevelTooLow, seasonMap)
-                ? new NotFoundToastObservation(true, TargetLevelTooLowVariant)
+                ? new NotFoundToastObservation(true, TargetLevelTooLowVariant,
+                    ResourceSearchFailureReason.TargetLevelTooLow)
                 : NotFoundToastObservation.NotVerified;
         }
 
@@ -308,16 +320,6 @@ namespace ADB_Tool_Automation_Post_FB.Infrastructure.ResourceSearch
                 }
                 return value.Level;
             }
-        }
-
-        private static bool RequiresSearchAreaChange(string variant)
-        {
-            return string.Equals(
-                    variant, TargetLevelTooLowVariant, StringComparison.Ordinal)
-                || string.Equals(
-                    variant, SearchOtherRegionVariant, StringComparison.Ordinal)
-                || string.Equals(
-                    variant, LegacyMoveAreaVariant, StringComparison.Ordinal);
         }
 
         private int RememberCeiling(string deviceName, string runId, int level)
@@ -437,16 +439,19 @@ namespace ADB_Tool_Automation_Post_FB.Infrastructure.ResourceSearch
         private sealed class NotFoundToastObservation
         {
             public static readonly NotFoundToastObservation NotVerified =
-                new NotFoundToastObservation(false, null);
+                new NotFoundToastObservation(false, null, ResourceSearchFailureReason.None);
 
-            public NotFoundToastObservation(bool verified, string variant)
+            public NotFoundToastObservation(bool verified, string variant,
+                ResourceSearchFailureReason failureReason)
             {
                 Verified = verified;
                 Variant = variant;
+                FailureReason = failureReason;
             }
 
             public bool Verified { get; }
             public string Variant { get; }
+            public ResourceSearchFailureReason FailureReason { get; }
         }
 
         private async Task<ResourceLevelFallbackResult> CompleteAsync(string deviceName, string runId,

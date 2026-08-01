@@ -126,6 +126,8 @@
     <Compile Include="Core\ResourceSearch\ResourceSearchExecutionOptions.cs" />
     <Compile Include="Core\ResourceSearch\ResourceSearchExecutionRequest.cs" />
     <Compile Include="Core\ResourceSearch\ResourceSearchExecutionResult.cs" />
+    <Compile Include="Core\ResourceSearch\ResourceSearchToastEvidence.cs" />
+    <Compile Include="Core\ResourceSearch\ResourceSearchFailureReason.cs" />
     <Compile Include="Core\ResourceSearch\ResourceSearchObservation.cs" />
     <Compile Include="Core\ResourceSearch\ResourceSearchOutcome.cs" />
     <Compile Include="Core\ResourceSearch\ResourceType.cs" />

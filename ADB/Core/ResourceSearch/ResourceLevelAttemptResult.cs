@@ -10,6 +10,7 @@ namespace ADB_Tool_Automation_Post_FB.Core.ResourceSearch
         public ResourceSearchOutcome? SearchOutcome { get; set; }
         public bool ToastClearVerifiedBeforeAttempt { get; set; }
         public string MatchedNotFoundVariant { get; set; }
+        public ResourceSearchFailureReason FailureReason { get; set; }
         public TimeSpan Duration { get; set; }
         public string Message { get; set; }
         public string ErrorMessage { get; set; }
