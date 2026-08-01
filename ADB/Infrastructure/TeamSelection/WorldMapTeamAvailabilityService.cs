@@ -7,6 +7,7 @@ using ADB_Tool_Automation_Post_FB.Core.TeamSelection;
 using ADB_Tool_Automation_Post_FB.Core.Vision;
 using System;
 using System.Collections.Generic;
+using System.Collections.Concurrent;
 using System.Drawing;
 using System.IO;
 using System.Linq;
@@ -27,6 +28,8 @@ namespace ADB_Tool_Automation_Post_FB.Infrastructure.TeamSelection
         private readonly IDeviceOperationLock operationLock;
         private readonly WorldMapTeamAvailabilityOptions options;
         private readonly IDiagnosticLogger logger;
+        private readonly ConcurrentDictionary<string, int> knownRosterCounts =
+            new ConcurrentDictionary<string, int>(StringComparer.OrdinalIgnoreCase);
 
         public WorldMapTeamAvailabilityService(IWorldMapNavigationService navigation,
             IGameStateDetector detector, ILdPlayerClient client,
@@ -82,6 +85,16 @@ namespace ADB_Tool_Automation_Post_FB.Infrastructure.TeamSelection
                 token => CheckCoreAsync(deviceName.Trim(), token), cancellationToken);
         }
 
+        public void ClearKnownRoster(string deviceName = null)
+        {
+            if (string.IsNullOrWhiteSpace(deviceName))
+            {
+                knownRosterCounts.Clear();
+                return;
+            }
+            knownRosterCounts.TryRemove(deviceName.Trim(), out int ignored);
+        }
+
         private async Task<WorldMapTeamAvailabilityResult> CheckCoreAsync(string deviceName,
             CancellationToken cancellationToken)
         {
@@ -94,7 +107,7 @@ namespace ADB_Tool_Automation_Post_FB.Infrastructure.TeamSelection
             {
                 TeamNumber.Team1, TeamNumber.Team2, TeamNumber.Team3, TeamNumber.Team4
             };
-            const int rowHeight = 52;
+            int rowHeight = options.TeamRowHeight;
             var badgeMatches = new Dictionary<TeamNumber, ImageMatchResult>();
             var readyMatchesByTeam = new Dictionary<TeamNumber, ImageMatchResult>();
             int verifiedFrameCount = 0;
@@ -113,8 +126,10 @@ namespace ADB_Tool_Automation_Post_FB.Infrastructure.TeamSelection
                     continue;
 
                 verifiedFrameCount++;
-                var badgeRequests = teams.Select(team => new ImageMatchRequest(
-                    registry.LoadBytes(BadgeTemplate(team)), options.TeamRosterRegion)).ToArray();
+                int rosterTop = options.TeamRosterRegion.Y;
+                var badgeRequests = teams.Select((team, index) => new ImageMatchRequest(
+                    registry.LoadBytes(BadgeTemplate(team)), RosterRowRegion(
+                        rosterTop + (index * rowHeight), rowHeight))).ToArray();
                 IReadOnlyList<ImageMatchResult> badgeResults = FindMany(screenshot, badgeRequests);
                 var badgesInFrame = new Dictionary<TeamNumber, ImageMatchResult>();
                 for (int index = 0; index < teams.Length; index++)
@@ -129,8 +144,6 @@ namespace ADB_Tool_Automation_Post_FB.Infrastructure.TeamSelection
                     }
                 }
 
-                int rosterTop = EstimateRosterTop(badgesInFrame, rowHeight);
-
                 // Merge two close observations. A moving map unit can cover one
                 // "Sẵn sàng" label for a single frame; a positive match is latched
                 // for this check, while no input is sent between observations.
@@ -144,7 +157,8 @@ namespace ADB_Tool_Automation_Post_FB.Infrastructure.TeamSelection
                     readyRequests.Add(new ImageMatchRequest(readyTemplate, rowRegion));
                     readyRequestTeams.Add(team);
                 }
-                IReadOnlyList<ImageMatchResult> readyResults = FindMany(screenshot, readyRequests);
+                IReadOnlyList<ImageMatchResult> readyResults = readyRequests.Count == 0
+                    ? new ImageMatchResult[0] : FindMany(screenshot, readyRequests);
                 for (int index = 0; index < readyResults.Count; index++)
                 {
                     TeamNumber team = readyRequestTeams[index];
@@ -161,11 +175,21 @@ namespace ADB_Tool_Automation_Post_FB.Infrastructure.TeamSelection
                     + "readiness was not inferred.", lastState?.ErrorMessage,
                     lastState?.State ?? GameState.Unknown);
 
-            int detectedTeamCount = badgeMatches.Keys
+            int freshTeamCount = badgeMatches.Keys
                 .Concat(readyMatchesByTeam.Keys)
                 .Select(team => (int)team)
                 .DefaultIfEmpty(0)
                 .Max();
+            int previousKnownCount;
+            knownRosterCounts.TryGetValue(deviceName, out previousKnownCount);
+            if (freshTeamCount > 0)
+            {
+                knownRosterCounts.AddOrUpdate(deviceName, freshTeamCount,
+                    (_, known) => Math.Max(known, freshTeamCount));
+            }
+            int knownTeamCount;
+            knownRosterCounts.TryGetValue(deviceName, out knownTeamCount);
+            int detectedTeamCount = Math.Max(freshTeamCount, knownTeamCount);
             if (detectedTeamCount == 0)
             {
                 // Every account has at least Team1. On a one-team account the
@@ -199,7 +223,9 @@ namespace ADB_Tool_Automation_Post_FB.Infrastructure.TeamSelection
                 + $"AvailableTeams='{string.Join(",", availableTeams)}', "
                 + $"Bounds=({match.X},{match.Y},{match.Width},{match.Height}), "
                 + $"Region=({options.TeamRosterRegion.X},{options.TeamRosterRegion.Y},"
-                + $"{options.TeamRosterRegion.Width},{options.TeamRosterRegion.Height}), Cancellation=false");
+                + $"{options.TeamRosterRegion.Width},{options.TeamRosterRegion.Height}), "
+                + $"RowHeight={rowHeight}, FreshRosterCount={freshTeamCount}, "
+                + $"PreviousKnownRosterCount={previousKnownCount}, Cancellation=false");
             return new WorldMapTeamAvailabilityResult
             {
                 Success = true,
@@ -253,7 +279,7 @@ namespace ADB_Tool_Automation_Post_FB.Infrastructure.TeamSelection
             IReadOnlyDictionary<TeamNumber, ImageMatchResult> badges,
             int rowHeight)
         {
-            const int badgeTopPadding = 8;
+            int badgeTopPadding = options.BadgeTopPadding;
             if (badges == null || badges.Count == 0)
                 return options.TeamRosterRegion.Y + badgeTopPadding;
 

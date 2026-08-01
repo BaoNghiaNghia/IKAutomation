@@ -79,8 +79,14 @@ namespace ADB_Tool_Automation_Post_FB.Infrastructure.Workflows
                 preflights = await Task.WhenAll(preflightTasks);
             }
 
-            Task<MultiDeviceOneShotFarmItemResult>[] tasks = preflights
-                .Where(item => item.Success)
+            PreflightResult[] readyPreflights = preflights.Where(item => item.Success
+                && (!request.YieldWhenNoReadyTeam
+                    || HasEligibleReadyTeam(item.Availability, request))).ToArray();
+            MultiDeviceOneShotFarmItemResult[] waitingResults = preflights.Where(item => item.Success
+                && request.YieldWhenNoReadyTeam
+                && !HasEligibleReadyTeam(item.Availability, request))
+                .Select(item => WaitingForReadyTeam(item.DeviceName, item.Availability)).ToArray();
+            Task<MultiDeviceOneShotFarmItemResult>[] tasks = readyPreflights
                 .Select(item => Task.Run(() => RunDeviceAsync(item.DeviceName,
                     CreatePreflightRequest(request, item.Availability), executionGate,
                     progress, cancellationToken)))
@@ -89,6 +95,7 @@ namespace ADB_Tool_Automation_Post_FB.Infrastructure.Workflows
             MultiDeviceOneShotFarmItemResult[] results = preflights
                 .Where(item => !item.Success)
                 .Select(item => item.ItemResult)
+                .Concat(waitingResults)
                 .Concat(workflowResults)
                 .OrderBy(item => Array.FindIndex(devices, device =>
                     string.Equals(device, item.DeviceName, StringComparison.OrdinalIgnoreCase)))
@@ -226,6 +233,38 @@ namespace ADB_Tool_Automation_Post_FB.Infrastructure.Workflows
                 }
             };
 
+        private static bool HasEligibleReadyTeam(WorldMapTeamAvailabilityResult availability,
+            OneShotFarmRequest request)
+        {
+            return availability != null && (availability.ReadyTeams ?? new TeamNumber[0])
+                .Any(team => (request.AllowedTeams ?? new TeamNumber[0]).Contains(team));
+        }
+
+        private static MultiDeviceOneShotFarmItemResult WaitingForReadyTeam(string deviceName,
+            WorldMapTeamAvailabilityResult availability)
+        {
+            return new MultiDeviceOneShotFarmItemResult
+            {
+                DeviceName = deviceName,
+                Stage = MultiDeviceOneShotFarmStage.WaitingForReadyTeam,
+                Result = new OneShotFarmResult
+                {
+                    DeviceName = deviceName,
+                    Success = false,
+                    Outcome = OneShotFarmOutcome.NoEligibleTeam,
+                    Message = "No allowed team is ready; device yielded until the next scheduled check.",
+                    DetectedTeams = availability?.AvailableTeams ?? new TeamNumber[0],
+                    ReadyTeams = availability?.ReadyTeams ?? new TeamNumber[0],
+                    AttemptedLevels = new int[0],
+                    AttemptedResources = new ADB_Tool_Automation_Post_FB.Core.ResourceSearch.ResourceType[0],
+                    MissingRuntimeTemplates = new MissingRuntimeTemplate[0],
+                    StorageFullResources = new ADB_Tool_Automation_Post_FB.Core.ResourceSearch.ResourceType[0],
+                    LevelsExhaustedResources = new ADB_Tool_Automation_Post_FB.Core.ResourceSearch.ResourceType[0],
+                    Steps = new OneShotFarmStepResult[0]
+                }
+            };
+        }
+
         private static OneShotFarmRequest CreatePreflightRequest(
             OneShotFarmRequest source, WorldMapTeamAvailabilityResult availability)
         {
@@ -343,6 +382,7 @@ namespace ADB_Tool_Automation_Post_FB.Infrastructure.Workflows
                 AllowTeam1 = source.AllowTeam1,
                 RequireMarchVerification = source.RequireMarchVerification,
                 RunUntilNoReadyTeams = source.RunUntilNoReadyTeams,
+                YieldWhenNoReadyTeam = source.YieldWhenNoReadyTeam,
                 ReadyTeamOptions = source.ReadyTeamOptions == null
                     ? null
                     : new ReadyTeamGateRunOptions(source.ReadyTeamOptions.CheckIntervalMs,

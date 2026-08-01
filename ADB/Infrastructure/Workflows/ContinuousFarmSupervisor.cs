@@ -47,6 +47,7 @@ namespace ADB_Tool_Automation_Post_FB.Infrastructure.Workflows
             IProgress<ContinuousFarmSupervisorProgress> progress,
             CancellationToken cancellationToken)
         {
+            request.YieldWhenNoReadyTeam = true;
             cancellationToken.ThrowIfCancellationRequested();
             if (request == null) throw new ArgumentNullException(nameof(request));
             string[] devices = (deviceNames ?? new string[0])
@@ -400,6 +401,9 @@ namespace ADB_Tool_Automation_Post_FB.Infrastructure.Workflows
                 string error = item?.ErrorMessage ?? item?.Result?.ErrorMessage
                     ?? item?.Result?.Message ?? "Supervised cycle returned no result.";
                 if (succeeded) return AttemptResult.Completed();
+                if (item?.Stage == MultiDeviceOneShotFarmStage.WaitingForReadyTeam)
+                    return AttemptResult.WaitingForNextCycle(
+                        item.Result?.Message ?? "No allowed team is ready; waiting for the next check.");
                 if (item?.Result?.Outcome == OneShotFarmOutcome.TeamDispatchFailed
                     && item.Result.DispatchResult?.Outcome
                         == DispatchMarchOutcome.TransitionTimeout)
