@@ -7,6 +7,8 @@ using ADB_Tool_Automation_Post_FB.Core.TeamSelection;
 using ADB_Tool_Automation_Post_FB.Core.Vision;
 using System;
 using System.Collections.Generic;
+using System.Drawing;
+using System.IO;
 using System.Linq;
 using System.Threading;
 using System.Threading.Tasks;
@@ -102,20 +104,23 @@ namespace ADB_Tool_Automation_Post_FB.Infrastructure.TeamSelection
                 if (frame > 0)
                     await Task.Delay(ObservationIntervalMs, cancellationToken);
 
-                byte[] screenshot = await client.CaptureScreenshotPngAsync(
-                    deviceName, cancellationToken);
-                lastState = detector.Detect(screenshot);
+                using (CapturedFrame screenshot = await CaptureFrameAsync(deviceName, cancellationToken))
+                {
+                lastState = Detect(screenshot, deviceName,
+                    new GameStateDetectionContext(GameState.WorldMap, GameState.WorldMap));
                 if (lastState == null || !lastState.IsSuccessful
                     || lastState.State != GameState.WorldMap)
                     continue;
 
                 verifiedFrameCount++;
+                var badgeRequests = teams.Select(team => new ImageMatchRequest(
+                    registry.LoadBytes(BadgeTemplate(team)), options.TeamRosterRegion)).ToArray();
+                IReadOnlyList<ImageMatchResult> badgeResults = FindMany(screenshot, badgeRequests);
                 var badgesInFrame = new Dictionary<TeamNumber, ImageMatchResult>();
-                foreach (TeamNumber team in teams)
+                for (int index = 0; index < teams.Length; index++)
                 {
-                    ImageMatchResult badgeMatch = matcher.Find(
-                        screenshot, registry.LoadBytes(BadgeTemplate(team)),
-                        options.TeamRosterRegion) ?? ImageMatchResult.NotFound();
+                    TeamNumber team = teams[index];
+                    ImageMatchResult badgeMatch = badgeResults[index] ?? ImageMatchResult.NotFound();
                     if (badgeMatch.Found && badgeMatch.Width > 0
                         && badgeMatch.Height > 0)
                     {
@@ -129,17 +134,25 @@ namespace ADB_Tool_Automation_Post_FB.Infrastructure.TeamSelection
                 // Merge two close observations. A moving map unit can cover one
                 // "Sẵn sàng" label for a single frame; a positive match is latched
                 // for this check, while no input is sent between observations.
+                var readyRequests = new List<ImageMatchRequest>(teams.Length);
+                var readyRequestTeams = new List<TeamNumber>(teams.Length);
                 for (int index = 0; index < teams.Length; index++)
                 {
                     TeamNumber team = teams[index];
                     ImageRegion rowRegion = RosterRowRegion(
                         rosterTop + (index * rowHeight), rowHeight);
-                    ImageMatchResult rowMatch = matcher.Find(
-                        screenshot, readyTemplate, rowRegion)
-                        ?? ImageMatchResult.NotFound();
+                    readyRequests.Add(new ImageMatchRequest(readyTemplate, rowRegion));
+                    readyRequestTeams.Add(team);
+                }
+                IReadOnlyList<ImageMatchResult> readyResults = FindMany(screenshot, readyRequests);
+                for (int index = 0; index < readyResults.Count; index++)
+                {
+                    TeamNumber team = readyRequestTeams[index];
+                    ImageMatchResult rowMatch = readyResults[index] ?? ImageMatchResult.NotFound();
                     if (rowMatch.Found && rowMatch.Width > 0
                         && rowMatch.Height > 0)
                         readyMatchesByTeam[team] = rowMatch;
+                }
                 }
             }
 
@@ -201,6 +214,39 @@ namespace ADB_Tool_Automation_Post_FB.Infrastructure.TeamSelection
                         + $"{string.Join(", ", readyTeams)}."
                     : $"Detected {availableTeams.Count} team(s); no team is ready."
             };
+        }
+
+        private async Task<CapturedFrame> CaptureFrameAsync(string deviceName,
+            CancellationToken cancellationToken)
+        {
+            var frameClient = client as IFrameCapturingLdPlayerClient;
+            if (frameClient != null)
+                return await frameClient.CaptureFrameAsync(deviceName, cancellationToken);
+
+            byte[] png = await client.CaptureScreenshotPngAsync(deviceName, cancellationToken);
+            using (var stream = new MemoryStream(png, writable: false))
+            using (var source = new Bitmap(stream))
+                return new CapturedFrame(new Bitmap(source), DateTimeOffset.UtcNow);
+        }
+
+        private GameDetectionResult Detect(CapturedFrame frame, string deviceName,
+            GameStateDetectionContext context)
+        {
+            var frameDetector = detector as IFrameGameStateDetector;
+            return frameDetector != null
+                ? frameDetector.Detect(frame, deviceName, context)
+                : detector.Detect(frame.GetPngBytes());
+        }
+
+        private IReadOnlyList<ImageMatchResult> FindMany(CapturedFrame frame,
+            IReadOnlyList<ImageMatchRequest> requests)
+        {
+            var frameMatcher = matcher as IFrameImageMatcher;
+            if (frameMatcher != null) return frameMatcher.FindMany(frame, requests);
+            var batchMatcher = matcher as IBatchImageMatcher;
+            if (batchMatcher != null) return batchMatcher.FindMany(frame.GetPngBytes(), requests);
+            return requests.Select(request => matcher.Find(frame.GetPngBytes(),
+                request.TemplatePng, request.SearchRegion)).ToArray();
         }
 
         private int EstimateRosterTop(
