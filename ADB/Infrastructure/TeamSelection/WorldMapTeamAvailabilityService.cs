@@ -183,13 +183,9 @@ namespace ADB_Tool_Automation_Post_FB.Infrastructure.TeamSelection
 
             var freshExisting = new HashSet<TeamNumber>(rowEvidenceTeams);
             freshExisting.ExceptWith(lockedTeamsFresh);
-            int highestFreshActiveRow = freshExisting.Select(team => (int)team)
-                .DefaultIfEmpty(0).Max();
-            for (int number = 1; number <= highestFreshActiveRow; number++)
-            {
-                TeamNumber team = (TeamNumber)number;
-                if (!lockedTeamsFresh.Contains(team)) freshExisting.Add(team);
-            }
+            // Row identity is explicit.  Do not infer rows below the highest match:
+            // a missing Team2 badge must never turn a Team3/Team4 observation into
+            // a compact "Team1..N" roster.
             TeamRosterEvidenceSource freshSource = badgeMatches.Count > 0
                 ? TeamRosterEvidenceSource.FreshBadges
                 : freshExisting.Count > 0
@@ -290,6 +286,7 @@ namespace ADB_Tool_Automation_Post_FB.Infrastructure.TeamSelection
                 + $"ObservationFrames={verifiedFrameCount}/{options.ObservationFrameCount}, "
                 + $"Ready={ready}, ReadyTeams='{string.Join(",", readyTeams)}', "
                 + $"AvailableTeams='{string.Join(",", availableTeams)}', "
+                + $"BusyTeams='{string.Join(",", busyTeams)}', LockedTeams='{string.Join(",", lockedTeams)}', "
                 + $"Team1Exists={existing.Contains(TeamNumber.Team1)}, "
                 + $"Team2Exists={existing.Contains(TeamNumber.Team2)}, "
                 + $"Team3Exists={existing.Contains(TeamNumber.Team3)}, "

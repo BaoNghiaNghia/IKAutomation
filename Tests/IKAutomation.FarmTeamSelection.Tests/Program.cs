@@ -38,6 +38,7 @@ namespace IKAutomation.FarmTeamSelection.Tests
             Run("Expected Team2 replaces initially selected Team3", ExpectedTeam2ReplacesTeam3);
             Run("Persistent wrong Team3 selection cleans up without success", PersistentWrongTeamCleansUp);
             Run("Visible Team2 is mapped by badge identity", ScrolledListMapsTeam2ByBadge);
+            Run("Missing Team2 cannot shift Team3 identity", MissingTeam2DoesNotShiftTeam3);
             Run("Hidden expected team is found with bounded scroll", HiddenTeamFoundAfterScroll);
             Run("Unavailable expected team stops after bounded scroll", HiddenTeamStopsAfterBoundedScroll);
             Run("Multiple selected borders are ambiguous", Ambiguous);
@@ -150,6 +151,18 @@ namespace IKAutomation.FarmTeamSelection.Tests
 
         private static void ScrolledListMapsTeam2ByBadge()
         { Fixture f=Successful(TeamNumber.Team2);f.Matcher.Badges.Add(TeamNumber.Team3);SelectFarmTeamResult r=Execute(f,Only(TeamNumber.Team2));Equal(TeamNumber.Team2,r.SelectedTeam.Value);Assert(r.VisibleTeams.Contains(TeamNumber.Team2)&&r.VisibleTeams.Contains(TeamNumber.Team3),"visible badge map");Equal(0,f.Client.SwipeCalls); }
+
+        private static void MissingTeam2DoesNotShiftTeam3()
+        {
+            Fixture f = Successful(TeamNumber.Team3);
+            SelectFarmTeamResult result = Execute(f, Only(TeamNumber.Team3));
+            Equal(SelectFarmTeamOutcome.TeamSelected, result.Outcome);
+            Equal(TeamNumber.Team3, result.SelectedTeam.Value);
+            Assert(f.Matcher.Regions.ContainsKey(TeamNumber.Team3),
+                "Team3 row was not retained when Team2 was absent.");
+            Assert(!f.Matcher.Regions.ContainsKey(TeamNumber.Team2),
+                "A missing Team2 was fabricated from Team3 geometry.");
+        }
 
         private static void HiddenTeamFoundAfterScroll()
         { Fixture f=Successful(TeamNumber.Team3);f.Matcher.HiddenUntilSwipe.Add(TeamNumber.Team3);SelectFarmTeamResult r=Execute(f,Only(TeamNumber.Team3));Equal(SelectFarmTeamOutcome.TeamSelected,r.Outcome);Equal(1,r.ScrollAttempts);Equal(1,f.Client.SwipeCalls); }

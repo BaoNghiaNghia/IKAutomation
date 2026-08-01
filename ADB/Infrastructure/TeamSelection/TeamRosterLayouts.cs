@@ -52,25 +52,36 @@ namespace ADB_Tool_Automation_Post_FB.Infrastructure.TeamSelection
             IReadOnlyDictionary<TeamNumber, ImageMatchResult> badgeMatches,
             ImageRegion rosterRegion, int frameWidth, int frameHeight)
         {
+            // Badge templates identify a team directly.  Ordering the matches by Y
+            // and assigning compact row indexes made a missing Team2 shift Team3
+            // into Team2.  Preserve the template's TeamNumber instead.
             var valid = (badgeMatches ?? new Dictionary<TeamNumber, ImageMatchResult>())
                 .Where(item => HasBounds(item.Value))
-                .OrderBy(item => item.Value.CenterY).ToArray();
+                .OrderBy(item => (int)item.Key).ToArray();
             var badges = valid.ToDictionary(item => item.Key, item => item.Value);
             var rows = new Dictionary<TeamNumber, ImageRegion>();
             int left = Math.Max(0, rosterRegion.X);
             int right = Math.Min(frameWidth, rosterRegion.X + rosterRegion.Width);
             int topLimit = Math.Max(0, rosterRegion.Y);
             int bottomLimit = Math.Min(frameHeight, rosterRegion.Y + rosterRegion.Height);
-            for (int index = 0; index < valid.Length; index++)
+            // The geometry may move with the panel.  Neighbouring bounds are used
+            // only to stop ROIs overlapping; the dictionary key remains the badge
+            // template's TeamNumber, so this is not compact-index assignment.
+            var byVerticalPosition = valid.OrderBy(item => item.Value.CenterY).ToArray();
+            for (int index = 0; index < byVerticalPosition.Length; index++)
             {
-                ImageMatchResult badge = valid[index].Value;
-                int top = index == 0 ? Math.Max(topLimit, badge.Y - badge.Height * 2)
-                    : Math.Max(topLimit, (valid[index - 1].Value.CenterY + badge.CenterY) / 2);
-                int bottom = index == valid.Length - 1
+                KeyValuePair<TeamNumber, ImageMatchResult> item = byVerticalPosition[index];
+                ImageMatchResult badge = item.Value;
+                int top = index == 0
+                    ? Math.Max(topLimit, badge.Y - badge.Height * 2)
+                    : Math.Max(topLimit, (byVerticalPosition[index - 1].Value.CenterY
+                        + badge.CenterY) / 2);
+                int bottom = index == byVerticalPosition.Length - 1
                     ? Math.Min(bottomLimit, badge.Y + badge.Height * 3)
-                    : Math.Min(bottomLimit, (badge.CenterY + valid[index + 1].Value.CenterY) / 2);
+                    : Math.Min(bottomLimit, (badge.CenterY
+                        + byVerticalPosition[index + 1].Value.CenterY) / 2);
                 if (bottom <= top) continue;
-                rows[valid[index].Key] = new ImageRegion(left, top,
+                rows[item.Key] = new ImageRegion(left, top,
                     Math.Max(1, right - left), bottom - top);
             }
             return new TeamSelectionRosterLayout(badges, rows);
