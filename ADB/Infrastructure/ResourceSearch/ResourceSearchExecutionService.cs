@@ -219,9 +219,12 @@ namespace ADB_Tool_Automation_Post_FB.Infrastructure.ResourceSearch
                                 "Chưa xác định rõ thông báo tìm kiếm; đang kiểm tra lại.",
                                 null, watch, cancellationToken);
                         }
+                        result.FailureReason = ResourceSearchFailureReason
+                            .SearchButtonStillVisibleAfterMaxAttempts;
+                        result.ShouldRetrySearch = true;
                         return await CompleteAsync(deviceName, result, context,
                             ResourceSearchOutcome.SearchTapNotApplied,
-                            "Thao tác tìm kiếm chưa có hiệu lực; đang thử lại.",
+                            "Nút Tìm kiếm vẫn hiển thị sau 3 lần thử; chuyển sang tài nguyên khác.",
                             null, watch, cancellationToken);
                     }
 

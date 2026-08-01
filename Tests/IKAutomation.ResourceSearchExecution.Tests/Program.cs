@@ -128,6 +128,8 @@ namespace IKAutomation.ResourceSearchExecution.Tests
             ResourceSearchExecutionResult result=Execute(f);
             Is(result.Outcome==ResourceSearchOutcome.SearchTapNotApplied,"outcome");
             Eq(3,result.SearchTapCount,"tap count");
+            Eq(ResourceSearchFailureReason.SearchButtonStillVisibleAfterMaxAttempts,
+                result.FailureReason,"failure reason");
             Eq(0,f.Client.ProhibitedCalls,"Back must not be sent");
         }
         private static void NotFoundNoRetry() { Fixture f=ToastFixture(); var r=Execute(f); Is(r.NotFoundObserved,"latch"); Eq(1,f.Client.TapCalls,"tap"); }

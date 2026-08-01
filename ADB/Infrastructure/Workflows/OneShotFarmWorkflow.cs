@@ -332,6 +332,11 @@ namespace ADB_Tool_Automation_Post_FB.Infrastructure.Workflows
                 token.ThrowIfCancellationRequested(); started = Start(runId, deviceName, OneShotFarmStep.SelectTeam);
                 SelectFarmTeamResult selected = await selectTeam.SelectAsync(deviceName, new TeamSelectionRequest
                 { AllowedTeams = request.AllowedTeams, Priority = request.TeamPriority,
+                    ExpectedTeam = request.ExpectedTeam,
+                    WorldMapAvailableTeams = request.WorldMapAvailableTeams,
+                    WorldMapReadyTeams = request.WorldMapReadyTeams,
+                    WorldMapRosterStatus = request.WorldMapRosterStatus,
+                    WorldMapRosterConfidence = request.WorldMapRosterConfidence,
                     AllowTeam1 = request.AllowTeam1, RunId = request.RunId }, token);
                 result.SelectTeamResult = selected; result.FinalState = selected.FinalState;
                 if (selected.Outcome == SelectFarmTeamOutcome.Cancelled) throw new OperationCanceledException(token);

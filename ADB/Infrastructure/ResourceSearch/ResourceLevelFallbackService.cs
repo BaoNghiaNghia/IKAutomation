@@ -239,11 +239,9 @@ namespace ADB_Tool_Automation_Post_FB.Infrastructure.ResourceSearch
                                 options.SaveExhaustedScreenshot);
                         }
 
-                        // ResourceNotFound can also be inferred after a bounded
-                        // retry leaves the verified panel unchanged. In that case
-                        // no toast was actually observed, so waiting for a toast
-                        // template to disappear can latch onto unrelated map/UI
-                        // pixels and block the next level indefinitely.
+                        // Only verified toast evidence is ResourceNotFound.  An
+                        // unchanged Search panel is SearchTapNotApplied and is
+                        // handled by the cross-resource sweep, not as a level miss.
                         needsToastClear = searched.NotFoundToastVerified;
                     }
                 }

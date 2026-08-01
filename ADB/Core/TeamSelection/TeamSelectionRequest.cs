@@ -13,6 +13,11 @@ namespace ADB_Tool_Automation_Post_FB.Core.TeamSelection
 
         public IReadOnlyList<TeamNumber> AllowedTeams { get; set; }
         public IReadOnlyList<TeamNumber> Priority { get; set; }
+        public TeamNumber? ExpectedTeam { get; set; }
+        public IReadOnlyList<TeamNumber> WorldMapAvailableTeams { get; set; }
+        public IReadOnlyList<TeamNumber> WorldMapReadyTeams { get; set; }
+        public string WorldMapRosterStatus { get; set; }
+        public string WorldMapRosterConfidence { get; set; }
         public bool AllowTeam1 { get; set; }
         public string RunId { get; set; }
     }

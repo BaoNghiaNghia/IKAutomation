@@ -104,21 +104,24 @@ namespace ADB_Tool_Automation_Post_FB.Infrastructure.Workflows
                             check.Message, check.ErrorMessage, checks, watch.Elapsed);
                     }
                     detectedTeams = check.AvailableTeams ?? new TeamNumber[0];
+                    // Availability is evidence, not a rewrite of the configured
+                    // policy.  A weak WorldMap frame must not permanently narrow
+                    // the rows the TeamSelection screen is allowed to reconcile.
                     IReadOnlyList<TeamNumber> effectiveAllowedTeams = request.AllowedTeams
-                        .Where(detectedTeams.Contains)
-                        .Distinct()
-                        .ToArray();
+                        .Distinct().ToArray();
                     eligibleReadyTeams = (check.ReadyTeams ?? new TeamNumber[0])
                         .Where(team => effectiveAllowedTeams.Contains(team))
+                        .Where(team => detectedTeams.Contains(team))
                         .Where(team => !dispatchedTeams.Contains(team))
                         .Distinct()
                         .ToArray();
                     if (eligibleReadyTeams.Count > 0)
                     {
                         consecutiveNoReadyChecks = 0;
+                        TeamNumber expectedTeam = (request.TeamPriority ?? request.AllowedTeams)
+                            .First(team => eligibleReadyTeams.Contains(team));
                         OneShotFarmRequest cycleRequest = CreateCycleRequest(request,
-                            eligibleReadyTeams, dispatchedResources);
-                        TeamNumber expectedTeam = cycleRequest.TeamPriority.First();
+                            expectedTeam, check, dispatchedResources);
                         Report(progress, new OneShotFarmProgress
                         {
                             Stage = OneShotFarmProgressStage.ReadyTeamFound,
@@ -303,7 +306,7 @@ namespace ADB_Tool_Automation_Post_FB.Infrastructure.Workflows
         }
 
         private static OneShotFarmRequest CreateCycleRequest(OneShotFarmRequest source,
-            IReadOnlyList<TeamNumber> eligibleReadyTeams,
+            TeamNumber expectedTeam, WorldMapTeamAvailabilityResult availability,
             IReadOnlyList<ResourceType> dispatchedResources)
         {
             IReadOnlyList<ResourceType> selected = source.SelectedResources
@@ -311,8 +314,6 @@ namespace ADB_Tool_Automation_Post_FB.Infrastructure.Workflows
             IReadOnlyList<ResourceType> priority = dispatchedResources.Count == 0
                 ? source.ResourcePriority ?? selected
                 : RotateAfter(selected, dispatchedResources[dispatchedResources.Count - 1]);
-            IReadOnlyList<TeamNumber> teams = (source.TeamPriority ?? source.AllowedTeams)
-                .Where(eligibleReadyTeams.Contains).Distinct().ToArray();
             return new OneShotFarmRequest
             {
                 ResourceType = priority.Count == 0 ? source.ResourceType : priority[0],
@@ -325,8 +326,13 @@ namespace ADB_Tool_Automation_Post_FB.Infrastructure.Workflows
                     && source.ShuffleResourcePriority,
                 StorageLimitPolicy = source.StorageLimitPolicy,
                 AttemptsPerResourceLevel = source.AttemptsPerResourceLevel,
-                AllowedTeams = teams,
-                TeamPriority = teams,
+                AllowedTeams = (source.AllowedTeams ?? new TeamNumber[0]).Distinct().ToArray(),
+                TeamPriority = (source.TeamPriority ?? source.AllowedTeams ?? new TeamNumber[0]).Distinct().ToArray(),
+                ExpectedTeam = expectedTeam,
+                WorldMapAvailableTeams = availability.AvailableTeams ?? new TeamNumber[0],
+                WorldMapReadyTeams = availability.ReadyTeams ?? new TeamNumber[0],
+                WorldMapRosterStatus = availability.RosterStatus,
+                WorldMapRosterConfidence = availability.RosterConfidence,
                 AllowTeam1 = source.AllowTeam1,
                 RequireMarchVerification = source.RequireMarchVerification,
                 RunUntilNoReadyTeams = source.RunUntilNoReadyTeams,

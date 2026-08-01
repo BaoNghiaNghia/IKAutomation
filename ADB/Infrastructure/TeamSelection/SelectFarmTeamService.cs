@@ -108,12 +108,15 @@ namespace ADB_Tool_Automation_Post_FB.Infrastructure.TeamSelection
                     ResolveTeamRegions(lastFrame, freshState);
                 result.VisibleTeams = initialRegions.Keys.OrderBy(item => (int)item).ToArray();
                 SelectedScan selected = ScanSelected(lastFrame, initialRegions);
+                bool rosterReconciled = result.VisibleTeams.Any(team =>
+                    !(request.WorldMapAvailableTeams ?? new TeamNumber[0]).Contains(team));
+                logger.Info($"[TeamSelection Full Scan] RunId='{request.RunId ?? string.Empty}', DeviceName='{deviceName}', ExpectedTeam='{request.ExpectedTeam}', WorldMapAvailableTeams='{Join(request.WorldMapAvailableTeams ?? new TeamNumber[0])}', WorldMapReadyTeams='{Join(request.WorldMapReadyTeams ?? new TeamNumber[0])}', ScreenExistsTeams='{Join(result.VisibleTeams)}', SelectedTeam='{(selected.Teams.Count == 1 ? selected.Teams[0].ToString() : string.Empty)}', SelectionAmbiguous={selected.IsAmbiguous}, RosterReconciled={rosterReconciled}, LayoutSource='BadgeAnchors'");
                 if (selected.IsAmbiguous)
                     return await CompleteAsync(deviceName, result, SelectFarmTeamOutcome.Failed,
                         "Selected border appeared in multiple team ROIs; no Tap was sent.",
                         "Ambiguous selected-team evidence.", lastFrame, watch, cancellationToken);
 
-                TeamNumber? expectedTeam = request.Priority.Where(team =>
+                TeamNumber? expectedTeam = request.ExpectedTeam ?? request.Priority.Where(team =>
                         request.AllowedTeams.Contains(team)
                         && (request.AllowTeam1 || team != TeamNumber.Team1))
                     .Select(team => (TeamNumber?)team).FirstOrDefault();
@@ -141,7 +144,9 @@ namespace ADB_Tool_Automation_Post_FB.Infrastructure.TeamSelection
                 DateTimeOffset selectionDeadline = DateTimeOffset.UtcNow.AddSeconds(
                     options.SelectionTimeoutSeconds);
                 bool continueAfterConfirmedUnavailable = false;
-                foreach (TeamNumber team in request.Priority)
+                IEnumerable<TeamNumber> candidateTeams = expectedTeam.HasValue
+                    ? new[] { expectedTeam.Value } : request.Priority;
+                foreach (TeamNumber team in candidateTeams)
                 {
                     cancellationToken.ThrowIfCancellationRequested();
                     if (!request.AllowedTeams.Contains(team) || (!request.AllowTeam1 && team == TeamNumber.Team1))
