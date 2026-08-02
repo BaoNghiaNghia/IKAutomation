@@ -951,11 +951,14 @@ namespace ADB_Tool_Automation_Post_FB.Infrastructure.TeamSelection
                 skipReason = "TapOutsideScreenshot";
                 return false;
             }
-            if (currentRows.Any(item => !IsSameRegion(item.Value, targetRow)
-                && ContainsPoint(item.Value, tapX, tapY)))
+            foreach (KeyValuePair<TeamNumber, ImageRegion> row in currentRows)
             {
-                skipReason = "TapOverlapsAnotherTeamRow";
-                return false;
+                if (!IsSameRegion(row.Value, targetRow)
+                    && ContainsPoint(row.Value, tapX, tapY))
+                {
+                    skipReason = "TapOverlapsAnotherTeamRow";
+                    return false;
+                }
             }
             return true;
         }
