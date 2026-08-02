@@ -221,6 +221,19 @@ namespace ADB_Tool_Automation_Post_FB.Infrastructure.ResourceSearch
                             return await CompleteAsync(deviceName, runId, result, ResourceLevelFallbackOutcome.ResourceLocated,
                                 $"Iron level {level} was located.", null, watch, null, token, false);
                         }
+                        if (searched.Outcome == ResourceSearchOutcome.SearchTapNotApplied)
+                        {
+                            // The panel was freshly verified and Search was retried
+                            // to its configured bound. This is not a technical
+                            // workflow failure: yield this resource to the outer
+                            // resource sweep instead of stopping the cycle.
+                            return await CompleteAsync(deviceName, runId, result,
+                                ResourceLevelFallbackOutcome.ResourceLevelsExhausted,
+                                "Nút Tìm kiếm không thay đổi màn hình sau các lần thử; "
+                                    + "đang chuyển sang tài nguyên tiếp theo.",
+                                null, watch, $"level-{level}_searchtapnotapplied", token,
+                                options.SaveExhaustedScreenshot);
+                        }
                         if (searched.Outcome != ResourceSearchOutcome.ResourceNotFound)
                             return await CompleteAsync(deviceName, runId, result, ResourceLevelFallbackOutcome.SearchFailed,
                                 searched.Message, searched.ErrorMessage, watch,

@@ -73,6 +73,7 @@ namespace ADB_Tool_Automation_Post_FB.Infrastructure.Workflows
                 for (int searchAreaAttempt = 0; ; searchAreaAttempt++)
                 {
                     var attemptedThisPass = new HashSet<ResourceType>();
+                    int searchTapNotAppliedResources = 0;
                     bool searchAreaRecoveryRequested = false;
                     IEnumerable<ResourceType> passResources = retryResourceAfterReposition.HasValue
                         ? new[] { retryResourceAfterReposition.Value }.Concat(request.ResourcePriority
@@ -146,6 +147,20 @@ namespace ADB_Tool_Automation_Post_FB.Infrastructure.Workflows
                             Log(runId, deviceName, resource, level.LocatedLevel,
                                 "SearchAreaRecovery", searchAreaReason.Value.ToString());
                             break;
+                        }
+                        if (HasSearchTapNotApplied(level))
+                        {
+                            searchTapNotAppliedResources++;
+                            if (searchTapNotAppliedResources
+                                >= options.SearchTapNotAppliedResourcesBeforeReposition)
+                            {
+                                searchAreaRecoveryRequested = true;
+                                retryResourceAfterReposition = resource;
+                                Log(runId, deviceName, resource, level.LocatedLevel,
+                                    "SearchAreaRecovery",
+                                    $"SearchTapNotAppliedResources={searchTapNotAppliedResources}");
+                                break;
+                            }
                         }
                         if (options.SwitchWhenLevelsExhausted) continue;
                         return Complete(result, ResourceFarmFallbackOutcome.ResourcePlanExhausted,
@@ -433,6 +448,10 @@ namespace ADB_Tool_Automation_Post_FB.Infrastructure.Workflows
                 .Select(attempt => (ResourceSearchFailureReason?)attempt.FailureReason)
                 .FirstOrDefault();
         }
+
+        private static bool HasSearchTapNotApplied(ResourceLevelFallbackResult result) =>
+            result?.Attempts != null && result.Attempts.Any(attempt =>
+                attempt.SearchOutcome == ResourceSearchOutcome.SearchTapNotApplied);
 
         private static string GetTerritoryColorSummary(NavigationResult result)
         {

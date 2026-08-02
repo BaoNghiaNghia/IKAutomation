@@ -18,6 +18,7 @@ using System.Threading.Tasks;
 using System.Windows;
 using System.Windows.Controls;
 using System.Windows.Media;
+using System.Windows.Media.Animation;
 using System.Windows.Threading;
 
 namespace ADB_Tool_Automation_Post_FB.UI
@@ -92,6 +93,7 @@ namespace ADB_Tool_Automation_Post_FB.UI
 
         private async void DeviceDiagnosticWindow_Loaded(object sender, RoutedEventArgs e)
         {
+            StartInitialLoadingSpinner();
             // Let WPF paint the loading overlay before configuration and LDPlayer
             // discovery begin. Without this render yield the new window can remain
             // visually blank while the first asynchronous operation starts.
@@ -102,8 +104,27 @@ namespace ADB_Tool_Automation_Post_FB.UI
             }
             finally
             {
+                StopInitialLoadingSpinner();
                 InitialLoadingOverlay.Visibility = Visibility.Collapsed;
             }
+        }
+
+        private void StartInitialLoadingSpinner()
+        {
+            var animation = new DoubleAnimation(0, 360,
+                TimeSpan.FromMilliseconds(800))
+            {
+                RepeatBehavior = RepeatBehavior.Forever
+            };
+            InitialLoadingSpinnerRotate.BeginAnimation(
+                RotateTransform.AngleProperty, animation,
+                HandoffBehavior.SnapshotAndReplace);
+        }
+
+        private void StopInitialLoadingSpinner()
+        {
+            InitialLoadingSpinnerRotate.BeginAnimation(
+                RotateTransform.AngleProperty, null);
         }
 
         private async Task LoadFarmPreferencesAndRefreshAsync()
@@ -111,8 +132,9 @@ namespace ADB_Tool_Automation_Post_FB.UI
             string warning = null;
             try
             {
-                FarmUiPreferencesLoadResult load = await farmPreferencesStore.LoadAsync(
-                    defaultFarmPreferences, lifetimeCancellation.Token);
+                FarmUiPreferencesLoadResult load = await Task.Run(() =>
+                    farmPreferencesStore.LoadAsync(defaultFarmPreferences,
+                        lifetimeCancellation.Token), lifetimeCancellation.Token);
                 ApplyFarmPreferences(load.Preferences ?? defaultFarmPreferences);
                 if (load.RecoveredInvalidFile || !string.IsNullOrWhiteSpace(load.ErrorMessage))
                     warning = "Cấu hình farm bị lỗi; đã khôi phục mặc định.";
@@ -145,7 +167,9 @@ namespace ADB_Tool_Automation_Post_FB.UI
             {
                 await RunOperationAsync(async cancellationToken =>
                 {
-                    IReadOnlyList<string> deviceNames = await diagnosticService.GetDeviceNamesAsync(cancellationToken);
+                    IReadOnlyList<string> deviceNames = await Task.Run(() =>
+                        diagnosticService.GetDeviceNamesAsync(cancellationToken),
+                        cancellationToken);
 
                 var previous = deviceSelections.ToDictionary(item => item.DeviceName,
                     item => item, StringComparer.OrdinalIgnoreCase);
@@ -189,8 +213,9 @@ namespace ADB_Tool_Automation_Post_FB.UI
                     await gate.WaitAsync(cancellationToken);
                     try
                     {
-                        DeviceDiagnosticResult result = await diagnosticService.CheckDeviceAsync(
-                            deviceName, cancellationToken);
+                        DeviceDiagnosticResult result = await Task.Run(() =>
+                            diagnosticService.CheckDeviceAsync(deviceName, cancellationToken),
+                            cancellationToken);
                         DeviceSelectionItem item = deviceSelections.FirstOrDefault(value =>
                             string.Equals(value.DeviceName, deviceName, StringComparison.OrdinalIgnoreCase));
                         if (item == null) return;
@@ -258,7 +283,11 @@ namespace ADB_Tool_Automation_Post_FB.UI
 
         private async void RunContinuousFarm_Click(object sender, RoutedEventArgs e)
         {
-            if (oneShotFarmCancellation != null) return;
+            if (oneShotFarmCancellation != null)
+            {
+                StopOneShotFarm_Click(sender, e);
+                return;
+            }
             string[] selectedDevices = deviceSelections
                 .Where(item => item.IsSelected && item.IsInGame)
                 .Select(item => item.DeviceName)
@@ -305,9 +334,8 @@ namespace ADB_Tool_Automation_Post_FB.UI
             var progress = new Progress<ContinuousFarmSupervisorProgress>(value =>
                 ApplyContinuousFarmProgress(runGeneration, runCancellation,
                     attemptVersions, value));
-            RunContinuousFarmButton.IsEnabled = false;
             RetryFailedDevicesButton.IsEnabled = false;
-            StopOneShotFarmButton.IsEnabled = true;
+            SetFarmActionButtonRunning();
             OneShotFarmResourcesGroupBox.IsEnabled = false;
             StatusTextBlock.Text = $"Continuous supervisor đang quản lý {deviceNames.Length} thiết bị...";
             try
@@ -339,8 +367,7 @@ namespace ADB_Tool_Automation_Post_FB.UI
                 if (ReferenceEquals(oneShotFarmCancellation, runCancellation))
                     oneShotFarmCancellation = null;
                 runCancellation.Dispose();
-                RunContinuousFarmButton.IsEnabled = true;
-                StopOneShotFarmButton.IsEnabled = false;
+                SetFarmActionButtonIdle();
                 OneShotFarmResourcesGroupBox.IsEnabled = true;
                 RefreshRetryButtonState();
             }
@@ -516,9 +543,8 @@ namespace ADB_Tool_Automation_Post_FB.UI
             foreach (DeviceSelectionItem item in deviceSelections.Where(item =>
                 deviceNames.Contains(item.DeviceName, StringComparer.OrdinalIgnoreCase)))
                 item.Status = "Queued";
-            RunContinuousFarmButton.IsEnabled = false;
             RetryFailedDevicesButton.IsEnabled = false;
-            StopOneShotFarmButton.IsEnabled = true;
+            SetFarmActionButtonRunning();
             OneShotFarmResourcesGroupBox.IsEnabled = false;
             StatusTextBlock.Text = isRetry
                 ? $"Đang chạy lại {deviceNames.Length} thiết bị lỗi; các thiết bị khác không bị ảnh hưởng..."
@@ -565,8 +591,7 @@ namespace ADB_Tool_Automation_Post_FB.UI
                     if (ReferenceEquals(oneShotFarmCancellation, runCancellation))
                         oneShotFarmCancellation = null;
                     runCancellation.Dispose();
-                    RunContinuousFarmButton.IsEnabled = true;
-                    StopOneShotFarmButton.IsEnabled = false;
+                    SetFarmActionButtonIdle();
                     OneShotFarmResourcesGroupBox.IsEnabled = true;
                     if (failedDeviceNames.Count == 0) retryRequest = null;
                 }
@@ -662,7 +687,7 @@ namespace ADB_Tool_Automation_Post_FB.UI
             CancellationTokenSource currentRun = oneShotFarmCancellation;
             if (currentRun == null || oneShotFarmCancellationRequested) return;
             oneShotFarmCancellationRequested = true;
-            StopOneShotFarmButton.IsEnabled = false;
+            SetFarmActionButtonStopping();
             RetryFailedDevicesButton.IsEnabled = false;
             ProgressOverviewTextBlock.Text = "Đang dừng";
             foreach (DeviceFarmProgressItem item in farmProgressItems.Where(item =>
@@ -670,6 +695,30 @@ namespace ADB_Tool_Automation_Post_FB.UI
                 item.SetStopping();
             StopOneShotFarmProgressTimer();
             currentRun.Cancel();
+        }
+
+        private void SetFarmActionButtonIdle()
+        {
+            RunContinuousFarmButton.Content = "▶  Chạy liên tục";
+            RunContinuousFarmButton.Background = new SolidColorBrush(
+                Color.FromRgb(15, 118, 110));
+            RunContinuousFarmButton.IsEnabled = true;
+        }
+
+        private void SetFarmActionButtonRunning()
+        {
+            RunContinuousFarmButton.Content = "■  Dừng";
+            RunContinuousFarmButton.Background = new SolidColorBrush(
+                Color.FromRgb(220, 38, 38));
+            RunContinuousFarmButton.IsEnabled = true;
+        }
+
+        private void SetFarmActionButtonStopping()
+        {
+            RunContinuousFarmButton.Content = "■  Đang dừng...";
+            RunContinuousFarmButton.Background = new SolidColorBrush(
+                Color.FromRgb(185, 28, 28));
+            RunContinuousFarmButton.IsEnabled = false;
         }
 
         private void ApplyOneShotFarmProgress(long runGeneration,
