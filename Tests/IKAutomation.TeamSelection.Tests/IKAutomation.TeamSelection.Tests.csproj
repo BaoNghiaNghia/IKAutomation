@@ -18,5 +18,6 @@
     <Compile Include="..\..\ADB\Infrastructure\Concurrency\DeviceOperationLock.cs" Link="Production\DeviceOperationLock.cs" />
     <Compile Include="..\..\ADB\Infrastructure\ResourcePopup\ResourcePopupTitleTemplateCropper.cs" Link="Production\ResourcePopupTitleTemplateCropper.cs" />
     <Compile Include="..\..\ADB\Infrastructure\TeamSelection\OpenTeamSelectionService.cs" Link="Production\OpenTeamSelectionService.cs" />
+    <Compile Include="..\..\ADB\Infrastructure\TeamSelection\SelectedTeamDetector.cs" Link="Production\SelectedTeamDetector.cs" />
   </ItemGroup>
 </Project>

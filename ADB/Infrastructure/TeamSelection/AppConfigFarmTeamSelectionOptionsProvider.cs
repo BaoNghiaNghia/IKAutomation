@@ -30,7 +30,7 @@ namespace ADB_Tool_Automation_Post_FB.Infrastructure.TeamSelection
                     Int("RosterRegion.Width", 300), Int("RosterRegion.Height", 590)),
                 minimumSafeTapX: Int("MinimumSafeTapX", 80),
                 maximumSafeTapX: Int("MaximumSafeTapX", 160),
-                maxInputFrameAgeMs: Int("MaxInputFrameAgeMs", 1000));
+                maxInputFrameAgeMs: Int("MaxInputFrameAgeMs", 1000), selectedMinimumScore: Double("SelectedMinimumScore", .70), selectedWinningMargin: Double("SelectedWinningMargin", .12), selectedRequiredBorderEdges: Int("SelectedRequiredBorderEdges",2), selectedConsensusFrames: Int("SelectedConsensusFrames",3), selectedRequiredMatchingFrames: Int("SelectedRequiredMatchingFrames",2), selectedFrameIntervalMs: Int("SelectedFrameIntervalMs",250), selectedDetectionTimeoutMs: Int("SelectedDetectionTimeoutMs",3000));
         }
 
         public static TeamSelectionRequest LoadRequest()
@@ -65,6 +65,7 @@ namespace ADB_Tool_Automation_Post_FB.Infrastructure.TeamSelection
                 throw new ConfigurationErrorsException($"Configuration value '{Key(name)}' must be true or false.");
             return parsed;
         }
+        private static double Double(string name,double fallback){string value=ConfigurationManager.AppSettings[Key(name)]; if(string.IsNullOrWhiteSpace(value))return fallback; if(!double.TryParse(value,NumberStyles.Float,CultureInfo.InvariantCulture,out double parsed))throw new ConfigurationErrorsException($"Configuration value '{Key(name)}' must be a number."); return parsed;}
         private static string Text(string name, string fallback) =>
             ConfigurationManager.AppSettings[Key(name)] ?? fallback;
         private static IReadOnlyList<TeamNumber> Teams(string name, TeamNumber[] fallback)

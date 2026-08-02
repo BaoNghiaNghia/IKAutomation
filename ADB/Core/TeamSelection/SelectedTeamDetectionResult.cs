@@ -15,6 +15,17 @@ namespace ADB_Tool_Automation_Post_FB.Core.TeamSelection
         public IReadOnlyDictionary<TeamNumber, ImageRegion> Rows { get; set; }
         public IReadOnlyDictionary<TeamNumber, double> RowScores { get; set; }
         public string FailureReason { get; set; }
+        public IReadOnlyDictionary<TeamNumber, SelectedTeamRowScore> RowDetails { get; set; }
+    }
+
+    public sealed class SelectedTeamRowScore
+    {
+        public TeamNumber Team { get; set; } public ImageRegion RowBounds { get; set; }
+        public double TemplateConfidence { get; set; } public double LeftBorderScore { get; set; }
+        public double RightBorderScore { get; set; } public double TopBorderScore { get; set; }
+        public double BottomBorderScore { get; set; } public int BorderEdgesFound { get; set; }
+        public double ContrastScore { get; set; } public double CombinedScore { get; set; }
+        public bool GeometryValid { get; set; } public string FailureReason { get; set; }
     }
 
     public sealed class SelectedTeamConsensusResult : SelectedTeamFrameResult

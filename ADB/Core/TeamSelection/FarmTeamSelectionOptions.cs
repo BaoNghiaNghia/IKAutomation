@@ -15,7 +15,10 @@ namespace ADB_Tool_Automation_Post_FB.Core.TeamSelection
             int maxRosterScrollAttempts = 3, int rosterScrollDurationMs = 350,
             ImageRegion? teamSelectionRosterRegion = null,
             int minimumSafeTapX = 80, int maximumSafeTapX = 160,
-            int maxInputFrameAgeMs = 1000)
+            int maxInputFrameAgeMs = 1000, double selectedMinimumScore = .70,
+            double selectedWinningMargin = .12, int selectedRequiredBorderEdges = 2,
+            int selectedConsensusFrames = 3, int selectedRequiredMatchingFrames = 2,
+            int selectedFrameIntervalMs = 250, int selectedDetectionTimeoutMs = 3000)
         {
             if (pollIntervalMs <= 0) throw new ArgumentOutOfRangeException(nameof(pollIntervalMs));
             if (selectionTimeoutSeconds <= 0) throw new ArgumentOutOfRangeException(nameof(selectionTimeoutSeconds));
@@ -31,6 +34,8 @@ namespace ADB_Tool_Automation_Post_FB.Core.TeamSelection
                 throw new ArgumentOutOfRangeException(nameof(minimumSafeTapX));
             if (maxInputFrameAgeMs <= 0 || maxInputFrameAgeMs > 5000)
                 throw new ArgumentOutOfRangeException(nameof(maxInputFrameAgeMs));
+            if (selectedMinimumScore < 0 || selectedMinimumScore > 1 || selectedWinningMargin < 0 || selectedWinningMargin > 1 || selectedRequiredBorderEdges < 1 || selectedRequiredBorderEdges > 4 || selectedConsensusFrames < 1 || selectedRequiredMatchingFrames < 1 || selectedRequiredMatchingFrames > selectedConsensusFrames || selectedFrameIntervalMs < 0 || selectedDetectionTimeoutMs <= 0 || (long)(selectedConsensusFrames - 1) * selectedFrameIntervalMs >= selectedDetectionTimeoutMs)
+                throw new ArgumentOutOfRangeException("selected-team detector configuration");
             foreach (TeamNumber team in new[] { TeamNumber.Team1, TeamNumber.Team2, TeamNumber.Team3, TeamNumber.Team4 })
             {
                 if (!teamRegions.TryGetValue(team, out ImageRegion region))
@@ -56,6 +61,7 @@ namespace ADB_Tool_Automation_Post_FB.Core.TeamSelection
             MaxInputFrameAgeMs = maxInputFrameAgeMs;
             TeamSelectionRosterRegion = teamSelectionRosterRegion
                 ?? Union(teamRegions, expectedWidth, expectedHeight);
+            SelectedMinimumScore=selectedMinimumScore; SelectedWinningMargin=selectedWinningMargin; SelectedRequiredBorderEdges=selectedRequiredBorderEdges; SelectedConsensusFrames=selectedConsensusFrames; SelectedRequiredMatchingFrames=selectedRequiredMatchingFrames; SelectedFrameIntervalMs=selectedFrameIntervalMs; SelectedDetectionTimeoutMs=selectedDetectionTimeoutMs;
         }
 
         public int PollIntervalMs { get; }
@@ -73,6 +79,10 @@ namespace ADB_Tool_Automation_Post_FB.Core.TeamSelection
         public int MaximumSafeTapX { get; }
         public int MaxInputFrameAgeMs { get; }
         public ImageRegion TeamSelectionRosterRegion { get; }
+        public double SelectedMinimumScore { get; } public double SelectedWinningMargin { get; }
+        public int SelectedRequiredBorderEdges { get; } public int SelectedConsensusFrames { get; }
+        public int SelectedRequiredMatchingFrames { get; } public int SelectedFrameIntervalMs { get; }
+        public int SelectedDetectionTimeoutMs { get; }
 
         private static ImageRegion Union(IReadOnlyDictionary<TeamNumber, ImageRegion> regions,
             int width, int height)

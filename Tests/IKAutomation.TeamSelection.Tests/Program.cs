@@ -13,6 +13,7 @@ using System.Collections.Generic;
 using System.Drawing;
 using System.Drawing.Imaging;
 using System.IO;
+using System.Linq;
 using System.Threading;
 using System.Threading.Tasks;
 
@@ -48,6 +49,10 @@ namespace IKAutomation.TeamSelection.Tests
             Run("No prohibited input API is called", NoProhibitedInput);
             Run("Options validate bounds", OptionsValidate);
             Run("Diagnostic save failure does not replace outcome", DiagnosticFailureSafe);
+            Run("SelectedTeamDetector_DetectFrame_StrongTeam2Border_ReturnsTeam2", SelectedTeam2);
+            Run("SelectedTeamDetector_DetectFrame_StrongTeam1Border_ReturnsTeam1", ()=>SelectedTeam(TeamNumber.Team1));
+            Run("SelectedTeamDetector_DetectFrame_StrongTeam3Border_ReturnsTeam3", ()=>SelectedTeam(TeamNumber.Team3));
+            Run("SelectedTeamDetector_DetectFrame_StrongTeam4Border_ReturnsTeam4", ()=>SelectedTeam(TeamNumber.Team4));
             Console.WriteLine($"Team Selection tests: {passed} passed, {failed} failed.");
             return failed == 0 ? 0 : 1;
         }
@@ -213,6 +218,12 @@ namespace IKAutomation.TeamSelection.Tests
             f.Client.Frames.Enqueue(Frame(7)); f.Store.Throw = true;
             Equal(OpenTeamSelectionOutcome.ResourcePopupNotReady, Execute(f).Outcome);
         }
+        private static void SelectedTeam2()
+        { SelectedTeam(TeamNumber.Team2); }
+        private static void SelectedTeam(TeamNumber team)
+        { var m=new FakeMatcher{SelectedTeam=team,Team2SelectionConfidence=.60}; var d=new SelectedTeamDetector(new FakeClient(),new FakeRegistry(),m); var rows=DetectorRows(); var c=new SelectedTeamDetectionContext{TeamRegions=rows,MinimumScore=.70,WinningMargin=.12}; var r=d.DetectFrame(TeamFrame(team),c); Assert(r.IsConfident&&r.Team==team,"Selected team"); Assert(r.RowDetails[team].BorderEdgesFound>=2,"edges"); Assert(r.RowDetails[team].CombinedScore>=.70,"score"); Assert(r.WinningMargin>=.12,"margin"); foreach(var other in rows.Keys.Where(x=>x!=team))Assert(r.RowDetails[team].CombinedScore>r.RowDetails[other].CombinedScore,"winner"); }
+        private static Dictionary<TeamNumber,ImageRegion> DetectorRows()=>new Dictionary<TeamNumber,ImageRegion>{{TeamNumber.Team1,new ImageRegion(20,80,220,120)},{TeamNumber.Team2,new ImageRegion(20,220,220,120)},{TeamNumber.Team3,new ImageRegion(20,360,220,120)},{TeamNumber.Team4,new ImageRegion(20,500,220,120)}};
+        private static byte[] TeamFrame(TeamNumber team){using(var b=new Bitmap(1280,720))using(var g=Graphics.FromImage(b))using(var s=new MemoryStream()){g.Clear(Color.FromArgb(30,30,30)); foreach(var row in DetectorRows().Values)g.FillRectangle(Brushes.DimGray,row.X,row.Y,row.Width,row.Height);var r=DetectorRows()[team];using(var p=new Pen(Color.White,5))g.DrawRectangle(p,r.X+2,r.Y+2,r.Width-4,r.Height-4); b.Save(s,ImageFormat.Png);return s.ToArray();}}
 
         private static Fixture ReadyFlow()
         {
@@ -333,6 +344,8 @@ namespace IKAutomation.TeamSelection.Tests
             private readonly Dictionary<string, ImageMatchResult> matches = new Dictionary<string, ImageMatchResult>();
             public readonly Dictionary<TemplateId, ImageRegion?> Regions = new Dictionary<TemplateId, ImageRegion?>();
             public bool StablePopupTitleOnly;
+            public double Team2SelectionConfidence;
+            public TeamNumber SelectedTeam;
             public void Add(byte marker, TemplateId id, int x, int y, int w, int h) => matches[marker + ":" + id] = ImageMatchResult.FoundAt(x, y, w, h);
             public ImageMatchResult Find(byte[] screenshot, byte[] template, ImageRegion? region = null)
             {
@@ -344,7 +357,7 @@ namespace IKAutomation.TeamSelection.Tests
                             ? ImageMatchResult.FoundAt(760, 260, bitmap.Width, bitmap.Height)
                             : ImageMatchResult.NotFound();
                 }
-                TemplateId id = (TemplateId)template[0]; Regions[id] = region; return matches.TryGetValue(screenshot[0] + ":" + id, out ImageMatchResult value) ? value : ImageMatchResult.NotFound();
+                TemplateId id = (TemplateId)template[0]; Regions[id] = region; if(id==TemplateId.TeamSelectedBorderAnchor&&region.HasValue)return region.Value.Y==DetectorRows()[SelectedTeam].Y?ImageMatchResult.FoundAt(20,region.Value.Y,220,120,Team2SelectionConfidence):ImageMatchResult.FoundAt(20,region.Value.Y,1,1,.20); return matches.TryGetValue(screenshot[0] + ":" + id, out ImageMatchResult value) ? value : ImageMatchResult.NotFound();
             }
         }
 
