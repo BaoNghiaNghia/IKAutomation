@@ -435,12 +435,24 @@ namespace ADB_Tool_Automation_Post_FB.Infrastructure.TeamSelection
                                     && !freshPostTap.Detection.IsAmbiguous
                                     && freshPostTap.Detection.Team.HasValue
                                     && freshPostTap.Detection.Team.Value == team;
-                                result.ActualSelectedTeam = freshPostTap?.Detection?.Team;
+                                // The panel can expose a false second candidate when a
+                                // missing badge stretches a neighbouring row.  For the
+                                // post-tap operation we know exactly which row was
+                                // tapped, so qualified fresh border evidence in that
+                                // row is sufficient; an unrelated row must not block
+                                // dispatch.
+                                bool expectedRowVerified = HasQualifiedExpectedRow(
+                                    freshPostTap?.Detection, team);
+                                expectedTeamVerified |= expectedRowVerified;
+                                result.ActualSelectedTeam = expectedTeamVerified
+                                    ? (TeamNumber?)team : freshPostTap?.Detection?.Team;
                                 attempt.SelectedAfter = result.ActualSelectedTeam;
                                 if (expectedTeamVerified)
                                 {
                                     attempt.SelectedVerified = true;
-                                    attempt.Message = "Fresh detector consensus verified the expected team after Tap.";
+                                    attempt.Message = expectedRowVerified
+                                        ? "Fresh target-row border verified the expected team after Tap."
+                                        : "Fresh detector consensus verified the expected team after Tap.";
                                     result.SelectedTeam = team;
                                     result.ActualSelectedTeam = team;
                                     result.SelectedStateVerified = true;
@@ -611,6 +623,20 @@ namespace ADB_Tool_Automation_Post_FB.Infrastructure.TeamSelection
             if (result?.RowDetails == null) return;
             foreach (SelectedTeamRowScore row in result.RowDetails.Values)
                 logger.Info($"[Selected Team Frame Score] DeviceName='{deviceName}', Phase='{phase}', ExpectedTeam='{expectedTeam}', FrameIndex=0, Team='{row.Team}', RowBounds=({row.RowBounds.X},{row.RowBounds.Y},{row.RowBounds.Width},{row.RowBounds.Height}), GeometryValid={row.GeometryValid}, TemplateConfidence={row.TemplateConfidence:F3}, TopBorderScore={row.TopBorderScore:F3}, BottomBorderScore={row.BottomBorderScore:F3}, LeftBorderScore={row.LeftBorderScore:F3}, RightBorderScore={row.RightBorderScore:F3}, BorderEdgesFound={row.BorderEdgesFound}, BorderEvidenceScore={row.BorderEvidenceScore:F3}, ContrastScore={row.ContrastScore:F3}, TemplatePathScore={row.TemplatePathScore:F3}, BorderPathScore={row.BorderPathScore:F3}, EffectiveScore={row.EffectiveScore:F3}, BorderOnlyQualified={row.BorderOnlyQualified}, CandidateQualified={row.CandidateQualified}, Offsets=({row.TopBorderOffset},{row.BottomBorderOffset},{row.LeftBorderOffset},{row.RightBorderOffset}), FailureReason='{row.FailureReason ?? result.FailureReason ?? string.Empty}'");
+        }
+
+        private bool HasQualifiedExpectedRow(SelectedTeamConsensusResult detection,
+            TeamNumber expectedTeam)
+        {
+            if (detection?.RowDetails == null
+                || !detection.RowDetails.TryGetValue(expectedTeam,
+                    out SelectedTeamRowScore expectedRow))
+                return false;
+            return expectedRow.GeometryValid
+                && expectedRow.CandidateQualified
+                && expectedRow.BorderOnlyQualified
+                && expectedRow.BorderEdgesFound >= options.SelectedRequiredBorderEdges
+                && expectedRow.EffectiveScore >= options.SelectedMinimumScore;
         }
 
         private SelectedScan ScanSelected(byte[] frame,
