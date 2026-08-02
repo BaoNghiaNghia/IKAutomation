@@ -1635,11 +1635,11 @@ namespace ADB_Tool_Automation_Post_FB.UI
                     bool isAllowed = allowed.Contains(item.Team);
                     bool isReady = ready.Contains(item.Team);
                     bool isEligible = eligible.Contains(item.Team);
-                    string status = isEligible ? "Có thể chọn"
+                    string status = isEligible ? "Sẵn sàng"
                         : isReady && isAllowed ? "Sẵn sàng"
-                        : isReady ? "Sẵn sàng · không được phép"
-                        : isAllowed ? "Được phép · bận/chưa xác minh"
-                        : "Không được phép";
+                        : isReady ? "Sẵn sàng · không chọn"
+                        : isAllowed ? "Bận"
+                        : "Không dùng";
                     item.SetStatus(status, isEligible || isReady);
                 }
             }
@@ -1781,7 +1781,9 @@ namespace ADB_Tool_Automation_Post_FB.UI
         public void SetStatus(string value, bool positive)
         {
             Status = value;
-            StatusBrush = positive ? Brushes.SeaGreen : Brushes.SlateGray;
+            StatusBrush = positive ? Brushes.SeaGreen
+                : string.Equals(value, "Bận", StringComparison.Ordinal)
+                    ? Brushes.DarkGoldenrod : Brushes.SlateGray;
         }
 
         public event PropertyChangedEventHandler PropertyChanged;

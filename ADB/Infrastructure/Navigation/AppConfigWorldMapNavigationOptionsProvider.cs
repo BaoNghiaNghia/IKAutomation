@@ -18,7 +18,13 @@ namespace ADB_Tool_Automation_Post_FB.Infrastructure.Navigation
                 Read("WorldMapNavigation.MinimumCoordinateOffset", 20),
                 Read("WorldMapNavigation.CoordinateCandidateSettleTimeoutMs", 3000),
                 Read("WorldMapNavigation.HomeTerritoryClassificationAttempts", 3),
-                ReadBool("WorldMapNavigation.AllowLegacyTerritoryFallback", true));
+                ReadBool("WorldMapNavigation.AllowLegacyTerritoryFallback", true),
+                Read("WorldMapNavigation.HomePinAcquisitionAttempts", 3),
+                ReadBool("WorldMapNavigation.RequireVerifiedSameTerritory", true),
+                Read("WorldMapNavigation.MinimumWorldCoordinate", 0),
+                Read("WorldMapNavigation.MaximumWorldCoordinate", 2047),
+                Read("WorldMapNavigation.CoordinateInputVerificationAttempts", 2),
+                Read("WorldMapNavigation.CoordinateRollbackTimeoutSeconds", 5));
         }
 
         private static int Read(string key, int fallback)

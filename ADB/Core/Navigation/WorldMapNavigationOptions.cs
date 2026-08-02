@@ -14,7 +14,13 @@ namespace ADB_Tool_Automation_Post_FB.Core.Navigation
             int minimumCoordinateOffset = 20,
             int coordinateCandidateSettleTimeoutMs = 3000,
             int homeTerritoryClassificationAttempts = 3,
-            bool allowLegacyTerritoryFallback = true)
+            bool allowLegacyTerritoryFallback = true,
+            int homePinAcquisitionAttempts = 3,
+            bool requireVerifiedSameTerritory = true,
+            int minimumWorldCoordinate = 0,
+            int maximumWorldCoordinate = 2047,
+            int coordinateInputVerificationAttempts = 2,
+            int coordinateRollbackTimeoutSeconds = 5)
         {
             if (statePollIntervalMs <= 0) throw new ArgumentOutOfRangeException(nameof(statePollIntervalMs));
             if (stateTransitionTimeoutSeconds <= 0) throw new ArgumentOutOfRangeException(nameof(stateTransitionTimeoutSeconds));
@@ -24,6 +30,11 @@ namespace ADB_Tool_Automation_Post_FB.Core.Navigation
             if (maximumCoordinateOffset < minimumCoordinateOffset) throw new ArgumentOutOfRangeException(nameof(maximumCoordinateOffset));
             if (coordinateCandidateSettleTimeoutMs < statePollIntervalMs) throw new ArgumentOutOfRangeException(nameof(coordinateCandidateSettleTimeoutMs));
             if (homeTerritoryClassificationAttempts < 1 || homeTerritoryClassificationAttempts > 5) throw new ArgumentOutOfRangeException(nameof(homeTerritoryClassificationAttempts));
+            if (homePinAcquisitionAttempts < 1 || homePinAcquisitionAttempts > 5) throw new ArgumentOutOfRangeException(nameof(homePinAcquisitionAttempts));
+            if (minimumWorldCoordinate < 0) throw new ArgumentOutOfRangeException(nameof(minimumWorldCoordinate));
+            if (maximumWorldCoordinate <= minimumWorldCoordinate) throw new ArgumentOutOfRangeException(nameof(maximumWorldCoordinate));
+            if (coordinateInputVerificationAttempts < 1 || coordinateInputVerificationAttempts > 3) throw new ArgumentOutOfRangeException(nameof(coordinateInputVerificationAttempts));
+            if (coordinateRollbackTimeoutSeconds < 1 || coordinateRollbackTimeoutSeconds > 15) throw new ArgumentOutOfRangeException(nameof(coordinateRollbackTimeoutSeconds));
             StatePollIntervalMs = statePollIntervalMs;
             StateTransitionTimeoutSeconds = stateTransitionTimeoutSeconds;
             MaxOpenSearchAttempts = maxOpenSearchAttempts;
@@ -34,6 +45,12 @@ namespace ADB_Tool_Automation_Post_FB.Core.Navigation
             CoordinateCandidateSettleTimeoutMs = coordinateCandidateSettleTimeoutMs;
             HomeTerritoryClassificationAttempts = homeTerritoryClassificationAttempts;
             AllowLegacyTerritoryFallback = allowLegacyTerritoryFallback;
+            HomePinAcquisitionAttempts = homePinAcquisitionAttempts;
+            RequireVerifiedSameTerritory = requireVerifiedSameTerritory;
+            MinimumWorldCoordinate = minimumWorldCoordinate;
+            MaximumWorldCoordinate = maximumWorldCoordinate;
+            CoordinateInputVerificationAttempts = coordinateInputVerificationAttempts;
+            CoordinateRollbackTimeoutSeconds = coordinateRollbackTimeoutSeconds;
         }
 
         public int StatePollIntervalMs { get; }
@@ -46,5 +63,11 @@ namespace ADB_Tool_Automation_Post_FB.Core.Navigation
         public int CoordinateCandidateSettleTimeoutMs { get; }
         public int HomeTerritoryClassificationAttempts { get; }
         public bool AllowLegacyTerritoryFallback { get; }
+        public int HomePinAcquisitionAttempts { get; }
+        public bool RequireVerifiedSameTerritory { get; }
+        public int MinimumWorldCoordinate { get; }
+        public int MaximumWorldCoordinate { get; }
+        public int CoordinateInputVerificationAttempts { get; }
+        public int CoordinateRollbackTimeoutSeconds { get; }
     }
 }

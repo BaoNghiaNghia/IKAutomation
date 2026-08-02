@@ -36,6 +36,7 @@ namespace IKAutomation.FarmTeamSelection.Tests
             Run("Team4 requires selected border in Team4 ROI", WrongRoiNotSuccess);
             Run("Selected border in Team3 does not verify Team4", WrongRoiNotSuccess);
             Run("Expected Team2 replaces initially selected Team3", ExpectedTeam2ReplacesTeam3);
+            Run("Preselected different team never mismatches before target Tap", PreselectedTeamDoesNotMismatchWithoutTap);
             Run("Persistent wrong Team3 selection cleans up without success", PersistentWrongTeamCleansUp);
             Run("Visible Team2 is mapped by badge identity", ScrolledListMapsTeam2ByBadge);
             Run("Missing Team2 cannot shift Team3 identity", MissingTeam2DoesNotShiftTeam3);
@@ -145,6 +146,9 @@ namespace IKAutomation.FarmTeamSelection.Tests
 
         private static void ExpectedTeam2ReplacesTeam3()
         { Fixture f=Setup(maxAttempts:2);f.Matcher.Badges.UnionWith(new[]{TeamNumber.Team2,TeamNumber.Team3});f.Matcher.Selected.Add(TeamNumber.Team3);f.Matcher.SelectOnTap[TeamNumber.Team2]=TeamNumber.Team2;SelectFarmTeamResult r=Execute(f,Only(TeamNumber.Team2));Equal(SelectFarmTeamOutcome.TeamSelected,r.Outcome);Equal(TeamNumber.Team2,r.SelectedTeam.Value);Equal(TeamNumber.Team2,r.ActualSelectedTeam.Value);Equal(1,f.Client.Taps.Count); }
+
+        private static void PreselectedTeamDoesNotMismatchWithoutTap()
+        { Fixture f=Setup(maxAttempts:2);f.Matcher.Badges.Add(TeamNumber.Team2);f.Matcher.Selected.Add(TeamNumber.Team2);SelectFarmTeamResult r=Execute(f,Only(TeamNumber.Team3));Equal(0,r.TeamTapCount);Assert(r.Outcome!=SelectFarmTeamOutcome.TeamSelectionMismatch,"A pre-existing different selection must not be a mismatch before target Team3 is tapped."); }
 
         private static void PersistentWrongTeamCleansUp()
         { Fixture f=Setup(maxAttempts:2);f.Matcher.Badges.UnionWith(new[]{TeamNumber.Team2,TeamNumber.Team3});f.Matcher.Selected.Add(TeamNumber.Team3);f.Matcher.SelectOnTap[TeamNumber.Team2]=TeamNumber.Team3;SelectFarmTeamResult r=Execute(f,Only(TeamNumber.Team2));Equal(SelectFarmTeamOutcome.TeamSelectionMismatch,r.Outcome);Equal(2,r.TeamTapCount);Assert(!r.CleanupAttempted,"TeamSelection must not receive cleanup input");Equal(TeamNumber.Team3,r.ActualSelectedTeam.Value);Assert(!r.Success&&f.Client.BackCalls==0,"TeamSelection must never be closed with Android Back"); }

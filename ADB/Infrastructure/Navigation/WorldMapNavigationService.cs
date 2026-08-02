@@ -345,151 +345,170 @@ namespace ADB_Tool_Automation_Post_FB.Infrastructure.Navigation
                     "Pin-map button was tapped but ContinentMap was not verified before timeout.",
                     current.ErrorMessage, transitions);
 
+            if (options.RequireVerifiedSameTerritory
+                && options.AllowLegacyTerritoryFallback)
+                logger.Info("[World Map Navigation] Warning: strict same-territory mode disabled legacy territory fallback.");
+
+            if (options.PreferSameTerritoryCoordinateSearch)
+            {
+                AddTransition(transitions, "Strategy", "SameTerritoryCoordinate");
+                AddTransition(transitions, "HomeEvidence", "Đang xác định màu lãnh thổ tại vị trí nhà.");
+                HomeLocationEvidence home = await AcquireHomeLocationEvidenceAsync(
+                    deviceName, current, transitions, cancellationToken);
+                CoordinateSearchResult coordinate = await TrySameTerritoryCoordinateAsync(
+                    deviceName, initial, home.Latest ?? current, home.Pin, ensured.Attempts,
+                    watch, transitions, progress, cancellationToken);
+                AddTransition(transitions, "StrategyResult", coordinate.Status.ToString());
+                if (coordinate.Status == CoordinateSearchStatus.Succeeded)
+                    return coordinate.Navigation;
+                if (coordinate.Status != CoordinateSearchStatus.Unavailable)
+                    return coordinate.Navigation;
+                current = home.Latest ?? current;
+            }
+
+            AddTransition(transitions, "Strategy", "ValidatedNearbyPin");
             PinObservation pinObservation = await ObserveNearbyPinPairAsync(
                 deviceName, current, transitions, cancellationToken);
             current = pinObservation.Latest;
-            NavigationResult coordinateFailure = null;
-            if (options.PreferSameTerritoryCoordinateSearch)
+            if (pinObservation.Pair == null)
             {
-                AddTransition(transitions, "Strategy",
-                    "Trying same-territory X/Y candidates before nearby-pin fallbacks.");
-                GameDetectionEvidence homePin = pinObservation.Home
-                    ?? FindFreshEvidence(current, TemplateId.ContinentMapHomeTerritoryAnchor);
-                NavigationResult coordinateResult = await TryCoordinateFallbackAsync(
-                    deviceName, initial, current, homePin,
-                    ensured.Attempts, watch, transitions, progress,
-                    cancellationToken);
-                if (coordinateResult?.Success == true) return coordinateResult;
-                coordinateFailure = coordinateResult;
-                AddTransition(transitions, "Strategy",
-                    "Primary X/Y search did not produce a verified move; continuing with bounded fallbacks.");
+                if (!options.PreferSameTerritoryCoordinateSearch)
+                {
+                    HomeLocationEvidence home = await AcquireHomeLocationEvidenceAsync(
+                        deviceName, current, transitions, cancellationToken);
+                    CoordinateSearchResult coordinate = await TrySameTerritoryCoordinateAsync(
+                        deviceName, initial, home.Latest ?? current, home.Pin,
+                        ensured.Attempts, watch, transitions, progress, cancellationToken);
+                    return coordinate.Navigation ?? Result(false, initial, current,
+                        ensured.Attempts + 1, watch,
+                        "Không thể xác định màu lãnh thổ đủ tin cậy.", null, transitions);
+                }
+                return Result(false, initial, current, ensured.Attempts + 1, watch,
+                    "Đã dừng để tránh di chuyển sang lãnh thổ khác: không có điểm đích gần đã được xác minh.", null, transitions);
             }
 
-            PinPair nearbyPins = pinObservation.Pair;
-            if (nearbyPins != null)
-            {
-                TerritoryValidation nearbyValidation =
-                    await ValidateNearbyPinTerritoriesAsync(
-                        deviceName, nearbyPins.Home, transitions,
-                        cancellationToken);
-                current = nearbyValidation.Latest ?? current;
-                if (!nearbyValidation.Allowed)
-                {
-                    AddTransition(transitions, "Strategy",
-                        "Nearby-pin territory was different or uncertain; continuing without sending its move Tap.");
-                    nearbyPins = null;
-                }
-
-                if (nearbyPins != null)
-                {
-                    await TapEvidenceAsync(deviceName,
-                    nearbyValidation.Destination,
-                    "ContinentMapSearchTargetPin", transitions, cancellationToken);
-                await Task.Delay(options.StatePollIntervalMs, cancellationToken);
-                AddTransition(transitions, "Wait",
-                    $"Waited {options.StatePollIntervalMs} ms after selecting the nearby yellow search pin.");
-                current = await DetectAsync(deviceName, transitions, cancellationToken);
-                if (current.IsSuccessful && current.State == GameState.WorldMap)
-                    return Result(true, initial, current, ensured.Attempts + 2, watch,
-                        "WorldMap verified immediately after selecting the nearby yellow search pin.",
-                        null, transitions);
-
-                if (current.IsSuccessful && current.State == GameState.Unknown
-                    && IsVerifiedContinentMapEvidence(current))
-                {
-                    current.State = GameState.ContinentMap;
-                    AddTransition(transitions, "Detect",
-                        "Normalized Unknown to ContinentMap after selecting the nearby yellow search pin.");
-                }
-
-                if (!current.IsSuccessful || current.State != GameState.ContinentMap)
-                    return Result(false, initial, current, ensured.Attempts + 2, watch,
-                        "Nearby yellow search pin was selected, but ContinentMap was not "
-                        + "verified before confirming the move.",
-                        current?.ErrorMessage, transitions);
-
-                GameDetectionEvidence movePin = FindFreshEvidence(
-                    current, TemplateId.ContinentMapPinButton);
-                if (movePin == null)
-                    return Result(false, initial, current, ensured.Attempts + 2, watch,
-                        "Nearby yellow search pin was selected, but the fresh move-to-coordinate "
-                        + "pin had no valid bounds; no move Tap was sent.",
-                        current.ErrorMessage, transitions);
-
-                await TapEvidenceAsync(deviceName, movePin,
-                    "ContinentMapPinButtonAfterNearbyTargetSelection", transitions,
-                    cancellationToken);
-                GameDetectionResult nearbyFinal = await PollAsync(
-                    deviceName, GameState.WorldMap, transitions, cancellationToken);
-                    return nearbyFinal.IsSuccessful && nearbyFinal.State == GameState.WorldMap
-                    ? Result(true, initial, nearbyFinal, ensured.Attempts + 3, watch,
-                        "WorldMap verified after selecting the nearby yellow search pin "
-                        + "and tapping the fresh move-to-coordinate pin.",
-                        null, transitions)
-                    : Result(false, initial, nearbyFinal, ensured.Attempts + 3, watch,
-                        "Nearby target move was confirmed, but WorldMap was not verified before timeout.",
-                        nearbyFinal.ErrorMessage, transitions);
-                }
-            }
-
-            if (!options.PreferSameTerritoryCoordinateSearch)
-            {
-                AddTransition(transitions, "Strategy",
-                    "Nearby-pin strategy did not move; trying same-territory X/Y candidates.");
-                GameDetectionEvidence homePin = pinObservation.Home
-                    ?? FindFreshEvidence(
-                        current, TemplateId.ContinentMapHomeTerritoryAnchor);
-                NavigationResult coordinateFallback = await TryCoordinateFallbackAsync(
-                    deviceName, initial, current, homePin,
-                    ensured.Attempts, watch, transitions, progress,
-                    cancellationToken);
-                if (coordinateFallback?.Success == true) return coordinateFallback;
-                coordinateFailure = coordinateFallback;
-            }
-
-            if (!options.AllowLegacyTerritoryFallback)
-                return coordinateFailure ?? Result(false, initial, current,
-                    ensured.Attempts + 1, watch,
-                    "Same-territory coordinate search and validated nearby-pin search did not find a safe destination; legacy territory fallback is disabled.",
+            TerritoryValidation nearbyValidation = await ValidateNearbyPinTerritoriesAsync(
+                deviceName, pinObservation.Pair.Home, transitions, cancellationToken);
+            current = nearbyValidation.Latest ?? current;
+            if (!nearbyValidation.Allowed)
+                return Result(false, initial, current, ensured.Attempts + 1, watch,
+                    "Đã dừng để tránh di chuyển sang lãnh thổ khác. " + nearbyValidation.Message,
                     null, transitions);
 
-            // A completed coordinate search has fresh, explicit color evidence.
-            // Do not override that safe rejection with an unvalidated legacy marker.
-            if (coordinateFailure != null)
-                return coordinateFailure;
-
-            TerritoryObservation territoryObservation =
-                await ObserveTerritoryMarkerAsync(deviceName, current, transitions,
-                    cancellationToken);
-            current = territoryObservation.Latest;
-            GameDetectionEvidence territory = territoryObservation.Marker;
-            if (territory == null)
-                return coordinateFailure ?? Result(false, initial, current, ensured.Attempts + 1, watch,
-                    "Neither a nearby yellow search pin nor an alliance territory marker "
-                    + "had valid fresh bounds; no Tap was sent.", null, transitions);
-
-            await TapEvidenceAsync(deviceName, territory, "ContinentMapHomeTerritoryAnchor", transitions, cancellationToken);
+            await TapEvidenceAsync(deviceName, nearbyValidation.Destination,
+                "ContinentMapSearchTargetPin", transitions, cancellationToken);
             await Task.Delay(options.StatePollIntervalMs, cancellationToken);
-            AddTransition(transitions, "Wait", $"Waited {options.StatePollIntervalMs} ms after selecting territory.");
             current = await DetectAsync(deviceName, transitions, cancellationToken);
-            if (!current.IsSuccessful || current.State != GameState.ContinentMap)
+            if (current.IsSuccessful && current.State == GameState.WorldMap)
+                return Result(true, initial, current, ensured.Attempts + 2, watch,
+                    "Đã tìm thấy điểm cùng màu lãnh thổ và di chuyển thành công.",
+                    null, transitions);
+            if (current.IsSuccessful && current.State == GameState.Unknown
+                && IsVerifiedContinentMapEvidence(current))
+                current.State = GameState.ContinentMap;
+            GameDetectionEvidence movePin = FindFreshEvidence(current,
+                TemplateId.ContinentMapPinButton);
+            if (movePin == null)
                 return Result(false, initial, current, ensured.Attempts + 2, watch,
-                    "Territory marker was tapped but ContinentMap was not still verified before pin navigation.",
-                    current.ErrorMessage, transitions);
+                    "Không có nút di chuyển mới để xác nhận điểm cùng màu; không gửi lệnh di chuyển.",
+                    current?.ErrorMessage, transitions);
+            await TapEvidenceAsync(deviceName, movePin,
+                "ContinentMapPinButtonAfterNearbyTargetSelection", transitions,
+                cancellationToken);
+            GameDetectionResult nearbyFinal = await PollAsync(deviceName,
+                GameState.WorldMap, transitions, cancellationToken);
+            return nearbyFinal.IsSuccessful && nearbyFinal.State == GameState.WorldMap
+                ? Result(true, initial, nearbyFinal, ensured.Attempts + 3, watch,
+                    "Đã tìm thấy điểm cùng màu lãnh thổ và di chuyển thành công.", null, transitions)
+                : Result(false, initial, nearbyFinal, ensured.Attempts + 3, watch,
+                    "Đã xác minh cùng màu nhưng không thể xác nhận di chuyển trên bản đồ.",
+                    nearbyFinal.ErrorMessage, transitions);
+        }
 
-            GameDetectionEvidence pin = FindFreshEvidence(current, TemplateId.ContinentMapPinButton);
-            if (pin == null)
-                return Result(false, initial, current, ensured.Attempts + 2, watch,
-                    "ContinentMap pin button had no valid fresh bounds; no Tap was sent.", null, transitions);
+        private async Task<HomeLocationEvidence> AcquireHomeLocationEvidenceAsync(
+            string deviceName,
+            GameDetectionResult initial,
+            IList<NavigationTransition> transitions,
+            CancellationToken cancellationToken)
+        {
+            GameDetectionEvidence existing = FindFreshEvidence(initial,
+                TemplateId.ContinentMapHomeLocationPin)
+                ?? FindFreshEvidence(initial, TemplateId.ContinentMapHomeTerritoryAnchor);
+            if (existing != null)
+                return new HomeLocationEvidence(initial, existing, "FreshEvidence");
 
-            await TapEvidenceAsync(deviceName, pin, "ContinentMapPinButton", transitions, cancellationToken);
-            GameDetectionResult final = await PollAsync(deviceName, GameState.WorldMap, transitions, cancellationToken);
-            return final.IsSuccessful && final.State == GameState.WorldMap
-                ? Result(true, initial, final, ensured.Attempts + 3, watch,
-                    "WorldMap verified after selecting alliance territory and tapping the coordinate pin.", null, transitions)
-                : Result(false, initial, final, ensured.Attempts + 3, watch,
-                    "Territory coordinate pin was tapped but WorldMap was not verified before timeout.",
-                    final.ErrorMessage, transitions);
+            GameDetectionResult latest = initial;
+            for (int attempt = 1; attempt <= options.HomePinAcquisitionAttempts; attempt++)
+            {
+                cancellationToken.ThrowIfCancellationRequested();
+                byte[] screenshot = await ldPlayerClient.CaptureScreenshotPngAsync(
+                    deviceName, cancellationToken);
+                GameDetectionResult detection = detector.Detect(screenshot);
+                if (detection != null && detection.IsSuccessful)
+                    latest = detection;
+                GameDetectionEvidence detected = FindFreshEvidence(detection,
+                    TemplateId.ContinentMapHomeLocationPin)
+                    ?? FindFreshEvidence(detection, TemplateId.ContinentMapHomeTerritoryAnchor);
+                if (detected != null)
+                    return new HomeLocationEvidence(latest, detected, "FreshDetection");
+                if (TryLocateHomeLocationPin(screenshot, out GameDetectionEvidence pixelPin))
+                {
+                    AddTransition(transitions, "HomeEvidence",
+                        $"Đã tìm thấy pin nhà từ điểm ảnh cyan (lần {attempt}/{options.HomePinAcquisitionAttempts}).");
+                    return new HomeLocationEvidence(latest, pixelPin, "CyanPixels");
+                }
+                if (attempt < options.HomePinAcquisitionAttempts)
+                    await Task.Delay(options.StatePollIntervalMs, cancellationToken);
+            }
+
+            return new HomeLocationEvidence(latest, null, "Unavailable");
+        }
+
+        private async Task<CoordinateSearchResult> TrySameTerritoryCoordinateAsync(
+            string deviceName,
+            GameDetectionResult initial,
+            GameDetectionResult current,
+            GameDetectionEvidence homePin,
+            int priorAttempts,
+            Stopwatch watch,
+            IList<NavigationTransition> transitions,
+            IProgress<NavigationTransition> progress,
+            CancellationToken cancellationToken)
+        {
+            if (!HasValidBounds(homePin))
+                return CoordinateSearchResult.Unavailable(null);
+
+            AddTransition(transitions, "CoordinateSearch", "Đang tìm tọa độ cùng màu lãnh thổ.");
+            NavigationResult result;
+            try
+            {
+                result = await TryCoordinateFallbackAsync(deviceName, initial, current,
+                    homePin, priorAttempts, watch, transitions, progress,
+                    cancellationToken);
+            }
+            catch (OperationCanceledException) { throw; }
+            catch (Exception exception)
+            {
+                return CoordinateSearchResult.Failed(Result(false, initial, current,
+                    priorAttempts, watch, "Đã dừng để tránh di chuyển sang lãnh thổ khác.",
+                    exception.Message, transitions));
+            }
+
+            if (result == null)
+                return CoordinateSearchResult.Unavailable(null);
+            if (result.Success)
+                return CoordinateSearchResult.Succeeded(result);
+            string message = result.Message ?? string.Empty;
+            if (message.IndexOf("requires a focused numeric input reader", StringComparison.OrdinalIgnoreCase) >= 0)
+                return CoordinateSearchResult.Unavailable(result);
+            if (message.IndexOf("could not be classified", StringComparison.OrdinalIgnoreCase) >= 0
+                || message.IndexOf("could not be located", StringComparison.OrdinalIgnoreCase) >= 0
+                || message.IndexOf("rolled back", StringComparison.OrdinalIgnoreCase) >= 0)
+                return CoordinateSearchResult.Unsafe(result);
+            if (message.IndexOf("No matching territory tone", StringComparison.OrdinalIgnoreCase) >= 0
+                || message.IndexOf("Không tìm thấy tọa độ cùng màu", StringComparison.OrdinalIgnoreCase) >= 0)
+                return CoordinateSearchResult.NoMatchingCandidate(result);
+            return CoordinateSearchResult.Failed(result);
         }
 
         private async Task<NavigationResult> TryCoordinateFallbackAsync(
@@ -517,122 +536,265 @@ namespace ADB_Tool_Automation_Post_FB.Infrastructure.Navigation
                     deviceName, homePin, transitions, cancellationToken);
             if (homeTerritory == TerritoryColorGroup.Unknown)
                 return Result(false, initial, current, priorAttempts + 1, watch,
-                    "Coordinate fallback stopped because the green home-pin territory "
-                    + "color could not be classified confidently; no coordinate input "
-                    + "or move Tap was sent.", null, transitions);
+                    "Không thể xác định màu lãnh thổ đủ tin cậy tại vị trí nhà; "
+                    + "đã dừng để tránh di chuyển sang lãnh thổ khác.", null, transitions);
+
+            CoordinateEditTransaction transaction;
+            try
+            {
+                transaction = await ReadCoordinateTransactionAsync(deviceName, initialPin,
+                    transitions, cancellationToken);
+            }
+            catch (Exception exception) when (!(exception is OperationCanceledException))
+            {
+                AddTransition(transitions, "CoordinateTransaction",
+                    "Không thể đọc đủ X/Y gốc trước khi chỉnh sửa; không gửi dữ liệu tọa độ.");
+                return null;
+            }
 
             GameDetectionEvidence coordinatePin = initialPin;
             string lastValidationMessage = null;
+            try
+            {
+                IList<CoordinateCandidate> candidates = CreateCoordinateCandidates(transaction);
+                foreach (CoordinateCandidate candidate in candidates)
+                {
+                    cancellationToken.ThrowIfCancellationRequested();
+                    AddTransition(transitions, "CoordinateCandidateRead",
+                        $"Candidate {candidate.Attempt}/{candidates.Count}: X={candidate.TargetX}; Y={candidate.TargetY}; "
+                        + $"Delta=({candidate.DeltaX},{candidate.DeltaY}).");
+
+                    current = await ApplyCoordinateCandidateAsync(deviceName, coordinatePin,
+                        transaction, candidate, transitions, cancellationToken);
+                    GameDetectionEvidence movePin = FindFreshEvidence(current,
+                        TemplateId.ContinentMapPinButton);
+                    if (movePin == null)
+                        return await FailCoordinateTransactionAsync(deviceName, initial, current,
+                            priorAttempts + (candidate.Attempt * 2), watch, transaction,
+                            coordinatePin, "Không thể làm mới nút tọa độ sau khi chỉnh X/Y; "
+                            + "đang khôi phục tọa độ ban đầu.", transitions);
+
+                    TerritoryValidation validation = await ValidateCoordinateDestinationAsync(
+                        deviceName, homeTerritory, candidate.Attempt, candidate.TargetX,
+                        candidate.TargetY, transitions, progress, cancellationToken);
+                    current = validation.Latest ?? current;
+                    if (!validation.Allowed)
+                    {
+                        lastValidationMessage = validation.Message;
+                        AddTransition(transitions, "CoordinateCandidateRejected",
+                            $"Candidate {candidate.Attempt} bị từ chối; khôi phục X={transaction.OriginalX}; Y={transaction.OriginalY}.");
+                        CoordinateRollbackResult rollback = await RollbackCoordinatesAsync(
+                            deviceName, transaction, movePin, transitions, cancellationToken);
+                        if (rollback.Status != CoordinateRollbackStatus.RestoredAndVerified)
+                            return UnsafeRollbackResult(initial, current, priorAttempts, watch,
+                                rollback, transitions);
+                        current = rollback.Latest ?? current;
+                        coordinatePin = FindFreshEvidence(current,
+                            TemplateId.ContinentMapPinButton);
+                        if (coordinatePin == null)
+                            return UnsafeRollbackResult(initial, current, priorAttempts, watch,
+                                CoordinateRollbackResult.VerificationUnavailable(current), transitions);
+                        continue;
+                    }
+
+                    AddTransition(transitions, "CoordinateCandidateAccepted",
+                        $"Candidate {candidate.Attempt} cùng màu; chỉ commit sau khi WorldMap được xác nhận.");
+                    await TapEvidenceAsync(deviceName, validation.Destination,
+                        "ContinentMapPinButtonAfterCoordinateChange", transitions, cancellationToken);
+                    GameDetectionResult final = await PollAsync(deviceName, GameState.WorldMap,
+                        transitions, cancellationToken);
+                    if (final.IsSuccessful && final.State == GameState.WorldMap)
+                    {
+                        transaction.Commit();
+                        return Result(true, initial, final, priorAttempts + (candidate.Attempt * 2) + 2,
+                            watch, "WorldMap verified after selecting an X/Y candidate with a territory tone matching the home pin.", null, transitions);
+                    }
+
+                    return await FailCoordinateTransactionAsync(deviceName, initial, final,
+                        priorAttempts + (candidate.Attempt * 2) + 2, watch, transaction,
+                        null, "Đã gửi di chuyển nhưng không xác nhận được WorldMap; đang khôi phục tọa độ ban đầu.", transitions);
+                }
+
+                return Result(false, initial, current, priorAttempts + (options.CoordinateTerritoryAttempts * 4), watch,
+                    $"Không tìm thấy tọa độ cùng màu sau {options.CoordinateTerritoryAttempts} lần thử; đã khôi phục tọa độ ban đầu và không gửi lệnh di chuyển. {lastValidationMessage}", null, transitions);
+            }
+            catch (OperationCanceledException)
+            {
+                await RollbackWithCleanupTokenAsync(deviceName, transaction, coordinatePin, transitions);
+                throw;
+            }
+            catch (Exception exception)
+            {
+                CoordinateRollbackResult rollback = await RollbackWithCleanupTokenAsync(
+                    deviceName, transaction, coordinatePin, transitions);
+                return rollback.Status == CoordinateRollbackStatus.RestoredAndVerified
+                    ? Result(false, initial, current, priorAttempts, watch,
+                        "Đã xảy ra lỗi khi thử tọa độ; tọa độ ban đầu đã được khôi phục.", exception.Message, transitions)
+                    : UnsafeRollbackResult(initial, current, priorAttempts, watch, rollback, transitions);
+            }
+        }
+
+        // Invariant: until Commit is called after a verified WorldMap transition,
+        // OriginalX/OriginalY remain authoritative and every exit restores them.
+        private async Task<CoordinateEditTransaction> ReadCoordinateTransactionAsync(
+            string deviceName, GameDetectionEvidence pin,
+            IList<NavigationTransition> transitions, CancellationToken cancellationToken)
+        {
+            int originalX = await ReadCoordinateValueAsync(deviceName,
+                pin.MatchResult.CenterX + CoordinateXOffsetFromPinCenterPx,
+                pin.MatchResult.CenterY, "X", transitions, cancellationToken);
+            int originalY = await ReadCoordinateValueAsync(deviceName,
+                pin.MatchResult.CenterX + CoordinateYOffsetFromPinCenterPx,
+                pin.MatchResult.CenterY, "Y", transitions, cancellationToken);
+            AddTransition(transitions, "CoordinateTransaction",
+                $"Đã đọc X/Y gốc trước khi chỉnh sửa: X={originalX}; Y={originalY}.");
+            return new CoordinateEditTransaction(originalX, originalY);
+        }
+
+        private async Task<int> ReadCoordinateValueAsync(string deviceName, int x, int y,
+            string axis, IList<NavigationTransition> transitions, CancellationToken cancellationToken)
+        {
+            if (x < 0 || x >= ExpectedScreenshotWidth || y < 0 || y >= ExpectedScreenshotHeight)
+                throw new InvalidOperationException($"Derived ContinentMap coordinate {axis} field is outside the supported viewport.");
+            await ldPlayerClient.TapAsync(deviceName, x, y, cancellationToken);
+            int value = await focusedInputValueReader.ReadFocusedIntegerAsync(deviceName, cancellationToken);
+            if (value < options.MinimumWorldCoordinate || value > options.MaximumWorldCoordinate)
+                throw new InvalidOperationException($"Coordinate {axis} value is outside configured world bounds.");
+            return value;
+        }
+
+        private IList<CoordinateCandidate> CreateCoordinateCandidates(CoordinateEditTransaction transaction)
+        {
+            var candidates = new List<CoordinateCandidate>();
+            int[] directionsX = { 1, -1, -1, 1 };
+            int[] directionsY = { 1, 1, -1, -1 };
+            int range = options.MaximumCoordinateOffset - options.MinimumCoordinateOffset;
             for (int attempt = 1; attempt <= options.CoordinateTerritoryAttempts; attempt++)
             {
-                cancellationToken.ThrowIfCancellationRequested();
-                AddTransition(transitions, "CoordinateCandidateRead",
-                    $"Trying fallback X/Y candidate {attempt}/"
-                    + $"{options.CoordinateTerritoryAttempts}.");
-
-                CoordinateEdit xEdit;
-                try
-                {
-                    xEdit = await AddCoordinateOffsetAsync(
-                        deviceName,
-                        coordinatePin.MatchResult.CenterX
-                            + CoordinateXOffsetFromPinCenterPx,
-                        coordinatePin.MatchResult.CenterY,
-                        "X",
-                        attempt,
-                        transitions,
-                        cancellationToken);
-                }
-                catch (InvalidOperationException exception)
-                {
-                    AddTransition(transitions, "CoordinateCandidateRead",
-                        "Coordinate fields could not be read before any value was changed; "
-                        + $"the X/Y strategy is unavailable. {exception.Message}");
-                    return null;
-                }
-
-                current = await DetectContinentMapAfterCoordinateEditAsync(
-                    deviceName, "X", transitions, cancellationToken);
-                GameDetectionEvidence pinAfterX = FindFreshEvidence(
-                    current, TemplateId.ContinentMapPinButton);
-                if (pinAfterX == null)
-                    return Result(false, initial, current,
-                        priorAttempts + (attempt * 2), watch,
-                        "Coordinate X was changed, but ContinentMap pin bounds could not "
-                        + "be refreshed before editing Y.", current?.ErrorMessage, transitions);
-
-                CoordinateEdit yEdit = await AddCoordinateOffsetAsync(
-                    deviceName,
-                    pinAfterX.MatchResult.CenterX
-                        + CoordinateYOffsetFromPinCenterPx,
-                    pinAfterX.MatchResult.CenterY,
-                    "Y",
-                    attempt,
-                    transitions,
-                    cancellationToken);
-
-                current = await DetectContinentMapAfterCoordinateEditAsync(
-                    deviceName, "Y", transitions, cancellationToken, true);
-                GameDetectionEvidence movePin = FindFreshEvidence(
-                    current, TemplateId.ContinentMapPinButton);
-                if (movePin == null)
-                    return Result(false, initial, current,
-                        priorAttempts + (attempt * 2) + 1, watch,
-                        "Coordinate Y was changed, but the move-to-coordinate pin had no "
-                        + "valid fresh bounds; no move Tap was sent.",
-                        current?.ErrorMessage, transitions);
-
-                TerritoryValidation coordinateValidation =
-                    await ValidateCoordinateDestinationAsync(
-                        deviceName, homeTerritory, attempt,
-                        xEdit.TargetValue, yEdit.TargetValue,
-                        transitions, progress, cancellationToken);
-                current = coordinateValidation.Latest ?? current;
-                if (coordinateValidation.Allowed)
-                {
-                    AddTransition(transitions, "CoordinateCandidateAccepted",
-                        $"Candidate {attempt} matched the home territory tone; rematched move bounds will be used.");
-                    await TapEvidenceAsync(deviceName,
-                        coordinateValidation.Destination,
-                        "ContinentMapPinButtonAfterCoordinateChange", transitions,
-                        cancellationToken);
-                    GameDetectionResult final = await PollAsync(
-                        deviceName, GameState.WorldMap, transitions,
-                        cancellationToken);
-                    return final.IsSuccessful && final.State == GameState.WorldMap
-                        ? Result(true, initial, final,
-                            priorAttempts + (attempt * 2) + 2, watch,
-                            "WorldMap verified after selecting an X/Y candidate with "
-                            + "a territory tone matching the home pin.", null, transitions)
-                        : Result(false, initial, final,
-                            priorAttempts + (attempt * 2) + 2, watch,
-                            "Coordinate fallback was submitted, but WorldMap was not "
-                            + "verified before timeout.", final.ErrorMessage, transitions);
-                }
-
-                lastValidationMessage = coordinateValidation.Message;
-                AddTransition(transitions, "CoordinateCandidateRejected",
-                    $"Candidate {attempt} was rejected. Restoring X={xEdit.OriginalValue} "
-                    + $"and Y={yEdit.OriginalValue} before retry.");
-                current = await RestoreCoordinatesAsync(
-                    deviceName, movePin, xEdit, yEdit, transitions,
-                    cancellationToken);
-                coordinatePin = FindFreshEvidence(
-                    current, TemplateId.ContinentMapPinButton);
-                if (coordinatePin == null)
-                    return Result(false, initial, current,
-                        priorAttempts + (attempt * 4), watch,
-                        "The rejected X/Y candidate was rolled back, but fresh coordinate "
-                        + "controls could not be verified; no move Tap was sent.",
-                        current?.ErrorMessage, transitions);
+                int magnitude = options.MinimumCoordinateOffset
+                    + ((attempt - 1) * Math.Max(1, range) / Math.Max(1, options.CoordinateTerritoryAttempts - 1));
+                int direction = (attempt - 1) % directionsX.Length;
+                int targetX = transaction.OriginalX + (directionsX[direction] * magnitude);
+                int targetY = transaction.OriginalY + (directionsY[direction] * magnitude);
+                if (targetX < options.MinimumWorldCoordinate || targetX > options.MaximumWorldCoordinate
+                    || targetY < options.MinimumWorldCoordinate || targetY > options.MaximumWorldCoordinate)
+                    continue;
+                if (targetX == transaction.OriginalX && targetY == transaction.OriginalY
+                    || candidates.Any(c => c.TargetX == targetX && c.TargetY == targetY))
+                    continue;
+                candidates.Add(new CoordinateCandidate(candidates.Count + 1, targetX, targetY,
+                    targetX - transaction.OriginalX, targetY - transaction.OriginalY));
             }
+            return candidates;
+        }
 
-            return Result(false, initial, current,
-                priorAttempts + (options.CoordinateTerritoryAttempts * 4), watch,
-                $"No matching territory tone was found after "
-                + $"{options.CoordinateTerritoryAttempts} bounded X/Y candidates. Original "
-                + $"coordinates were restored; no move Tap was sent. "
-                + $"{lastValidationMessage}", null, transitions);
+        private async Task<GameDetectionResult> ApplyCoordinateCandidateAsync(string deviceName,
+            GameDetectionEvidence pin, CoordinateEditTransaction transaction,
+            CoordinateCandidate candidate, IList<NavigationTransition> transitions,
+            CancellationToken cancellationToken)
+        {
+            await SetCoordinateValueVerifiedAsync(deviceName,
+                pin.MatchResult.CenterX + CoordinateXOffsetFromPinCenterPx,
+                pin.MatchResult.CenterY, "X", transaction.CurrentX, candidate.TargetX,
+                transitions, cancellationToken);
+            transaction.SetX(candidate.TargetX);
+            GameDetectionResult current = await DetectContinentMapAfterCoordinateEditAsync(
+                deviceName, "X", transitions, cancellationToken);
+            GameDetectionEvidence pinAfterX = FindFreshEvidence(current, TemplateId.ContinentMapPinButton);
+            if (pinAfterX == null)
+                return current;
+            await SetCoordinateValueVerifiedAsync(deviceName,
+                pinAfterX.MatchResult.CenterX + CoordinateYOffsetFromPinCenterPx,
+                pinAfterX.MatchResult.CenterY, "Y", transaction.CurrentY, candidate.TargetY,
+                transitions, cancellationToken);
+            transaction.SetY(candidate.TargetY);
+            return await DetectContinentMapAfterCoordinateEditAsync(deviceName, "Y", transitions,
+                cancellationToken, true);
+        }
+
+        private async Task SetCoordinateValueVerifiedAsync(string deviceName, int x, int y,
+            string axis, int oldValue, int targetValue, IList<NavigationTransition> transitions,
+            CancellationToken cancellationToken)
+        {
+            if (x < 0 || x >= ExpectedScreenshotWidth || y < 0 || y >= ExpectedScreenshotHeight)
+                throw new InvalidOperationException($"Derived ContinentMap coordinate {axis} field is outside the supported viewport.");
+            for (int verificationAttempt = 1; verificationAttempt <= options.CoordinateInputVerificationAttempts; verificationAttempt++)
+            {
+                await ldPlayerClient.TapAsync(deviceName, x, y, cancellationToken);
+                await ReplaceFocusedCoordinateAsync(deviceName, oldValue, targetValue, cancellationToken);
+                int observed = await focusedInputValueReader.ReadFocusedIntegerAsync(deviceName, cancellationToken);
+                AddTransition(transitions, "CoordinateInputVerified",
+                    $"Axis={axis}; ExpectedValue={targetValue}; ObservedValue={observed}; VerificationAttempt={verificationAttempt}.");
+                if (observed == targetValue)
+                    return;
+            }
+            throw new InvalidOperationException($"Coordinate {axis} input could not be verified.");
+        }
+
+        private async Task<CoordinateRollbackResult> RollbackCoordinatesAsync(string deviceName,
+            CoordinateEditTransaction transaction, GameDetectionEvidence pin,
+            IList<NavigationTransition> transitions, CancellationToken cancellationToken)
+        {
+            if (!transaction.IsDirty || transaction.IsCommitted)
+                return CoordinateRollbackResult.NotRequired();
+            if (!HasValidBounds(pin))
+                return CoordinateRollbackResult.VerificationUnavailable(null);
+            var watch = Stopwatch.StartNew();
+            try
+            {
+                if (transaction.XChanged)
+                    await SetCoordinateValueVerifiedAsync(deviceName,
+                        pin.MatchResult.CenterX + CoordinateXOffsetFromPinCenterPx, pin.MatchResult.CenterY,
+                        "X", transaction.CurrentX, transaction.OriginalX, transitions, cancellationToken);
+                if (transaction.YChanged)
+                    await SetCoordinateValueVerifiedAsync(deviceName,
+                        pin.MatchResult.CenterX + CoordinateYOffsetFromPinCenterPx, pin.MatchResult.CenterY,
+                        "Y", transaction.CurrentY, transaction.OriginalY, transitions, cancellationToken);
+                transaction.Restored();
+                AddTransition(transitions, "CoordinateRollback",
+                    $"RollbackStatus=RestoredAndVerified; RollbackDurationMs={watch.ElapsedMilliseconds}.");
+                // The candidate observation already verified ContinentMap and fresh
+                // controls.  Re-reading both focused values above is the rollback
+                // verification; avoid another state transition that could consume a
+                // final move verification frame.
+                return CoordinateRollbackResult.Restored(null);
+            }
+            catch (Exception exception) when (!(exception is OperationCanceledException))
+            {
+                AddTransition(transitions, "CoordinateRollback", "RollbackStatus=RestorationFailed; " + exception.Message);
+                return CoordinateRollbackResult.Failed(null);
+            }
+        }
+
+        private async Task<CoordinateRollbackResult> RollbackWithCleanupTokenAsync(string deviceName,
+            CoordinateEditTransaction transaction, GameDetectionEvidence pin,
+            IList<NavigationTransition> transitions)
+        {
+            using (var cleanup = new CancellationTokenSource(TimeSpan.FromSeconds(options.CoordinateRollbackTimeoutSeconds)))
+                return await RollbackCoordinatesAsync(deviceName, transaction, pin, transitions, cleanup.Token);
+        }
+
+        private async Task<NavigationResult> FailCoordinateTransactionAsync(string deviceName,
+            GameDetectionResult initial, GameDetectionResult current, int attempts, Stopwatch watch,
+            CoordinateEditTransaction transaction, GameDetectionEvidence pin, string message,
+            IList<NavigationTransition> transitions)
+        {
+            CoordinateRollbackResult rollback = await RollbackWithCleanupTokenAsync(deviceName,
+                transaction, pin, transitions);
+            return rollback.Status == CoordinateRollbackStatus.RestoredAndVerified
+                ? Result(false, initial, rollback.Latest ?? current, attempts, watch, message, null, transitions)
+                : UnsafeRollbackResult(initial, rollback.Latest ?? current, attempts, watch, rollback, transitions);
+        }
+
+        private NavigationResult UnsafeRollbackResult(GameDetectionResult initial, GameDetectionResult current,
+            int attempts, Stopwatch watch, CoordinateRollbackResult rollback,
+            IList<NavigationTransition> transitions)
+        {
+            AddTransition(transitions, "CoordinateRollback",
+                $"RollbackStatus={rollback.Status}; ExitReason=Unsafe.");
+            return Result(false, initial, current, attempts, watch,
+                "Không thể xác nhận đã khôi phục tọa độ ban đầu. Thiết bị được dừng để tránh di chuyển sai vị trí.",
+                null, transitions);
         }
 
         private async Task<CoordinateEdit> AddCoordinateOffsetAsync(
@@ -903,9 +1065,8 @@ namespace ADB_Tool_Automation_Post_FB.Infrastructure.Navigation
                 + $"Source={source}.");
             if (homeTerritory != destination)
                 return TerritoryValidation.Blocked(latest,
-                    $"Coordinate fallback stopped because the green home territory group "
-                    + $"({homeTerritory}) differs from the X/Y destination group "
-                    + $"({destination}); no move Tap was sent.");
+                    $"Điểm mới khác màu lãnh thổ nhà ({homeTerritory}/{destination}); "
+                    + "đã dừng để tránh di chuyển sang lãnh thổ khác.");
 
             return TerritoryValidation.Permitted(latest, movePin,
                 $"The fallback X/Y destination belongs to the {homeTerritory} territory group.");
@@ -1483,6 +1644,53 @@ namespace ADB_Tool_Automation_Post_FB.Infrastructure.Navigation
             public GameDetectionEvidence Home { get; }
         }
 
+        private sealed class HomeLocationEvidence
+        {
+            public HomeLocationEvidence(GameDetectionResult latest,
+                GameDetectionEvidence pin, string source)
+            {
+                Latest = latest;
+                Pin = pin;
+                Source = source;
+            }
+
+            public GameDetectionResult Latest { get; }
+            public GameDetectionEvidence Pin { get; }
+            public string Source { get; }
+        }
+
+        private enum CoordinateSearchStatus
+        {
+            Succeeded,
+            NoMatchingCandidate,
+            Unavailable,
+            Unsafe,
+            Failed
+        }
+
+        private sealed class CoordinateSearchResult
+        {
+            private CoordinateSearchResult(CoordinateSearchStatus status,
+                NavigationResult navigation)
+            {
+                Status = status;
+                Navigation = navigation;
+            }
+
+            public CoordinateSearchStatus Status { get; }
+            public NavigationResult Navigation { get; }
+            public static CoordinateSearchResult Succeeded(NavigationResult result) =>
+                new CoordinateSearchResult(CoordinateSearchStatus.Succeeded, result);
+            public static CoordinateSearchResult NoMatchingCandidate(NavigationResult result) =>
+                new CoordinateSearchResult(CoordinateSearchStatus.NoMatchingCandidate, result);
+            public static CoordinateSearchResult Unavailable(NavigationResult result) =>
+                new CoordinateSearchResult(CoordinateSearchStatus.Unavailable, result);
+            public static CoordinateSearchResult Unsafe(NavigationResult result) =>
+                new CoordinateSearchResult(CoordinateSearchStatus.Unsafe, result);
+            public static CoordinateSearchResult Failed(NavigationResult result) =>
+                new CoordinateSearchResult(CoordinateSearchStatus.Failed, result);
+        }
+
         private sealed class YellowPinCandidate
         {
             public YellowPinCandidate(
@@ -1525,6 +1733,71 @@ namespace ADB_Tool_Automation_Post_FB.Infrastructure.Navigation
             public string Axis { get; }
             public int OriginalValue { get; }
             public int TargetValue { get; }
+        }
+
+        private sealed class CoordinateCandidate
+        {
+            public CoordinateCandidate(int attempt, int targetX, int targetY, int deltaX, int deltaY)
+            {
+                Attempt = attempt;
+                TargetX = targetX;
+                TargetY = targetY;
+                DeltaX = deltaX;
+                DeltaY = deltaY;
+            }
+
+            public int Attempt { get; }
+            public int TargetX { get; }
+            public int TargetY { get; }
+            public int DeltaX { get; }
+            public int DeltaY { get; }
+        }
+
+        private sealed class CoordinateEditTransaction
+        {
+            public CoordinateEditTransaction(int originalX, int originalY)
+            {
+                OriginalX = CurrentX = originalX;
+                OriginalY = CurrentY = originalY;
+            }
+
+            public int OriginalX { get; }
+            public int OriginalY { get; }
+            public int CurrentX { get; private set; }
+            public int CurrentY { get; private set; }
+            public bool XChanged { get; private set; }
+            public bool YChanged { get; private set; }
+            public bool IsDirty => XChanged || YChanged;
+            public bool IsCommitted { get; private set; }
+
+            public void SetX(int value) { CurrentX = value; XChanged = value != OriginalX; }
+            public void SetY(int value) { CurrentY = value; YChanged = value != OriginalY; }
+            public void Restored() { CurrentX = OriginalX; CurrentY = OriginalY; XChanged = YChanged = false; }
+            public void Commit() { IsCommitted = true; }
+        }
+
+        private enum CoordinateRollbackStatus
+        {
+            NotRequired,
+            RestoredAndVerified,
+            RestorationFailed,
+            VerificationUnavailable
+        }
+
+        private sealed class CoordinateRollbackResult
+        {
+            private CoordinateRollbackResult(CoordinateRollbackStatus status, GameDetectionResult latest)
+            {
+                Status = status;
+                Latest = latest;
+            }
+
+            public CoordinateRollbackStatus Status { get; }
+            public GameDetectionResult Latest { get; }
+            public static CoordinateRollbackResult NotRequired() => new CoordinateRollbackResult(CoordinateRollbackStatus.NotRequired, null);
+            public static CoordinateRollbackResult Restored(GameDetectionResult latest) => new CoordinateRollbackResult(CoordinateRollbackStatus.RestoredAndVerified, latest);
+            public static CoordinateRollbackResult Failed(GameDetectionResult latest) => new CoordinateRollbackResult(CoordinateRollbackStatus.RestorationFailed, latest);
+            public static CoordinateRollbackResult VerificationUnavailable(GameDetectionResult latest) => new CoordinateRollbackResult(CoordinateRollbackStatus.VerificationUnavailable, latest);
         }
 
         private sealed class TerritoryValidation

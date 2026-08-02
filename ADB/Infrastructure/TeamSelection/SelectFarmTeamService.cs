@@ -393,7 +393,12 @@ namespace ADB_Tool_Automation_Post_FB.Infrastructure.TeamSelection
                     }
                 }
 
-                bool wrongTeam = result.ActualSelectedTeam.HasValue
+                // A different pre-existing selected team is normal: the target must
+                // first be found and tapped.  A mismatch is meaningful only after
+                // at least one verified target-row Tap has been sent and fresh
+                // post-Tap observations still show a different team.
+                bool wrongTeam = result.TeamTapCount > 0
+                    && result.ActualSelectedTeam.HasValue
                     && (!result.ExpectedTeam.HasValue
                         || result.ActualSelectedTeam.Value != result.ExpectedTeam.Value);
                 SelectFarmTeamOutcome outcome = wrongTeam
@@ -414,7 +419,7 @@ namespace ADB_Tool_Automation_Post_FB.Infrastructure.TeamSelection
                 }
                 return await CompleteAsync(deviceName, result, outcome,
                     outcome == SelectFarmTeamOutcome.TeamSelectionMismatch
-                        ? "Đội đang được chọn không khớp đội dự kiến; đã dừng trước lệnh thu thập."
+                        ? "Không thể chuyển sang đội dự kiến sau các lần thử; đã dừng trước lệnh thu thập."
                     : outcome == SelectFarmTeamOutcome.SelectionTimeout
                         ? "Farm team selection timed out without a verified team."
                         : "No eligible team could be selected and verified.",
