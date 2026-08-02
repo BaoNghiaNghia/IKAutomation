@@ -27,7 +27,6 @@ namespace ADB_Tool_Automation_Post_FB.Infrastructure.Navigation
         private const int MaxTerritoryMarkerDistanceFromViewportCenterPx = 360;
         private const int MaxSearchTargetDistanceFromHomePinPx = 260;
         private const int NearbyPinObservationAttempts = 8;
-        private const int CoordinateTerritoryAttempts = 5;
         private const int DestinationPinSearchLeftPx = 220;
         private const int DestinationPinSearchTopPx = 80;
         private const int DestinationPinSearchRightMarginPx = 100;
@@ -53,9 +52,6 @@ namespace ADB_Tool_Automation_Post_FB.Infrastructure.Navigation
         // 1280x720 layout and avoids blind absolute taps.
         private const int CoordinateXOffsetFromPinCenterPx = -134;
         private const int CoordinateYOffsetFromPinCenterPx = -54;
-        private const int MaximumCoordinateOffset = 100;
-        private static readonly object CoordinateOffsetRandomLock = new object();
-        private static readonly Random CoordinateOffsetRandom = new Random();
         private readonly ILdPlayerClient ldPlayerClient;
         private readonly IFocusedInputValueReader focusedInputValueReader;
         private readonly IGameStateDetector detector;
@@ -352,6 +348,23 @@ namespace ADB_Tool_Automation_Post_FB.Infrastructure.Navigation
             PinObservation pinObservation = await ObserveNearbyPinPairAsync(
                 deviceName, current, transitions, cancellationToken);
             current = pinObservation.Latest;
+            NavigationResult coordinateFailure = null;
+            if (options.PreferSameTerritoryCoordinateSearch)
+            {
+                AddTransition(transitions, "Strategy",
+                    "Trying same-territory X/Y candidates before nearby-pin fallbacks.");
+                GameDetectionEvidence homePin = pinObservation.Home
+                    ?? FindFreshEvidence(current, TemplateId.ContinentMapHomeTerritoryAnchor);
+                NavigationResult coordinateResult = await TryCoordinateFallbackAsync(
+                    deviceName, initial, current, homePin,
+                    ensured.Attempts, watch, transitions, progress,
+                    cancellationToken);
+                if (coordinateResult?.Success == true) return coordinateResult;
+                coordinateFailure = coordinateResult;
+                AddTransition(transitions, "Strategy",
+                    "Primary X/Y search did not produce a verified move; continuing with bounded fallbacks.");
+            }
+
             PinPair nearbyPins = pinObservation.Pair;
             if (nearbyPins != null)
             {
@@ -361,11 +374,15 @@ namespace ADB_Tool_Automation_Post_FB.Infrastructure.Navigation
                         cancellationToken);
                 current = nearbyValidation.Latest ?? current;
                 if (!nearbyValidation.Allowed)
-                    return Result(false, initial, current,
-                        ensured.Attempts + 1, watch,
-                        nearbyValidation.Message, null, transitions);
+                {
+                    AddTransition(transitions, "Strategy",
+                        "Nearby-pin territory was different or uncertain; continuing without sending its move Tap.");
+                    nearbyPins = null;
+                }
 
-                await TapEvidenceAsync(deviceName,
+                if (nearbyPins != null)
+                {
+                    await TapEvidenceAsync(deviceName,
                     nearbyValidation.Destination,
                     "ContinentMapSearchTargetPin", transitions, cancellationToken);
                 await Task.Delay(options.StatePollIntervalMs, cancellationToken);
@@ -404,7 +421,7 @@ namespace ADB_Tool_Automation_Post_FB.Infrastructure.Navigation
                     cancellationToken);
                 GameDetectionResult nearbyFinal = await PollAsync(
                     deviceName, GameState.WorldMap, transitions, cancellationToken);
-                return nearbyFinal.IsSuccessful && nearbyFinal.State == GameState.WorldMap
+                    return nearbyFinal.IsSuccessful && nearbyFinal.State == GameState.WorldMap
                     ? Result(true, initial, nearbyFinal, ensured.Attempts + 3, watch,
                         "WorldMap verified after selecting the nearby yellow search pin "
                         + "and tapping the fresh move-to-coordinate pin.",
@@ -412,10 +429,13 @@ namespace ADB_Tool_Automation_Post_FB.Infrastructure.Navigation
                     : Result(false, initial, nearbyFinal, ensured.Attempts + 3, watch,
                         "Nearby target move was confirmed, but WorldMap was not verified before timeout.",
                         nearbyFinal.ErrorMessage, transitions);
+                }
             }
 
-            if (AnimatedPinPairWasCheckedButUnavailable(current))
+            if (!options.PreferSameTerritoryCoordinateSearch)
             {
+                AddTransition(transitions, "Strategy",
+                    "Nearby-pin strategy did not move; trying same-territory X/Y candidates.");
                 GameDetectionEvidence homePin = pinObservation.Home
                     ?? FindFreshEvidence(
                         current, TemplateId.ContinentMapHomeTerritoryAnchor);
@@ -423,9 +443,20 @@ namespace ADB_Tool_Automation_Post_FB.Infrastructure.Navigation
                     deviceName, initial, current, homePin,
                     ensured.Attempts, watch, transitions, progress,
                     cancellationToken);
-                if (coordinateFallback != null)
-                    return coordinateFallback;
+                if (coordinateFallback?.Success == true) return coordinateFallback;
+                coordinateFailure = coordinateFallback;
             }
+
+            if (!options.AllowLegacyTerritoryFallback)
+                return coordinateFailure ?? Result(false, initial, current,
+                    ensured.Attempts + 1, watch,
+                    "Same-territory coordinate search and validated nearby-pin search did not find a safe destination; legacy territory fallback is disabled.",
+                    null, transitions);
+
+            // A completed coordinate search has fresh, explicit color evidence.
+            // Do not override that safe rejection with an unvalidated legacy marker.
+            if (coordinateFailure != null)
+                return coordinateFailure;
 
             TerritoryObservation territoryObservation =
                 await ObserveTerritoryMarkerAsync(deviceName, current, transitions,
@@ -433,7 +464,7 @@ namespace ADB_Tool_Automation_Post_FB.Infrastructure.Navigation
             current = territoryObservation.Latest;
             GameDetectionEvidence territory = territoryObservation.Marker;
             if (territory == null)
-                return Result(false, initial, current, ensured.Attempts + 1, watch,
+                return coordinateFailure ?? Result(false, initial, current, ensured.Attempts + 1, watch,
                     "Neither a nearby yellow search pin nor an alliance territory marker "
                     + "had valid fresh bounds; no Tap was sent.", null, transitions);
 
@@ -482,9 +513,8 @@ namespace ADB_Tool_Automation_Post_FB.Infrastructure.Navigation
                     + "no coordinate input was sent.", null, transitions);
 
             TerritoryColorGroup homeTerritory =
-                await ClassifyPinTerritoryAsync(
-                    deviceName, homePin, "green home pin",
-                    transitions, cancellationToken);
+                await ResolveHomeTerritoryAsync(
+                    deviceName, homePin, transitions, cancellationToken);
             if (homeTerritory == TerritoryColorGroup.Unknown)
                 return Result(false, initial, current, priorAttempts + 1, watch,
                     "Coordinate fallback stopped because the green home-pin territory "
@@ -493,21 +523,33 @@ namespace ADB_Tool_Automation_Post_FB.Infrastructure.Navigation
 
             GameDetectionEvidence coordinatePin = initialPin;
             string lastValidationMessage = null;
-            for (int attempt = 1; attempt <= CoordinateTerritoryAttempts; attempt++)
+            for (int attempt = 1; attempt <= options.CoordinateTerritoryAttempts; attempt++)
             {
                 cancellationToken.ThrowIfCancellationRequested();
-                AddTransition(transitions, "CoordinateAttempt",
+                AddTransition(transitions, "CoordinateCandidateRead",
                     $"Trying fallback X/Y candidate {attempt}/"
-                    + $"{CoordinateTerritoryAttempts}.");
+                    + $"{options.CoordinateTerritoryAttempts}.");
 
-                CoordinateEdit xEdit = await AddCoordinateOffsetAsync(
-                    deviceName,
-                    coordinatePin.MatchResult.CenterX
-                        + CoordinateXOffsetFromPinCenterPx,
-                    coordinatePin.MatchResult.CenterY,
-                    "X",
-                    transitions,
-                    cancellationToken);
+                CoordinateEdit xEdit;
+                try
+                {
+                    xEdit = await AddCoordinateOffsetAsync(
+                        deviceName,
+                        coordinatePin.MatchResult.CenterX
+                            + CoordinateXOffsetFromPinCenterPx,
+                        coordinatePin.MatchResult.CenterY,
+                        "X",
+                        attempt,
+                        transitions,
+                        cancellationToken);
+                }
+                catch (InvalidOperationException exception)
+                {
+                    AddTransition(transitions, "CoordinateCandidateRead",
+                        "Coordinate fields could not be read before any value was changed; "
+                        + $"the X/Y strategy is unavailable. {exception.Message}");
+                    return null;
+                }
 
                 current = await DetectContinentMapAfterCoordinateEditAsync(
                     deviceName, "X", transitions, cancellationToken);
@@ -525,11 +567,12 @@ namespace ADB_Tool_Automation_Post_FB.Infrastructure.Navigation
                         + CoordinateYOffsetFromPinCenterPx,
                     pinAfterX.MatchResult.CenterY,
                     "Y",
+                    attempt,
                     transitions,
                     cancellationToken);
 
                 current = await DetectContinentMapAfterCoordinateEditAsync(
-                    deviceName, "Y", transitions, cancellationToken);
+                    deviceName, "Y", transitions, cancellationToken, true);
                 GameDetectionEvidence movePin = FindFreshEvidence(
                     current, TemplateId.ContinentMapPinButton);
                 if (movePin == null)
@@ -547,6 +590,8 @@ namespace ADB_Tool_Automation_Post_FB.Infrastructure.Navigation
                 current = coordinateValidation.Latest ?? current;
                 if (coordinateValidation.Allowed)
                 {
+                    AddTransition(transitions, "CoordinateCandidateAccepted",
+                        $"Candidate {attempt} matched the home territory tone; rematched move bounds will be used.");
                     await TapEvidenceAsync(deviceName,
                         coordinateValidation.Destination,
                         "ContinentMapPinButtonAfterCoordinateChange", transitions,
@@ -566,7 +611,7 @@ namespace ADB_Tool_Automation_Post_FB.Infrastructure.Navigation
                 }
 
                 lastValidationMessage = coordinateValidation.Message;
-                AddTransition(transitions, "TerritoryColor",
+                AddTransition(transitions, "CoordinateCandidateRejected",
                     $"Candidate {attempt} was rejected. Restoring X={xEdit.OriginalValue} "
                     + $"and Y={yEdit.OriginalValue} before retry.");
                 current = await RestoreCoordinatesAsync(
@@ -583,9 +628,9 @@ namespace ADB_Tool_Automation_Post_FB.Infrastructure.Navigation
             }
 
             return Result(false, initial, current,
-                priorAttempts + (CoordinateTerritoryAttempts * 4), watch,
+                priorAttempts + (options.CoordinateTerritoryAttempts * 4), watch,
                 $"No matching territory tone was found after "
-                + $"{CoordinateTerritoryAttempts} bounded X/Y candidates. Original "
+                + $"{options.CoordinateTerritoryAttempts} bounded X/Y candidates. Original "
                 + $"coordinates were restored; no move Tap was sent. "
                 + $"{lastValidationMessage}", null, transitions);
         }
@@ -595,6 +640,7 @@ namespace ADB_Tool_Automation_Post_FB.Infrastructure.Navigation
             int x,
             int y,
             string axis,
+            int attempt,
             IList<NavigationTransition> transitions,
             CancellationToken cancellationToken)
         {
@@ -608,11 +654,11 @@ namespace ADB_Tool_Automation_Post_FB.Infrastructure.Navigation
                 $"Tapped coordinate {axis} field derived from fresh coordinate-pin bounds ({x},{y}).");
             int currentValue = await focusedInputValueReader.ReadFocusedIntegerAsync(
                 deviceName, cancellationToken);
-            int offset = NextCoordinateOffset(currentValue);
+            int offset = NextCoordinateOffset(currentValue, attempt, axis);
             int targetValue = checked(currentValue + offset);
             await ReplaceFocusedCoordinateAsync(
                 deviceName, currentValue, targetValue, cancellationToken);
-            AddTransition(transitions, "Input",
+            AddTransition(transitions, "CoordinateCandidateInput",
                 $"Set coordinate {axis}: {currentValue} + {offset} = {targetValue}, "
                 + "then confirmed with Enter.");
             await Task.Delay(options.StatePollIntervalMs, cancellationToken);
@@ -652,7 +698,7 @@ namespace ADB_Tool_Automation_Post_FB.Infrastructure.Navigation
                 transitions,
                 cancellationToken);
             return await DetectContinentMapAfterCoordinateEditAsync(
-                deviceName, "Y rollback", transitions, cancellationToken);
+                deviceName, "Y rollback", transitions, cancellationToken, true);
         }
 
         private async Task SetCoordinateValueAsync(
@@ -673,7 +719,7 @@ namespace ADB_Tool_Automation_Post_FB.Infrastructure.Navigation
             await ReplaceFocusedCoordinateAsync(
                 deviceName, edit.TargetValue, edit.OriginalValue,
                 cancellationToken);
-            AddTransition(transitions, "Rollback",
+            AddTransition(transitions, "CoordinateCandidateRollback",
                 $"Restored coordinate {edit.Axis} from {edit.TargetValue} "
                 + $"to {edit.OriginalValue}.");
             await Task.Delay(options.StatePollIntervalMs, cancellationToken);
@@ -746,29 +792,54 @@ namespace ADB_Tool_Automation_Post_FB.Infrastructure.Navigation
                 $"Both pin-base backgrounds belong to the {home} territory group.");
         }
 
-        private async Task<TerritoryColorGroup> ClassifyPinTerritoryAsync(
+        private async Task<TerritoryColorGroup> ResolveHomeTerritoryAsync(
             string deviceName,
-            GameDetectionEvidence pin,
-            string label,
+            GameDetectionEvidence homePin,
             IList<NavigationTransition> transitions,
             CancellationToken cancellationToken)
         {
-            if (!HasValidBounds(pin))
+            for (int attempt = 1;
+                attempt <= options.HomeTerritoryClassificationAttempts;
+                attempt++)
             {
-                AddTransition(transitions, "TerritoryColor",
-                    $"Could not classify {label}: no valid pin bounds were available.");
-                return TerritoryColorGroup.Unknown;
+                cancellationToken.ThrowIfCancellationRequested();
+                byte[] screenshot = await ldPlayerClient.CaptureScreenshotPngAsync(
+                    deviceName, cancellationToken);
+                GameDetectionResult latest = detector.Detect(screenshot);
+                GameDetectionEvidence resolvedPin = FindFreshEvidence(
+                    latest, TemplateId.ContinentMapHomeLocationPin) ?? homePin;
+                if (!HasValidBounds(resolvedPin))
+                {
+                    if (!TryLocateHomeLocationPin(screenshot, out resolvedPin))
+                    {
+                        AddTransition(transitions, "HomeTerritoryClassification",
+                            $"Attempt {attempt}/{options.HomeTerritoryClassificationAttempts}: "
+                            + "could not locate one unique cyan home pin from fresh pixels.");
+                        if (attempt < options.HomeTerritoryClassificationAttempts)
+                            await Task.Delay(options.StatePollIntervalMs, cancellationToken);
+                        continue;
+                    }
+
+                    AddTransition(transitions, "Detect",
+                        "Located the cyan home pin from foreground pixels after the "
+                        + "background-sensitive template was unavailable.");
+                }
+
+                TerritoryColorGroup group;
+                bool classified = TryClassifyPinTerritory(
+                    screenshot, resolvedPin, out group);
+                AddTransition(transitions, "HomeTerritoryClassification",
+                    classified
+                        ? $"Attempt {attempt}: classified the background near the home-pin base as {group}."
+                        : $"Attempt {attempt}/{options.HomeTerritoryClassificationAttempts}: home territory remained low-confidence.");
+                if (classified) return group;
+                if (attempt < options.HomeTerritoryClassificationAttempts)
+                    await Task.Delay(options.StatePollIntervalMs, cancellationToken);
             }
 
-            byte[] screenshot = await ldPlayerClient.CaptureScreenshotPngAsync(
-                deviceName, cancellationToken);
-            TerritoryColorGroup group;
-            bool classified = TryClassifyPinTerritory(screenshot, pin, out group);
             AddTransition(transitions, "TerritoryColor",
-                classified
-                    ? $"Classified the background below the {label} as {group}."
-                    : $"Could not classify the background below the {label} confidently.");
-            return classified ? group : TerritoryColorGroup.Unknown;
+                "Could not classify the home territory confidently after the bounded fresh-frame attempts.");
+            return TerritoryColorGroup.Unknown;
         }
 
         private async Task<TerritoryValidation> ValidateCoordinateDestinationAsync(
@@ -801,7 +872,7 @@ namespace ADB_Tool_Automation_Post_FB.Infrastructure.Navigation
             if (!destinationLocated)
             {
                 AddTerritoryColorProgress(transitions, progress,
-                    $"Candidate={candidate}/{CoordinateTerritoryAttempts}; "
+                    $"Candidate={candidate}/{options.CoordinateTerritoryAttempts}; "
                     + $"X={destinationX}; Y={destinationY}; Home={homeTerritory}; "
                     + "Destination=Unknown; Result=Blocked; "
                     + $"Source={source}; Reason=PinNotLocatedConfidently.");
@@ -815,7 +886,7 @@ namespace ADB_Tool_Automation_Post_FB.Infrastructure.Navigation
                     screenshot, destinationPin, out destination))
             {
                 AddTerritoryColorProgress(transitions, progress,
-                    $"Candidate={candidate}/{CoordinateTerritoryAttempts}; "
+                    $"Candidate={candidate}/{options.CoordinateTerritoryAttempts}; "
                     + $"X={destinationX}; Y={destinationY}; Home={homeTerritory}; "
                     + $"Destination=Unknown; Result=Blocked; Source={source}; "
                     + "Reason=LowConfidence.");
@@ -825,7 +896,7 @@ namespace ADB_Tool_Automation_Post_FB.Infrastructure.Navigation
             }
 
             AddTerritoryColorProgress(transitions, progress,
-                $"Candidate={candidate}/{CoordinateTerritoryAttempts}; "
+                $"Candidate={candidate}/{options.CoordinateTerritoryAttempts}; "
                 + $"X={destinationX}; Y={destinationY}; Home={homeTerritory}; "
                 + $"Destination={destination}; "
                 + $"Result={(homeTerritory == destination ? "Match" : "Different")}; "
@@ -842,6 +913,29 @@ namespace ADB_Tool_Automation_Post_FB.Infrastructure.Navigation
 
         private static bool TryLocateYellowDestinationPin(
             byte[] screenshotPng,
+            out GameDetectionEvidence destinationPin)
+        {
+            return TryLocateColoredPin(screenshotPng,
+                IsYellowDestinationPinPixel,
+                TemplateId.ContinentMapSearchTargetPin,
+                "Yellow X/Y destination pin", out destinationPin);
+        }
+
+        private static bool TryLocateHomeLocationPin(
+            byte[] screenshotPng,
+            out GameDetectionEvidence homePin)
+        {
+            return TryLocateColoredPin(screenshotPng,
+                IsCyanHomePinPixel,
+                TemplateId.ContinentMapHomeLocationPin,
+                "Cyan home pin", out homePin);
+        }
+
+        private static bool TryLocateColoredPin(
+            byte[] screenshotPng,
+            Func<Color, bool> isPinPixel,
+            TemplateId templateId,
+            string label,
             out GameDetectionEvidence destinationPin)
         {
             destinationPin = null;
@@ -870,8 +964,7 @@ namespace ADB_Tool_Automation_Post_FB.Infrastructure.Navigation
                         {
                             int index = (y * bitmap.Width) + x;
                             if (visited[index]
-                                || !IsYellowDestinationPinPixel(
-                                    bitmap.GetPixel(x, y)))
+                                || !isPinPixel(bitmap.GetPixel(x, y)))
                                 continue;
 
                             var queue = new Queue<int>();
@@ -910,9 +1003,8 @@ namespace ADB_Tool_Automation_Post_FB.Infrastructure.Navigation
                                         int next = (nextY * bitmap.Width)
                                             + nextX;
                                         if (visited[next]
-                                            || !IsYellowDestinationPinPixel(
-                                                bitmap.GetPixel(
-                                                    nextX, nextY)))
+                                            || !isPinPixel(bitmap.GetPixel(
+                                                nextX, nextY)))
                                             continue;
                                         visited[next] = true;
                                         queue.Enqueue(next);
@@ -946,14 +1038,12 @@ namespace ADB_Tool_Automation_Post_FB.Infrastructure.Navigation
 
                     destinationPin = new GameDetectionEvidence
                     {
-                        TemplateId =
-                            TemplateId.ContinentMapSearchTargetPin,
+                        TemplateId = templateId,
                         TemplateExists = true,
                         Found = true,
                         MatchResult = ImageMatchResult.FoundAt(
                             best.X, best.Y, best.Width, best.Height),
-                        Message = "Yellow X/Y destination pin located "
-                            + "from foreground pixels."
+                        Message = label + " located from foreground pixels."
                     };
                     return true;
                 }
@@ -975,6 +1065,16 @@ namespace ADB_Tool_Automation_Post_FB.Infrastructure.Navigation
                 && pixel.B <= 195
                 && pixel.R - pixel.G >= 15
                 && pixel.G - pixel.B >= 15;
+        }
+
+        private static bool IsCyanHomePinPixel(Color pixel)
+        {
+            return pixel.G >= 165
+                && pixel.B >= 135
+                && pixel.R <= 175
+                && pixel.G - pixel.R >= 45
+                && pixel.B - pixel.R >= 30
+                && Math.Abs(pixel.G - pixel.B) <= 95;
         }
 
         private static void AddTerritoryColorProgress(
@@ -1155,34 +1255,57 @@ namespace ADB_Tool_Automation_Post_FB.Infrastructure.Navigation
             if (hue < 0) hue += 360;
         }
 
-        private static int NextCoordinateOffset(int currentValue)
+        private int NextCoordinateOffset(int currentValue, int attempt, string axis)
         {
-            lock (CoordinateOffsetRandomLock)
-            {
-                int magnitude = CoordinateOffsetRandom.Next(
-                    1, MaximumCoordinateOffset + 1);
-                bool canSubtract = currentValue > magnitude;
-                bool subtract = canSubtract && CoordinateOffsetRandom.Next(0, 2) == 0;
-                return subtract ? -magnitude : magnitude;
-            }
+            int range = options.MaximumCoordinateOffset
+                - options.MinimumCoordinateOffset + 1;
+            int axisSalt = string.Equals(axis, "Y", StringComparison.Ordinal) ? 17 : 0;
+            int magnitude = options.MinimumCoordinateOffset
+                + (((attempt - 1) * 37 + axisSalt) % range);
+            int quadrant = (attempt - 1) % 4;
+            bool subtract = string.Equals(axis, "X", StringComparison.Ordinal)
+                ? quadrant == 1 || quadrant == 2
+                : quadrant == 2 || quadrant == 3;
+            return subtract && currentValue > magnitude ? -magnitude : magnitude;
         }
 
         private async Task<GameDetectionResult> DetectContinentMapAfterCoordinateEditAsync(
             string deviceName,
             string axis,
             IList<NavigationTransition> transitions,
-            CancellationToken cancellationToken)
+            CancellationToken cancellationToken,
+            bool waitForCoordinatePin = false)
         {
-            GameDetectionResult result = await DetectAsync(
-                deviceName, transitions, cancellationToken);
-            if (result != null && result.IsSuccessful
-                && result.State == GameState.Unknown
-                && IsVerifiedContinentMapEvidence(result))
+            var settleWatch = Stopwatch.StartNew();
+            GameDetectionResult result;
+            do
             {
-                result.State = GameState.ContinentMap;
-                AddTransition(transitions, "Detect",
-                    $"Normalized Unknown to ContinentMap after coordinate {axis} edit.");
+                result = await DetectAsync(
+                    deviceName, transitions, cancellationToken);
+                if (result != null && result.IsSuccessful
+                    && result.State == GameState.Unknown
+                    && IsVerifiedContinentMapEvidence(result))
+                {
+                    result.State = GameState.ContinentMap;
+                    AddTransition(transitions, "Detect",
+                        $"Normalized Unknown to ContinentMap after coordinate {axis} edit.");
+                }
+
+                if (!waitForCoordinatePin
+                    || result == null
+                    || !result.IsSuccessful
+                    || result.State != GameState.ContinentMap
+                    || FindFreshEvidence(result, TemplateId.ContinentMapPinButton) != null)
+                    return result;
+
+                await Task.Delay(options.StatePollIntervalMs, cancellationToken);
             }
+            while (settleWatch.ElapsedMilliseconds
+                < options.CoordinateCandidateSettleTimeoutMs);
+
+            AddTransition(transitions, "CoordinateCandidateSettling",
+                $"Coordinate {axis} did not expose a fresh move pin within "
+                + $"{options.CoordinateCandidateSettleTimeoutMs} ms.");
             return result;
         }
 
