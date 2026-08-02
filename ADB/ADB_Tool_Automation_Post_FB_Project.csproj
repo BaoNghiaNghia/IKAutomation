@@ -157,6 +157,7 @@
     <Compile Include="Core\TeamSelection\IOpenTeamSelectionService.cs" />
     <Compile Include="Core\TeamSelection\IResourceAwareOpenTeamSelectionService.cs" />
     <Compile Include="Core\TeamSelection\ISelectFarmTeamDiagnosticStore.cs" />
+    <Compile Include="Core\TeamSelection\ISelectedTeamDetector.cs" />
     <Compile Include="Core\TeamSelection\ISelectFarmTeamService.cs" />
     <Compile Include="Core\TeamSelection\IWorldMapTeamAvailabilityService.cs" />
     <Compile Include="Core\TeamSelection\FarmTeamSelectionOptions.cs" />
@@ -165,6 +166,7 @@
     <Compile Include="Core\TeamSelection\OpenTeamSelectionResult.cs" />
     <Compile Include="Core\TeamSelection\SelectFarmTeamOutcome.cs" />
     <Compile Include="Core\TeamSelection\SelectFarmTeamResult.cs" />
+    <Compile Include="Core\TeamSelection\SelectedTeamDetectionResult.cs" />
     <Compile Include="Core\TeamSelection\TeamNumber.cs" />
     <Compile Include="Core\TeamSelection\TeamSelectionAttempt.cs" />
     <Compile Include="Core\TeamSelection\TeamSelectionRequest.cs" />
@@ -273,6 +275,7 @@
     <Compile Include="Infrastructure\TeamSelection\OpenTeamSelectionServiceFactory.cs" />
     <Compile Include="Infrastructure\TeamSelection\SelectFarmTeamDiagnosticStore.cs" />
     <Compile Include="Infrastructure\TeamSelection\SelectFarmTeamService.cs" />
+    <Compile Include="Infrastructure\TeamSelection\SelectedTeamDetector.cs" />
     <Compile Include="Infrastructure\TeamSelection\SelectFarmTeamServiceFactory.cs" />
     <Compile Include="Infrastructure\TeamSelection\WorldMapTeamAvailabilityService.cs" />
     <Compile Include="Infrastructure\TeamSelection\TeamRosterLayouts.cs" />
