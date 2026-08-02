@@ -112,12 +112,22 @@ namespace ADB_Tool_Automation_Post_FB.Infrastructure.TeamSelection
             SelectedTeamFrameResult[] strong = frames.Where(item => item.IsConfident).ToArray();
             var groups = strong.GroupBy(item => item.Team).ToArray();
             if (groups.Length != 1 || groups[0].Count() < context.RequiredMatchingFrames)
+            {
+                SelectedTeamFrameResult best = frames.OrderByDescending(item => item.WinningScore)
+                    .FirstOrDefault();
                 return new SelectedTeamConsensusResult
                 {
                     FramesObserved = frames.Count,
                     MatchingFrames = groups.Length == 1 ? groups[0].Count() : 0,
-                    FailureReason = groups.Length > 1 ? "ConflictingFrames" : "InsufficientConsensus"
+                    FailureReason = groups.Length > 1 ? "ConflictingFrames" : "InsufficientConsensus",
+                    WinningScore = best?.WinningScore ?? 0d,
+                    RunnerUpScore = best?.RunnerUpScore ?? 0d,
+                    WinningMargin = best?.WinningMargin ?? 0d,
+                    Rows = best?.Rows,
+                    RowScores = best?.RowScores,
+                    RowDetails = best?.RowDetails
                 };
+            }
             SelectedTeamFrameResult winner = groups[0].First();
             return new SelectedTeamConsensusResult
             {
@@ -198,7 +208,11 @@ namespace ADB_Tool_Automation_Post_FB.Infrastructure.TeamSelection
                     out border, out inside)) continue;
                 double bright = BrightRatio(bitmap, border);
                 double continuity = Continuity(bitmap, border, edge == Edge.Top || edge == Edge.Bottom);
-                double contrast = Clamp((Mean(bitmap, border) - Mean(bitmap, inside)) / .35d);
+                // The selected outline is only one or two pixels wide.  Averaging an
+                // entire strip dilutes it into the dark row background; compare the
+                // brightest outline pixel with the interior instead.
+                double contrast = Clamp((PeakLuminance(bitmap, border)
+                    - Mean(bitmap, inside)) / .35d);
                 double score = Clamp(.45d * contrast + .30d * bright + .25d * continuity);
                 if (score > best.Score)
                     best = new EdgeSample { Score = score, Contrast = contrast,
@@ -352,12 +366,22 @@ namespace ADB_Tool_Automation_Post_FB.Infrastructure.TeamSelection
             for (int index = 0; index < samples; index++)
             {
                 double value = horizontal
-                    ? Mean(bitmap, new ImageRegion(region.X + index, region.Y, 1, region.Height))
-                    : Mean(bitmap, new ImageRegion(region.X, region.Y + index, region.Width, 1));
+                    ? PeakLuminance(bitmap, new ImageRegion(region.X + index, region.Y, 1,
+                        region.Height))
+                    : PeakLuminance(bitmap, new ImageRegion(region.X, region.Y + index,
+                        region.Width, 1));
                 if (value >= .75d) { run++; longest = Math.Max(longest, run); }
                 else run = 0;
             }
             return samples == 0 ? 0d : longest / (double)samples;
+        }
+        private static double PeakLuminance(Bitmap bitmap, ImageRegion region)
+        {
+            double peak = 0d;
+            for (int y = region.Y; y < region.Y + region.Height; y++)
+                for (int x = region.X; x < region.X + region.Width; x++)
+                    peak = Math.Max(peak, Luminance(bitmap.GetPixel(x, y)));
+            return peak;
         }
         private static double Luminance(Color color) =>
             (.2126d * color.R + .7152d * color.G + .0722d * color.B) / 255d;
