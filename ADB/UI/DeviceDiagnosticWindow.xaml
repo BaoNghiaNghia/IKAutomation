@@ -444,7 +444,8 @@
                                                     <TextBlock Text="{Binding TerritoryColor}" Margin="0,5,0,0"
                                                                Foreground="#FF047857" FontWeight="SemiBold"
                                                                TextWrapping="Wrap"/>
-                                                    <ItemsControl ItemsSource="{Binding Teams}" Margin="0,7,0,0">
+                                                    <ItemsControl ItemsSource="{Binding Teams}" Margin="0,7,0,0"
+                                                                  ToolTip="{Binding TeamsSummary}">
                                                         <ItemsControl.ItemsPanel>
                                                             <ItemsPanelTemplate>
                                                                 <WrapPanel/>

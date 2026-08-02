@@ -116,36 +116,41 @@ namespace ADB_Tool_Automation_Post_FB.Infrastructure.TeamSelection
                         "Selected border appeared in multiple team ROIs; no Tap was sent.",
                         "Ambiguous selected-team evidence.", lastFrame, watch, cancellationToken);
 
-                TeamNumber? expectedTeam = request.ExpectedTeam ?? request.Priority.Where(team =>
-                        request.AllowedTeams.Contains(team)
-                        && (request.AllowTeam1 || team != TeamNumber.Team1))
-                    .Select(team => (TeamNumber?)team).FirstOrDefault();
-                result.ExpectedTeam = expectedTeam;
-                if (expectedTeam.HasValue && selected.Teams.Contains(expectedTeam.Value)
+                TeamSelectionTargetResolution target = ResolveTarget(request);
+                result.ExpectedTeam = target.TargetTeam;
+                logger.Info($"[Farm Team Selection Target] DeviceName='{deviceName}', RunId='{request.RunId ?? string.Empty}', ExpectedTeam='{request.ExpectedTeam}', ResolvedTargetTeam='{target.TargetTeam}', TargetSource='{target.Source}', PreTapSelectedTeam='{(selected.Teams.Count == 1 ? selected.Teams[0].ToString() : string.Empty)}', PreTapSelectedConfident={!selected.IsAmbiguous && selected.Teams.Count == 1}, AllowedTeams='{Join(request.AllowedTeams)}', WorldMapReadyTeams='{Join(request.WorldMapReadyTeams ?? new TeamNumber[0])}', WorldMapAvailableTeams='{Join(request.WorldMapAvailableTeams ?? new TeamNumber[0])}', RosterStatus='{request.WorldMapRosterStatus ?? string.Empty}', RosterConfidence='{request.WorldMapRosterConfidence ?? string.Empty}', AlreadySelectedAccepted=false, FailureReason='{target.FailureReason ?? string.Empty}'");
+                if (!target.Success)
+                    return await CompleteAsync(deviceName, result, target.Outcome,
+                        target.Message, target.FailureReason, lastFrame, watch, cancellationToken);
+
+                if (target.TargetTeam.HasValue && selected.Teams.Contains(target.TargetTeam.Value)
                     && HasEnabledAction(freshState))
                 {
-                    result.SelectedTeam = expectedTeam;
-                    result.ActualSelectedTeam = expectedTeam;
+                    result.SelectedTeam = target.TargetTeam;
+                    result.ActualSelectedTeam = target.TargetTeam;
                     result.SelectedStateVerified = true;
                     attempts.Add(new TeamSelectionAttempt
                     {
-                        TeamNumber = expectedTeam.Value,
+                        TeamNumber = target.TargetTeam.Value,
                         AlreadySelected = true,
                         SelectedVerified = true,
-                        SelectedBorderMatch = selected.Matches[expectedTeam.Value],
-                        Message = "Allowed team was already selected; no Tap was sent."
+                        SelectedBorderMatch = selected.Matches[target.TargetTeam.Value],
+                        Message = "Đội dự kiến đã được chọn sẵn; không gửi lệnh chọn."
                     });
                     return Complete(result, SelectFarmTeamOutcome.AlreadySelected,
-                        $"{expectedTeam.Value} was already selected.", null, watch);
+                        $"Đội {((int)target.TargetTeam.Value)} đã được chọn sẵn.", null, watch);
                 }
                 result.ActualSelectedTeam = selected.Teams.Count == 1
                     ? (TeamNumber?)selected.Teams[0] : null;
+                if (result.ActualSelectedTeam.HasValue
+                    && result.ActualSelectedTeam != target.TargetTeam)
+                    logger.Info($"[Farm Team Selection Target] DeviceName='{deviceName}', PreTapSelectedTeam='{result.ActualSelectedTeam}', ResolvedTargetTeam='{target.TargetTeam}', AlreadySelectedAccepted=false, NextAction='TapTarget'.");
 
                 DateTimeOffset selectionDeadline = DateTimeOffset.UtcNow.AddSeconds(
                     options.SelectionTimeoutSeconds);
                 bool continueAfterConfirmedUnavailable = false;
-                IEnumerable<TeamNumber> candidateTeams = expectedTeam.HasValue
-                    ? new[] { expectedTeam.Value } : request.Priority;
+                bool postTapDifferentExpectedTeamObserved = false;
+                IEnumerable<TeamNumber> candidateTeams = BuildCandidatePlan(request, target);
                 foreach (TeamNumber team in candidateTeams)
                 {
                     cancellationToken.ThrowIfCancellationRequested();
@@ -328,14 +333,13 @@ namespace ADB_Tool_Automation_Post_FB.Infrastructure.TeamSelection
 
                         // Both confirmations must come from fresh frames. The selection
                         // timeout remains the hard bound even on slower LDPlayer captures.
-                        DateTimeOffset observationDeadline = selectionDeadline;
-                        bool firstPostTapObservation = true;
                         int consistentSelectionFrames = 0;
-                        while (firstPostTapObservation
-                            || (DateTimeOffset.UtcNow < observationDeadline
-                                && consistentSelectionFrames < 2))
+                        // Keep post-Tap confirmation bounded by frames, not by the
+                        // entire selection timeout.  Otherwise a missing border can
+                        // consume the deadline and prevent the configured retry.
+                        for (int postTapObservation = 1;
+                            postTapObservation <= 2; postTapObservation++)
                         {
-                            firstPostTapObservation = false;
                             await Task.Delay(options.PollIntervalMs, cancellationToken);
                             lastFrame = await client.CaptureScreenshotPngAsync(deviceName, cancellationToken);
                             GameDetectionResult observedState = detector.Detect(lastFrame);
@@ -378,6 +382,10 @@ namespace ADB_Tool_Automation_Post_FB.Infrastructure.TeamSelection
                                 return Complete(result, SelectFarmTeamOutcome.TeamSelected,
                                     $"{team} was selected and verified.", null, watch);
                             }
+                            if (request.ExpectedTeam.HasValue
+                                && observed.Teams.Count == 1
+                                && observed.Teams[0] != request.ExpectedTeam.Value)
+                                postTapDifferentExpectedTeamObserved = true;
                             consistentSelectionFrames = 0;
                         }
 
@@ -397,10 +405,9 @@ namespace ADB_Tool_Automation_Post_FB.Infrastructure.TeamSelection
                 // first be found and tapped.  A mismatch is meaningful only after
                 // at least one verified target-row Tap has been sent and fresh
                 // post-Tap observations still show a different team.
-                bool wrongTeam = result.TeamTapCount > 0
-                    && result.ActualSelectedTeam.HasValue
-                    && (!result.ExpectedTeam.HasValue
-                        || result.ActualSelectedTeam.Value != result.ExpectedTeam.Value);
+                bool wrongTeam = request.ExpectedTeam.HasValue
+                    && result.TeamTapCount > 0
+                    && postTapDifferentExpectedTeamObserved;
                 SelectFarmTeamOutcome outcome = wrongTeam
                     ? SelectFarmTeamOutcome.TeamSelectionMismatch
                     : DateTimeOffset.UtcNow >= selectionDeadline
@@ -553,13 +560,106 @@ namespace ADB_Tool_Automation_Post_FB.Infrastructure.TeamSelection
             state != null && state.Evidence != null
             && state.Evidence.Any(item => item.TemplateId == id && item.Found);
 
-        private static TeamNumber? FirstByPriority(IReadOnlyList<TeamNumber> selected,
-            IReadOnlyList<TeamNumber> priority, IReadOnlyList<TeamNumber> allowed, bool allowTeam1)
+        private static TeamSelectionTargetResolution ResolveTarget(TeamSelectionRequest request)
         {
-            foreach (TeamNumber team in priority)
-                if (selected.Contains(team) && allowed.Contains(team)
-                    && (allowTeam1 || team != TeamNumber.Team1)) return team;
-            return null;
+            if (request.ExpectedTeam.HasValue)
+            {
+                TeamNumber expected = request.ExpectedTeam.Value;
+                if (!IsAllowedCandidate(request, expected))
+                    return TeamSelectionTargetResolution.Failure(
+                        SelectFarmTeamOutcome.ExpectedTeamNotAllowed,
+                        "Đội dự kiến không nằm trong danh sách được phép.",
+                        "ExpectedTeamNotAllowed");
+                if (IsTrustedRoster(request)
+                    && request.WorldMapAvailableTeams != null
+                    && !request.WorldMapAvailableTeams.Contains(expected))
+                    return TeamSelectionTargetResolution.Failure(
+                        SelectFarmTeamOutcome.ExpectedTeamUnavailable,
+                        "Chưa thể xác nhận đội dự kiến khả dụng.",
+                        "ExpectedTeamUnavailable");
+                return TeamSelectionTargetResolution.ForTarget(expected,
+                    TeamSelectionTargetSource.ExpectedTeam);
+            }
+
+            foreach (TeamNumber team in request.WorldMapReadyTeams ?? new TeamNumber[0])
+                if (IsAllowedCandidate(request, team))
+                    return TeamSelectionTargetResolution.ForTarget(team,
+                        TeamSelectionTargetSource.WorldMapReadyTeams);
+            foreach (TeamNumber team in request.WorldMapAvailableTeams ?? new TeamNumber[0])
+                if (IsAllowedCandidate(request, team))
+                    return TeamSelectionTargetResolution.ForTarget(team,
+                        TeamSelectionTargetSource.WorldMapAvailableTeams);
+            foreach (TeamNumber team in request.Priority ?? new TeamNumber[0])
+                if (IsAllowedCandidate(request, team))
+                    return TeamSelectionTargetResolution.ForTarget(team,
+                        TeamSelectionTargetSource.PriorityFallback);
+            return TeamSelectionTargetResolution.Failure(SelectFarmTeamOutcome.NoEligibleTeam,
+                "Không có đội phù hợp để chọn.", "NoEligibleTeam");
+        }
+
+        private static IReadOnlyList<TeamNumber> BuildCandidatePlan(
+            TeamSelectionRequest request, TeamSelectionTargetResolution target)
+        {
+            if (!target.Success || !target.TargetTeam.HasValue)
+                return new TeamNumber[0];
+            if (request.ExpectedTeam.HasValue)
+                return new[] { target.TargetTeam.Value };
+
+            var plan = new List<TeamNumber> { target.TargetTeam.Value };
+            foreach (IReadOnlyList<TeamNumber> source in new[]
+            {
+                request.WorldMapReadyTeams, request.WorldMapAvailableTeams, request.Priority
+            })
+                if (source != null)
+                    foreach (TeamNumber team in source)
+                        if (IsAllowedCandidate(request, team) && !plan.Contains(team))
+                            plan.Add(team);
+            return plan;
+        }
+
+        private static bool IsAllowedCandidate(TeamSelectionRequest request, TeamNumber team) =>
+            Enum.IsDefined(typeof(TeamNumber), team)
+            && request.AllowedTeams.Contains(team)
+            && (request.AllowTeam1 || team != TeamNumber.Team1);
+
+        private static bool IsTrustedRoster(TeamSelectionRequest request) =>
+            !string.Equals(request.WorldMapRosterConfidence, "Uncertain",
+                StringComparison.OrdinalIgnoreCase)
+            && !string.Equals(request.WorldMapRosterStatus, "Uncertain",
+                StringComparison.OrdinalIgnoreCase)
+            && request.WorldMapAvailableTeams != null;
+
+        private enum TeamSelectionTargetSource
+        {
+            ExpectedTeam,
+            WorldMapReadyTeams,
+            WorldMapAvailableTeams,
+            PriorityFallback,
+            None
+        }
+
+        private sealed class TeamSelectionTargetResolution
+        {
+            public TeamNumber? TargetTeam { get; private set; }
+            public TeamSelectionTargetSource Source { get; private set; }
+            public bool Success { get; private set; }
+            public SelectFarmTeamOutcome Outcome { get; private set; }
+            public string Message { get; private set; }
+            public string FailureReason { get; private set; }
+
+            public static TeamSelectionTargetResolution ForTarget(TeamNumber team,
+                TeamSelectionTargetSource source) => new TeamSelectionTargetResolution
+                {
+                    TargetTeam = team, Source = source, Success = true,
+                    Outcome = SelectFarmTeamOutcome.NoEligibleTeam
+                };
+
+            public static TeamSelectionTargetResolution Failure(SelectFarmTeamOutcome outcome,
+                string message, string reason) => new TeamSelectionTargetResolution
+                {
+                    Source = TeamSelectionTargetSource.None, Success = false,
+                    Outcome = outcome, Message = message, FailureReason = reason
+                };
         }
 
         private static TemplateId? BadgeId(TeamNumber team)

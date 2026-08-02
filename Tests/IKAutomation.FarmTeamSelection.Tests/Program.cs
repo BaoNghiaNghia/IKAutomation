@@ -36,6 +36,7 @@ namespace IKAutomation.FarmTeamSelection.Tests
             Run("Team4 requires selected border in Team4 ROI", WrongRoiNotSuccess);
             Run("Selected border in Team3 does not verify Team4", WrongRoiNotSuccess);
             Run("Expected Team2 replaces initially selected Team3", ExpectedTeam2ReplacesTeam3);
+            Run("Expected team outside allowed list sends no Tap", ExpectedTeamNotAllowed);
             Run("Preselected different team never mismatches before target Tap", PreselectedTeamDoesNotMismatchWithoutTap);
             Run("Persistent wrong Team3 selection cleans up without success", PersistentWrongTeamCleansUp);
             Run("Visible Team2 is mapped by badge identity", ScrolledListMapsTeam2ByBadge);
@@ -146,6 +147,9 @@ namespace IKAutomation.FarmTeamSelection.Tests
 
         private static void ExpectedTeam2ReplacesTeam3()
         { Fixture f=Setup(maxAttempts:2);f.Matcher.Badges.UnionWith(new[]{TeamNumber.Team2,TeamNumber.Team3});f.Matcher.Selected.Add(TeamNumber.Team3);f.Matcher.SelectOnTap[TeamNumber.Team2]=TeamNumber.Team2;SelectFarmTeamResult r=Execute(f,Only(TeamNumber.Team2));Equal(SelectFarmTeamOutcome.TeamSelected,r.Outcome);Equal(TeamNumber.Team2,r.SelectedTeam.Value);Equal(TeamNumber.Team2,r.ActualSelectedTeam.Value);Equal(1,f.Client.Taps.Count); }
+
+        private static void ExpectedTeamNotAllowed()
+        { Fixture f=Setup();var request=Only(TeamNumber.Team2);request.ExpectedTeam=TeamNumber.Team3;SelectFarmTeamResult r=Execute(f,request);Equal(SelectFarmTeamOutcome.ExpectedTeamNotAllowed,r.Outcome);Equal(0,f.Client.Taps.Count); }
 
         private static void PreselectedTeamDoesNotMismatchWithoutTap()
         { Fixture f=Setup(maxAttempts:2);f.Matcher.Badges.Add(TeamNumber.Team2);f.Matcher.Selected.Add(TeamNumber.Team2);SelectFarmTeamResult r=Execute(f,Only(TeamNumber.Team3));Equal(0,r.TeamTapCount);Assert(r.Outcome!=SelectFarmTeamOutcome.TeamSelectionMismatch,"A pre-existing different selection must not be a mismatch before target Team3 is tapped."); }
@@ -340,7 +344,11 @@ namespace IKAutomation.FarmTeamSelection.Tests
         private static Fixture Successful(TeamNumber team)
         { Fixture f = Setup(); f.Matcher.Badges.Add(team); f.Matcher.SelectOnTap[team] = team; return f; }
 
-        private static Fixture Setup(int maxAttempts = 2, int timeoutSeconds = 1)
+        // The production contract verifies selection on fresh post-Tap frames.
+        // A one-second fixture timeout is shorter than the deliberately delayed
+        // fake captures used by retry tests, which turns timing tests into host
+        // scheduling tests.  TimeoutBounded supplies its own one-second limit.
+        private static Fixture Setup(int maxAttempts = 2, int timeoutSeconds = 3)
         {
             var f = new Fixture();
             f.Detector = new FakeDetector(); f.Registry = new FakeRegistry(); f.Matcher = new FakeMatcher();
@@ -359,7 +367,7 @@ namespace IKAutomation.FarmTeamSelection.Tests
             { TeamNumber.Team3, new ImageRegion(0, 290, 235, 145) },
             { TeamNumber.Team4, new ImageRegion(0, 435, 235, 155) }
         };
-        private static TeamSelectionRequest Only(TeamNumber team) => new TeamSelectionRequest { AllowedTeams = new[] { team }, Priority = new[] { team }, AllowTeam1 = team == TeamNumber.Team1 };
+        private static TeamSelectionRequest Only(TeamNumber team) => new TeamSelectionRequest { AllowedTeams = new[] { team }, Priority = new[] { team }, ExpectedTeam = team, AllowTeam1 = team == TeamNumber.Team1 };
         private static SelectFarmTeamResult Execute(Fixture f, TeamSelectionRequest request = null, CancellationToken? token = null) => f.Service.SelectAsync("LDPlayer", request ?? new TeamSelectionRequest(), token ?? Token).GetAwaiter().GetResult();
         private static void Sequence<T>(IEnumerable<T> expected, IEnumerable<T> actual) { if (!expected.SequenceEqual(actual)) throw new Exception("Expected " + string.Join(",", expected) + "; actual " + string.Join(",", actual)); }
         private static void Assert(bool value, string message) { if (!value) throw new Exception(message); }

@@ -4,6 +4,11 @@ namespace ADB_Tool_Automation_Post_FB.Core.TeamSelection
     {
         AlreadySelected,
         TeamSelected,
+        ExpectedTeamNotAllowed,
+        ExpectedTeamUnavailable,
+        TargetBadgeNotFound,
+        TargetTeamDisabled,
+        SelectionEvidenceUncertain,
         NoEligibleTeam,
         TeamSelectionNotReady,
         SelectionTimeout,
