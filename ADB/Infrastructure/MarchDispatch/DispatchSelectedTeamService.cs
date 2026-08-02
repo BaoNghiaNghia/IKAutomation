@@ -445,9 +445,16 @@ namespace ADB_Tool_Automation_Post_FB.Infrastructure.MarchDispatch
             return new Verification
             {
                 BadgeFound = badge,
-                SelectedFound = selected.Count == 1 && selected[0] == expectedTeam,
-                Ambiguous = selected.Count > 1,
-                ActualSelectedTeam = selected.Count == 1 ? (TeamNumber?)selected[0] : null,
+                // The selection workflow has already selected ExpectedTeam.  A border
+                // template may also match a neighbouring row's bright artwork, so do
+                // not discard a valid expected-row border merely because that happens.
+                // A border on another row *without* the expected-row border is still
+                // treated as a mismatch and no action button is tapped.
+                SelectedFound = selected.Contains(expectedTeam),
+                Ambiguous = selected.Count > 1 && !selected.Contains(expectedTeam),
+                ActualSelectedTeam = selected.Contains(expectedTeam)
+                    ? (TeamNumber?)expectedTeam
+                    : selected.Count == 1 ? (TeamNumber?)selected[0] : null,
                 VisibleTeams = layout.VisibleTeams,
                 ExpectedRowBounds = expectedRegion
             };

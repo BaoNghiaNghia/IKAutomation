@@ -33,7 +33,7 @@ internal static class Program
         Run("Selected border without expected badge is rejected", BadgeVariationAccepted);
         Run("Team4 selected permits action Tap", SelectedPermitsTap);
         Run("Team1 selected permits action Tap", Team1SelectedPermitsTap);
-        Run("Multiple selected ROIs are indeterminate", AmbiguousSelection);
+        Run("Expected selected row permits yellow action despite a secondary border match", ExpectedRowWinsSecondaryBorderMatch);
         Run("Missing action bounds is unavailable", MissingAction);
         Run("Action Tap uses fresh center", FreshCenter);
         Run("Action Tap is not hard-coded", DynamicCenter);
@@ -122,7 +122,7 @@ internal static class Program
     private static void BadgeVariationAccepted() { var h = new Harness(); h.Matcher.Rule = (f,id,roi) => id == TemplateId.Team4Badge ? ImageMatchResult.NotFound() : h.Matcher.Default(f,id,roi); var r=Execute(h); Eq(DispatchMarchOutcome.ExpectedTeamNotSelected,r.Outcome,"outcome"); Eq(0,r.ActionTapCount,"tap count"); Is(!r.ActionTapSent,"action tap flag"); Is(!r.ExpectedTeamSelectedBeforeTap,"selected border without expected badge must not identify Team4"); }
     private static void SelectedPermitsTap() { var h = new Harness(); var r = Execute(h); Eq(DispatchMarchOutcome.MarchStarted, r.Outcome, "outcome"); Is(r.ExpectedTeamSelectedBeforeTap, "selected"); }
     private static void Team1SelectedPermitsTap() { var h = new Harness(); h.Request.ExpectedTeam = TeamNumber.Team1; h.Matcher.SelectedTeam = TeamNumber.Team1; var r = Execute(h); Eq(DispatchMarchOutcome.MarchStarted, r.Outcome, "outcome"); Is(r.ExpectedTeamSelectedBeforeTap, "selected"); }
-    private static void AmbiguousSelection() { var h = new Harness(); h.Matcher.Rule = (f,id,roi) => id==TemplateId.Team3Badge&&f<=2?Found(20,315):id == TemplateId.TeamSelectedBorderAnchor && roi.HasValue && ((roi.Value.Y<=325&&roi.Value.Y+roi.Value.Height>325)||(roi.Value.Y<=470&&roi.Value.Y+roi.Value.Height>470)) ? Found(10,roi.Value.Y) : h.Matcher.Default(f,id,roi); var r=Execute(h); Eq(DispatchMarchOutcome.VerificationIndeterminate,r.Outcome,"outcome"); Eq(0,h.Client.Taps.Count,"tap count"); }
+    private static void ExpectedRowWinsSecondaryBorderMatch() { var h = new Harness(); h.Matcher.Rule = (f,id,roi) => id==TemplateId.Team3Badge&&f<=2?Found(20,315):id == TemplateId.TeamSelectedBorderAnchor && roi.HasValue && ((roi.Value.Y<=325&&roi.Value.Y+roi.Value.Height>325)||(roi.Value.Y<=470&&roi.Value.Y+roi.Value.Height>470)) ? Found(10,roi.Value.Y) : h.Matcher.Default(f,id,roi); var r=Execute(h); Eq(1,h.Client.Taps.Count,"yellow action tap count"); Is(r.ExpectedTeamSelectedBeforeTap,"expected selection"); Is(r.ActionButtonVerified,"fresh yellow action button"); }
     private static void MissingAction() { var h=new Harness(); h.Matcher.Rule=(f,id,roi)=>id==TemplateId.TeamActionButtonEnabled && f==2 ? ImageMatchResult.NotFound():h.Matcher.Default(f,id,roi); var r=Execute(h); Eq(DispatchMarchOutcome.ActionButtonUnavailable,r.Outcome,"outcome"); }
     private static void FreshCenter() { var h=new Harness(); Execute(h); Eq((70,620),h.Client.Taps[0],"fresh center"); }
     private static void DynamicCenter() { var h=new Harness(); h.Matcher.ActionX=333; Execute(h); Eq((383,620),h.Client.Taps[0],"dynamic center"); }
