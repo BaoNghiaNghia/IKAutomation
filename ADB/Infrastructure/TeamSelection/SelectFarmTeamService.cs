@@ -286,37 +286,43 @@ namespace ADB_Tool_Automation_Post_FB.Infrastructure.TeamSelection
                             result.FailureReason = "ExpectedTeamNotVisible";
                             break;
                         }
-                        SelectedScan currentSelected = ScanSelected(lastFrame, currentRegions);
-                        result.ActualSelectedTeam = currentSelected.Teams.Count == 1
-                            ? (TeamNumber?)currentSelected.Teams[0] : null;
-                        if (currentSelected.IsAmbiguous)
-                            return await CompleteAsync(deviceName, result,
-                                SelectFarmTeamOutcome.Failed,
-                                "Selected border appeared in multiple team ROIs before Tap.",
-                                "Ambiguous selected-team evidence.", lastFrame, watch, cancellationToken);
-                        if (currentSelected.Teams.Count == 1
-                            && currentSelected.Teams[0] == team)
+                        // The confidence detector owns all production selected-team
+                        // decisions.  The legacy template scan remains only for the
+                        // compatibility constructor, where no detector was injected.
+                        if (selectedTeamDetector == null)
                         {
-                            bool actionAvailable = HasEnabledAction(state);
-                            attempts.Add(new TeamSelectionAttempt
+                            SelectedScan currentSelected = ScanSelected(lastFrame, currentRegions);
+                            result.ActualSelectedTeam = currentSelected.Teams.Count == 1
+                                ? (TeamNumber?)currentSelected.Teams[0] : null;
+                            if (currentSelected.IsAmbiguous)
+                                return await CompleteAsync(deviceName, result,
+                                    SelectFarmTeamOutcome.Failed,
+                                    "Selected border appeared in multiple team ROIs before Tap.",
+                                    "Ambiguous selected-team evidence.", lastFrame, watch, cancellationToken);
+                            if (currentSelected.Teams.Count == 1
+                                && currentSelected.Teams[0] == team)
                             {
-                                TeamNumber = team,
-                                SelectedVerified = true,
-                                SelectedBorderMatch = currentSelected.Matches[team],
-                                Message = actionAvailable
-                                    ? "Team selection became visible on the fresh retry frame; no repeated Tap was sent."
-                                    : "Team selection became visible on the fresh retry frame but has no enabled farm action; trying the next eligible team."
-                            });
-                            if (actionAvailable)
-                            {
-                                result.SelectedTeam = team;
-                                result.SelectedStateVerified = true;
-                                result.FinalState = GameState.TeamSelection;
-                                return Complete(result, SelectFarmTeamOutcome.TeamSelected,
-                                    $"{team} was selected and verified on a fresh retry frame.", null, watch);
+                                bool actionAvailable = HasEnabledAction(state);
+                                attempts.Add(new TeamSelectionAttempt
+                                {
+                                    TeamNumber = team,
+                                    SelectedVerified = true,
+                                    SelectedBorderMatch = currentSelected.Matches[team],
+                                    Message = actionAvailable
+                                        ? "Team selection became visible on the fresh retry frame; no repeated Tap was sent."
+                                        : "Team selection became visible on the fresh retry frame but has no enabled farm action; trying the next eligible team."
+                                });
+                                if (actionAvailable)
+                                {
+                                    result.SelectedTeam = team;
+                                    result.SelectedStateVerified = true;
+                                    result.FinalState = GameState.TeamSelection;
+                                    return Complete(result, SelectFarmTeamOutcome.TeamSelected,
+                                        $"{team} was selected and verified on a fresh retry frame.", null, watch);
+                                }
+                                continueAfterConfirmedUnavailable = true;
+                                break;
                             }
-                            continueAfterConfirmedUnavailable = true;
-                            break;
                         }
 
                         ImageRegion region = teamRegion;
