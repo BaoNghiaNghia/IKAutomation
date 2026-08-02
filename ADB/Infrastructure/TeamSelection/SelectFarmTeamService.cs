@@ -188,7 +188,12 @@ namespace ADB_Tool_Automation_Post_FB.Infrastructure.TeamSelection
                     options.SelectionTimeoutSeconds);
                 bool continueAfterConfirmedUnavailable = false;
                 bool postTapDifferentExpectedTeamObserved = false;
-                IEnumerable<TeamNumber> candidateTeams = BuildCandidatePlan(request, target);
+                // The detector-backed production path resolves exactly one target for
+                // this operation.  Priority is only a legacy compatibility plan.
+                TeamNumber resolvedTargetTeam = target.TargetTeam.Value;
+                IEnumerable<TeamNumber> candidateTeams = selectedTeamDetector != null
+                    ? new[] { resolvedTargetTeam }
+                    : BuildCandidatePlan(request, target);
                 foreach (TeamNumber team in candidateTeams)
                 {
                     cancellationToken.ThrowIfCancellationRequested();
@@ -228,7 +233,7 @@ namespace ADB_Tool_Automation_Post_FB.Infrastructure.TeamSelection
                             ScrollAttempt = result.ScrollAttempts,
                             Message = "Expected numbered team badge is not visible after bounded scrolling."
                         });
-                        if (request.Priority.Count == 1)
+                        if (selectedTeamDetector == null && request.Priority.Count == 1)
                         {
                             result.FailureReason = "ExpectedTeamNotVisible";
                             return await CompleteAsync(deviceName, result,
@@ -236,23 +241,8 @@ namespace ADB_Tool_Automation_Post_FB.Infrastructure.TeamSelection
                                 "Không tìm thấy đội dự kiến trong danh sách đội sau khi cuộn giới hạn.",
                                 null, lastFrame, watch, cancellationToken);
                         }
-                        continue;
-                    }
-                    ImageMatchResult preliminaryBadge = Match(lastFrame, badgeId, teamRegion);
-                    bool preliminaryDisabled = IsDisabled(lastFrame, teamRegion);
-                    if (!HasBounds(preliminaryBadge) || preliminaryDisabled)
-                    {
-                        attempts.Add(new TeamSelectionAttempt
-                        {
-                            TeamNumber = team,
-                            BadgeFound = HasBounds(preliminaryBadge),
-                            BadgeMatch = preliminaryBadge,
-                            DisabledDetected = preliminaryDisabled,
-                            Message = preliminaryDisabled
-                                ? "Disabled team evidence was found during candidate inspection; no Tap was sent."
-                                : "Team badge was not found during candidate inspection; no Tap was sent."
-                        });
-                        continue;
+                        if (selectedTeamDetector == null)
+                            continue;
                     }
 
                     for (int attemptNumber = 1;
@@ -263,10 +253,14 @@ namespace ADB_Tool_Automation_Post_FB.Infrastructure.TeamSelection
                         cancellationToken.ThrowIfCancellationRequested();
                         if (DateTimeOffset.UtcNow >= selectionDeadline
                             && !continueAfterConfirmedUnavailable)
+                        {
+                            LogTapSkippedWithoutRow(deviceName, resolvedTargetTeam,
+                                attemptNumber, "SelectionDeadlineElapsed", result.TeamTapCount);
                             return await CompleteAsync(deviceName, result,
                                 SelectFarmTeamOutcome.SelectionTimeout,
                                 "Farm team selection timed out before another safe attempt.",
                                 null, lastFrame, watch, cancellationToken);
+                        }
                         continueAfterConfirmedUnavailable = false;
 
                         lastFrame = await client.CaptureScreenshotPngAsync(deviceName, cancellationToken);
@@ -283,8 +277,17 @@ namespace ADB_Tool_Automation_Post_FB.Infrastructure.TeamSelection
                         result.VisibleTeams = currentRegions.Keys.OrderBy(item => (int)item).ToArray();
                         if (!currentRegions.TryGetValue(team, out teamRegion))
                         {
+                            attempts.Add(new TeamSelectionAttempt
+                            {
+                                TeamNumber = team,
+                                TapAttempt = attemptNumber,
+                                ScrollAttempt = result.ScrollAttempts,
+                                Message = "Expected team row was not visible on the fresh attempt screenshot; no Tap was sent."
+                            });
                             result.FailureReason = "ExpectedTeamNotVisible";
-                            break;
+                            LogTapSkippedWithoutRow(deviceName, resolvedTargetTeam,
+                                attemptNumber, "TargetRowNotVisible", result.TeamTapCount);
+                            continue;
                         }
                         // The confidence detector owns all production selected-team
                         // decisions.  The legacy template scan remains only for the
@@ -344,35 +347,66 @@ namespace ADB_Tool_Automation_Post_FB.Infrastructure.TeamSelection
                         if (!HasBounds(badge))
                         {
                             attempt.Message = "Team badge was not found with valid bounds; no Tap was sent.";
-                            break;
+                            LogTapPlanned(deviceName, resolvedTargetTeam, attemptNumber, badge,
+                                disabled, region, 0, 0, false, "BadgeBoundsInvalid",
+                                result.TeamTapCount);
+                            continue;
                         }
                         if (disabled)
                         {
                             attempt.Message = "Disabled team evidence was found; no Tap was sent.";
-                            break;
-                        }
-
-                        int safeLeft = Math.Max(region.X + 8, options.MinimumSafeTapX);
-                        int safeRight = Math.Min(region.X + region.Width - 8,
-                            options.MaximumSafeTapX);
-                        if (safeRight < safeLeft)
-                        {
-                            attempt.Message = "The expected team row has no safe selectable area; no Tap was sent.";
-                            break;
-                        }
-                        int tapX = Math.Max(safeLeft, Math.Min(safeRight,
-                            region.X + (region.Width * 3 / 4)));
-                        int tapY = region.Y + (region.Height / 2);
-                        int inputFrameAgeMs = (int)Math.Max(0,
-                            (DateTimeOffset.UtcNow - inputFrameCapturedAt).TotalMilliseconds);
-                        if (inputFrameAgeMs > options.MaxInputFrameAgeMs)
-                        {
-                            attempt.Message = "The team-selection screenshot was stale; no Tap was sent.";
+                            LogTapPlanned(deviceName, resolvedTargetTeam, attemptNumber, badge,
+                                true, region, 0, 0, false, "TargetDisabled",
+                                result.TeamTapCount);
                             continue;
                         }
-                        await client.TapAsync(deviceName, tapX, tapY, cancellationToken);
-                        result.TeamTapCount++;
-                        attempt.TapSent = true;
+
+                        int tapX;
+                        int tapY;
+                        string tapSkipReason;
+                        bool tapPointValid = TryGetSafeTapPoint(region, currentRegions,
+                            out tapX, out tapY, out tapSkipReason);
+                        LogTapPlanned(deviceName, resolvedTargetTeam, attemptNumber, badge,
+                            false, region, tapX, tapY, tapPointValid, tapSkipReason,
+                            result.TeamTapCount);
+                        if (!tapPointValid)
+                        {
+                            attempt.Message = "The expected team row has no safe selectable area; no Tap was sent."
+                                + " Reason=" + tapSkipReason + ".";
+                            continue;
+                        }
+                        int inputFrameAgeMs = (int)Math.Max(0,
+                            (DateTimeOffset.UtcNow - inputFrameCapturedAt).TotalMilliseconds);
+                        if (selectedTeamDetector == null
+                            && inputFrameAgeMs > options.MaxInputFrameAgeMs)
+                        {
+                            attempt.Message = "The team-selection screenshot was stale; no Tap was sent.";
+                            LogTapPlanned(deviceName, resolvedTargetTeam, attemptNumber, badge,
+                                false, region, tapX, tapY, false, "InputFrameStale",
+                                result.TeamTapCount);
+                            continue;
+                        }
+                        try
+                        {
+                            await client.TapAsync(deviceName, tapX, tapY, cancellationToken);
+                            result.TeamTapCount++;
+                            attempt.TapSent = true;
+                            LogTapIssued(deviceName, resolvedTargetTeam, attemptNumber, tapX,
+                                tapY, true, result.TeamTapCount, null);
+                        }
+                        catch (OperationCanceledException)
+                        {
+                            throw;
+                        }
+                        catch (Exception exception)
+                        {
+                            attempt.Message = "Tap command failed; the resolved target will be retried.";
+                            LogTapIssued(deviceName, resolvedTargetTeam, attemptNumber, tapX,
+                                tapY, false, result.TeamTapCount, exception.Message);
+                            if (attemptNumber < options.MaxSelectionAttemptsPerTeam)
+                                await Task.Delay(options.TapRetryDelayMs, cancellationToken);
+                            continue;
+                        }
                         PostTapVerificationSnapshot freshPostTap = null;
                         if (selectedTeamDetector != null)
                         {
@@ -380,7 +414,7 @@ namespace ADB_Tool_Automation_Post_FB.Infrastructure.TeamSelection
                                 attemptNumber, result.TeamTapCount, cancellationToken);
                             logger.Info($"[Farm Team Selection PostTap] DeviceName='{deviceName}', ExpectedTeam='{team}', DetectedTeam='{freshPostTap.Detection?.Team}', DetectionConfident={freshPostTap.Detection?.IsConfident}, DetectionAmbiguous={freshPostTap.Detection?.IsAmbiguous}, DetectionWinningMargin={freshPostTap.Detection?.WinningMargin}, FramesObserved={freshPostTap.Detection?.FramesObserved}, MatchingFrames={freshPostTap.Detection?.MatchingFrames}, FreshActionEnabled={freshPostTap.HasFreshFrameState && HasEnabledAction(freshPostTap.FrameState)}, Attempt={freshPostTap.Attempt}, TeamTapCount={freshPostTap.TeamTapCount}, FailureReason='{freshPostTap.FailureReason ?? string.Empty}'");
                         }
-                        logger.Info($"[Team Selection Mapping] RunId='{request.RunId ?? string.Empty}', DeviceName='{deviceName}', ExpectedTeam='{team}', VisibleTeams='{Join(result.VisibleTeams)}', SelectedBefore='{result.ActualSelectedTeam}', BadgeBounds=({badge.X},{badge.Y},{badge.Width},{badge.Height}), RowBounds=({region.X},{region.Y},{region.Width},{region.Height}), SafeTapBounds=({safeLeft},{region.Y},{safeRight-safeLeft+1},{region.Height}), ScrollAttempt={result.ScrollAttempts}, TapAttempt={attemptNumber}, TapCoordinates=({tapX},{tapY}), InputFrameAgeMs={inputFrameAgeMs}, NextAction='VerifyExactTeam'");
+                        logger.Info($"[Team Selection Mapping] RunId='{request.RunId ?? string.Empty}', DeviceName='{deviceName}', ExpectedTeam='{team}', VisibleTeams='{Join(result.VisibleTeams)}', SelectedBefore='{result.ActualSelectedTeam}', BadgeBounds=({badge.X},{badge.Y},{badge.Width},{badge.Height}), RowBounds=({region.X},{region.Y},{region.Width},{region.Height}), TapPointValidated=true, ScrollAttempt={result.ScrollAttempts}, TapAttempt={attemptNumber}, TapCoordinates=({tapX},{tapY}), InputFrameAgeMs={inputFrameAgeMs}, NextAction='VerifyExactTeam'");
 
                         // Both confirmations must come from fresh frames. The selection
                         // timeout remains the hard bound even on slower LDPlayer captures.
@@ -886,6 +920,77 @@ namespace ADB_Tool_Automation_Post_FB.Infrastructure.TeamSelection
             && match.Y < region.Y + region.Height && match.Y + match.Height > region.Y;
         private static string Join(IEnumerable<TeamNumber> teams) =>
             string.Join(",", teams.Select(team => ((int)team).ToString()));
+
+        private bool TryGetSafeTapPoint(ImageRegion targetRow,
+            IReadOnlyDictionary<TeamNumber, ImageRegion> currentRows,
+            out int tapX, out int tapY, out string skipReason)
+        {
+            int safeLeft = Math.Max(targetRow.X + 8, options.MinimumSafeTapX);
+            int safeRight = Math.Min(targetRow.X + targetRow.Width - 8,
+                options.MaximumSafeTapX);
+            tapX = 0;
+            tapY = 0;
+            skipReason = null;
+            if (safeRight < safeLeft)
+            {
+                skipReason = "NoSafeHorizontalTargetArea";
+                return false;
+            }
+
+            tapX = Math.Max(safeLeft, Math.Min(safeRight,
+                targetRow.X + (targetRow.Width * 3 / 4)));
+            tapY = targetRow.Y + (targetRow.Height / 2);
+            if (!ContainsPoint(targetRow, tapX, tapY))
+            {
+                skipReason = "TapOutsideTargetRow";
+                return false;
+            }
+            if (tapX < 0 || tapX >= options.ExpectedWidth
+                || tapY < 0 || tapY >= options.ExpectedHeight)
+            {
+                skipReason = "TapOutsideScreenshot";
+                return false;
+            }
+            if (currentRows.Any(item => !IsSameRegion(item.Value, targetRow)
+                && ContainsPoint(item.Value, tapX, tapY)))
+            {
+                skipReason = "TapOverlapsAnotherTeamRow";
+                return false;
+            }
+            return true;
+        }
+
+        private static bool ContainsPoint(ImageRegion region, int x, int y) =>
+            x >= region.X && x < region.X + region.Width
+            && y >= region.Y && y < region.Y + region.Height;
+
+        private static bool IsSameRegion(ImageRegion left, ImageRegion right) =>
+            left.X == right.X && left.Y == right.Y
+            && left.Width == right.Width && left.Height == right.Height;
+
+        private void LogTapPlanned(string deviceName, TeamNumber resolvedTargetTeam,
+            int attempt, ImageMatchResult badge, bool disabled, ImageRegion targetRow,
+            int tapX, int tapY, bool tapPointValid, string skipReason,
+            int teamTapCountBefore)
+        {
+            string badgeBounds = HasBounds(badge)
+                ? $"({badge.X},{badge.Y},{badge.Width},{badge.Height})" : string.Empty;
+            logger.Info($"[Farm Team Selection Tap Planned] DeviceName='{deviceName}', ExpectedTeam='{resolvedTargetTeam}', ResolvedTargetTeam='{resolvedTargetTeam}', Attempt={attempt}, BadgeFound={HasBounds(badge)}, BadgeBounds={badgeBounds}, Disabled={disabled}, TargetRowBounds=({targetRow.X},{targetRow.Y},{targetRow.Width},{targetRow.Height}), TapX={tapX}, TapY={tapY}, TapPointValid={tapPointValid}, SkipReason='{skipReason ?? string.Empty}', TeamTapCountBefore={teamTapCountBefore}");
+        }
+
+        private void LogTapIssued(string deviceName, TeamNumber resolvedTargetTeam,
+            int attempt, int tapX, int tapY, bool tapCommandSucceeded,
+            int teamTapCountAfter, string error)
+        {
+            logger.Info($"[Farm Team Selection Tap Issued] DeviceName='{deviceName}', ResolvedTargetTeam='{resolvedTargetTeam}', Attempt={attempt}, TapX={tapX}, TapY={tapY}, TapCommandIssued=true, TapCommandSucceeded={tapCommandSucceeded}, TeamTapCountAfter={teamTapCountAfter}, Error='{error ?? string.Empty}'");
+        }
+
+        private void LogTapSkippedWithoutRow(string deviceName,
+            TeamNumber resolvedTargetTeam, int attempt, string skipReason,
+            int teamTapCountBefore)
+        {
+            logger.Info($"[Farm Team Selection Tap Planned] DeviceName='{deviceName}', ExpectedTeam='{resolvedTargetTeam}', ResolvedTargetTeam='{resolvedTargetTeam}', Attempt={attempt}, BadgeFound=false, BadgeBounds='', Disabled=false, TargetRowBounds='', TapX=0, TapY=0, TapPointValid=false, SkipReason='{skipReason}', TeamTapCountBefore={teamTapCountBefore}");
+        }
 
         private void LogMatch(string deviceName, TeamNumber team, int attempt,
             ImageRegion region, ImageMatchResult badge, bool disabled)
