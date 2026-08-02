@@ -331,6 +331,26 @@ namespace ADB_Tool_Automation_Post_FB.Infrastructure.TeamSelection
 
                         ImageRegion region = teamRegion;
                         ImageMatchResult badge = Match(lastFrame, badgeId, region);
+                        // Badge-anchor geometry can be distorted by a false match in
+                        // another row.  Prefer the fresh dynamic layout, but if it
+                        // cannot find the expected badge, fall back to that team's
+                        // configured non-overlapping row before giving up.  This keeps
+                        // the ready team decision intact and does not tap a guessed
+                        // coordinate.
+                        if (!HasBounds(badge)
+                            && options.TeamRegions.TryGetValue(team,
+                                out ImageRegion configuredRegion))
+                        {
+                            ImageMatchResult configuredBadge = Match(lastFrame,
+                                badgeId, configuredRegion);
+                            if (HasBounds(configuredBadge))
+                            {
+                                region = configuredRegion;
+                                badge = configuredBadge;
+                                currentRegions = options.TeamRegions;
+                                logger.Info($"[Farm Team Selection] DeviceName='{deviceName}', Team='{team}', LayoutFallback='ConfiguredRow', DynamicRow=({teamRegion.X},{teamRegion.Y},{teamRegion.Width},{teamRegion.Height}), ConfiguredRow=({configuredRegion.X},{configuredRegion.Y},{configuredRegion.Width},{configuredRegion.Height})");
+                            }
+                        }
                         bool disabled = IsDisabled(lastFrame, region);
                         var attempt = new TeamSelectionAttempt
                         {

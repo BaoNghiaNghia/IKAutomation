@@ -155,9 +155,18 @@ namespace ADB_Tool_Automation_Post_FB.Infrastructure.ResourceSearch
                     ImageMatchResult button = Match(beforeTap, TemplateId.SearchButtonEnabled, null);
                     if (!HasBounds(button))
                     {
+                        // The button briefly disappears while the panel applies the
+                        // previous resource/level input.  Treat this as an unchanged
+                        // panel observation and use the next bounded fresh frame,
+                        // rather than failing a device that has not left the panel.
+                        if (attempt < options.MaxSearchTapAttempts)
+                        {
+                            logger.Info($"[Resource Search Execution] DeviceName='{deviceName}', Attempt={attempt}, SearchButtonAvailable=false, Decision='RetryFreshFrame'");
+                            continue;
+                        }
                         result.FailureReason = ResourceSearchFailureReason.SearchButtonUnavailable;
                         return await CompleteAsync(deviceName, result, context, ResourceSearchOutcome.SearchButtonUnavailable,
-                            "SearchButtonEnabled was not found with valid bounds; no Tap was sent.", null,
+                            "SearchButtonEnabled was not found with valid bounds after fresh retries; no Tap was sent.", null,
                             watch, cancellationToken);
                     }
 

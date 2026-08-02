@@ -13,7 +13,7 @@ namespace ADB_Tool_Automation_Post_FB.Infrastructure.TeamSelection
                 Int("PollIntervalMs", 250), Int("TransitionTimeoutSeconds", 8),
                 Int("MaxGatherTapAttempts", 2), Int("GatherTapRetryDelayMs", 750),
                 Int("MaxTransientUnknownFrames", 5), Int("RequiredTeamSelectionSignals", 2),
-                Bool("RequireReadyForSuccess", true), Bool("SaveFailureScreenshots", true),
+                Bool("RequireReadyForSuccess", false), Bool("SaveFailureScreenshots", true),
                 Text("FailureScreenshotDirectory", "Diagnostics/TeamSelection"),
                 new ImageRegion(Int("TeamSelectionRegion.X", 0), Int("TeamSelectionRegion.Y", 0),
                     Int("TeamSelectionRegion.Width", 780), Int("TeamSelectionRegion.Height", 720)),
