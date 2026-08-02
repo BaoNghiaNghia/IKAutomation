@@ -132,7 +132,6 @@ namespace ADB_Tool_Automation_Post_FB.Infrastructure.ResourceSearch
                             current.ErrorMessage, watch, cancellationToken);
                 }
 
-                Stopwatch searchResultWatch = null;
                 for (int attempt = 1; attempt <= options.MaxSearchTapAttempts; attempt++)
                 {
                     cancellationToken.ThrowIfCancellationRequested();
@@ -142,6 +141,7 @@ namespace ADB_Tool_Automation_Post_FB.Infrastructure.ResourceSearch
                         await Task.Delay(retryDelayMs, cancellationToken);
                     }
                     context.ResetToastEvidence();
+                    Stopwatch searchResultWatch = null;
                     CapturedFrame beforeTap = await CaptureFrameAsync(deviceName, cancellationToken);
                     try
                     {
@@ -179,8 +179,10 @@ namespace ADB_Tool_Automation_Post_FB.Infrastructure.ResourceSearch
                         + $"SearchTap=({tapX},{tapY}), SearchTapCount={result.SearchTapCount + 1}");
                     await ldPlayerClient.TapAsync(deviceName, tapX, tapY, cancellationToken);
                     result.SearchTapCount++;
-                    if (searchResultWatch == null)
-                        searchResultWatch = Stopwatch.StartNew();
+                    // Each freshly rematched Tap gets its own bounded verification
+                    // window. A slow/Unknown observation after the first Tap must
+                    // not consume the verification budget of later retries.
+                    searchResultWatch = Stopwatch.StartNew();
                     context.ReplacePreviousFrame(beforeTap);
                     beforeTap = null;
                     context.PreviousPanelConfirmed = true;
@@ -206,7 +208,25 @@ namespace ADB_Tool_Automation_Post_FB.Infrastructure.ResourceSearch
                         await Task.Delay(options.NotFoundFastPollIntervalMs, cancellationToken);
                     }
 
-                    if (context.LastPanelConfirmed && !result.CameraMovementObserved)
+                    if (!IsUnchangedSearchPanel(result, context))
+                    {
+                        while (searchResultWatch.Elapsed < TimeSpan.FromSeconds(
+                            options.SearchResultTimeoutSeconds))
+                        {
+                            ObservationDecision decision = await ObserveFrameAsync(
+                                deviceName, request.Configuration.ResourceType, result, observations,
+                                context, cancellationToken);
+                            if (decision.HasOutcome)
+                                return await CompleteAsync(deviceName, result, context, decision.Outcome,
+                                    decision.Message, decision.ErrorMessage, watch, cancellationToken);
+                            await Task.Delay(options.NormalPollIntervalMs, cancellationToken);
+                        }
+                    }
+
+                    // The first post-Tap frame can be transient Unknown. If later
+                    // frames recover to the unchanged panel, retry with fresh bounds
+                    // instead of falling through to SearchTransitionTimeout.
+                    if (IsUnchangedSearchPanel(result, context))
                     {
                         if (attempt < options.MaxSearchTapAttempts)
                             continue;
@@ -224,19 +244,9 @@ namespace ADB_Tool_Automation_Post_FB.Infrastructure.ResourceSearch
                         result.ShouldRetrySearch = true;
                         return await CompleteAsync(deviceName, result, context,
                             ResourceSearchOutcome.SearchTapNotApplied,
-                            "Nút Tìm kiếm vẫn hiển thị sau 3 lần thử; chuyển sang tài nguyên khác.",
+                            $"Nút Tìm kiếm vẫn hiển thị sau {options.MaxSearchTapAttempts} lần thử; "
+                                + "chuyển sang tài nguyên khác.",
                             null, watch, cancellationToken);
-                    }
-
-                    while (searchResultWatch.Elapsed < TimeSpan.FromSeconds(options.SearchResultTimeoutSeconds))
-                    {
-                        ObservationDecision decision = await ObserveFrameAsync(
-                            deviceName, request.Configuration.ResourceType, result, observations,
-                            context, cancellationToken);
-                        if (decision.HasOutcome)
-                            return await CompleteAsync(deviceName, result, context, decision.Outcome,
-                                decision.Message, decision.ErrorMessage, watch, cancellationToken);
-                        await Task.Delay(options.NormalPollIntervalMs, cancellationToken);
                     }
                     break;
                 }
@@ -699,6 +709,11 @@ namespace ADB_Tool_Automation_Post_FB.Infrastructure.ResourceSearch
 
         private static bool HasBounds(ImageMatchResult match) =>
             match != null && match.Found && match.Width > 0 && match.Height > 0;
+
+        private static bool IsUnchangedSearchPanel(ResourceSearchExecutionResult result,
+            ObservationContext context) => !result.CameraMovementObserved
+            && (context.LastPanelConfirmed
+                || (!result.PanelClosed && result.FinalState == GameState.ResourceSearchPanel));
 
         private bool AreToastAnchorsClose(ImageMatchResult first, ImageMatchResult second) =>
             HasBounds(first) && HasBounds(second)

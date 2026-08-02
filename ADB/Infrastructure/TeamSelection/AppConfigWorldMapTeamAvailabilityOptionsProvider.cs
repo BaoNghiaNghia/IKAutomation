@@ -15,7 +15,7 @@ namespace ADB_Tool_Automation_Post_FB.Infrastructure.TeamSelection
                 Int("TeamRosterRegion.Width", 150),
             Int("TeamRosterRegion.Height", 280)),
             Int("TeamRowCount", 4), NullableInt("TeamRowHeight"), Int("BadgeTopPadding", 8),
-            Int("RowVerticalTolerance", 4), Int("ObservationFrameCount", 3),
+            Int("RowVerticalTolerance", 16), Int("ObservationFrameCount", 3),
             Int("ObservationIntervalMs", 150), KnownUnlockedTeamCounts(),
             Int("ExpectedWidth", 1280), Int("ExpectedHeight", 720));
 

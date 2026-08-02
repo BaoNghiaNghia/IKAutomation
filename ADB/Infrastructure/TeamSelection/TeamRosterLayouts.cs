@@ -8,8 +8,14 @@ namespace ADB_Tool_Automation_Post_FB.Infrastructure.TeamSelection
 {
     public sealed class WorldMapTeamRosterLayout
     {
-        public WorldMapTeamRosterLayout(IReadOnlyList<ImageRegion> rows) { Rows = rows; }
+        public WorldMapTeamRosterLayout(IReadOnlyList<ImageRegion> rows,
+            IReadOnlyList<ImageRegion> searchRows)
+        {
+            Rows = rows;
+            SearchRows = searchRows;
+        }
         public IReadOnlyList<ImageRegion> Rows { get; }
+        public IReadOnlyList<ImageRegion> SearchRows { get; }
     }
 
     public static class WorldMapTeamRosterLayoutResolver
@@ -36,10 +42,24 @@ namespace ADB_Tool_Automation_Post_FB.Infrastructure.TeamSelection
             if (width <= 0 || lastBottom > roster.Y + roster.Height || lastBottom > frameHeight)
                 return null;
             var rows = new List<ImageRegion>(options.TeamRowCount);
+            var searchRows = new List<ImageRegion>(options.TeamRowCount);
+            int verticalTolerance = Math.Max(0,
+                (int)Math.Round(options.RowVerticalTolerance * scaleY));
             for (int index = 0; index < options.TeamRowCount; index++)
-                rows.Add(new ImageRegion(roster.X, roster.Y + index * rowHeight,
-                    width, rowHeight));
-            return new WorldMapTeamRosterLayout(rows.AsReadOnly());
+            {
+                var row = new ImageRegion(roster.X, roster.Y + index * rowHeight,
+                    width, rowHeight);
+                rows.Add(row);
+                // Status and badge templates can straddle the upper boundary of a
+                // visual row. Extend only upward: the lower boundary remains the
+                // canonical row boundary, so a label from the next row cannot be
+                // fully matched by the preceding row.
+                int searchTop = Math.Max(roster.Y, row.Y - verticalTolerance);
+                searchRows.Add(new ImageRegion(row.X, searchTop, row.Width,
+                    row.Y + row.Height - searchTop));
+            }
+            return new WorldMapTeamRosterLayout(rows.AsReadOnly(),
+                searchRows.AsReadOnly());
         }
     }
 

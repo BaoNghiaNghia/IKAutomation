@@ -130,7 +130,7 @@ namespace ADB_Tool_Automation_Post_FB.Infrastructure.TeamSelection
 
                 verifiedFrameCount++;
                 var badgeRequests = teams.Select((team, index) => new ImageMatchRequest(
-                    registry.LoadBytes(BadgeTemplate(team)), layout.Rows[index])).ToArray();
+                    registry.LoadBytes(BadgeTemplate(team)), layout.SearchRows[index])).ToArray();
                 IReadOnlyList<ImageMatchResult> badgeResults = FindMany(screenshot, badgeRequests);
                 for (int index = 0; index < teams.Length; index++)
                 {
@@ -148,7 +148,7 @@ namespace ADB_Tool_Automation_Post_FB.Infrastructure.TeamSelection
                 for (int index = 0; index < teams.Length; index++)
                 {
                     TeamNumber team = teams[index];
-                    ImageRegion rowRegion = layout.Rows[index];
+                    ImageRegion rowRegion = layout.SearchRows[index];
                     AddStatusRequest(statusRequests, statusSignals, team, "Ready",
                         TemplateId.WorldMapTeamReadyAnchor, rowRegion);
                     AddStatusRequest(statusRequests, statusSignals, team, "Locked",
@@ -183,9 +183,18 @@ namespace ADB_Tool_Automation_Post_FB.Infrastructure.TeamSelection
 
             var freshExisting = new HashSet<TeamNumber>(rowEvidenceTeams);
             freshExisting.ExceptWith(lockedTeamsFresh);
-            // Row identity is explicit.  Do not infer rows below the highest match:
-            // a missing Team2 badge must never turn a Team3/Team4 observation into
-            // a compact "Team1..N" roster.
+            // A positively identified numbered row or row-local status establishes
+            // the roster size. Accounts unlock rows sequentially, so a confirmed
+            // Team3 row also proves Team1 and Team2 exist. This fills only preceding
+            // rows; it never remaps one row's evidence to another team identity.
+            int highestConfirmedRow = freshExisting.Select(team => (int)team)
+                .DefaultIfEmpty(0).Max();
+            for (int number = 1; number <= highestConfirmedRow; number++)
+            {
+                TeamNumber precedingTeam = (TeamNumber)number;
+                if (!lockedTeamsFresh.Contains(precedingTeam))
+                    freshExisting.Add(precedingTeam);
+            }
             TeamRosterEvidenceSource freshSource = badgeMatches.Count > 0
                 ? TeamRosterEvidenceSource.FreshBadges
                 : freshExisting.Count > 0
@@ -265,11 +274,13 @@ namespace ADB_Tool_Automation_Post_FB.Infrastructure.TeamSelection
                     : existing.Contains(team) ? TeamRowState.Unknown : TeamRowState.Missing,
                 EvidenceSource = lockedTeams.Contains(team) ? "LockedAnchor"
                     : badgeMatches.ContainsKey(team) ? "NumberedBadge"
-                    : busyTeams.Contains(team) ? "BusyStructure"
                     : readyTeams.Contains(team) ? "ReadyLabel"
+                    : busyTeamsFresh.Contains(team) ? "BusyStructure"
+                    : freshExisting.Contains(team) ? "InferredPrecedingRow"
                     : existing.Contains(team) ? "CachedConfirmed" : "None",
                 EvidenceStrength = badgeMatches.ContainsKey(team) || lockedTeams.Contains(team)
                     ? "Strong" : rowEvidenceTeams.Contains(team) ? "Moderate"
+                    : freshExisting.Contains(team) ? "Inferred"
                     : existing.Contains(team) ? "Cached" : "None"
             }).ToArray();
             IReadOnlyDictionary<TeamNumber, TeamRowObservation> rowsByTeam =

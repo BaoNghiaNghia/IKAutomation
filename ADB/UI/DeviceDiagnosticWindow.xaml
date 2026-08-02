@@ -505,5 +505,47 @@
                 <TextBlock x:Name="StatusTextBlock" Visibility="Collapsed"/>
             </Grid>
         </Grid>
+
+        <Border x:Name="InitialLoadingOverlay"
+                Grid.Row="0" Grid.RowSpan="3"
+                Panel.ZIndex="100"
+                Background="#FFF4F7FB">
+            <StackPanel HorizontalAlignment="Center"
+                        VerticalAlignment="Center">
+                <Grid Width="48" Height="48"
+                      HorizontalAlignment="Center"
+                      RenderTransformOrigin="0.5,0.5">
+                    <Grid.RenderTransform>
+                        <RotateTransform x:Name="InitialLoadingSpinnerRotate"/>
+                    </Grid.RenderTransform>
+                    <Ellipse Stroke="#FFDCE6F2" StrokeThickness="4"/>
+                    <Path Data="M 24,3 A 21,21 0 0 1 45,24"
+                          Stroke="#FF0F766E" StrokeThickness="4"
+                          StrokeStartLineCap="Round"
+                          StrokeEndLineCap="Round"/>
+                    <Grid.Triggers>
+                        <EventTrigger RoutedEvent="FrameworkElement.Loaded">
+                            <BeginStoryboard>
+                                <Storyboard RepeatBehavior="Forever">
+                                    <DoubleAnimation
+                                        Storyboard.TargetName="InitialLoadingSpinnerRotate"
+                                        Storyboard.TargetProperty="Angle"
+                                        From="0" To="360" Duration="0:0:0.8"/>
+                                </Storyboard>
+                            </BeginStoryboard>
+                        </EventTrigger>
+                    </Grid.Triggers>
+                </Grid>
+                <TextBlock Text="Đang tải Farm Control..."
+                           Margin="0,16,0,0"
+                           HorizontalAlignment="Center"
+                           Foreground="{StaticResource TextPrimaryBrush}"
+                           FontSize="16" FontWeight="SemiBold"/>
+                <TextBlock Text="Đang kiểm tra danh sách và trạng thái thiết bị"
+                           Margin="0,5,0,0"
+                           HorizontalAlignment="Center"
+                           Foreground="{StaticResource TextSecondaryBrush}"/>
+            </StackPanel>
+        </Border>
     </Grid>
 </Window>

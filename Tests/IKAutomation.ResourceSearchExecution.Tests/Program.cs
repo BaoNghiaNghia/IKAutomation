@@ -77,6 +77,7 @@ namespace IKAutomation.ResourceSearchExecution.Tests
             Run("Located requires stable frames", LocatedNeedsStableFrames);
             Run("WorldMap without movement does not succeed", WorldWithoutMovement);
             Run("Transient Unknown sends no extra input", TransientUnknown);
+            Run("Transient Unknown followed by unchanged panel retries Search", TransientUnknownThenPanelRetries);
             Run("Unknown limit returns controlled failure", UnknownLimit);
             Run("Timeout is bounded", TimeoutBounded);
             Run("Fast polling cancellation is returned", FastCancellation);
@@ -194,7 +195,7 @@ namespace IKAutomation.ResourceSearchExecution.Tests
         private static void OpenPanelNotLocated() { var r=Execute(Setup()); Is(!r.Success,"success"); }
         private static void OpenPanelTimeout() { var r=Execute(Setup(maxAttempts:1)); Is(r.Outcome==ResourceSearchOutcome.SearchTapNotApplied,"outcome"); }
         private static void RetryPanelNoChangeInfersNotFound() { Fixture f=Setup(maxAttempts:2,windowMs:3); var r=Execute(f); Is(r.Outcome==ResourceSearchOutcome.SearchTapNotApplied&&!r.NotFoundObserved,"outcome"); Eq(2,r.SearchTapCount,"bounded retries"); }
-        private static void RetrySparsePanelObservationInfersNotFound() { Fixture f=Setup(maxAttempts:2,windowMs:100); f.Client.CaptureDelayMs=600; var r=Execute(f); Is(r.Outcome==ResourceSearchOutcome.SearchTapNotApplied&&!r.NotFoundObserved,"outcome"); Eq(1,r.ObservedFrameCount,"sparse observations"); Eq(2,r.SearchTapCount,"bounded retries"); }
+        private static void RetrySparsePanelObservationInfersNotFound() { Fixture f=Setup(maxAttempts:2,windowMs:100); f.Client.CaptureDelayMs=600; var r=Execute(f); Is(r.Outcome==ResourceSearchOutcome.SearchTapNotApplied&&!r.NotFoundObserved,"outcome"); Eq(2,r.ObservedFrameCount,"each retry receives a fresh observation"); Eq(2,r.SearchTapCount,"bounded retries"); }
         private static void RetryPanelChangeInfersNotFound() { Fixture f=Setup(maxAttempts:2,windowMs:3); f.Stability.Differences.Enqueue(.05); f.Stability.Differences.Enqueue(.05); var r=Execute(f); Is(r.Outcome==ResourceSearchOutcome.SearchTapNotApplied&&!r.NotFoundObserved,"outcome"); Eq(2,r.SearchTapCount,"bounded retries"); Is(!r.CameraMovementObserved,"panel animation was treated as camera movement"); }
         private static void RetryPartialToastInfersNotFound() { Fixture f=Setup(maxAttempts:2,windowMs:3); f.Matcher.Short=true; f.Matcher.ToastFrames.Add(2); var r=Execute(f); Is(r.Outcome==ResourceSearchOutcome.SearchTapNotApplied&&!r.NotFoundObserved,"outcome"); Eq(2,r.SearchTapCount,"bounded retries"); }
         private static void LocatedNeedsClosedPanel() { Fixture f=Setup(requiredStable:1); f.Stability.Differences.Enqueue(.1); f.Stability.Differences.Enqueue(.001); var r=Execute(f); Is(!r.Success,"success"); }
@@ -203,6 +204,7 @@ namespace IKAutomation.ResourceSearchExecution.Tests
         private static void LocatedNeedsStableFrames() { Fixture f=Setup(requiredStable:100,windowMs:5); f.Detector.SetStates(Panel(),World(),World(),World()); f.Stability.Differences.Enqueue(.1); f.Stability.Differences.Enqueue(.001); f.Stability.Differences.Enqueue(.001); Is(!Execute(f).Success,"success"); }
         private static void WorldWithoutMovement() { Fixture f=Setup(requiredStable:1); f.Detector.SetStates(Panel(),World(),World()); Is(Execute(f).Outcome!=ResourceSearchOutcome.ResourceLocated,"outcome"); }
         private static void TransientUnknown() { Fixture f=ToastFixture(); f.Detector.SetStates(Panel(),State(GameState.Unknown),Panel()); f.Matcher.ToastFrames.Clear(); f.Matcher.ToastFrames.Add(3); var r=Execute(f); Is(r.NotFoundObserved,"eventual toast"); Eq(1,r.SearchTapCount,"tap"); }
+        private static void TransientUnknownThenPanelRetries() { Fixture f=Setup(maxAttempts:2,windowMs:3); f.Client.CaptureDelayMs=20; f.Detector.SetStates(Panel(),State(GameState.Unknown),Panel()); var r=Execute(f); Is(r.Outcome==ResourceSearchOutcome.SearchTapNotApplied,"outcome"); Eq(2,r.SearchTapCount,"unchanged panel did not retry Search"); Eq(2,f.Client.TapCalls,"client taps"); }
         private static void UnknownLimit() { Fixture f=Setup(maxUnknown:0); f.Detector.SetStates(Panel(),State(GameState.Unknown)); Is(Execute(f).Outcome==ResourceSearchOutcome.Failed,"outcome"); }
         private static void TimeoutBounded() { Fixture f=Setup(windowMs:3); var r=Execute(f); Is(r.Duration<TimeSpan.FromSeconds(1),"duration"); }
         private static void FastCancellation() { Fixture f=Setup(windowMs:100); using(var c=new CancellationTokenSource(10)){Is(Execute(f,Request(),c.Token).Outcome==ResourceSearchOutcome.Cancelled,"outcome");} }

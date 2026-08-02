@@ -81,13 +81,29 @@ namespace ADB_Tool_Automation_Post_FB.UI
             oneShotFarmProgressTimer = new DispatcherTimer { Interval = TimeSpan.FromSeconds(1) };
             oneShotFarmProgressTimer.Tick += OneShotFarmProgressTimer_Tick;
             ApplyFarmPreferences(defaultFarmPreferences);
-            Loaded += async (sender, args) => await LoadFarmPreferencesAndRefreshAsync();
+            Loaded += DeviceDiagnosticWindow_Loaded;
             Closed += (sender, args) =>
             {
                 oneShotFarmCancellation?.Cancel();
                 oneShotFarmProgressTimer.Stop();
                 lifetimeCancellation.Cancel();
             };
+        }
+
+        private async void DeviceDiagnosticWindow_Loaded(object sender, RoutedEventArgs e)
+        {
+            // Let WPF paint the loading overlay before configuration and LDPlayer
+            // discovery begin. Without this render yield the new window can remain
+            // visually blank while the first asynchronous operation starts.
+            await Dispatcher.Yield(DispatcherPriority.Render);
+            try
+            {
+                await LoadFarmPreferencesAndRefreshAsync();
+            }
+            finally
+            {
+                InitialLoadingOverlay.Visibility = Visibility.Collapsed;
+            }
         }
 
         private async Task LoadFarmPreferencesAndRefreshAsync()
