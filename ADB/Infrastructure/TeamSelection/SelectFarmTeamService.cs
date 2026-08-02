@@ -412,14 +412,14 @@ namespace ADB_Tool_Automation_Post_FB.Infrastructure.TeamSelection
                         if (selectedTeamDetector != null)
                         {
                             freshPostTap = await CaptureFreshPostTapVerificationAsync(deviceName,
-                                attemptNumber, result.TeamTapCount, team, region, cancellationToken);
-                            logger.Info($"[Farm Team Selection PostTap] DeviceName='{deviceName}', ExpectedTeam='{team}', DetectedTeam='{freshPostTap.Detection?.Team}', DetectionConfident={freshPostTap.Detection?.IsConfident}, DetectionAmbiguous={freshPostTap.Detection?.IsAmbiguous}, DetectionWinningMargin={freshPostTap.Detection?.WinningMargin}, FramesObserved={freshPostTap.Detection?.FramesObserved}, MatchingFrames={freshPostTap.Detection?.MatchingFrames}, FreshActionEnabled={freshPostTap.HasFreshFrameState && HasEnabledAction(freshPostTap.FrameState)}, Attempt={freshPostTap.Attempt}, TeamTapCount={freshPostTap.TeamTapCount}, FailureReason='{freshPostTap.FailureReason ?? string.Empty}'");
+                                attemptNumber, result.TeamTapCount, team, cancellationToken);
+                            logger.Info($"[Farm Team Selection PostTap] DeviceName='{deviceName}', ExpectedTeam='{team}', DetectedTeam='{freshPostTap.Detection?.Team}', DetectionConfident={freshPostTap.Detection?.IsConfident}, DetectionAmbiguous={freshPostTap.Detection?.IsAmbiguous}, DetectionWinningMargin={freshPostTap.Detection?.WinningMargin}, FramesObserved={freshPostTap.Detection?.FramesObserved}, MatchingFrames={freshPostTap.Detection?.MatchingFrames}, FreshTeamSelectionConfirmed={freshPostTap.HasFreshFrameState}, RowGeometrySource='FreshBadgeFrame', Attempt={freshPostTap.Attempt}, TeamTapCount={freshPostTap.TeamTapCount}, FailureReason='{freshPostTap.FailureReason ?? string.Empty}'");
                             LogFrameScores(deviceName, "PostTap", team, freshPostTap.Detection);
                         }
                         logger.Info($"[Team Selection Mapping] RunId='{request.RunId ?? string.Empty}', DeviceName='{deviceName}', ExpectedTeam='{team}', VisibleTeams='{Join(result.VisibleTeams)}', SelectedBefore='{result.ActualSelectedTeam}', BadgeBounds=({badge.X},{badge.Y},{badge.Width},{badge.Height}), RowBounds=({region.X},{region.Y},{region.Width},{region.Height}), TapPointValidated=true, ScrollAttempt={result.ScrollAttempts}, TapAttempt={attemptNumber}, TapCoordinates=({tapX},{tapY}), InputFrameAgeMs={inputFrameAgeMs}, NextAction='VerifyExactTeam'");
 
-                        // Both confirmations must come from fresh frames. The selection
-                        // timeout remains the hard bound even on slower LDPlayer captures.
+                        // Selection confirmation is based only on fresh selected-border
+                        // evidence. Dispatch owns the later action-button verification.
                         int consistentSelectionFrames = 0;
                         // Keep post-Tap confirmation bounded by frames, not by the
                         // entire selection timeout.  Otherwise a missing border can
@@ -435,13 +435,9 @@ namespace ADB_Tool_Automation_Post_FB.Infrastructure.TeamSelection
                                     && !freshPostTap.Detection.IsAmbiguous
                                     && freshPostTap.Detection.Team.HasValue
                                     && freshPostTap.Detection.Team.Value == team;
-                                bool freshActionReady = freshPostTap != null
-                                    && freshPostTap.HasFreshFrameState
-                                    && freshPostTap.FrameState != null
-                                    && HasEnabledAction(freshPostTap.FrameState);
                                 result.ActualSelectedTeam = freshPostTap?.Detection?.Team;
                                 attempt.SelectedAfter = result.ActualSelectedTeam;
-                                if (expectedTeamVerified && freshActionReady)
+                                if (expectedTeamVerified)
                                 {
                                     attempt.SelectedVerified = true;
                                     attempt.Message = "Fresh detector consensus verified the expected team after Tap.";
@@ -567,7 +563,7 @@ namespace ADB_Tool_Automation_Post_FB.Infrastructure.TeamSelection
 
         private async Task<PostTapVerificationSnapshot> CaptureFreshPostTapVerificationAsync(
             string deviceName, int attempt, int teamTapCount, TeamNumber expectedTeam,
-            ImageRegion freshTargetRowBounds, CancellationToken cancellationToken)
+            CancellationToken cancellationToken)
         {
             await Task.Delay(options.PollIntervalMs, cancellationToken);
             var snapshot = new PostTapVerificationSnapshot
@@ -580,7 +576,8 @@ namespace ADB_Tool_Automation_Post_FB.Infrastructure.TeamSelection
                 {
                     TeamRegions = options.TeamRegions,
                     ExpectedTeam = expectedTeam,
-                    FreshTargetRowBounds = freshTargetRowBounds,
+                    ResolveRowsFromFreshBadges = true,
+                    TeamBadgeSearchRegion = options.TeamSelectionRosterRegion,
                     ExpectedWidth = options.ExpectedWidth,
                     ExpectedHeight = options.ExpectedHeight,
                     ConsensusFrames = options.SelectedConsensusFrames,

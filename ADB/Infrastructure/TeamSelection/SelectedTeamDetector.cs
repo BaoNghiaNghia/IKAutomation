@@ -43,8 +43,8 @@ namespace ADB_Tool_Automation_Post_FB.Infrastructure.TeamSelection
             using (var stream = new MemoryStream(frame, false))
             using (var bitmap = new Bitmap(stream))
             {
-                IReadOnlyDictionary<TeamNumber, ImageRegion> rows = ResolveRows(context,
-                    bitmap.Width, bitmap.Height);
+                IReadOnlyDictionary<TeamNumber, ImageRegion> rows = ResolveRows(frame,
+                    context, bitmap.Width, bitmap.Height);
                 if (rows.Count == 0 || rows.Any(item => !Valid(item.Value, bitmap.Width, bitmap.Height))
                     || Overlaps(rows))
                     return Fail("InvalidRowGeometry");
@@ -248,14 +248,73 @@ namespace ADB_Tool_Automation_Post_FB.Infrastructure.TeamSelection
             return true;
         }
 
-        private static IReadOnlyDictionary<TeamNumber, ImageRegion> ResolveRows(
+        private IReadOnlyDictionary<TeamNumber, ImageRegion> ResolveRows(byte[] frame,
             SelectedTeamDetectionContext context, int width, int height)
         {
             var rows = context.TeamRegions.ToDictionary(item => item.Key, item => item.Value);
-            if (context.ExpectedTeam.HasValue && context.FreshTargetRowBounds.HasValue
-                && Valid(context.FreshTargetRowBounds.Value, width, height))
-                rows[context.ExpectedTeam.Value] = context.FreshTargetRowBounds.Value;
+            if (!context.ResolveRowsFromFreshBadges
+                || !context.TeamBadgeSearchRegion.HasValue)
+                return rows;
+
+            IReadOnlyDictionary<TeamNumber, ImageRegion> freshRows =
+                ResolveFreshBadgeRows(frame, context.TeamBadgeSearchRegion.Value, width, height);
+            if (freshRows.Count > 0)
+                return freshRows;
             return rows;
+        }
+
+        private IReadOnlyDictionary<TeamNumber, ImageRegion> ResolveFreshBadgeRows(
+            byte[] frame, ImageRegion roster, int width, int height)
+        {
+            TeamNumber[] teams = { TeamNumber.Team1, TeamNumber.Team2,
+                TeamNumber.Team3, TeamNumber.Team4 };
+            var requests = teams.Where(team => registry.Exists(BadgeId(team)))
+                .Select(team => new KeyValuePair<TeamNumber, ImageMatchRequest>(team,
+                    new ImageMatchRequest(registry.LoadBytes(BadgeId(team)), roster))).ToArray();
+            if (requests.Length == 0) return new Dictionary<TeamNumber, ImageRegion>();
+
+            IReadOnlyList<ImageMatchResult> matches = matcher is IBatchImageMatcher batch
+                ? batch.FindMany(frame, requests.Select(item => item.Value).ToArray())
+                : requests.Select(item => matcher.Find(frame, item.Value.TemplatePng,
+                    item.Value.SearchRegion)).ToArray();
+            var badges = new List<KeyValuePair<TeamNumber, ImageMatchResult>>();
+            for (int index = 0; index < requests.Length; index++)
+                if (HasBounds(matches[index])) badges.Add(new KeyValuePair<TeamNumber,
+                    ImageMatchResult>(requests[index].Key, matches[index]));
+            if (badges.Count == 0) return new Dictionary<TeamNumber, ImageRegion>();
+
+            int left = Math.Max(0, roster.X);
+            int right = Math.Min(width, roster.X + roster.Width);
+            int bottomLimit = Math.Min(height, roster.Y + roster.Height);
+            var ordered = badges.OrderBy(item => item.Value.Y).ToArray();
+            var rows = new Dictionary<TeamNumber, ImageRegion>();
+            for (int index = 0; index < ordered.Length; index++)
+            {
+                ImageMatchResult badge = ordered[index].Value;
+                int top = Math.Max(roster.Y, badge.Y - 4);
+                int bottom = index + 1 < ordered.Length
+                    ? Math.Min(bottomLimit, ordered[index + 1].Value.Y - 4)
+                    : bottomLimit;
+                if (right > left && bottom > top)
+                    rows[ordered[index].Key] = new ImageRegion(left, top, right - left,
+                        bottom - top);
+            }
+            return rows;
+        }
+
+        private static bool HasBounds(ImageMatchResult match) => match != null && match.Found
+            && match.Width > 0 && match.Height > 0;
+
+        private static TemplateId BadgeId(TeamNumber team)
+        {
+            switch (team)
+            {
+                case TeamNumber.Team1: return TemplateId.Team1Badge;
+                case TeamNumber.Team2: return TemplateId.Team2Badge;
+                case TeamNumber.Team3: return TemplateId.Team3Badge;
+                case TeamNumber.Team4: return TemplateId.Team4Badge;
+                default: throw new ArgumentOutOfRangeException(nameof(team));
+            }
         }
 
         private static bool Valid(ImageRegion row, int width, int height) => row.X >= 0

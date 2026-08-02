@@ -57,6 +57,9 @@ namespace ADB_Tool_Automation_Post_FB.Core.TeamSelection
         public double MinimumScore { get; set; } = .70;
         public double WinningMargin { get; set; } = .12;
         public TeamNumber? ExpectedTeam { get; set; }
-        public ImageRegion? FreshTargetRowBounds { get; set; }
+        // Post-tap verification must use badge positions from the frame being scored.
+        // The tap layout can span adjacent rows and is not a reliable selected-border ROI.
+        public bool ResolveRowsFromFreshBadges { get; set; }
+        public ImageRegion? TeamBadgeSearchRegion { get; set; }
     }
 }
