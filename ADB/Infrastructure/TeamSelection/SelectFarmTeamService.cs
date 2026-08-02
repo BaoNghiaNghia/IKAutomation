@@ -592,10 +592,15 @@ namespace ADB_Tool_Automation_Post_FB.Infrastructure.TeamSelection
                     TeamBadgeSearchRegion = options.TeamSelectionRosterRegion,
                     ExpectedWidth = options.ExpectedWidth,
                     ExpectedHeight = options.ExpectedHeight,
-                    ConsensusFrames = options.SelectedConsensusFrames,
-                    RequiredMatchingFrames = options.SelectedRequiredMatchingFrames,
-                    FrameIntervalMs = options.SelectedFrameIntervalMs,
-                    TimeoutMs = options.SelectedDetectionTimeoutMs,
+                    // This is a targeted post-tap check for the exact row we just
+                    // tapped, not an account-wide roster observation.  Waiting for
+                    // the normal three-frame consensus here can exhaust the
+                    // selection deadline before Dispatch gets a chance to rematch
+                    // and tap the enabled yellow action button.
+                    ConsensusFrames = 1,
+                    RequiredMatchingFrames = 1,
+                    FrameIntervalMs = 0,
+                    TimeoutMs = options.PollIntervalMs,
                     MinimumScore = options.SelectedMinimumScore,
                     WinningMargin = options.SelectedWinningMargin
                 }, cancellationToken);
