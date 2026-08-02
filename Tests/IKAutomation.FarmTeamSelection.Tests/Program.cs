@@ -25,6 +25,7 @@ namespace IKAutomation.FarmTeamSelection.Tests
         {
             Run("TeamSelection not ready sends no Tap", NotReady);
             Run("Action button confirms TeamSelection without Adjust Formation", ActionOnlyConfirmsSelection);
+            Run("Ready-team tap hands off to fresh Dispatch verification", ReadyTeamTapHandsOffToDispatch);
             Run("Team row is derived from badge geometry", BaselinePanelLayout);
             Run("Team row follows shifted badge geometry", ShiftedPanelLayout);
             Run("Team4 already selected returns AlreadySelected", AlreadySelected);
@@ -101,6 +102,15 @@ namespace IKAutomation.FarmTeamSelection.Tests
             SelectFarmTeamResult result = Execute(f, Only(TeamNumber.Team3));
             Equal(SelectFarmTeamOutcome.TeamSelected, result.Outcome);
             Equal(TeamNumber.Team3, result.SelectedTeam.Value);
+        }
+
+        private static void ReadyTeamTapHandsOffToDispatch()
+        {
+            Fixture f = Successful(TeamNumber.Team3, true);
+            SelectFarmTeamResult result = Execute(f, Only(TeamNumber.Team3));
+            Equal(SelectFarmTeamOutcome.TeamSelected, result.Outcome);
+            Equal(TeamNumber.Team3, result.SelectedTeam.Value);
+            Equal(1, result.TeamTapCount);
         }
 
         private static void BaselinePanelLayout()
@@ -341,20 +351,22 @@ namespace IKAutomation.FarmTeamSelection.Tests
         private static void TimeoutBounded()
         { Fixture f = Setup(timeoutSeconds: 1); f.Matcher.Badges.Add(TeamNumber.Team4); Stopwatch watch = Stopwatch.StartNew(); SelectFarmTeamResult r = Execute(f, Only(TeamNumber.Team4)); Assert(watch.Elapsed < TimeSpan.FromSeconds(2), "Timeout was not bounded."); Assert(!r.Success, "Unexpected success."); }
 
-        private static Fixture Successful(TeamNumber team)
-        { Fixture f = Setup(); f.Matcher.Badges.Add(team); f.Matcher.SelectOnTap[team] = team; return f; }
+        private static Fixture Successful(TeamNumber team, bool useProductionDetector = false)
+        { Fixture f = Setup(2, 3, useProductionDetector); f.Matcher.Badges.Add(team); f.Matcher.SelectOnTap[team] = team; return f; }
 
         // The production contract verifies selection on fresh post-Tap frames.
         // A one-second fixture timeout is shorter than the deliberately delayed
         // fake captures used by retry tests, which turns timing tests into host
         // scheduling tests.  TimeoutBounded supplies its own one-second limit.
-        private static Fixture Setup(int maxAttempts = 2, int timeoutSeconds = 3)
+        private static Fixture Setup(int maxAttempts = 2, int timeoutSeconds = 3,
+            bool useProductionDetector = false)
         {
             var f = new Fixture();
             f.Detector = new FakeDetector(); f.Registry = new FakeRegistry(); f.Matcher = new FakeMatcher();
             f.Client = new FakeClient(f.Matcher); f.Store = new FakeStore();
             f.Service = new SelectFarmTeamService(f.Detector, f.Client, f.Registry, f.Matcher,
-                new DeviceOperationLock(), Options(1, maxAttempts, timeoutSeconds), f.Store, new FakeLogger());
+                new DeviceOperationLock(), Options(1, maxAttempts, timeoutSeconds), f.Store,
+                new FakeLogger(), useProductionDetector ? new FakeSelectedTeamDetector() : null);
             return f;
         }
 
@@ -515,6 +527,14 @@ namespace IKAutomation.FarmTeamSelection.Tests
 
         private sealed class FakeStore : ISelectFarmTeamDiagnosticStore
         { public bool Throw; public Task<string> SaveAsync(string d, SelectFarmTeamOutcome o, byte[] p, CancellationToken t) { if (Throw) throw new IOException("disk full"); return Task.FromResult("farm-team.png"); } }
+        private sealed class FakeSelectedTeamDetector : ISelectedTeamDetector
+        {
+            public Task<SelectedTeamConsensusResult> DetectAsync(string d,
+                SelectedTeamDetectionContext c, CancellationToken t) => Task.FromResult(
+                    new SelectedTeamConsensusResult { IsConfident = false });
+            public SelectedTeamFrameResult DetectFrame(byte[] p,
+                SelectedTeamDetectionContext c) => new SelectedTeamFrameResult();
+        }
         private sealed class FakeLogger : IDiagnosticLogger { public void Info(string m) { } public void Error(string m, Exception e) { } }
     }
 }

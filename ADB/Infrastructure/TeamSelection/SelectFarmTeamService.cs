@@ -409,32 +409,25 @@ namespace ADB_Tool_Automation_Post_FB.Infrastructure.TeamSelection
                             continue;
                         }
                         // The ready-team decision was made on WorldMap and this exact
-                        // team row was just tapped from fresh badge bounds.  A border
-                        // detector is too fragile to gate the only enabled Gather
-                        // action, so only confirm that Team Selection still exists.
-                        GameDetectionResult postTapState = null;
-                        bool postTapScreenConfirmed = false;
+                        // team row was just tapped from fresh badge bounds. Do not
+                        // spend the selection deadline on a second screen detector:
+                        // Dispatch owns the mandatory fresh TeamSelection/action
+                        // verification immediately before the yellow Gather tap.
                         if (selectedTeamDetector != null)
-                        {
-                            postTapState = await ConfirmSelectionScreenAsync(deviceName,
-                                cancellationToken, frame => lastFrame = frame);
-                            postTapScreenConfirmed = IsSelectionScreen(postTapState);
-                            logger.Info($"[Farm Team Selection PostTap] DeviceName='{deviceName}', ExpectedTeam='{team}', TeamSelectionConfirmed={postTapScreenConfirmed}, Attempt={attemptNumber}, TeamTapCount={result.TeamTapCount}, NextAction='{(postTapScreenConfirmed ? "DispatchFreshAction" : "RetrySelection")}'");
-                        }
-                        logger.Info($"[Team Selection Mapping] RunId='{request.RunId ?? string.Empty}', DeviceName='{deviceName}', ExpectedTeam='{team}', VisibleTeams='{Join(result.VisibleTeams)}', SelectedBefore='{result.ActualSelectedTeam}', BadgeBounds=({badge.X},{badge.Y},{badge.Width},{badge.Height}), RowBounds=({region.X},{region.Y},{region.Width},{region.Height}), TapPointValidated=true, ScrollAttempt={result.ScrollAttempts}, TapAttempt={attemptNumber}, TapCoordinates=({tapX},{tapY}), InputFrameAgeMs={inputFrameAgeMs}, NextAction='VerifyExactTeam'");
-
-                        if (selectedTeamDetector != null && postTapScreenConfirmed)
                         {
                             attempt.SelectedAfter = team;
                             attempt.SelectedVerified = true;
-                            attempt.Message = "Đội sẵn sàng đã được chọn; chuyển sang nút Thu thập.";
+                            attempt.Message = "Đội sẵn sàng đã được chọn; Dispatch sẽ kiểm tra lại nút Thu thập mới nhất.";
                             result.SelectedTeam = team;
                             result.ActualSelectedTeam = team;
                             result.SelectedStateVerified = true;
                             result.FinalState = GameState.TeamSelection;
+                            logger.Info($"[Farm Team Selection PostTap] DeviceName='{deviceName}', ExpectedTeam='{team}', ReadyTeamTapAccepted=true, Attempt={attemptNumber}, TeamTapCount={result.TeamTapCount}, NextAction='DispatchFreshAction'");
                             return Complete(result, SelectFarmTeamOutcome.TeamSelected,
-                                $"{team} was tapped from the ready-team plan.", null, watch);
+                                $"{team} was tapped from the ready-team plan; Dispatch will rematch the fresh action.",
+                                null, watch);
                         }
+                        logger.Info($"[Team Selection Mapping] RunId='{request.RunId ?? string.Empty}', DeviceName='{deviceName}', ExpectedTeam='{team}', VisibleTeams='{Join(result.VisibleTeams)}', SelectedBefore='{result.ActualSelectedTeam}', BadgeBounds=({badge.X},{badge.Y},{badge.Width},{badge.Height}), RowBounds=({region.X},{region.Y},{region.Width},{region.Height}), TapPointValidated=true, ScrollAttempt={result.ScrollAttempts}, TapAttempt={attemptNumber}, TapCoordinates=({tapX},{tapY}), InputFrameAgeMs={inputFrameAgeMs}, NextAction='VerifyExactTeam'");
 
                         // Keep the legacy detector path only as a conservative fallback
                         // when the fresh screen itself cannot be confirmed.
