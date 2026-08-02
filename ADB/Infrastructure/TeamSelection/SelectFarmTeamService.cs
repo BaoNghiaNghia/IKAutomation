@@ -450,6 +450,21 @@ namespace ADB_Tool_Automation_Post_FB.Infrastructure.TeamSelection
                                     return Complete(result, SelectFarmTeamOutcome.TeamSelected,
                                         $"{team} was selected and verified.", null, watch);
                                 }
+                                bool actionReadyFallback = IsActionReadyFallback(
+                                    freshPostTap, attempt, team, resolvedTargetTeam,
+                                    result.TeamTapCount, out string fallbackRejectReason);
+                                logger.Info($"[Farm Team Selection Fallback] DeviceName='{deviceName}', ExpectedTeam='{team}', ResolvedTargetTeam='{resolvedTargetTeam}', Attempt={attemptNumber}, TargetTapSucceeded={attempt.TapSent}, TeamTapCount={result.TeamTapCount}, DetectedTeam='{freshPostTap?.Detection?.Team}', DetectionConfident={freshPostTap?.Detection?.IsConfident}, DetectionAmbiguous={freshPostTap?.Detection?.IsAmbiguous}, FramesObserved={freshPostTap?.Detection?.FramesObserved}, MatchingFrames={freshPostTap?.Detection?.MatchingFrames}, FreshPanelConfirmed={freshPostTap?.FrameState != null && IsSelectionScreen(freshPostTap.FrameState)}, FreshActionEnabled={freshActionReady}, FallbackAccepted={actionReadyFallback}, RejectReason='{fallbackRejectReason ?? string.Empty}'");
+                                if (actionReadyFallback)
+                                {
+                                    attempt.SelectedVerified = true;
+                                    attempt.Message = "The target tap succeeded and the fresh action is ready; using controlled action-ready fallback.";
+                                    result.SelectedTeam = team;
+                                    result.SelectedStateVerified = true;
+                                    result.ActionReadyFallbackAccepted = true;
+                                    result.FinalState = GameState.TeamSelection;
+                                    return Complete(result, SelectFarmTeamOutcome.TeamSelected,
+                                        $"{team} was selected through the action-ready fallback.", null, watch);
+                                }
                                 if (freshPostTap?.Detection?.IsConfident == true
                                     && freshPostTap.Detection.Team.HasValue
                                     && freshPostTap.Detection.Team.Value != team)
@@ -601,6 +616,68 @@ namespace ADB_Tool_Automation_Post_FB.Infrastructure.TeamSelection
             public string FailureReason { get; set; }
             public int Attempt { get; set; }
             public int TeamTapCount { get; set; }
+        }
+
+        private static bool IsActionReadyFallback(PostTapVerificationSnapshot snapshot,
+            TeamSelectionAttempt attempt, TeamNumber tappedTeam,
+            TeamNumber resolvedTargetTeam, int teamTapCount, out string rejectReason)
+        {
+            rejectReason = null;
+            if (attempt == null || !attempt.TapSent)
+            {
+                rejectReason = "TargetTapNotIssued";
+                return false;
+            }
+            if (tappedTeam != resolvedTargetTeam || teamTapCount <= 0)
+            {
+                rejectReason = "TargetTapDoesNotMatchResolvedTeam";
+                return false;
+            }
+            if (snapshot == null || !snapshot.HasFreshFrameState
+                || snapshot.FrameState == null || !IsSelectionScreen(snapshot.FrameState))
+            {
+                rejectReason = "FreshTeamSelectionStateUnavailable";
+                return false;
+            }
+            if (!HasEnabledAction(snapshot.FrameState))
+            {
+                rejectReason = "FreshActionDisabled";
+                return false;
+            }
+            if (snapshot.Detection == null)
+            {
+                rejectReason = "FreshDetectorResultUnavailable";
+                return false;
+            }
+            if (snapshot.Detection.IsAmbiguous)
+            {
+                rejectReason = "AmbiguousSelectionEvidence";
+                return false;
+            }
+            if (snapshot.Detection.IsConfident && snapshot.Detection.Team.HasValue
+                && snapshot.Detection.Team.Value != resolvedTargetTeam)
+            {
+                rejectReason = "ConflictingSelectedTeam";
+                return false;
+            }
+            if (snapshot.Detection.Team.HasValue)
+            {
+                rejectReason = "SelectedTeamWasNotUnknown";
+                return false;
+            }
+            if (snapshot.Detection.MatchingFrames != 0)
+            {
+                rejectReason = "DetectorProducedPartialConsensus";
+                return false;
+            }
+            if (!string.IsNullOrWhiteSpace(snapshot.Detection.FailureReason)
+                && !string.Equals(snapshot.Detection.FailureReason,
+                    "InsufficientConsensus", StringComparison.Ordinal))
+            {
+                rejectReason = "DetectorFailureWasNotNoConsensus";
+                return false;
+            }
+            return true;
         }
 
         private SelectedScan ScanSelected(byte[] frame,

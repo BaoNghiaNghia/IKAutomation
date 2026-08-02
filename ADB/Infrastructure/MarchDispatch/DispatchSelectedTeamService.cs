@@ -116,7 +116,7 @@ namespace ADB_Tool_Automation_Post_FB.Infrastructure.MarchDispatch
                 GameDetectionResult initial = await detector.DetectAsync(deviceName, cancellationToken);
                 result.InitialState = initial.State;
                 result.FinalState = initial.State;
-                if (!IsReady(initial))
+                if (!IsReadyForDispatch(initial, request.AllowActionReadyFallback))
                 {
                     lastFrame = await TryCaptureAsync(deviceName, cancellationToken);
                     return await CompleteAsync(deviceName, result, DispatchMarchOutcome.TeamSelectionNotReady,
@@ -132,20 +132,25 @@ namespace ADB_Tool_Automation_Post_FB.Infrastructure.MarchDispatch
                 result.ActualSelectedTeam = precheck.ActualSelectedTeam;
                 result.ObservedSelectedTeam = precheck.ActualSelectedTeam;
                 result.VisibleTeams = precheck.VisibleTeams;
-                logger.Info($"[Dispatch Guard] RunId='{request.RunId ?? string.Empty}', DeviceName='{deviceName}', ExpectedTeam='{request.ExpectedTeam}', ObservedSelectedTeam='{precheck.ActualSelectedTeam}', ExpectedBadgeFound={precheck.BadgeFound}, ExpectedSelected={precheck.SelectedFound}, ActionTapSent=false, Outcome='Precheck'");
+                bool actionReadyFallback = request.AllowActionReadyFallback;
+                logger.Info($"[Dispatch Guard] RunId='{request.RunId ?? string.Empty}', DeviceName='{deviceName}', ExpectedTeam='{request.ExpectedTeam}', ObservedSelectedTeam='{precheck.ActualSelectedTeam}', ExpectedBadgeFound={precheck.BadgeFound}, ExpectedSelected={precheck.SelectedFound}, ActionReadyFallback={actionReadyFallback}, ActionTapSent=false, Outcome='Precheck'");
                 if (precheck.Ambiguous)
                     return await CompleteAsync(deviceName, result, DispatchMarchOutcome.VerificationIndeterminate,
                         "Selected border appeared in multiple team ROIs; no Tap was sent.",
                         "Ambiguous selected-team evidence.", lastFrame, watch, cancellationToken);
-                if (!precheck.SelectedFound)
+                if ((precheck.ActualSelectedTeam.HasValue
+                        && precheck.ActualSelectedTeam.Value != request.ExpectedTeam)
+                    || (!precheck.SelectedFound && !actionReadyFallback))
                 {
                     result.FailureReason = "WrongTeamSelected";
                     return await CompleteAsync(deviceName, result, DispatchMarchOutcome.ExpectedTeamNotSelected,
                         "Đội dự kiến chưa được chọn chính xác; chưa thực hiện lệnh thu thập.", null,
                         lastFrame, watch, cancellationToken);
                 }
-                ImageRegion teamRegion = precheck.ExpectedRowBounds;
-                result.ExpectedTeamSelectedBeforeTap = true;
+                ImageRegion teamRegion = precheck.BadgeFound
+                    ? precheck.ExpectedRowBounds
+                    : teamOptions.TeamRegions[request.ExpectedTeam];
+                result.ExpectedTeamSelectedBeforeTap = precheck.SelectedFound;
 
                 byte[] beforeDispatch = await client.CaptureScreenshotPngAsync(deviceName, cancellationToken);
                 GameDetectionResult freshState = detector.Detect(beforeDispatch);
@@ -155,12 +160,21 @@ namespace ADB_Tool_Automation_Post_FB.Infrastructure.MarchDispatch
                 result.VisibleTeams = freshSelection.VisibleTeams;
                 ImageMatchResult action = Match(beforeDispatch, TemplateId.TeamActionButtonEnabled, null);
                 logger.Info($"[March Dispatch] DeviceName='{deviceName}', FreshState='{freshState.State}', ExpectedBadgeFound={freshSelection.BadgeFound}, ExpectedSelected={freshSelection.SelectedFound}, ActionButtonFound={HasBounds(action)}, ActionButtonBounds={(HasBounds(action) ? $"({action.X},{action.Y},{action.Width},{action.Height})" : string.Empty)}");
-                if (!IsReady(freshState) || freshSelection.Ambiguous
-                    || !freshSelection.SelectedFound)
+                if (!IsReadyForDispatch(freshState, actionReadyFallback) || freshSelection.Ambiguous
+                    || (freshSelection.ActualSelectedTeam.HasValue
+                        && freshSelection.ActualSelectedTeam.Value != request.ExpectedTeam)
+                    || (!freshSelection.SelectedFound && !actionReadyFallback))
                     return await CompleteAsync(deviceName, result, DispatchMarchOutcome.ExpectedTeamNotSelected,
                         "Đội dự kiến chưa được chọn chính xác; chưa thực hiện lệnh thu thập.", null,
                         beforeDispatch, watch, cancellationToken);
-                if (!HasBounds(action))
+                ActionTapPlan actionPlan = HasBounds(action)
+                    ? ActionTapPlan.FromTemplate(action)
+                    : TryCreateNormalizedActionPlan(freshState, actionReadyFallback,
+                        out ActionTapPlan normalizedAction)
+                        ? normalizedAction : ActionTapPlan.Unavailable("ActionTemplateBoundsUnavailable");
+                LogActionTapPlanned(deviceName, actionPlan, freshState, request.TeamTapCount,
+                    result.ActionTapCount);
+                if (!actionPlan.IsValid)
                     return await CompleteAsync(deviceName, result, DispatchMarchOutcome.ActionButtonUnavailable,
                         "Team action button has no valid fresh bounds; no Tap was sent.", null,
                         beforeDispatch, watch, cancellationToken);
@@ -174,7 +188,7 @@ namespace ADB_Tool_Automation_Post_FB.Infrastructure.MarchDispatch
                 logger.Info($"[March Dispatch] DeviceName='{deviceName}', ExpectedTeam='{request.ExpectedTeam}', ReadyBeforeDispatch={result.ExpectedTeamReadyBeforeDispatch}, TimerContentBeforeDispatch={timerBefore.ContentDetected}, TimerForegroundRatio={timerBefore.ForegroundRatio:F4}, TimerRegion=({timerRegion.X},{timerRegion.Y},{timerRegion.Width},{timerRegion.Height})");
                 result.ActionButtonVerified = true;
                 lastFrame = beforeDispatch;
-                await TapActionAsync(deviceName, result, action, cancellationToken, false);
+                await TapActionAsync(deviceName, result, actionPlan, cancellationToken, false);
                 DateTimeOffset lastTapAt = DateTimeOffset.UtcNow;
                 DateTimeOffset transitionDeadline = DateTimeOffset.UtcNow.AddSeconds(
                     options.TransitionTimeoutSeconds);
@@ -247,6 +261,11 @@ namespace ADB_Tool_Automation_Post_FB.Infrastructure.MarchDispatch
                     observations.Add(observation);
                     result.ObservedFrameCount = observations.Count;
                     Apply(result, observation);
+                    bool actionButtonPresent = Match(lastFrame,
+                        TemplateId.TeamActionButtonEnabled, null).Found;
+                    LogActionTapVerification(deviceName, result.InitialState, state.State,
+                        observation.TeamSelectionFound, actionButtonPresent,
+                        observation.SuccessRuleMatched, result.ActionTapCount, null);
 
                     if (state.State == GameState.Unknown) result.TransientUnknownFrameCount++;
                     bool success = observation.SuccessRuleMatched;
@@ -291,9 +310,15 @@ namespace ADB_Tool_Automation_Post_FB.Infrastructure.MarchDispatch
                             lastFrame, watch, cancellationToken);
 
                     if (CanRetry(state, observation, transitionObserved, result.ActionTapCount,
-                        lastTapAt, lastFrame, request.ExpectedTeam, badgeId, out ImageMatchResult retryAction))
+                        actionReadyFallback ? Math.Min(options.MaxActionTapAttempts, 2)
+                            : options.MaxActionTapAttempts,
+                        lastTapAt, lastFrame, request.ExpectedTeam, badgeId,
+                        actionReadyFallback, out ImageMatchResult retryAction))
                     {
-                        await TapActionAsync(deviceName, result, retryAction, cancellationToken, true);
+                        ActionTapPlan retryPlan = ActionTapPlan.FromTemplate(retryAction);
+                        LogActionTapPlanned(deviceName, retryPlan, state, request.TeamTapCount,
+                            result.ActionTapCount);
+                        await TapActionAsync(deviceName, result, retryPlan, cancellationToken, true);
                         lastTapAt = DateTimeOffset.UtcNow;
                     }
                 }
@@ -389,28 +414,115 @@ namespace ADB_Tool_Automation_Post_FB.Infrastructure.MarchDispatch
         }
 
         private bool CanRetry(GameDetectionResult state, MarchDispatchObservation observation,
-            bool transitionObserved, int tapCount, DateTimeOffset lastTapAt, byte[] frame,
-            TeamNumber team, TemplateId badgeId, out ImageMatchResult action)
+            bool transitionObserved, int tapCount, int maxActionTapAttempts,
+            DateTimeOffset lastTapAt, byte[] frame, TeamNumber team, TemplateId badgeId,
+            bool allowActionReadyFallback, out ImageMatchResult action)
         {
             action = ImageMatchResult.NotFound();
-            if (transitionObserved || tapCount >= options.MaxActionTapAttempts
+            if (transitionObserved || tapCount >= maxActionTapAttempts
                 || DateTimeOffset.UtcNow - lastTapAt < TimeSpan.FromMilliseconds(options.ActionTapRetryDelayMs)
                 || state.State != GameState.TeamSelection || !observation.TeamSelectionFound)
                 return false;
             Verification selection = VerifySelection(frame, team, badgeId);
-            if (selection.Ambiguous || !selection.SelectedFound) return false;
+            if (selection.Ambiguous || (!selection.SelectedFound && !allowActionReadyFallback))
+                return false;
             ImageMatchResult adjust = Match(frame, TemplateId.TeamAdjustFormationButton, null);
             action = Match(frame, TemplateId.TeamActionButtonEnabled, null);
             return adjust.Found && HasBounds(action);
         }
 
         private async Task TapActionAsync(string deviceName, DispatchMarchResult result,
-            ImageMatchResult action, CancellationToken token, bool retry)
+            ActionTapPlan action, CancellationToken token, bool retry)
         {
             token.ThrowIfCancellationRequested();
-            await client.TapAsync(deviceName, action.CenterX, action.CenterY, token);
-            result.ActionTapCount++;
-            logger.Info($"[March Dispatch] DeviceName='{deviceName}', TeamActionBounds=({action.X},{action.Y},{action.Width},{action.Height}), Tap=({action.CenterX},{action.CenterY}), ActionTapCount={result.ActionTapCount}, Retry={retry}, Cancellation=false");
+            try
+            {
+                await client.TapAsync(deviceName, action.TapX, action.TapY, token);
+                result.ActionTapCount++;
+                logger.Info($"[Team Action Tap Issued] DeviceName='{deviceName}', Source='{action.Source}', TapX={action.TapX}, TapY={action.TapY}, TapCommandSucceeded=true, ActionTapCount={result.ActionTapCount}, Error='', Retry={retry}");
+            }
+            catch (OperationCanceledException)
+            {
+                throw;
+            }
+            catch (Exception exception)
+            {
+                logger.Info($"[Team Action Tap Issued] DeviceName='{deviceName}', Source='{action.Source}', TapX={action.TapX}, TapY={action.TapY}, TapCommandSucceeded=false, ActionTapCount={result.ActionTapCount}, Error='{exception.Message}', Retry={retry}");
+                throw;
+            }
+        }
+
+        private static bool TryCreateNormalizedActionPlan(GameDetectionResult state,
+            bool actionReadyFallback, out ActionTapPlan plan)
+        {
+            plan = null;
+            if (!actionReadyFallback || !IsActionReadyFallbackState(state))
+                return false;
+            int width = state.ScreenshotWidth;
+            int height = state.ScreenshotHeight;
+            if (width <= 0 || height <= 0
+                || Math.Abs((width / (double)height) - (16d / 9d)) > .03d)
+                return false;
+            int tapX = (int)Math.Round(width * .484375d);
+            int tapY = (int)Math.Round(height * .7472d);
+            bool insideScreen = tapX >= 0 && tapX < width && tapY >= 0 && tapY < height;
+            bool insideActionRegion = tapX >= width * .40d && tapX <= width * .58d
+                && tapY >= height * .68d && tapY <= height * .81d;
+            if (!insideScreen || !insideActionRegion)
+                return false;
+            plan = ActionTapPlan.FromNormalized(tapX, tapY);
+            return true;
+        }
+
+        private void LogActionTapPlanned(string deviceName, ActionTapPlan plan,
+            GameDetectionResult state, int teamTapCount, int actionTapCount)
+        {
+            logger.Info($"[Team Action Tap Planned] DeviceName='{deviceName}', Source='{plan.Source}', ButtonBounds='{plan.ButtonBounds}', FrameWidth={state?.ScreenshotWidth ?? 0}, FrameHeight={state?.ScreenshotHeight ?? 0}, TapX={plan.TapX}, TapY={plan.TapY}, PointValid={plan.IsValid}, TeamTapCount={teamTapCount}, ActionTapCount={actionTapCount}, SkipReason='{plan.SkipReason ?? string.Empty}'");
+        }
+
+        private void LogActionTapVerification(string deviceName, GameState initialState,
+            GameState finalState, bool teamSelectionPanelPresent, bool actionButtonPresent,
+            bool success, int attempt, string error)
+        {
+            logger.Info($"[Team Action Tap Verification] DeviceName='{deviceName}', InitialState='{initialState}', FinalState='{finalState}', TeamSelectionPanelPresent={teamSelectionPanelPresent}, ActionButtonPresent={actionButtonPresent}, Success={success}, Attempt={attempt}, Error='{error ?? string.Empty}'");
+        }
+
+        private sealed class ActionTapPlan
+        {
+            public string Source { get; private set; }
+            public string ButtonBounds { get; private set; }
+            public int TapX { get; private set; }
+            public int TapY { get; private set; }
+            public bool IsValid { get; private set; }
+            public string SkipReason { get; private set; }
+
+            public static ActionTapPlan FromTemplate(ImageMatchResult match) =>
+                new ActionTapPlan
+                {
+                    Source = "TemplateBounds",
+                    ButtonBounds = $"({match.X},{match.Y},{match.Width},{match.Height})",
+                    TapX = match.CenterX,
+                    TapY = match.CenterY,
+                    IsValid = HasBounds(match)
+                };
+
+            public static ActionTapPlan FromNormalized(int tapX, int tapY) =>
+                new ActionTapPlan
+                {
+                    Source = "NormalizedHardcoded",
+                    ButtonBounds = string.Empty,
+                    TapX = tapX,
+                    TapY = tapY,
+                    IsValid = true
+                };
+
+            public static ActionTapPlan Unavailable(string reason) => new ActionTapPlan
+            {
+                Source = "Unavailable",
+                ButtonBounds = string.Empty,
+                IsValid = false,
+                SkipReason = reason
+            };
         }
 
         private Verification VerifySelection(byte[] frame, TeamNumber expectedTeam, TemplateId badgeId)
@@ -486,6 +598,15 @@ namespace ADB_Tool_Automation_Post_FB.Infrastructure.MarchDispatch
             result != null && result.IsSuccessful && result.State == GameState.TeamSelection
             && ReadyTemplates.All(id => result.Evidence != null
                 && result.Evidence.Any(item => item.TemplateId == id && item.Found));
+        private static bool IsReadyForDispatch(GameDetectionResult result,
+            bool allowActionReadyFallback) =>
+            IsReady(result) || (allowActionReadyFallback
+                && IsActionReadyFallbackState(result));
+        private static bool IsActionReadyFallbackState(GameDetectionResult result) =>
+            result != null && result.IsSuccessful && result.State == GameState.TeamSelection
+            && TeamSelectionEvidence.IsConfirmed(result)
+            && result.Evidence != null && result.Evidence.Any(item =>
+                item.TemplateId == TemplateId.TeamActionButtonEnabled && item.Found);
         private static TemplateId BadgeId(TeamNumber team)
         {
             switch (team)

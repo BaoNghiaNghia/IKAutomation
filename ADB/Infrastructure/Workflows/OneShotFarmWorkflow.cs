@@ -361,6 +361,8 @@ namespace ADB_Tool_Automation_Post_FB.Infrastructure.Workflows
                 token.ThrowIfCancellationRequested(); started = Start(runId, deviceName, OneShotFarmStep.DispatchTeam);
                 DispatchMarchResult dispatched = await dispatch.DispatchAsync(deviceName, new DispatchMarchRequest
                 { ExpectedTeam = selected.SelectedTeam.Value, RequireExpectedTeamSelected = true,
+                    AllowActionReadyFallback = selected.ActionReadyFallbackAccepted,
+                    TeamTapCount = selected.TeamTapCount,
                     AllowStructuralVerificationFallback = true, CurrentResource = request.ResourceType,
                     RunId = request.RunId }, token);
                 result.DispatchResult = dispatched; result.FinalState = dispatched.FinalState;
