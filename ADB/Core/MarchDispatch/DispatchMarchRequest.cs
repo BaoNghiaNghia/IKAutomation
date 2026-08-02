@@ -7,8 +7,6 @@ namespace ADB_Tool_Automation_Post_FB.Core.MarchDispatch
     {
         public TeamNumber ExpectedTeam { get; set; } = TeamNumber.Team4;
         public bool RequireExpectedTeamSelected { get; set; } = true;
-        public bool AllowActionReadyFallback { get; set; }
-        public int TeamTapCount { get; set; }
         public bool AllowStructuralVerificationFallback { get; set; } = true;
         public ResourceType CurrentResource { get; set; } = ResourceType.Iron;
         public string RunId { get; set; }

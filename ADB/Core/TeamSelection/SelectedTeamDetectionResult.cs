@@ -25,6 +25,17 @@ namespace ADB_Tool_Automation_Post_FB.Core.TeamSelection
         public double RightBorderScore { get; set; } public double TopBorderScore { get; set; }
         public double BottomBorderScore { get; set; } public int BorderEdgesFound { get; set; }
         public double ContrastScore { get; set; } public double CombinedScore { get; set; }
+        public double BorderEvidenceScore { get; set; }
+        public double BorderContinuityScore { get; set; }
+        public double TemplatePathScore { get; set; }
+        public double BorderPathScore { get; set; }
+        public double EffectiveScore { get; set; }
+        public bool BorderOnlyQualified { get; set; }
+        public bool CandidateQualified { get; set; }
+        public int TopBorderOffset { get; set; }
+        public int BottomBorderOffset { get; set; }
+        public int LeftBorderOffset { get; set; }
+        public int RightBorderOffset { get; set; }
         public bool GeometryValid { get; set; } public string FailureReason { get; set; }
     }
 
@@ -45,5 +56,7 @@ namespace ADB_Tool_Automation_Post_FB.Core.TeamSelection
         public int TimeoutMs { get; set; } = 3000;
         public double MinimumScore { get; set; } = .70;
         public double WinningMargin { get; set; } = .12;
+        public TeamNumber? ExpectedTeam { get; set; }
+        public ImageRegion? FreshTargetRowBounds { get; set; }
     }
 }

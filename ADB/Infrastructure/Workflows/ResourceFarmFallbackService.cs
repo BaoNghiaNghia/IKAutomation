@@ -239,8 +239,6 @@ namespace ADB_Tool_Automation_Post_FB.Infrastructure.Workflows
                     DispatchMarchResult dispatched = await dispatch.DispatchAsync(deviceName,
                         new DispatchMarchRequest { ExpectedTeam = selected.SelectedTeam.Value,
                             RequireExpectedTeamSelected = true,
-                            AllowActionReadyFallback = selected.ActionReadyFallbackAccepted,
-                            TeamTapCount = selected.TeamTapCount,
                             AllowStructuralVerificationFallback = true, CurrentResource = resource,
                             RunId = runId },
                         cancellationToken);

@@ -3,41 +3,313 @@ using ADB_Tool_Automation_Post_FB.Core.TeamSelection;
 using ADB_Tool_Automation_Post_FB.Core.Vision;
 using System;
 using System.Collections.Generic;
+using System.Drawing;
+using System.IO;
 using System.Linq;
 using System.Threading;
 using System.Threading.Tasks;
-using System.Drawing;
-using System.IO;
 
 namespace ADB_Tool_Automation_Post_FB.Infrastructure.TeamSelection
 {
-    // A selected border is only an evidence signal: a winner also needs a clear margin.
     public sealed class SelectedTeamDetector : ISelectedTeamDetector
     {
-        private readonly ILdPlayerClient client; private readonly ITemplateRegistry registry; private readonly IImageMatcher matcher;
-        public SelectedTeamDetector(ILdPlayerClient client, ITemplateRegistry registry, IImageMatcher matcher)
-        { this.client=client; this.registry=registry; this.matcher=matcher; }
-        public SelectedTeamFrameResult DetectFrame(byte[] frame, SelectedTeamDetectionContext context)
+        private const double TemplateWeight = .35d;
+        private const double BorderWeight = .45d;
+        private const double ContrastWeight = .20d;
+        private const double BorderOnlyWeight = .80d;
+        private const double MinimumCoherentContinuity = .55d;
+        private const double MinimumBorderContrast = .35d;
+        private const int RequiredBorderEdges = 2;
+        private const int EdgeSearchBand = 6;
+
+        private readonly ILdPlayerClient client;
+        private readonly ITemplateRegistry registry;
+        private readonly IImageMatcher matcher;
+
+        public SelectedTeamDetector(ILdPlayerClient client, ITemplateRegistry registry,
+            IImageMatcher matcher)
         {
-            if(frame==null||context==null||context.TeamRegions==null) return Fail("MissingFrameOrGeometry");
-            var rows=context.TeamRegions.OrderBy(x=>(int)x.Key).ToArray();
-            if(rows.Length==0||rows.Any(x=>!Valid(x.Value,context))||Overlaps(rows)) return Fail("InvalidRowGeometry");
-            var scores=new Dictionary<TeamNumber,double>(); var details=new Dictionary<TeamNumber,SelectedTeamRowScore>();
-            using(var stream=new MemoryStream(frame,false)) using(var bitmap=new Bitmap(stream)) foreach(var row in rows){ var m=matcher.Find(frame,registry.LoadBytes(TemplateId.TeamSelectedBorderAnchor),row.Value); double t=m!=null&&m.Found?Clamp(m.Confidence??.75):0; int strip=Math.Max(2,Math.Min(5,row.Value.Width/20)); var d=new SelectedTeamRowScore{Team=row.Key,RowBounds=row.Value,TemplateConfidence=t,GeometryValid=true}; d.LeftBorderScore=Edge(bitmap,row.Value,new ImageRegion(row.Value.X,row.Value.Y,strip,row.Value.Height),new ImageRegion(row.Value.X+strip,row.Value.Y,strip,row.Value.Height)); d.RightBorderScore=Edge(bitmap,row.Value,new ImageRegion(row.Value.X+row.Value.Width-strip,row.Value.Y,strip,row.Value.Height),new ImageRegion(row.Value.X+row.Value.Width-2*strip,row.Value.Y,strip,row.Value.Height)); d.TopBorderScore=Edge(bitmap,row.Value,new ImageRegion(row.Value.X,row.Value.Y,row.Value.Width,strip),new ImageRegion(row.Value.X,row.Value.Y+strip,row.Value.Width,strip)); d.BottomBorderScore=Edge(bitmap,row.Value,new ImageRegion(row.Value.X,row.Value.Y+row.Value.Height-strip,row.Value.Width,strip),new ImageRegion(row.Value.X,row.Value.Y+row.Value.Height-2*strip,row.Value.Width,strip)); var e=new[]{d.LeftBorderScore,d.RightBorderScore,d.TopBorderScore,d.BottomBorderScore}.OrderByDescending(x=>x).ToArray(); d.BorderEdgesFound=e.Count(x=>x>=.60); double border=d.BorderEdgesFound>=2?(e[0]+e[1])/2:0; d.ContrastScore=Clamp(border); d.CombinedScore=Clamp(.35*t+.45*border+.20*d.ContrastScore); scores[row.Key]=d.CombinedScore; details[row.Key]=d; }
-            var ranked=scores.OrderByDescending(x=>x.Value).ToArray(); var win=ranked[0]; double runner=ranked.Length>1?ranked[1].Value:0, margin=win.Value-runner;
-            bool ambiguous=ranked.Count(x=>x.Value>=context.MinimumScore)>1;
-            bool confident=!ambiguous&&win.Value>=context.MinimumScore&&details[win.Key].BorderEdgesFound>=2&&margin>=context.WinningMargin;
-            return new SelectedTeamFrameResult{Team=confident?win.Key:(TeamNumber?)null,IsConfident=confident,IsAmbiguous=ambiguous,WinningScore=win.Value,RunnerUpScore=runner,WinningMargin=margin,Rows=rows.ToDictionary(x=>x.Key,x=>x.Value),RowScores=scores,RowDetails=details,FailureReason=confident?null:(ambiguous?"MultipleStrongRows":"InsufficientSelectionEvidence")};
+            this.client = client;
+            this.registry = registry;
+            this.matcher = matcher;
         }
-        public async Task<SelectedTeamConsensusResult> DetectAsync(string device, SelectedTeamDetectionContext c, CancellationToken token)
-        { var frames=new List<SelectedTeamFrameResult>(); for(int i=0;i<c.ConsensusFrames;i++){token.ThrowIfCancellationRequested(); frames.Add(DetectFrame(await client.CaptureScreenshotPngAsync(device,token),c)); if(i+1<c.ConsensusFrames) await Task.Delay(c.FrameIntervalMs,token);} var strong=frames.Where(x=>x.IsConfident).ToArray(); var groups=strong.GroupBy(x=>x.Team).ToArray(); if(groups.Length!=1||groups[0].Count()<c.RequiredMatchingFrames)return new SelectedTeamConsensusResult{FramesObserved=frames.Count,MatchingFrames=groups.Length==1?groups[0].Count():0,FailureReason=groups.Length>1?"ConflictingFrames":"InsufficientConsensus"}; var r=groups[0].First(); return new SelectedTeamConsensusResult{Team=r.Team,IsConfident=true,WinningScore=r.WinningScore,RunnerUpScore=r.RunnerUpScore,WinningMargin=r.WinningMargin,Rows=r.Rows,RowScores=r.RowScores,FramesObserved=frames.Count,MatchingFrames=groups[0].Count()}; }
-        private static SelectedTeamFrameResult Fail(string r)=>new SelectedTeamFrameResult{FailureReason=r};
-        private static bool Valid(ImageRegion r,SelectedTeamDetectionContext c)=>r.X>=0&&r.Y>=0&&r.Width>0&&r.Height>0&&r.X+r.Width<=c.ExpectedWidth&&r.Y+r.Height<=c.ExpectedHeight;
-        private static bool Overlaps(KeyValuePair<TeamNumber,ImageRegion>[] r)=>r.Any(a=>r.Any(b=>a.Key!=b.Key&&a.Value.X<b.Value.X+b.Value.Width&&b.Value.X<a.Value.X+a.Value.Width&&a.Value.Y<b.Value.Y+b.Value.Height&&b.Value.Y<a.Value.Y+a.Value.Height));
-        private static double Edge(Bitmap b,ImageRegion row,ImageRegion border,ImageRegion inner){double bm=Mean(b,border), im=Mean(b,inner); return Clamp(.45*Clamp((bm-im)/.35)+.30*Bright(b,border)+.25*Continuity(b,border));}
-        private static double Mean(Bitmap b,ImageRegion r){double s=0;int n=0; for(int y=Math.Max(0,r.Y);y<Math.Min(b.Height,r.Y+r.Height);y++)for(int x=Math.Max(0,r.X);x<Math.Min(b.Width,r.X+r.Width);x++){Color c=b.GetPixel(x,y);s+=(.2126*c.R+.7152*c.G+.0722*c.B)/255d;n++;}return n==0?0:s/n;}
-        private static double Bright(Bitmap b,ImageRegion r){return Mean(b,r)>.75?1:0;}
-        private static double Continuity(Bitmap b,ImageRegion r){return Bright(b,r);}
-        private static double Clamp(double v)=>Math.Max(0,Math.Min(1,v));
+
+        public SelectedTeamFrameResult DetectFrame(byte[] frame,
+            SelectedTeamDetectionContext context)
+        {
+            if (frame == null || context == null || context.TeamRegions == null)
+                return Fail("MissingFrameOrGeometry");
+
+            using (var stream = new MemoryStream(frame, false))
+            using (var bitmap = new Bitmap(stream))
+            {
+                IReadOnlyDictionary<TeamNumber, ImageRegion> rows = ResolveRows(context,
+                    bitmap.Width, bitmap.Height);
+                if (rows.Count == 0 || rows.Any(item => !Valid(item.Value, bitmap.Width, bitmap.Height))
+                    || Overlaps(rows))
+                    return Fail("InvalidRowGeometry");
+
+                var details = new Dictionary<TeamNumber, SelectedTeamRowScore>();
+                foreach (KeyValuePair<TeamNumber, ImageRegion> item in rows)
+                {
+                    ImageMatchResult match = matcher.Find(frame,
+                        registry.LoadBytes(TemplateId.TeamSelectedBorderAnchor), item.Value);
+                    double template = match != null && match.Found
+                        ? Clamp(match.Confidence ?? .75d) : 0d;
+                    SelectedTeamRowScore score = ScoreRow(bitmap, item.Key, item.Value, template);
+                    details[item.Key] = score;
+                }
+
+                SelectedTeamRowScore[] ranked = details.Values
+                    .OrderByDescending(item => item.EffectiveScore).ToArray();
+                SelectedTeamRowScore winner = ranked[0];
+                double runner = ranked.Length > 1 ? ranked[1].EffectiveScore : 0d;
+                double margin = winner.EffectiveScore - runner;
+                bool multipleStrong = ranked.Count(item => item.CandidateQualified
+                    && item.EffectiveScore >= context.MinimumScore) > 1;
+                bool confident = !multipleStrong && winner.CandidateQualified
+                    && winner.EffectiveScore >= context.MinimumScore
+                    && margin >= context.WinningMargin;
+                string failure = confident ? null
+                    : multipleStrong ? "ConflictingStrongRows"
+                    : !winner.GeometryValid ? "InvalidGeometry"
+                    : winner.BorderEdgesFound < RequiredBorderEdges ? "InsufficientBorderEdges"
+                    : winner.BorderContinuityScore < MinimumCoherentContinuity
+                        ? "BorderContinuityTooLow"
+                    : winner.ContrastScore < MinimumBorderContrast ? "ContrastTooLow"
+                    : winner.EffectiveScore < context.MinimumScore ? "ScoreBelowThreshold"
+                    : margin < context.WinningMargin ? "WinningMarginTooLow"
+                    : "InsufficientSelectionEvidence";
+                return new SelectedTeamFrameResult
+                {
+                    Team = confident ? winner.Team : (TeamNumber?)null,
+                    IsConfident = confident,
+                    IsAmbiguous = multipleStrong,
+                    WinningScore = winner.EffectiveScore,
+                    RunnerUpScore = runner,
+                    WinningMargin = margin,
+                    Rows = rows,
+                    RowScores = details.ToDictionary(item => item.Key,
+                        item => item.Value.EffectiveScore),
+                    RowDetails = details,
+                    FailureReason = failure
+                };
+            }
+        }
+
+        public async Task<SelectedTeamConsensusResult> DetectAsync(string device,
+            SelectedTeamDetectionContext context, CancellationToken token)
+        {
+            var frames = new List<SelectedTeamFrameResult>();
+            for (int index = 0; index < context.ConsensusFrames; index++)
+            {
+                token.ThrowIfCancellationRequested();
+                frames.Add(DetectFrame(await client.CaptureScreenshotPngAsync(device, token),
+                    context));
+                if (index + 1 < context.ConsensusFrames)
+                    await Task.Delay(context.FrameIntervalMs, token);
+            }
+            SelectedTeamFrameResult[] strong = frames.Where(item => item.IsConfident).ToArray();
+            var groups = strong.GroupBy(item => item.Team).ToArray();
+            if (groups.Length != 1 || groups[0].Count() < context.RequiredMatchingFrames)
+                return new SelectedTeamConsensusResult
+                {
+                    FramesObserved = frames.Count,
+                    MatchingFrames = groups.Length == 1 ? groups[0].Count() : 0,
+                    FailureReason = groups.Length > 1 ? "ConflictingFrames" : "InsufficientConsensus"
+                };
+            SelectedTeamFrameResult winner = groups[0].First();
+            return new SelectedTeamConsensusResult
+            {
+                Team = winner.Team,
+                IsConfident = true,
+                WinningScore = winner.WinningScore,
+                RunnerUpScore = winner.RunnerUpScore,
+                WinningMargin = winner.WinningMargin,
+                Rows = winner.Rows,
+                RowScores = winner.RowScores,
+                RowDetails = winner.RowDetails,
+                FramesObserved = frames.Count,
+                MatchingFrames = groups[0].Count()
+            };
+        }
+
+        private static SelectedTeamRowScore ScoreRow(Bitmap bitmap, TeamNumber team,
+            ImageRegion row, double template)
+        {
+            int strip = Math.Max(2, Math.Min(5, row.Width / 20));
+            EdgeSample left = BestEdge(bitmap, row, strip, Edge.Left);
+            EdgeSample right = BestEdge(bitmap, row, strip, Edge.Right);
+            EdgeSample top = BestEdge(bitmap, row, strip, Edge.Top);
+            EdgeSample bottom = BestEdge(bitmap, row, strip, Edge.Bottom);
+            EdgeSample[] edges = { left, right, top, bottom };
+            EdgeSample[] strong = edges.OrderByDescending(item => item.Score).ToArray();
+            int edgeCount = edges.Count(item => item.Score >= .60d);
+            bool horizontal = top.Score >= .60d || bottom.Score >= .60d;
+            bool vertical = left.Score >= .60d || right.Score >= .60d;
+            double border = edgeCount >= RequiredBorderEdges
+                ? (strong[0].Score + strong[1].Score) / 2d : 0d;
+            double continuity = strong.Take(Math.Min(RequiredBorderEdges, strong.Length))
+                .Average(item => item.Continuity);
+            double contrast = strong.Take(Math.Min(RequiredBorderEdges, strong.Length))
+                .Average(item => item.Contrast);
+            double templatePath = Clamp(TemplateWeight * template + BorderWeight * border
+                + ContrastWeight * contrast);
+            double borderPath = Clamp(BorderOnlyWeight * border + ContrastWeight * contrast);
+            bool borderOnlyQualified = edgeCount >= RequiredBorderEdges && horizontal && vertical
+                && continuity >= MinimumCoherentContinuity && contrast >= MinimumBorderContrast;
+            double effective = Math.Max(templatePath, borderPath);
+            return new SelectedTeamRowScore
+            {
+                Team = team,
+                RowBounds = row,
+                TemplateConfidence = template,
+                LeftBorderScore = left.Score,
+                RightBorderScore = right.Score,
+                TopBorderScore = top.Score,
+                BottomBorderScore = bottom.Score,
+                BorderEdgesFound = edgeCount,
+                BorderEvidenceScore = border,
+                BorderContinuityScore = continuity,
+                ContrastScore = contrast,
+                TemplatePathScore = templatePath,
+                BorderPathScore = borderPath,
+                EffectiveScore = effective,
+                CombinedScore = effective,
+                BorderOnlyQualified = borderOnlyQualified,
+                CandidateQualified = borderOnlyQualified,
+                TopBorderOffset = top.Offset,
+                BottomBorderOffset = bottom.Offset,
+                LeftBorderOffset = left.Offset,
+                RightBorderOffset = right.Offset,
+                GeometryValid = true,
+                FailureReason = borderOnlyQualified ? null : "InsufficientBorderEvidence"
+            };
+        }
+
+        private static EdgeSample BestEdge(Bitmap bitmap, ImageRegion row, int strip, Edge edge)
+        {
+            EdgeSample best = new EdgeSample();
+            for (int offset = -EdgeSearchBand; offset <= EdgeSearchBand; offset++)
+            {
+                ImageRegion border;
+                ImageRegion inside;
+                if (!TryEdgeRegions(row, strip, edge, offset, bitmap.Width, bitmap.Height,
+                    out border, out inside)) continue;
+                double bright = BrightRatio(bitmap, border);
+                double continuity = Continuity(bitmap, border, edge == Edge.Top || edge == Edge.Bottom);
+                double contrast = Clamp((Mean(bitmap, border) - Mean(bitmap, inside)) / .35d);
+                double score = Clamp(.45d * contrast + .30d * bright + .25d * continuity);
+                if (score > best.Score)
+                    best = new EdgeSample { Score = score, Contrast = contrast,
+                        Continuity = continuity, Offset = offset };
+            }
+            return best;
+        }
+
+        private static bool TryEdgeRegions(ImageRegion row, int strip, Edge edge, int offset,
+            int width, int height, out ImageRegion border, out ImageRegion inside)
+        {
+            int x = row.X;
+            int y = row.Y;
+            int w = row.Width;
+            int h = row.Height;
+            switch (edge)
+            {
+                case Edge.Left: x += offset; w = strip; break;
+                case Edge.Right: x += row.Width - strip + offset; w = strip; break;
+                case Edge.Top: y += offset; h = strip; break;
+                default: y += row.Height - strip + offset; h = strip; break;
+            }
+            if (!TryClamp(x, y, w, h, width, height, out border))
+            {
+                inside = default(ImageRegion);
+                return false;
+            }
+            int dx = edge == Edge.Left ? strip : edge == Edge.Right ? -strip : 0;
+            int dy = edge == Edge.Top ? strip : edge == Edge.Bottom ? -strip : 0;
+            return TryClamp(border.X + dx, border.Y + dy, border.Width, border.Height,
+                width, height, out inside);
+        }
+
+        private static bool TryClamp(int x, int y, int width, int height, int maxWidth,
+            int maxHeight, out ImageRegion region)
+        {
+            int left = Math.Max(0, x);
+            int top = Math.Max(0, y);
+            int right = Math.Min(maxWidth, x + width);
+            int bottom = Math.Min(maxHeight, y + height);
+            if (right <= left || bottom <= top)
+            {
+                region = default(ImageRegion);
+                return false;
+            }
+            region = new ImageRegion(left, top, right - left, bottom - top);
+            return true;
+        }
+
+        private static IReadOnlyDictionary<TeamNumber, ImageRegion> ResolveRows(
+            SelectedTeamDetectionContext context, int width, int height)
+        {
+            var rows = context.TeamRegions.ToDictionary(item => item.Key, item => item.Value);
+            if (context.ExpectedTeam.HasValue && context.FreshTargetRowBounds.HasValue
+                && Valid(context.FreshTargetRowBounds.Value, width, height))
+                rows[context.ExpectedTeam.Value] = context.FreshTargetRowBounds.Value;
+            return rows;
+        }
+
+        private static bool Valid(ImageRegion row, int width, int height) => row.X >= 0
+            && row.Y >= 0 && row.Width > 0 && row.Height > 0
+            && row.X + row.Width <= width && row.Y + row.Height <= height;
+        private static bool Overlaps(IReadOnlyDictionary<TeamNumber, ImageRegion> rows) =>
+            rows.Any(a => rows.Any(b => a.Key != b.Key && a.Value.X < b.Value.X + b.Value.Width
+                && b.Value.X < a.Value.X + a.Value.Width && a.Value.Y < b.Value.Y + b.Value.Height
+                && b.Value.Y < a.Value.Y + a.Value.Height));
+        private static SelectedTeamFrameResult Fail(string reason) =>
+            new SelectedTeamFrameResult { FailureReason = reason };
+        private static double Mean(Bitmap bitmap, ImageRegion region)
+        {
+            double sum = 0d;
+            int count = 0;
+            for (int y = region.Y; y < region.Y + region.Height; y++)
+                for (int x = region.X; x < region.X + region.Width; x++)
+                { sum += Luminance(bitmap.GetPixel(x, y)); count++; }
+            return count == 0 ? 0d : sum / count;
+        }
+        private static double BrightRatio(Bitmap bitmap, ImageRegion region)
+        {
+            int bright = 0;
+            int count = region.Width * region.Height;
+            for (int y = region.Y; y < region.Y + region.Height; y++)
+                for (int x = region.X; x < region.X + region.Width; x++)
+                    if (Luminance(bitmap.GetPixel(x, y)) >= .75d) bright++;
+            return count == 0 ? 0d : bright / (double)count;
+        }
+        private static double Continuity(Bitmap bitmap, ImageRegion region, bool horizontal)
+        {
+            int samples = horizontal ? region.Width : region.Height;
+            int longest = 0;
+            int run = 0;
+            for (int index = 0; index < samples; index++)
+            {
+                double value = horizontal
+                    ? Mean(bitmap, new ImageRegion(region.X + index, region.Y, 1, region.Height))
+                    : Mean(bitmap, new ImageRegion(region.X, region.Y + index, region.Width, 1));
+                if (value >= .75d) { run++; longest = Math.Max(longest, run); }
+                else run = 0;
+            }
+            return samples == 0 ? 0d : longest / (double)samples;
+        }
+        private static double Luminance(Color color) =>
+            (.2126d * color.R + .7152d * color.G + .0722d * color.B) / 255d;
+        private static double Clamp(double value) => Math.Max(0d, Math.Min(1d, value));
+        private enum Edge { Left, Right, Top, Bottom }
+        private sealed class EdgeSample
+        {
+            public double Score { get; set; }
+            public double Contrast { get; set; }
+            public double Continuity { get; set; }
+            public int Offset { get; set; }
+        }
     }
 }

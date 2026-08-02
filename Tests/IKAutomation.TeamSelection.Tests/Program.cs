@@ -53,6 +53,8 @@ namespace IKAutomation.TeamSelection.Tests
             Run("SelectedTeamDetector_DetectFrame_StrongTeam1Border_ReturnsTeam1", ()=>SelectedTeam(TeamNumber.Team1));
             Run("SelectedTeamDetector_DetectFrame_StrongTeam3Border_ReturnsTeam3", ()=>SelectedTeam(TeamNumber.Team3));
             Run("SelectedTeamDetector_DetectFrame_StrongTeam4Border_ReturnsTeam4", ()=>SelectedTeam(TeamNumber.Team4));
+            Run("SelectedTeamDetector_DetectFrame_TemplateFreeTeam2Border_ReturnsTeam2", ()=>SelectedTeamWithoutTemplate(TeamNumber.Team2));
+            Run("SelectedTeamDetector_DetectFrame_TemplateFreeTeam3Border_ReturnsTeam3", ()=>SelectedTeamWithoutTemplate(TeamNumber.Team3));
             Console.WriteLine($"Team Selection tests: {passed} passed, {failed} failed.");
             return failed == 0 ? 0 : 1;
         }
@@ -222,6 +224,8 @@ namespace IKAutomation.TeamSelection.Tests
         { SelectedTeam(TeamNumber.Team2); }
         private static void SelectedTeam(TeamNumber team)
         { var m=new FakeMatcher{SelectedTeam=team,Team2SelectionConfidence=.60}; var d=new SelectedTeamDetector(new FakeClient(),new FakeRegistry(),m); var rows=DetectorRows(); var c=new SelectedTeamDetectionContext{TeamRegions=rows,MinimumScore=.70,WinningMargin=.12}; var r=d.DetectFrame(TeamFrame(team),c); Assert(r.IsConfident&&r.Team==team,"Selected team"); Assert(r.RowDetails[team].BorderEdgesFound>=2,"edges"); Assert(r.RowDetails[team].CombinedScore>=.70,"score"); Assert(r.WinningMargin>=.12,"margin"); foreach(var other in rows.Keys.Where(x=>x!=team))Assert(r.RowDetails[team].CombinedScore>r.RowDetails[other].CombinedScore,"winner"); }
+        private static void SelectedTeamWithoutTemplate(TeamNumber team)
+        { var m=new FakeMatcher{SelectedTeam=team,Team2SelectionConfidence=0}; var d=new SelectedTeamDetector(new FakeClient(),new FakeRegistry(),m); var rows=DetectorRows(); var r=d.DetectFrame(TeamFrame(team),new SelectedTeamDetectionContext{TeamRegions=rows,MinimumScore=.70,WinningMargin=.12}); Assert(r.IsConfident&&r.Team==team,"Template-free selected team"); Assert(r.RowDetails[team].TemplateConfidence==0,"Template confidence must be zero"); Assert(r.RowDetails[team].BorderOnlyQualified,"Border-only qualification"); Assert(r.RowDetails[team].BorderPathScore>=.70,"Border-only score"); }
         private static Dictionary<TeamNumber,ImageRegion> DetectorRows()=>new Dictionary<TeamNumber,ImageRegion>{{TeamNumber.Team1,new ImageRegion(20,80,220,120)},{TeamNumber.Team2,new ImageRegion(20,220,220,120)},{TeamNumber.Team3,new ImageRegion(20,360,220,120)},{TeamNumber.Team4,new ImageRegion(20,500,220,120)}};
         private static byte[] TeamFrame(TeamNumber team){using(var b=new Bitmap(1280,720))using(var g=Graphics.FromImage(b))using(var s=new MemoryStream()){g.Clear(Color.FromArgb(30,30,30)); foreach(var row in DetectorRows().Values)g.FillRectangle(Brushes.DimGray,row.X,row.Y,row.Width,row.Height);var r=DetectorRows()[team];using(var p=new Pen(Color.White,5))g.DrawRectangle(p,r.X+2,r.Y+2,r.Width-4,r.Height-4); b.Save(s,ImageFormat.Png);return s.ToArray();}}
 

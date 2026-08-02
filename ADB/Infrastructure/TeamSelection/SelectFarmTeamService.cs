@@ -152,6 +152,7 @@ namespace ADB_Tool_Automation_Post_FB.Infrastructure.TeamSelection
                             WinningMargin = options.SelectedWinningMargin
                         }, cancellationToken);
                     logger.Info($"[Farm Team Selection PreTap] DeviceName='{deviceName}', ExpectedTeam='{target.TargetTeam}', DetectedTeam='{detectedSelection.Team}', DetectionConfident={detectedSelection.IsConfident}, DetectionAmbiguous={detectedSelection.IsAmbiguous}, DetectionWinningMargin={detectedSelection.WinningMargin}, FramesObserved={detectedSelection.FramesObserved}, MatchingFrames={detectedSelection.MatchingFrames}, FailureReason='{detectedSelection.FailureReason ?? string.Empty}'");
+                    LogFrameScores(deviceName, "PreTap", target.TargetTeam, detectedSelection);
                 }
 
                 bool expectedAlreadySelected = selectedTeamDetector != null
@@ -411,8 +412,9 @@ namespace ADB_Tool_Automation_Post_FB.Infrastructure.TeamSelection
                         if (selectedTeamDetector != null)
                         {
                             freshPostTap = await CaptureFreshPostTapVerificationAsync(deviceName,
-                                attemptNumber, result.TeamTapCount, cancellationToken);
+                                attemptNumber, result.TeamTapCount, team, region, cancellationToken);
                             logger.Info($"[Farm Team Selection PostTap] DeviceName='{deviceName}', ExpectedTeam='{team}', DetectedTeam='{freshPostTap.Detection?.Team}', DetectionConfident={freshPostTap.Detection?.IsConfident}, DetectionAmbiguous={freshPostTap.Detection?.IsAmbiguous}, DetectionWinningMargin={freshPostTap.Detection?.WinningMargin}, FramesObserved={freshPostTap.Detection?.FramesObserved}, MatchingFrames={freshPostTap.Detection?.MatchingFrames}, FreshActionEnabled={freshPostTap.HasFreshFrameState && HasEnabledAction(freshPostTap.FrameState)}, Attempt={freshPostTap.Attempt}, TeamTapCount={freshPostTap.TeamTapCount}, FailureReason='{freshPostTap.FailureReason ?? string.Empty}'");
+                            LogFrameScores(deviceName, "PostTap", team, freshPostTap.Detection);
                         }
                         logger.Info($"[Team Selection Mapping] RunId='{request.RunId ?? string.Empty}', DeviceName='{deviceName}', ExpectedTeam='{team}', VisibleTeams='{Join(result.VisibleTeams)}', SelectedBefore='{result.ActualSelectedTeam}', BadgeBounds=({badge.X},{badge.Y},{badge.Width},{badge.Height}), RowBounds=({region.X},{region.Y},{region.Width},{region.Height}), TapPointValidated=true, ScrollAttempt={result.ScrollAttempts}, TapAttempt={attemptNumber}, TapCoordinates=({tapX},{tapY}), InputFrameAgeMs={inputFrameAgeMs}, NextAction='VerifyExactTeam'");
 
@@ -449,21 +451,6 @@ namespace ADB_Tool_Automation_Post_FB.Infrastructure.TeamSelection
                                     result.FinalState = GameState.TeamSelection;
                                     return Complete(result, SelectFarmTeamOutcome.TeamSelected,
                                         $"{team} was selected and verified.", null, watch);
-                                }
-                                bool actionReadyFallback = IsActionReadyFallback(
-                                    freshPostTap, attempt, team, resolvedTargetTeam,
-                                    result.TeamTapCount, out string fallbackRejectReason);
-                                logger.Info($"[Farm Team Selection Fallback] DeviceName='{deviceName}', ExpectedTeam='{team}', ResolvedTargetTeam='{resolvedTargetTeam}', Attempt={attemptNumber}, TargetTapSucceeded={attempt.TapSent}, TeamTapCount={result.TeamTapCount}, DetectedTeam='{freshPostTap?.Detection?.Team}', DetectionConfident={freshPostTap?.Detection?.IsConfident}, DetectionAmbiguous={freshPostTap?.Detection?.IsAmbiguous}, FramesObserved={freshPostTap?.Detection?.FramesObserved}, MatchingFrames={freshPostTap?.Detection?.MatchingFrames}, FreshPanelConfirmed={freshPostTap?.FrameState != null && IsSelectionScreen(freshPostTap.FrameState)}, FreshActionEnabled={freshActionReady}, FallbackAccepted={actionReadyFallback}, RejectReason='{fallbackRejectReason ?? string.Empty}'");
-                                if (actionReadyFallback)
-                                {
-                                    attempt.SelectedVerified = true;
-                                    attempt.Message = "The target tap succeeded and the fresh action is ready; using controlled action-ready fallback.";
-                                    result.SelectedTeam = team;
-                                    result.SelectedStateVerified = true;
-                                    result.ActionReadyFallbackAccepted = true;
-                                    result.FinalState = GameState.TeamSelection;
-                                    return Complete(result, SelectFarmTeamOutcome.TeamSelected,
-                                        $"{team} was selected through the action-ready fallback.", null, watch);
                                 }
                                 if (freshPostTap?.Detection?.IsConfident == true
                                     && freshPostTap.Detection.Team.HasValue
@@ -579,7 +566,8 @@ namespace ADB_Tool_Automation_Post_FB.Infrastructure.TeamSelection
         }
 
         private async Task<PostTapVerificationSnapshot> CaptureFreshPostTapVerificationAsync(
-            string deviceName, int attempt, int teamTapCount, CancellationToken cancellationToken)
+            string deviceName, int attempt, int teamTapCount, TeamNumber expectedTeam,
+            ImageRegion freshTargetRowBounds, CancellationToken cancellationToken)
         {
             await Task.Delay(options.PollIntervalMs, cancellationToken);
             var snapshot = new PostTapVerificationSnapshot
@@ -591,6 +579,8 @@ namespace ADB_Tool_Automation_Post_FB.Infrastructure.TeamSelection
                 new SelectedTeamDetectionContext
                 {
                     TeamRegions = options.TeamRegions,
+                    ExpectedTeam = expectedTeam,
+                    FreshTargetRowBounds = freshTargetRowBounds,
                     ExpectedWidth = options.ExpectedWidth,
                     ExpectedHeight = options.ExpectedHeight,
                     ConsensusFrames = options.SelectedConsensusFrames,
@@ -618,66 +608,12 @@ namespace ADB_Tool_Automation_Post_FB.Infrastructure.TeamSelection
             public int TeamTapCount { get; set; }
         }
 
-        private static bool IsActionReadyFallback(PostTapVerificationSnapshot snapshot,
-            TeamSelectionAttempt attempt, TeamNumber tappedTeam,
-            TeamNumber resolvedTargetTeam, int teamTapCount, out string rejectReason)
+        private void LogFrameScores(string deviceName, string phase, TeamNumber? expectedTeam,
+            SelectedTeamFrameResult result)
         {
-            rejectReason = null;
-            if (attempt == null || !attempt.TapSent)
-            {
-                rejectReason = "TargetTapNotIssued";
-                return false;
-            }
-            if (tappedTeam != resolvedTargetTeam || teamTapCount <= 0)
-            {
-                rejectReason = "TargetTapDoesNotMatchResolvedTeam";
-                return false;
-            }
-            if (snapshot == null || !snapshot.HasFreshFrameState
-                || snapshot.FrameState == null || !IsSelectionScreen(snapshot.FrameState))
-            {
-                rejectReason = "FreshTeamSelectionStateUnavailable";
-                return false;
-            }
-            if (!HasEnabledAction(snapshot.FrameState))
-            {
-                rejectReason = "FreshActionDisabled";
-                return false;
-            }
-            if (snapshot.Detection == null)
-            {
-                rejectReason = "FreshDetectorResultUnavailable";
-                return false;
-            }
-            if (snapshot.Detection.IsAmbiguous)
-            {
-                rejectReason = "AmbiguousSelectionEvidence";
-                return false;
-            }
-            if (snapshot.Detection.IsConfident && snapshot.Detection.Team.HasValue
-                && snapshot.Detection.Team.Value != resolvedTargetTeam)
-            {
-                rejectReason = "ConflictingSelectedTeam";
-                return false;
-            }
-            if (snapshot.Detection.Team.HasValue)
-            {
-                rejectReason = "SelectedTeamWasNotUnknown";
-                return false;
-            }
-            if (snapshot.Detection.MatchingFrames != 0)
-            {
-                rejectReason = "DetectorProducedPartialConsensus";
-                return false;
-            }
-            if (!string.IsNullOrWhiteSpace(snapshot.Detection.FailureReason)
-                && !string.Equals(snapshot.Detection.FailureReason,
-                    "InsufficientConsensus", StringComparison.Ordinal))
-            {
-                rejectReason = "DetectorFailureWasNotNoConsensus";
-                return false;
-            }
-            return true;
+            if (result?.RowDetails == null) return;
+            foreach (SelectedTeamRowScore row in result.RowDetails.Values)
+                logger.Info($"[Selected Team Frame Score] DeviceName='{deviceName}', Phase='{phase}', ExpectedTeam='{expectedTeam}', FrameIndex=0, Team='{row.Team}', RowBounds=({row.RowBounds.X},{row.RowBounds.Y},{row.RowBounds.Width},{row.RowBounds.Height}), GeometryValid={row.GeometryValid}, TemplateConfidence={row.TemplateConfidence:F3}, TopBorderScore={row.TopBorderScore:F3}, BottomBorderScore={row.BottomBorderScore:F3}, LeftBorderScore={row.LeftBorderScore:F3}, RightBorderScore={row.RightBorderScore:F3}, BorderEdgesFound={row.BorderEdgesFound}, BorderEvidenceScore={row.BorderEvidenceScore:F3}, ContrastScore={row.ContrastScore:F3}, TemplatePathScore={row.TemplatePathScore:F3}, BorderPathScore={row.BorderPathScore:F3}, EffectiveScore={row.EffectiveScore:F3}, BorderOnlyQualified={row.BorderOnlyQualified}, CandidateQualified={row.CandidateQualified}, Offsets=({row.TopBorderOffset},{row.BottomBorderOffset},{row.LeftBorderOffset},{row.RightBorderOffset}), FailureReason='{row.FailureReason ?? result.FailureReason ?? string.Empty}'");
         }
 
         private SelectedScan ScanSelected(byte[] frame,
@@ -1028,10 +964,10 @@ namespace ADB_Tool_Automation_Post_FB.Infrastructure.TeamSelection
                 skipReason = "TapOutsideScreenshot";
                 return false;
             }
-            foreach (KeyValuePair<TeamNumber, ImageRegion> row in currentRows)
+            foreach (var currentRow in currentRows)
             {
-                if (!IsSameRegion(row.Value, targetRow)
-                    && ContainsPoint(row.Value, tapX, tapY))
+                if (!IsSameRegion(currentRow.Value, targetRow)
+                    && ContainsPoint(currentRow.Value, tapX, tapY))
                 {
                     skipReason = "TapOverlapsAnotherTeamRow";
                     return false;

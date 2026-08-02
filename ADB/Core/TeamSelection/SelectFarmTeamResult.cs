@@ -24,7 +24,6 @@ namespace ADB_Tool_Automation_Post_FB.Core.TeamSelection
         public GameState StateAfterCleanup { get; set; }
         public bool TeamSelectionScreenVerified { get; set; }
         public bool SelectedStateVerified { get; set; }
-        public bool ActionReadyFallbackAccepted { get; set; }
         public TimeSpan Duration { get; set; }
         public string Message { get; set; }
         public string ErrorMessage { get; set; }
