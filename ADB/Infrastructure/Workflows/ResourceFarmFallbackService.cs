@@ -224,8 +224,16 @@ namespace ADB_Tool_Automation_Post_FB.Infrastructure.Workflows
                     ReportStep(progress, OneShotFarmStep.SelectTeam, clearTerritoryColor: true);
                     SelectFarmTeamResult selected = await selectTeam.SelectAsync(deviceName,
                         new TeamSelectionRequest { AllowedTeams = request.AllowedTeams,
-                            Priority = request.TeamPriority, AllowTeam1 = request.AllowTeam1,
-                            RunId = runId }, cancellationToken);
+                            Priority = request.TeamPriority,
+                            // Preserve the ready-team decision made before resource
+                            // search.  Without these fields this inner workflow falls
+                            // back to global priority and can tap a non-ready team.
+                            ExpectedTeam = request.ExpectedTeam,
+                            WorldMapAvailableTeams = request.WorldMapAvailableTeams,
+                            WorldMapReadyTeams = request.WorldMapReadyTeams,
+                            WorldMapRosterStatus = request.WorldMapRosterStatus,
+                            WorldMapRosterConfidence = request.WorldMapRosterConfidence,
+                            AllowTeam1 = request.AllowTeam1, RunId = runId }, cancellationToken);
                     attempt.SelectTeamResult = selected; result.FinalState = selected.FinalState;
                     if (selected.Outcome == SelectFarmTeamOutcome.Cancelled)
                         throw new OperationCanceledException(cancellationToken);
