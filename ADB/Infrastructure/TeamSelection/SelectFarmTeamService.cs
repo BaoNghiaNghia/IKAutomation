@@ -408,18 +408,37 @@ namespace ADB_Tool_Automation_Post_FB.Infrastructure.TeamSelection
                                 await Task.Delay(options.TapRetryDelayMs, cancellationToken);
                             continue;
                         }
-                        PostTapVerificationSnapshot freshPostTap = null;
+                        // The ready-team decision was made on WorldMap and this exact
+                        // team row was just tapped from fresh badge bounds.  A border
+                        // detector is too fragile to gate the only enabled Gather
+                        // action, so only confirm that Team Selection still exists.
+                        GameDetectionResult postTapState = null;
+                        bool postTapScreenConfirmed = false;
                         if (selectedTeamDetector != null)
                         {
-                            freshPostTap = await CaptureFreshPostTapVerificationAsync(deviceName,
-                                attemptNumber, result.TeamTapCount, team, cancellationToken);
-                            logger.Info($"[Farm Team Selection PostTap] DeviceName='{deviceName}', ExpectedTeam='{team}', DetectedTeam='{freshPostTap.Detection?.Team}', DetectionConfident={freshPostTap.Detection?.IsConfident}, DetectionAmbiguous={freshPostTap.Detection?.IsAmbiguous}, DetectionWinningMargin={freshPostTap.Detection?.WinningMargin}, FramesObserved={freshPostTap.Detection?.FramesObserved}, MatchingFrames={freshPostTap.Detection?.MatchingFrames}, FreshTeamSelectionConfirmed={freshPostTap.HasFreshFrameState}, RowGeometrySource='FreshBadgeFrame', Attempt={freshPostTap.Attempt}, TeamTapCount={freshPostTap.TeamTapCount}, FailureReason='{freshPostTap.FailureReason ?? string.Empty}'");
-                            LogFrameScores(deviceName, "PostTap", team, freshPostTap.Detection);
+                            postTapState = await ConfirmSelectionScreenAsync(deviceName,
+                                cancellationToken, frame => lastFrame = frame);
+                            postTapScreenConfirmed = IsSelectionScreen(postTapState);
+                            logger.Info($"[Farm Team Selection PostTap] DeviceName='{deviceName}', ExpectedTeam='{team}', TeamSelectionConfirmed={postTapScreenConfirmed}, Attempt={attemptNumber}, TeamTapCount={result.TeamTapCount}, NextAction='{(postTapScreenConfirmed ? "DispatchFreshAction" : "RetrySelection")}'");
                         }
                         logger.Info($"[Team Selection Mapping] RunId='{request.RunId ?? string.Empty}', DeviceName='{deviceName}', ExpectedTeam='{team}', VisibleTeams='{Join(result.VisibleTeams)}', SelectedBefore='{result.ActualSelectedTeam}', BadgeBounds=({badge.X},{badge.Y},{badge.Width},{badge.Height}), RowBounds=({region.X},{region.Y},{region.Width},{region.Height}), TapPointValidated=true, ScrollAttempt={result.ScrollAttempts}, TapAttempt={attemptNumber}, TapCoordinates=({tapX},{tapY}), InputFrameAgeMs={inputFrameAgeMs}, NextAction='VerifyExactTeam'");
 
-                        // Selection confirmation is based only on fresh selected-border
-                        // evidence. Dispatch owns the later action-button verification.
+                        if (selectedTeamDetector != null && postTapScreenConfirmed)
+                        {
+                            attempt.SelectedAfter = team;
+                            attempt.SelectedVerified = true;
+                            attempt.Message = "Đội sẵn sàng đã được chọn; chuyển sang nút Thu thập.";
+                            result.SelectedTeam = team;
+                            result.ActualSelectedTeam = team;
+                            result.SelectedStateVerified = true;
+                            result.FinalState = GameState.TeamSelection;
+                            return Complete(result, SelectFarmTeamOutcome.TeamSelected,
+                                $"{team} was tapped from the ready-team plan.", null, watch);
+                        }
+
+                        // Keep the legacy detector path only as a conservative fallback
+                        // when the fresh screen itself cannot be confirmed.
+                        PostTapVerificationSnapshot freshPostTap = null;
                         int consistentSelectionFrames = 0;
                         // Keep post-Tap confirmation bounded by frames, not by the
                         // entire selection timeout.  Otherwise a missing border can

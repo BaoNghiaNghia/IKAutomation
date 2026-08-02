@@ -246,7 +246,10 @@ namespace ADB_Tool_Automation_Post_FB.Infrastructure.Workflows
 
                     DispatchMarchResult dispatched = await dispatch.DispatchAsync(deviceName,
                         new DispatchMarchRequest { ExpectedTeam = selected.SelectedTeam.Value,
-                            RequireExpectedTeamSelected = true,
+                            // SelectFarmTeam has just tapped the WorldMap-confirmed
+                            // ready team. Dispatch only needs a fresh Team Selection
+                            // state and the current enabled yellow action button.
+                            RequireExpectedTeamSelected = false,
                             AllowStructuralVerificationFallback = true, CurrentResource = resource,
                             RunId = runId },
                         cancellationToken);

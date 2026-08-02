@@ -127,36 +127,54 @@ namespace ADB_Tool_Automation_Post_FB.Infrastructure.MarchDispatch
 
                 ImageRegion timerRegion = options.TeamTimerRegions[request.ExpectedTeam];
                 TemplateId badgeId = BadgeId(request.ExpectedTeam);
-                lastFrame = await client.CaptureScreenshotPngAsync(deviceName, cancellationToken);
-                Verification precheck = VerifySelection(lastFrame, request.ExpectedTeam, badgeId);
-                result.ActualSelectedTeam = precheck.ActualSelectedTeam;
-                result.ObservedSelectedTeam = precheck.ActualSelectedTeam;
-                result.VisibleTeams = precheck.VisibleTeams;
-                logger.Info($"[Dispatch Guard] RunId='{request.RunId ?? string.Empty}', DeviceName='{deviceName}', ExpectedTeam='{request.ExpectedTeam}', ObservedSelectedTeam='{precheck.ActualSelectedTeam}', ExpectedBadgeFound={precheck.BadgeFound}, ExpectedSelected={precheck.SelectedFound}, ActionTapSent=false, Outcome='Precheck'");
-                if (precheck.Ambiguous)
-                    return await CompleteAsync(deviceName, result, DispatchMarchOutcome.VerificationIndeterminate,
-                        "Selected border appeared in multiple team ROIs; no Tap was sent.",
-                        "Ambiguous selected-team evidence.", lastFrame, watch, cancellationToken);
-                if (!precheck.SelectedFound)
+                ImageRegion teamRegion = teamOptions.TeamRegions[request.ExpectedTeam];
+                if (request.RequireExpectedTeamSelected)
                 {
-                    result.FailureReason = "WrongTeamSelected";
-                    return await CompleteAsync(deviceName, result, DispatchMarchOutcome.ExpectedTeamNotSelected,
-                        "Đội dự kiến chưa được chọn chính xác; chưa thực hiện lệnh thu thập.", null,
-                        lastFrame, watch, cancellationToken);
+                    lastFrame = await client.CaptureScreenshotPngAsync(deviceName, cancellationToken);
+                    Verification precheck = VerifySelection(lastFrame, request.ExpectedTeam, badgeId);
+                    result.ActualSelectedTeam = precheck.ActualSelectedTeam;
+                    result.ObservedSelectedTeam = precheck.ActualSelectedTeam;
+                    result.VisibleTeams = precheck.VisibleTeams;
+                    logger.Info($"[Dispatch Guard] RunId='{request.RunId ?? string.Empty}', DeviceName='{deviceName}', ExpectedTeam='{request.ExpectedTeam}', ObservedSelectedTeam='{precheck.ActualSelectedTeam}', ExpectedBadgeFound={precheck.BadgeFound}, ExpectedSelected={precheck.SelectedFound}, ActionTapSent=false, Outcome='Precheck'");
+                    if (precheck.Ambiguous)
+                        return await CompleteAsync(deviceName, result, DispatchMarchOutcome.VerificationIndeterminate,
+                            "Selected border appeared in multiple team ROIs; no Tap was sent.",
+                            "Ambiguous selected-team evidence.", lastFrame, watch, cancellationToken);
+                    if (!precheck.SelectedFound)
+                    {
+                        result.FailureReason = "WrongTeamSelected";
+                        return await CompleteAsync(deviceName, result, DispatchMarchOutcome.ExpectedTeamNotSelected,
+                            "Đội dự kiến chưa được chọn chính xác; chưa thực hiện lệnh thu thập.", null,
+                            lastFrame, watch, cancellationToken);
+                    }
+                    teamRegion = precheck.ExpectedRowBounds;
+                    result.ExpectedTeamSelectedBeforeTap = true;
                 }
-                ImageRegion teamRegion = precheck.ExpectedRowBounds;
-                result.ExpectedTeamSelectedBeforeTap = true;
+                else
+                {
+                    // The ready-team workflow has just tapped this expected row.
+                    // Avoid reclassifying a selected border; the fresh action-button
+                    // match below remains mandatory immediately before the Tap.
+                    result.ActualSelectedTeam = request.ExpectedTeam;
+                    result.ObservedSelectedTeam = request.ExpectedTeam;
+                    result.ExpectedTeamSelectedBeforeTap = true;
+                    logger.Info($"[Dispatch Guard] RunId='{request.RunId ?? string.Empty}', DeviceName='{deviceName}', ExpectedTeam='{request.ExpectedTeam}', ActionTapSent=false, Outcome='TrustedReadyTeam'");
+                }
 
                 byte[] beforeDispatch = await client.CaptureScreenshotPngAsync(deviceName, cancellationToken);
                 GameDetectionResult freshState = detector.Detect(beforeDispatch);
-                Verification freshSelection = VerifySelection(beforeDispatch, request.ExpectedTeam, badgeId);
-                result.ActualSelectedTeam = freshSelection.ActualSelectedTeam;
-                result.ObservedSelectedTeam = freshSelection.ActualSelectedTeam;
-                result.VisibleTeams = freshSelection.VisibleTeams;
+                Verification freshSelection = request.RequireExpectedTeamSelected
+                    ? VerifySelection(beforeDispatch, request.ExpectedTeam, badgeId) : null;
+                if (freshSelection != null)
+                {
+                    result.ActualSelectedTeam = freshSelection.ActualSelectedTeam;
+                    result.ObservedSelectedTeam = freshSelection.ActualSelectedTeam;
+                    result.VisibleTeams = freshSelection.VisibleTeams;
+                }
                 ImageMatchResult action = Match(beforeDispatch, TemplateId.TeamActionButtonEnabled, null);
-                logger.Info($"[March Dispatch] DeviceName='{deviceName}', FreshState='{freshState.State}', ExpectedBadgeFound={freshSelection.BadgeFound}, ExpectedSelected={freshSelection.SelectedFound}, ActionButtonFound={HasBounds(action)}, ActionButtonBounds={(HasBounds(action) ? $"({action.X},{action.Y},{action.Width},{action.Height})" : string.Empty)}");
-                if (!IsReady(freshState) || freshSelection.Ambiguous
-                    || !freshSelection.SelectedFound)
+                logger.Info($"[March Dispatch] DeviceName='{deviceName}', FreshState='{freshState.State}', ExpectedSelectionRequired={request.RequireExpectedTeamSelected}, ExpectedBadgeFound={freshSelection?.BadgeFound}, ExpectedSelected={freshSelection?.SelectedFound}, ActionButtonFound={HasBounds(action)}, ActionButtonBounds={(HasBounds(action) ? $"({action.X},{action.Y},{action.Width},{action.Height})" : string.Empty)}");
+                if (!IsReady(freshState) || (request.RequireExpectedTeamSelected
+                    && (freshSelection.Ambiguous || !freshSelection.SelectedFound)))
                     return await CompleteAsync(deviceName, result, DispatchMarchOutcome.ExpectedTeamNotSelected,
                         "Đội dự kiến chưa được chọn chính xác; chưa thực hiện lệnh thu thập.", null,
                         beforeDispatch, watch, cancellationToken);
