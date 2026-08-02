@@ -203,10 +203,10 @@
         </Style>
     </Window.Resources>
 
-    <Grid Margin="24">
+    <Grid Margin="20,16,20,20">
         <Grid.RowDefinitions>
             <RowDefinition Height="Auto"/>
-            <RowDefinition Height="16"/>
+            <RowDefinition Height="10"/>
             <RowDefinition Height="*"/>
         </Grid.RowDefinitions>
 
@@ -215,15 +215,12 @@
                 <ColumnDefinition Width="*"/>
                 <ColumnDefinition Width="Auto"/>
             </Grid.ColumnDefinitions>
-            <StackPanel>
-                <TextBlock Text="Điều khiển farm Infinity Kingdom"
-                           Foreground="{StaticResource TextPrimaryBrush}"
-                           FontSize="24" FontWeight="Bold"/>
-                <TextBlock Text="Quản lý thiết bị, farm liên tục và theo dõi sức khỏe trong một màn hình."
-                           Foreground="{StaticResource TextSecondaryBrush}" Margin="0,4,0,0"/>
-            </StackPanel>
-            <Border Grid.Column="1" Background="#FFDBEAFE" CornerRadius="14"
-                    Padding="12,6" VerticalAlignment="Center">
+            <TextBlock Text="Điều khiển farm Infinity Kingdom"
+                       Foreground="{StaticResource TextPrimaryBrush}"
+                       FontSize="20" FontWeight="Bold"
+                       VerticalAlignment="Center"/>
+            <Border Grid.Column="1" Background="#FFDBEAFE" CornerRadius="12"
+                    Padding="10,5" VerticalAlignment="Center">
                 <TextBlock Text="Tối đa 25 thiết bị" Foreground="#FF1D4ED8"
                            FontWeight="SemiBold"/>
             </Border>

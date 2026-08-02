@@ -928,7 +928,10 @@ namespace ADB_Tool_Automation_Post_FB.Infrastructure.Navigation
             return TryLocateColoredPin(screenshotPng,
                 IsCyanHomePinPixel,
                 TemplateId.ContinentMapHomeLocationPin,
-                "Cyan home pin", out homePin);
+                "Cyan home pin", out homePin,
+                minimumPixels: 14,
+                minimumWidth: 5,
+                minimumHeight: 12);
         }
 
         private static bool TryLocateColoredPin(
@@ -936,7 +939,10 @@ namespace ADB_Tool_Automation_Post_FB.Infrastructure.Navigation
             Func<Color, bool> isPinPixel,
             TemplateId templateId,
             string label,
-            out GameDetectionEvidence destinationPin)
+            out GameDetectionEvidence destinationPin,
+            int minimumPixels = MinimumDestinationPinPixels,
+            int minimumWidth = MinimumDestinationPinWidthPx,
+            int minimumHeight = MinimumDestinationPinHeightPx)
         {
             destinationPin = null;
             if (screenshotPng == null || screenshotPng.Length == 0)
@@ -1014,11 +1020,11 @@ namespace ADB_Tool_Automation_Post_FB.Infrastructure.Navigation
 
                             int width = maximumX - minimumX + 1;
                             int height = maximumY - minimumY + 1;
-                            if (pixels < MinimumDestinationPinPixels
+                            if (pixels < minimumPixels
                                 || pixels > MaximumDestinationPinPixels
-                                || width < MinimumDestinationPinWidthPx
+                                || width < minimumWidth
                                 || width > MaximumDestinationPinWidthPx
-                                || height < MinimumDestinationPinHeightPx
+                                || height < minimumHeight
                                 || height > MaximumDestinationPinHeightPx
                                 || height <= width)
                                 continue;
