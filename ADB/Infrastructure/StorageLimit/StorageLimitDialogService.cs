@@ -155,13 +155,34 @@ namespace ADB_Tool_Automation_Post_FB.Infrastructure.StorageLimit
                 if (state.State != GameState.TeamSelection) continue;
 
                 result.ReturnedToTeamSelection = true;
-                logger.Info($"[{logName}] DeviceName='{deviceName}', TeamSelectionVerified=true, BackSent=false, Recovery='DeferredToOwningTransaction'");
-                return null;
+                if (dialogState == GameState.ResourceExpiryDialog)
+                {
+                    // The expiry warning has already been cancelled.  The game leaves
+                    // the TeamSelection overlay open, so send exactly one explicit
+                    // Escape only after that fresh state verification.
+                    await client.PressKeyAsync(deviceName, AndroidKeyCode.Escape,
+                        cancellationToken);
+                    result.EscapeSent = true;
+                    result.EscapeCount++;
+                    result.RecoveryTransitions++;
+                    logger.Info($"[{logName}] DeviceName='{deviceName}', TeamSelectionVerified=true, EscapeSent=true, EscapeCount={result.EscapeCount}");
+                }
+                else
+                {
+                    await client.BackAsync(deviceName, cancellationToken);
+                    result.BackSent = true;
+                    result.BackCount++;
+                    result.RecoveryTransitions++;
+                    logger.Info($"[{logName}] DeviceName='{deviceName}', TeamSelectionVerified=true, BackSent=true, BackCount={result.BackCount}");
+                }
+
+                return await VerifyAfterExitAsync(deviceName, result, dialogState,
+                    cancellationToken, watch);
             }
             return null;
         }
 
-        private async Task<StorageLimitDialogResult> VerifyAfterBackAsync(string deviceName,
+        private async Task<StorageLimitDialogResult> VerifyAfterExitAsync(string deviceName,
             StorageLimitDialogResult result, GameState dialogState,
             CancellationToken cancellationToken, Stopwatch watch)
         {
@@ -172,9 +193,9 @@ namespace ADB_Tool_Automation_Post_FB.Infrastructure.StorageLimit
             {
                 await Task.Delay(options.PollIntervalMs, cancellationToken);
 
-                // A Back from TeamSelection can expose the game's exit confirmation
-                // instead of returning directly to WorldMap.  This recovery runs only
-                // after that one verified Back.  Rematch the safe Cancel action on a
+                // Leaving TeamSelection can expose the game's exit confirmation instead
+                // of returning directly to WorldMap. This recovery runs only after the
+                // one verified exit key. Rematch the safe Cancel action on a
                 // fresh frame and never retry it blindly.
                 if (!postBackCancelTapped)
                 {
@@ -191,7 +212,7 @@ namespace ADB_Tool_Automation_Post_FB.Infrastructure.StorageLimit
                         result.PostBackConfirmationCancelled = true;
                         postBackCancelTapped = true;
                         result.RecoveryTransitions++;
-                        logger.Info($"[PostBackRecovery] DeviceName='{deviceName}', CancelBounds=({cancel.MatchResult.X},{cancel.MatchResult.Y},{cancel.MatchResult.Width},{cancel.MatchResult.Height}), Tap=({cancel.MatchResult.CenterX},{cancel.MatchResult.CenterY}), BackCount={result.BackCount}");
+                        logger.Info($"[PostExitRecovery] DeviceName='{deviceName}', CancelBounds=({cancel.MatchResult.X},{cancel.MatchResult.Y},{cancel.MatchResult.Width},{cancel.MatchResult.Height}), Tap=({cancel.MatchResult.CenterX},{cancel.MatchResult.CenterY}), BackCount={result.BackCount}, EscapeCount={result.EscapeCount}");
                         continue;
                     }
                 }
@@ -211,7 +232,7 @@ namespace ADB_Tool_Automation_Post_FB.Infrastructure.StorageLimit
                     result.ReturnedToWorldMap = true;
                     return Complete(result, StorageLimitDialogOutcome.CancelledForResourceSwitch,
                         result.PostBackConfirmationCancelled
-                            ? "Resource-switch warning and post-Back confirmation were cancelled; WorldMap was verified."
+                            ? "Resource-switch warning and post-exit confirmation were cancelled; WorldMap was verified."
                             : "Resource-switch warning was cancelled; TeamSelection closed and WorldMap was verified.", null, watch);
                 }
                 if (state.State == GameState.ResourceSearchPanel)
@@ -221,10 +242,10 @@ namespace ADB_Tool_Automation_Post_FB.Infrastructure.StorageLimit
                         "Resource-switch warning was cancelled; ResourceSearchPanel is ready.", null, watch);
                 }
                 if (state.State == dialogState) break;
-                // Do not send another Back for Unknown or any unverified transition.
+                // Do not send another exit key for Unknown or any unverified transition.
             }
             return Complete(result, StorageLimitDialogOutcome.RecoveryFailed,
-                "Back was sent once, but WorldMap was not verified before timeout.", null, watch);
+                "The verified TeamSelection exit was sent once, but WorldMap was not verified before timeout.", null, watch);
         }
 
         private GameDetectionEvidence Match(byte[] frame, TemplateId id)

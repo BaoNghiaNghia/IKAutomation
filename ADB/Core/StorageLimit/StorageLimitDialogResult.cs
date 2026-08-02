@@ -23,6 +23,8 @@ namespace ADB_Tool_Automation_Post_FB.Core.StorageLimit
         public bool ReturnedToTeamSelection { get; set; }
         public bool BackSent { get; set; }
         public int BackCount { get; set; }
+        public bool EscapeSent { get; set; }
+        public int EscapeCount { get; set; }
         public bool PostBackConfirmationCancelled { get; set; }
         public int RecoveryTransitions { get; set; }
         public string Message { get; set; }

@@ -97,7 +97,7 @@ internal static class Program
         Run("Storage cancel returns directly to WorldMap without Back", StorageCancelReturnsWorld);
         Run("Storage cancel returns SearchPanel without Back", StorageCancelReturnsPanel);
         Run("Storage cancel verifies TeamSelection then sends one Back", StorageCancelTeamThenBack);
-        Run("Resource expiry cancel verifies TeamSelection then sends one Back", ResourceExpiryCancelTeamThenBack);
+        Run("Resource expiry cancel verifies TeamSelection then sends one Escape", ResourceExpiryCancelTeamThenEscape);
         Run("Post-Back exit confirmation is cancelled before recovery continues", PostBackConfirmationCancelled);
         Run("Delayed post-Back exit confirmation is cancelled once", DelayedPostBackConfirmationCancelled);
         Run("Storage transient Unknown sends no Back", StorageUnknownNoBack);
@@ -252,7 +252,7 @@ internal static class Program
         Eq(1, result.BackCount, "Back count");
         Eq(1, h.Client.BackCalls, "client Back count");
     }
-    private static void ResourceExpiryCancelTeamThenBack()
+    private static void ResourceExpiryCancelTeamThenEscape()
     {
         var h = new StorageDialogHarness(TemplateId.ResourceExpiryDialogAnchor);
         h.Detector.AsyncStates.Enqueue(GameState.TeamSelection);
@@ -260,8 +260,9 @@ internal static class Program
         StorageLimitDialogResult result = h.ExecuteResourceExpiry();
         Eq(StorageLimitDialogOutcome.CancelledForResourceSwitch, result.Outcome, "outcome");
         Is(result.ReturnedToTeamSelection && result.ReturnedToWorldMap, "recovery flags");
-        Eq(1, result.ActionTapCount, "Cancel tap count"); Eq(1, result.BackCount, "Back count");
-        Eq(1, h.Client.BackCalls, "client Back count");
+        Eq(1, result.ActionTapCount, "Cancel tap count"); Eq(1, result.EscapeCount, "Escape count");
+        Eq(1, h.Client.EscapeCalls, "client Escape count");
+        Eq(0, h.Client.BackCalls, "resource expiry must not use Back");
     }
     private static void PostBackConfirmationCancelled()
     {
@@ -372,9 +373,9 @@ internal static class Program
     private sealed class FakeComparer:IFrameStabilityDetector { public double Ratio=0.2; public Func<int,double> Rule; public int Calls; public List<ImageRegion?> Regions=new List<ImageRegion?>(); public FrameComparisonResult Compare(byte[] a,byte[] b,ImageRegion? r=null){return Next(r);} public FrameComparisonResult Compare(CapturedFrame a,CapturedFrame b,ImageRegion? r=null){return Next(r);} private FrameComparisonResult Next(ImageRegion? r){Regions.Add(r);Calls++;double value=Rule==null?Ratio:Rule(Calls);return new FrameComparisonResult{DifferenceRatio=value,IsStable=value<=0.025};} }
     private sealed class FakeClient:ILdPlayerClient
     {
-        private int frame; public List<(int,int)> Taps=new List<(int,int)>(); public int ProhibitedCalls; public int BackCalls;
+        private int frame; public List<(int,int)> Taps=new List<(int,int)>(); public int ProhibitedCalls; public int BackCalls; public int EscapeCalls;
         public Task<byte[]> CaptureScreenshotPngAsync(string d,CancellationToken t){t.ThrowIfCancellationRequested();return Task.FromResult(new[]{(byte)Interlocked.Increment(ref frame)});} public Task TapAsync(string d,int x,int y,CancellationToken t){t.ThrowIfCancellationRequested();Taps.Add((x,y));return Task.CompletedTask;}
-        private Task Bad(){ProhibitedCalls++;return Task.CompletedTask;} public Task<IReadOnlyList<string>> GetDeviceNamesAsync(CancellationToken t)=>Task.FromResult((IReadOnlyList<string>)new string[0]); public Task<bool> IsRunningAsync(string d,CancellationToken t)=>Task.FromResult(true); public Task OpenAsync(string d,CancellationToken t)=>Bad(); public Task CloseAsync(string d,CancellationToken t)=>Bad(); public Task RunAppAsync(string d,string p,CancellationToken t)=>Bad(); public Task TapByPercentAsync(string d,double x,double y,CancellationToken t)=>Bad(); public Task LongPressAsync(string d,int x,int y,int m,CancellationToken t)=>Bad(); public Task SwipeByPercentAsync(string d,double a,double b,double c,double e,int m,CancellationToken t)=>Bad(); public Task BackAsync(string d,CancellationToken t){BackCalls++;return Bad();} public Task InputTextAsync(string d,string s,CancellationToken t)=>Bad(); public Task PressKeyAsync(string d,AndroidKeyCode k,CancellationToken t)=>Bad();
+        private Task Bad(){ProhibitedCalls++;return Task.CompletedTask;} public Task<IReadOnlyList<string>> GetDeviceNamesAsync(CancellationToken t)=>Task.FromResult((IReadOnlyList<string>)new string[0]); public Task<bool> IsRunningAsync(string d,CancellationToken t)=>Task.FromResult(true); public Task OpenAsync(string d,CancellationToken t)=>Bad(); public Task CloseAsync(string d,CancellationToken t)=>Bad(); public Task RunAppAsync(string d,string p,CancellationToken t)=>Bad(); public Task TapByPercentAsync(string d,double x,double y,CancellationToken t)=>Bad(); public Task LongPressAsync(string d,int x,int y,int m,CancellationToken t)=>Bad(); public Task SwipeByPercentAsync(string d,double a,double b,double c,double e,int m,CancellationToken t)=>Bad(); public Task BackAsync(string d,CancellationToken t){BackCalls++;return Task.CompletedTask;} public Task InputTextAsync(string d,string s,CancellationToken t)=>Bad(); public Task PressKeyAsync(string d,AndroidKeyCode k,CancellationToken t){if(k==AndroidKeyCode.Escape)EscapeCalls++;else ProhibitedCalls++;return Task.CompletedTask;}
     }
     private sealed class ImmediateLock:IDeviceOperationLock { public Task<T> RunAsync<T>(string d,Func<CancellationToken,Task<T>> o,CancellationToken t)=>o(t); }
     private sealed class BlockingLock:IDeviceOperationLock { public async Task<T> RunAsync<T>(string d,Func<CancellationToken,Task<T>> o,CancellationToken t){await Task.Delay(500,t);return await o(t);} }

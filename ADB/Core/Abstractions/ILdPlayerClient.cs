@@ -23,6 +23,7 @@ namespace ADB_Tool_Automation_Post_FB.Core.Abstractions
         Enter = 66,
         Delete = 67,
         Menu = 82,
+        Escape = 111,
         AppSwitch = 187
     }
 
