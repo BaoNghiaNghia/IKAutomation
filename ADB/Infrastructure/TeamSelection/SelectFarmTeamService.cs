@@ -30,11 +30,22 @@ namespace ADB_Tool_Automation_Post_FB.Infrastructure.TeamSelection
         private readonly FarmTeamSelectionOptions options;
         private readonly ISelectFarmTeamDiagnosticStore diagnosticStore;
         private readonly IDiagnosticLogger logger;
+        private readonly ISelectedTeamDetector selectedTeamDetector;
 
         public SelectFarmTeamService(IGameStateDetector detector, ILdPlayerClient client,
             ITemplateRegistry registry, IImageMatcher matcher,
             IDeviceOperationLock operationLock, FarmTeamSelectionOptions options,
             ISelectFarmTeamDiagnosticStore diagnosticStore, IDiagnosticLogger logger)
+            : this(detector, client, registry, matcher, operationLock, options,
+                diagnosticStore, logger, null)
+        {
+        }
+
+        public SelectFarmTeamService(IGameStateDetector detector, ILdPlayerClient client,
+            ITemplateRegistry registry, IImageMatcher matcher,
+            IDeviceOperationLock operationLock, FarmTeamSelectionOptions options,
+            ISelectFarmTeamDiagnosticStore diagnosticStore, IDiagnosticLogger logger,
+            ISelectedTeamDetector selectedTeamDetector)
         {
             this.detector = detector ?? throw new ArgumentNullException(nameof(detector));
             this.client = client ?? throw new ArgumentNullException(nameof(client));
@@ -44,6 +55,7 @@ namespace ADB_Tool_Automation_Post_FB.Infrastructure.TeamSelection
             this.options = options ?? throw new ArgumentNullException(nameof(options));
             this.diagnosticStore = diagnosticStore ?? throw new ArgumentNullException(nameof(diagnosticStore));
             this.logger = logger ?? throw new ArgumentNullException(nameof(logger));
+            this.selectedTeamDetector = selectedTeamDetector;
         }
 
         public async Task<SelectFarmTeamResult> SelectAsync(string deviceName,
@@ -111,7 +123,7 @@ namespace ADB_Tool_Automation_Post_FB.Infrastructure.TeamSelection
                 bool rosterReconciled = result.VisibleTeams.Any(team =>
                     !(request.WorldMapAvailableTeams ?? new TeamNumber[0]).Contains(team));
                 logger.Info($"[TeamSelection Full Scan] RunId='{request.RunId ?? string.Empty}', DeviceName='{deviceName}', ExpectedTeam='{request.ExpectedTeam}', WorldMapAvailableTeams='{Join(request.WorldMapAvailableTeams ?? new TeamNumber[0])}', WorldMapReadyTeams='{Join(request.WorldMapReadyTeams ?? new TeamNumber[0])}', ScreenExistsTeams='{Join(result.VisibleTeams)}', SelectedTeam='{(selected.Teams.Count == 1 ? selected.Teams[0].ToString() : string.Empty)}', SelectionAmbiguous={selected.IsAmbiguous}, RosterReconciled={rosterReconciled}, LayoutSource='BadgeAnchors'");
-                if (selected.IsAmbiguous)
+                if (selectedTeamDetector == null && selected.IsAmbiguous)
                     return await CompleteAsync(deviceName, result, SelectFarmTeamOutcome.Failed,
                         "Selected border appeared in multiple team ROIs; no Tap was sent.",
                         "Ambiguous selected-team evidence.", lastFrame, watch, cancellationToken);
@@ -123,7 +135,31 @@ namespace ADB_Tool_Automation_Post_FB.Infrastructure.TeamSelection
                     return await CompleteAsync(deviceName, result, target.Outcome,
                         target.Message, target.FailureReason, lastFrame, watch, cancellationToken);
 
-                if (target.TargetTeam.HasValue && selected.Teams.Contains(target.TargetTeam.Value)
+                SelectedTeamConsensusResult detectedSelection = null;
+                if (selectedTeamDetector != null)
+                {
+                    detectedSelection = await selectedTeamDetector.DetectAsync(deviceName,
+                        new SelectedTeamDetectionContext
+                        {
+                            TeamRegions = initialRegions,
+                            ExpectedWidth = options.ExpectedWidth,
+                            ExpectedHeight = options.ExpectedHeight,
+                            ConsensusFrames = options.SelectedConsensusFrames,
+                            RequiredMatchingFrames = options.SelectedRequiredMatchingFrames,
+                            FrameIntervalMs = options.SelectedFrameIntervalMs,
+                            TimeoutMs = options.SelectedDetectionTimeoutMs,
+                            MinimumScore = options.SelectedMinimumScore,
+                            WinningMargin = options.SelectedWinningMargin
+                        }, cancellationToken);
+                    logger.Info($"[Farm Team Selection PreTap] DeviceName='{deviceName}', ExpectedTeam='{target.TargetTeam}', DetectedTeam='{detectedSelection.Team}', DetectionConfident={detectedSelection.IsConfident}, DetectionAmbiguous={detectedSelection.IsAmbiguous}, DetectionWinningMargin={detectedSelection.WinningMargin}, FramesObserved={detectedSelection.FramesObserved}, MatchingFrames={detectedSelection.MatchingFrames}, FailureReason='{detectedSelection.FailureReason ?? string.Empty}'");
+                }
+
+                bool expectedAlreadySelected = selectedTeamDetector != null
+                    ? detectedSelection != null && detectedSelection.IsConfident
+                        && target.TargetTeam.HasValue
+                        && detectedSelection.Team == target.TargetTeam
+                    : target.TargetTeam.HasValue && selected.Teams.Contains(target.TargetTeam.Value);
+                if (expectedAlreadySelected
                     && HasEnabledAction(freshState))
                 {
                     result.SelectedTeam = target.TargetTeam;
@@ -134,14 +170,16 @@ namespace ADB_Tool_Automation_Post_FB.Infrastructure.TeamSelection
                         TeamNumber = target.TargetTeam.Value,
                         AlreadySelected = true,
                         SelectedVerified = true,
-                        SelectedBorderMatch = selected.Matches[target.TargetTeam.Value],
+                        SelectedBorderMatch = selected.Matches.ContainsKey(target.TargetTeam.Value)
+                            ? selected.Matches[target.TargetTeam.Value] : null,
                         Message = "Đội dự kiến đã được chọn sẵn; không gửi lệnh chọn."
                     });
                     return Complete(result, SelectFarmTeamOutcome.AlreadySelected,
                         $"Đội {((int)target.TargetTeam.Value)} đã được chọn sẵn.", null, watch);
                 }
-                result.ActualSelectedTeam = selected.Teams.Count == 1
-                    ? (TeamNumber?)selected.Teams[0] : null;
+                result.ActualSelectedTeam = selectedTeamDetector != null && detectedSelection != null
+                    && detectedSelection.IsConfident ? detectedSelection.Team
+                    : selected.Teams.Count == 1 ? (TeamNumber?)selected.Teams[0] : null;
                 if (result.ActualSelectedTeam.HasValue
                     && result.ActualSelectedTeam != target.TargetTeam)
                     logger.Info($"[Farm Team Selection Target] DeviceName='{deviceName}', PreTapSelectedTeam='{result.ActualSelectedTeam}', ResolvedTargetTeam='{target.TargetTeam}', AlreadySelectedAccepted=false, NextAction='TapTarget'.");
@@ -329,6 +367,13 @@ namespace ADB_Tool_Automation_Post_FB.Infrastructure.TeamSelection
                         await client.TapAsync(deviceName, tapX, tapY, cancellationToken);
                         result.TeamTapCount++;
                         attempt.TapSent = true;
+                        PostTapVerificationSnapshot freshPostTap = null;
+                        if (selectedTeamDetector != null)
+                        {
+                            freshPostTap = await CaptureFreshPostTapVerificationAsync(deviceName,
+                                attemptNumber, result.TeamTapCount, cancellationToken);
+                            logger.Info($"[Farm Team Selection PostTap] DeviceName='{deviceName}', ExpectedTeam='{team}', DetectedTeam='{freshPostTap.Detection?.Team}', DetectionConfident={freshPostTap.Detection?.IsConfident}, DetectionAmbiguous={freshPostTap.Detection?.IsAmbiguous}, DetectionWinningMargin={freshPostTap.Detection?.WinningMargin}, FramesObserved={freshPostTap.Detection?.FramesObserved}, MatchingFrames={freshPostTap.Detection?.MatchingFrames}, FreshActionEnabled={freshPostTap.HasFreshFrameState && HasEnabledAction(freshPostTap.FrameState)}, Attempt={freshPostTap.Attempt}, TeamTapCount={freshPostTap.TeamTapCount}, FailureReason='{freshPostTap.FailureReason ?? string.Empty}'");
+                        }
                         logger.Info($"[Team Selection Mapping] RunId='{request.RunId ?? string.Empty}', DeviceName='{deviceName}', ExpectedTeam='{team}', VisibleTeams='{Join(result.VisibleTeams)}', SelectedBefore='{result.ActualSelectedTeam}', BadgeBounds=({badge.X},{badge.Y},{badge.Width},{badge.Height}), RowBounds=({region.X},{region.Y},{region.Width},{region.Height}), SafeTapBounds=({safeLeft},{region.Y},{safeRight-safeLeft+1},{region.Height}), ScrollAttempt={result.ScrollAttempts}, TapAttempt={attemptNumber}, TapCoordinates=({tapX},{tapY}), InputFrameAgeMs={inputFrameAgeMs}, NextAction='VerifyExactTeam'");
 
                         // Both confirmations must come from fresh frames. The selection
@@ -340,6 +385,38 @@ namespace ADB_Tool_Automation_Post_FB.Infrastructure.TeamSelection
                         for (int postTapObservation = 1;
                             postTapObservation <= 2; postTapObservation++)
                         {
+                            if (selectedTeamDetector != null)
+                            {
+                                bool expectedTeamVerified = freshPostTap != null
+                                    && freshPostTap.Detection != null
+                                    && freshPostTap.Detection.IsConfident
+                                    && !freshPostTap.Detection.IsAmbiguous
+                                    && freshPostTap.Detection.Team.HasValue
+                                    && freshPostTap.Detection.Team.Value == team;
+                                bool freshActionReady = freshPostTap != null
+                                    && freshPostTap.HasFreshFrameState
+                                    && freshPostTap.FrameState != null
+                                    && HasEnabledAction(freshPostTap.FrameState);
+                                result.ActualSelectedTeam = freshPostTap?.Detection?.Team;
+                                attempt.SelectedAfter = result.ActualSelectedTeam;
+                                if (expectedTeamVerified && freshActionReady)
+                                {
+                                    attempt.SelectedVerified = true;
+                                    attempt.Message = "Fresh detector consensus verified the expected team after Tap.";
+                                    result.SelectedTeam = team;
+                                    result.ActualSelectedTeam = team;
+                                    result.SelectedStateVerified = true;
+                                    result.FinalState = GameState.TeamSelection;
+                                    return Complete(result, SelectFarmTeamOutcome.TeamSelected,
+                                        $"{team} was selected and verified.", null, watch);
+                                }
+                                if (freshPostTap?.Detection?.IsConfident == true
+                                    && freshPostTap.Detection.Team.HasValue
+                                    && freshPostTap.Detection.Team.Value != team)
+                                    postTapDifferentExpectedTeamObserved = true;
+                                attempt.Message = "Fresh post-tap detector verification did not confirm the expected team.";
+                                break;
+                            }
                             await Task.Delay(options.PollIntervalMs, cancellationToken);
                             lastFrame = await client.CaptureScreenshotPngAsync(deviceName, cancellationToken);
                             GameDetectionResult observedState = detector.Detect(lastFrame);
@@ -444,6 +521,46 @@ namespace ADB_Tool_Automation_Post_FB.Infrastructure.TeamSelection
                     "Farm team selection failed.", exception.Message,
                     lastFrame, watch, cancellationToken);
             }
+        }
+
+        private async Task<PostTapVerificationSnapshot> CaptureFreshPostTapVerificationAsync(
+            string deviceName, int attempt, int teamTapCount, CancellationToken cancellationToken)
+        {
+            await Task.Delay(options.PollIntervalMs, cancellationToken);
+            var snapshot = new PostTapVerificationSnapshot
+            {
+                Attempt = attempt,
+                TeamTapCount = teamTapCount
+            };
+            snapshot.Detection = await selectedTeamDetector.DetectAsync(deviceName,
+                new SelectedTeamDetectionContext
+                {
+                    TeamRegions = options.TeamRegions,
+                    ExpectedWidth = options.ExpectedWidth,
+                    ExpectedHeight = options.ExpectedHeight,
+                    ConsensusFrames = options.SelectedConsensusFrames,
+                    RequiredMatchingFrames = options.SelectedRequiredMatchingFrames,
+                    FrameIntervalMs = options.SelectedFrameIntervalMs,
+                    TimeoutMs = options.SelectedDetectionTimeoutMs,
+                    MinimumScore = options.SelectedMinimumScore,
+                    WinningMargin = options.SelectedWinningMargin
+                }, cancellationToken);
+            snapshot.FrameState = await ConfirmSelectionScreenAsync(deviceName,
+                cancellationToken, frame => { });
+            snapshot.HasFreshFrameState = snapshot.FrameState != null;
+            if (!snapshot.HasFreshFrameState)
+                snapshot.FailureReason = "FreshTeamSelectionStateUnavailable";
+            return snapshot;
+        }
+
+        private sealed class PostTapVerificationSnapshot
+        {
+            public SelectedTeamConsensusResult Detection { get; set; }
+            public GameDetectionResult FrameState { get; set; }
+            public bool HasFreshFrameState { get; set; }
+            public string FailureReason { get; set; }
+            public int Attempt { get; set; }
+            public int TeamTapCount { get; set; }
         }
 
         private SelectedScan ScanSelected(byte[] frame,

@@ -21,9 +21,12 @@ namespace ADB_Tool_Automation_Post_FB.Infrastructure.TeamSelection
                 new UnknownScreenshotStore(detectionOptions.UnknownScreenshotDirectory),
                 logger);
             var options = AppConfigFarmTeamSelectionOptionsProvider.Load();
+            ISelectedTeamDetector selectedTeamDetector = new SelectedTeamDetector(
+                client, registry, matcher);
             return new SelectFarmTeamService(detector, client, registry, matcher,
                 DeviceOperationLock.Shared, options,
-                new SelectFarmTeamDiagnosticStore(options.FailureScreenshotDirectory), logger);
+                new SelectFarmTeamDiagnosticStore(options.FailureScreenshotDirectory), logger,
+                selectedTeamDetector);
         }
     }
 }
