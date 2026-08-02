@@ -6,6 +6,7 @@ using System.Drawing;
 using System.Drawing.Imaging;
 using System.IO;
 using System.Threading.Tasks;
+using System.Threading;
 
 namespace IKAutomation.Vision.Tests
 {
@@ -26,6 +27,8 @@ namespace IKAutomation.Vision.Tests
                 Test("Matcher returns not found", MatcherReturnsNotFound),
                 Test("Matcher rejects empty bytes", MatcherRejectsEmptyBytes),
                 Test("Matching and registry do not lock files", MatchingDoesNotLockFiles)
+                ,Test("Vision admission waits asynchronously and cancels", AsyncVisionAdmissionCancels)
+                ,Test("Vision exception does not leak admission", VisionExceptionDoesNotLeak)
             };
 
             int failed = 0;
@@ -247,6 +250,61 @@ namespace IKAutomation.Vision.Tests
             {
                 Directory.Delete(root, true);
             }
+        }
+
+        private static void AsyncVisionAdmissionCancels()
+        {
+            GeneratedImages images = CreateGeneratedImages(47, 31);
+            var entered = new TaskCompletionSource<bool>(TaskCreationOptions.RunContinuationsAsynchronously);
+            var release = new TaskCompletionSource<bool>(TaskCreationOptions.RunContinuationsAsynchronously);
+            var matcher = new KAutoImageMatcher(1, async token =>
+            {
+                entered.TrySetResult(true);
+                using (token.Register(() => release.TrySetCanceled())) await release.Task;
+            });
+            using (CapturedFrame frame = DecodeFrame(images.ScreenshotPng))
+            {
+                Task<ImageMatchResult> first = matcher.FindAsync(frame, images.TemplatePng,
+                    null, CancellationToken.None);
+                AssertTrue(entered.Task.Wait(TimeSpan.FromSeconds(2)), "first vision job did not enter");
+                using (var cancellation = new CancellationTokenSource())
+                {
+                    Task<ImageMatchResult> second = matcher.FindAsync(frame, images.TemplatePng,
+                        null, cancellation.Token);
+                    AssertTrue(!second.IsCompleted, "vision admission blocked the caller synchronously");
+                    cancellation.Cancel();
+                    AssertThrows<OperationCanceledException>(() => second.GetAwaiter().GetResult());
+                }
+                release.TrySetResult(true);
+                AssertTrue(first.GetAwaiter().GetResult().Found, "first vision result");
+            }
+        }
+
+        private static void VisionExceptionDoesNotLeak()
+        {
+            GeneratedImages images = CreateGeneratedImages(47, 31);
+            int calls = 0;
+            var matcher = new KAutoImageMatcher(1, token =>
+            {
+                if (Interlocked.Increment(ref calls) == 1)
+                    throw new InvalidOperationException("synthetic vision failure");
+                return Task.CompletedTask;
+            });
+            using (CapturedFrame frame = DecodeFrame(images.ScreenshotPng))
+            {
+                AssertThrows<InvalidOperationException>(() => matcher.FindAsync(frame,
+                    images.TemplatePng, null, CancellationToken.None).GetAwaiter().GetResult());
+                AssertTrue(matcher.FindAsync(frame, images.TemplatePng, null,
+                    CancellationToken.None).GetAwaiter().GetResult().Found,
+                    "vision permit leaked after exception");
+            }
+        }
+
+        private static CapturedFrame DecodeFrame(byte[] png)
+        {
+            using (var stream = new MemoryStream(png, writable: false))
+            using (var source = new Bitmap(stream))
+                return new CapturedFrame(new Bitmap(source), DateTimeOffset.UtcNow);
         }
 
         private static GeneratedImages CreateGeneratedImages(int targetX, int targetY)

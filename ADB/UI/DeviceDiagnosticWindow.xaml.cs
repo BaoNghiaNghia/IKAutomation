@@ -34,6 +34,12 @@ namespace ADB_Tool_Automation_Post_FB.UI
         private readonly FarmUiPreferences defaultFarmPreferences;
         private readonly CancellationTokenSource lifetimeCancellation = new CancellationTokenSource();
         private readonly DispatcherTimer oneShotFarmProgressTimer;
+        private readonly DispatcherTimer continuousProgressFlushTimer;
+        private readonly object continuousProgressSync = new object();
+        private readonly Dictionary<string, PendingContinuousUpdate> pendingContinuousUpdates =
+            new Dictionary<string, PendingContinuousUpdate>(StringComparer.OrdinalIgnoreCase);
+        private PendingContinuousUpdate pendingContinuousHealth;
+        private DateTimeOffset lastContinuousHealthFlush = DateTimeOffset.MinValue;
         private CancellationTokenSource oneShotFarmCancellation;
         private bool oneShotFarmCancellationRequested;
         private long oneShotFarmRunGeneration;
@@ -81,12 +87,16 @@ namespace ADB_Tool_Automation_Post_FB.UI
             FarmProgressItemsControl.ItemsSource = farmProgressItems;
             oneShotFarmProgressTimer = new DispatcherTimer { Interval = TimeSpan.FromSeconds(1) };
             oneShotFarmProgressTimer.Tick += OneShotFarmProgressTimer_Tick;
+            continuousProgressFlushTimer = new DispatcherTimer
+                { Interval = TimeSpan.FromMilliseconds(350) };
+            continuousProgressFlushTimer.Tick += ContinuousProgressFlushTimer_Tick;
             ApplyFarmPreferences(defaultFarmPreferences);
             Loaded += DeviceDiagnosticWindow_Loaded;
             Closed += (sender, args) =>
             {
                 oneShotFarmCancellation?.Cancel();
                 oneShotFarmProgressTimer.Stop();
+                continuousProgressFlushTimer.Stop();
                 lifetimeCancellation.Cancel();
             };
         }
@@ -331,9 +341,10 @@ namespace ADB_Tool_Automation_Post_FB.UI
                 deviceAttemptVersions[deviceName] = attemptVersion;
                 activeDeviceNames.Add(deviceName);
             }
-            var progress = new Progress<ContinuousFarmSupervisorProgress>(value =>
-                ApplyContinuousFarmProgress(runGeneration, runCancellation,
+            var progress = new DirectProgress<ContinuousFarmSupervisorProgress>(value =>
+                QueueContinuousFarmProgress(runGeneration, runCancellation,
                     attemptVersions, value));
+            continuousProgressFlushTimer.Start();
             RetryFailedDevicesButton.IsEnabled = false;
             SetFarmActionButtonRunning();
             OneShotFarmResourcesGroupBox.IsEnabled = false;
@@ -364,6 +375,8 @@ namespace ADB_Tool_Automation_Post_FB.UI
                     IsCurrentDeviceAttempt(name, attemptVersions)))
                     activeDeviceNames.Remove(deviceName);
                 StopOneShotFarmProgressTimer();
+                continuousProgressFlushTimer.Stop();
+                FlushContinuousProgress();
                 if (ReferenceEquals(oneShotFarmCancellation, runCancellation))
                     oneShotFarmCancellation = null;
                 runCancellation.Dispose();
@@ -427,6 +440,60 @@ namespace ADB_Tool_Automation_Post_FB.UI
             if (snapshot.State == ContinuousFarmDeviceState.Waiting
                 && snapshot.NextAttemptAt.HasValue)
                 oneShotFarmProgressTimer.Start();
+        }
+
+        private void QueueContinuousFarmProgress(long runGeneration,
+            CancellationTokenSource runCancellation,
+            IReadOnlyDictionary<string, long> attemptVersions,
+            ContinuousFarmSupervisorProgress progress)
+        {
+            if (progress == null) return;
+            var update = new PendingContinuousUpdate(runGeneration, runCancellation,
+                attemptVersions, progress);
+            bool critical = progress.Device != null
+                && (progress.Device.State == ContinuousFarmDeviceState.Recovering
+                    || progress.Device.State == ContinuousFarmDeviceState.Quarantined
+                    || progress.Device.State == ContinuousFarmDeviceState.Stopped);
+            if (critical)
+            {
+                Dispatcher.BeginInvoke(new Action(() => ApplyContinuousFarmProgress(
+                    update.RunGeneration, update.RunCancellation,
+                    update.AttemptVersions, update.Progress)));
+                return;
+            }
+            lock (continuousProgressSync)
+            {
+                if (progress.Device != null)
+                    pendingContinuousUpdates[progress.Device.DeviceName] = update;
+                if (progress.Health != null) pendingContinuousHealth = update;
+            }
+        }
+
+        private void ContinuousProgressFlushTimer_Tick(object sender, EventArgs e) =>
+            FlushContinuousProgress();
+
+        private void FlushContinuousProgress()
+        {
+            PendingContinuousUpdate[] updates;
+            PendingContinuousUpdate health = null;
+            lock (continuousProgressSync)
+            {
+                updates = pendingContinuousUpdates.Values.ToArray();
+                pendingContinuousUpdates.Clear();
+                if (DateTimeOffset.UtcNow - lastContinuousHealthFlush >= TimeSpan.FromSeconds(1))
+                {
+                    health = pendingContinuousHealth;
+                    pendingContinuousHealth = null;
+                    lastContinuousHealthFlush = DateTimeOffset.UtcNow;
+                }
+            }
+            foreach (PendingContinuousUpdate update in updates)
+                ApplyContinuousFarmProgress(update.RunGeneration, update.RunCancellation,
+                    update.AttemptVersions, update.Progress);
+            if (health != null && (health.Progress.Device == null
+                || !updates.Any(update => ReferenceEquals(update.Progress, health.Progress))))
+                ApplyContinuousFarmProgress(health.RunGeneration, health.RunCancellation,
+                    health.AttemptVersions, health.Progress);
         }
 
         private void ApplyHealthDashboard(ContinuousFarmHealthSnapshot health)
@@ -640,7 +707,8 @@ namespace ADB_Tool_Automation_Post_FB.UI
             {
                 // A yielded readiness check is scheduled by the supervisor; it no
                 // longer owns a farm slot and must not appear as actively running.
-                item.IsRunning = progress.Stage == MultiDeviceOneShotFarmStage.Running;
+                item.IsRunning = progress.Stage == MultiDeviceOneShotFarmStage.Running
+                    || progress.Stage == MultiDeviceOneShotFarmStage.DispatchingTeam;
                 item.IsInGame = true;
                 item.Status = string.IsNullOrWhiteSpace(progress.Message)
                     ? FarmProgressVietnamese.Stage(progress.Stage.ToString())
@@ -1195,6 +1263,32 @@ namespace ADB_Tool_Automation_Post_FB.UI
             Error = result.ErrorMessage,
             DiagnosticPath = result.DiagnosticScreenshotPath
         };
+
+        private sealed class PendingContinuousUpdate
+        {
+            public PendingContinuousUpdate(long runGeneration,
+                CancellationTokenSource runCancellation,
+                IReadOnlyDictionary<string, long> attemptVersions,
+                ContinuousFarmSupervisorProgress progress)
+            {
+                RunGeneration = runGeneration;
+                RunCancellation = runCancellation;
+                AttemptVersions = attemptVersions;
+                Progress = progress;
+            }
+            public long RunGeneration { get; }
+            public CancellationTokenSource RunCancellation { get; }
+            public IReadOnlyDictionary<string, long> AttemptVersions { get; }
+            public ContinuousFarmSupervisorProgress Progress { get; }
+        }
+
+        private sealed class DirectProgress<T> : IProgress<T>
+        {
+            private readonly Action<T> callback;
+            public DirectProgress(Action<T> callback)
+            { this.callback = callback ?? throw new ArgumentNullException(nameof(callback)); }
+            public void Report(T value) { callback(value); }
+        }
     }
 
     internal sealed class DeviceSelectionItem : INotifyPropertyChanged

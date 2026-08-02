@@ -15,6 +15,8 @@ using ADB_Tool_Automation_Post_FB.Infrastructure.TeamSelection;
 using ADB_Tool_Automation_Post_FB.Infrastructure.Workflows;
 using System;
 using System.Collections.Generic;
+using System.Collections.Specialized;
+using System.Diagnostics;
 using System.Drawing;
 using System.IO;
 using System.Linq;
@@ -24,8 +26,10 @@ using System.Threading.Tasks;
 internal static class Program
 {
     static int pass, fail;
-    static int Main()
+    static string nameFilter;
+    static int Main(string[] args)
     {
+        nameFilter = args != null && args.Length > 0 ? args[0] : null;
         Run("Invalid request calls no services", Invalid); Run("Unknown initial state is precondition failure", Unknown);
         Run("ResourcePopup initial state is rejected", InitialPopup); Run("TeamSelection initial state is rejected", InitialTeam);
         Run("ContinentMap is handled by EnsureWorldMap", Continent); Run("Ensure failure stops before panel", EnsureFail);
@@ -163,6 +167,8 @@ internal static class Program
         Run("Farm UI uses one Run and Stop toggle", OneShotUiHasStop);
         Run("One-Shot UI hides manual diagnostic controls", OneShotUiIsFocused);
         Run("Initial Farm Control spinner remains animated while loading", InitialLoadingSpinnerAnimates);
+        Run("Continuous UI coalesces per-device progress", ContinuousUiCoalescesProgress);
+        Run("Critical continuous UI states flush immediately", ContinuousUiFlushesCriticalProgress);
         Run("Team selection clears stale territory color UI", TeamSelectionClearsStaleTerritoryColor);
         Run("Vietnamese message catalog validates placeholders", VietnameseMessageCatalogIsComplete);
         Run("Vietnamese display names format farm values", VietnameseDisplayNamesAreComplete);
@@ -172,16 +178,35 @@ internal static class Program
         Run("Adaptive gate enforces its live concurrency limit", AdaptiveGateEnforcesLiveLimit);
         Run("Adaptive gate reduces concurrency under host pressure", AdaptiveGateReducesOnPressure);
         Run("Adaptive gate increases slowly without exceeding maximum", AdaptiveGateIncreasesWithinMaximum);
+        Run("Adaptive gate decreases under sustained queue pressure", AdaptiveQueuePressureMustPersist);
+        Run("Adaptive gate ignores one isolated queue spike", AdaptiveQueueSpikeDoesNotReduce);
+        Run("Adaptive gate increases after stable healthy windows", AdaptiveStableHealthIncreases);
+        Run("Screenshot metrics separate admission, capture, and total time", ScreenshotMetricsAreSeparated);
+        Run("Adaptive defaults are conservative", AdaptiveDefaultsAreConservative);
         Run("Adaptive stagger honors cancellation", AdaptiveStaggerHonorsCancellation);
+        Run("Adaptive admission without explicit stagger starts immediately", AdmissionWithoutStaggerStartsImmediately);
+        Run("Adaptive startup stagger is applied once per run", StartupStaggerIsAppliedOncePerRun);
+        Run("Adaptive ready path uses one admission", ReadyPathUsesOneAdaptiveAdmission);
+        Run("Adaptive recovery can request stagger again", RecoveryCanRequestStaggerAgain);
+        Run("Adaptive runner releases lease after exception", AdaptiveLeaseReleasesAfterException);
+        Run("Adaptive runner releases lease after cancellation", AdaptiveLeaseReleasesAfterCancellation);
+        Run("Adaptive invalid config logs documented fallback", AdaptiveInvalidConfigUsesFallback);
+        Run("Adaptive runtime config summary reports resolved values", AdaptiveConfigurationSummaryIsComplete);
         Run("Concurrent retry shares the twenty-five-device limit", ConcurrentBatchesShareConcurrencyLimit);
         Run("Multi-device runner isolates requests per device", MultiDeviceRequestsAreIsolated);
         Run("One device failure does not stop other devices", MultiDeviceFailureIsIsolated);
-        Run("All device preflights finish before farming starts", MultiDevicePreflightBarrier);
+        Run("Fair scheduling slow preflight does not block fast device", MultiDevicePreflightBarrier);
         Run("Preflight failure does not stop healthy devices", MultiDevicePreflightFailureIsIsolated);
         Run("Ready gate consumes preflight result without duplicate check", MultiDevicePreflightIsReused);
         Run("Waiting devices yield execution and adaptive capacity", WaitingDevicesYieldExecutionSlots);
         Run("Ready devices proceed while other devices yield", ReadyDevicesProceedWhileWaiting);
         Run("Runner has no global preflight barrier", MultiDeviceHasNoGlobalPreflightBarrier);
+        Run("Fair scheduling preflight timeout releases lease", PreflightTimeoutReleasesLease);
+        Run("Fair scheduling dispatches at most one team per lease", OneTeamPerLease);
+        Run("Fair scheduling alternates devices with ready teams", MultiDeviceDispatchAlternates);
+        Run("Fair scheduling stops requeue when no team remains", RequeueStopsWithoutReadyTeam);
+        Run("Fair scheduling stops at configured safety limit", RequeueStopsAtSafetyLimit);
+        Run("Fair scheduling cancellation clears pending requeue", CancellationClearsPendingRequeue);
         Run("One-Shot UI retries only failed devices", MultiDeviceUiRetriesFailures);
         Run("Continuous supervisor keeps device states independent", ContinuousSupervisorIsolatesDevices);
         Run("Continuous supervisor cancellation stops waiting devices", ContinuousSupervisorCancellationStopsWaiting);
@@ -211,11 +236,15 @@ internal static class Program
         Run("Operational maintenance is interval gated", MaintenanceRunsOnlyWhenDue);
         Run("Logger rotates without clearing startup log", LoggerUsesRotationAndRetention);
         Run("Diagnostic stores honor disk-pressure gate", DiagnosticStoresHonorStorageGate);
+        Run("Diagnostic screenshot cooldown suppresses duplicates", DiagnosticScreenshotCooldown);
+        Run("Diagnostic screenshot queue has bounded capacity", DiagnosticQueueIsBounded);
+        Run("Disabled success screenshots capture nothing", DiagnosticSuccessIsDisabled);
+        Run("Diagnostic retention preserves user files", DiagnosticRetentionPreservesUserFiles);
         Run("Continuous supervisor has no default token bypass", ContinuousSupervisorHasNoNone);
         Run("Continuous supervisor UI is wired without replacing bounded run", ContinuousSupervisorUiIsWired);
         Console.WriteLine($"One-shot farm tests: {pass} passed, {fail} failed."); return fail == 0 ? 0 : 1;
     }
-    static void Run(string n, Action a) { try { a(); pass++; Console.WriteLine("PASS: " + n); } catch (Exception e) { fail++; Console.WriteLine("FAIL: " + n + " - " + e); } }
+    static void Run(string n, Action a) { if (!string.IsNullOrWhiteSpace(nameFilter) && n.IndexOf(nameFilter, StringComparison.OrdinalIgnoreCase) < 0) return; try { a(); pass++; Console.WriteLine("PASS: " + n); } catch (Exception e) { fail++; Console.WriteLine("FAIL: " + n + " - " + e); } }
     static void Is(bool v, string m) { if (!v) throw new Exception(m); } static void Eq<T>(T e,T a,string m){if(!Equals(e,a))throw new Exception($"{m} Expected={e}, Actual={a}");}
     static OneShotFarmResult Go(H h, CancellationToken t=default(CancellationToken))=>h.Workflow.RunAsync("LDPlayer",h.Request,t).GetAwaiter().GetResult();
     static ResourceFarmFallbackResult Plan(H h, FakeProfiles profiles=null, CancellationToken t=default(CancellationToken))
@@ -1081,13 +1110,34 @@ internal static class Program
         second.Dispose();
     }
 
+    static void AdaptiveDefaultsAreConservative()
+    {
+        var options = new AdaptiveConcurrencyOptions();
+        Eq(4, options.MinimumConcurrency, "default minimum concurrency");
+        Eq(6, options.InitialConcurrency, "default initial concurrency");
+        Eq(10, options.MaximumConcurrency, "default maximum concurrency");
+        string config = File.ReadAllText(Path.Combine(Environment.CurrentDirectory,
+            "ADB", "App.config"));
+        Is(config.Contains("Operations.AdaptiveMinimumConcurrency\" value=\"4\""),
+            "configured minimum concurrency");
+        Is(config.Contains("Operations.AdaptiveInitialConcurrency\" value=\"6\""),
+            "configured initial concurrency");
+        Is(config.Contains("Operations.AdaptiveMaximumConcurrency\" value=\"10\""),
+            "configured maximum concurrency");
+        Is(config.Contains("Operations.MaxConcurrentScreenshots\" value=\"4\""),
+            "screenshot gate changed");
+        Is(config.Contains("Operations.MaxConcurrentVisionOperations\" value=\"6\""),
+            "vision gate changed");
+    }
+
     static void AdaptiveGateReducesOnPressure()
     {
         var gate = new AdaptiveConcurrencyGate(new AdaptiveConcurrencyOptions(
             minimumConcurrency: 1, initialConcurrency: 3, maximumConcurrency: 4,
             sampleIntervalMs: 1, healthySamplesToIncrease: 100, highCpuPercent: 50,
             automationStaggerMinMs: 0, automationStaggerMaxMs: 0,
-            recoveryStaggerMinMs: 0, recoveryStaggerMaxMs: 0),
+            recoveryStaggerMinMs: 0, recoveryStaggerMaxMs: 0,
+            adjustmentCooldownMs: 0),
             new FakeHostResourceProbe(99, 8L * 1024 * 1024 * 1024));
         using (gate.AcquireAsync("May 1", AdaptiveOperationKind.Automation,
             default(CancellationToken)).GetAwaiter().GetResult()) { }
@@ -1095,6 +1145,87 @@ internal static class Program
         using (gate.AcquireAsync("May 2", AdaptiveOperationKind.Automation,
             default(CancellationToken)).GetAwaiter().GetResult()) { }
         Eq(1, gate.GetSnapshot().CurrentLimit, "pressure did not reduce limit");
+    }
+
+    static void AdaptiveQueuePressureMustPersist()
+    {
+        RuntimePressureMetrics.Reset();
+        try
+        {
+            var gate = QueuePressureGate(initial: 6, healthySamples: 100);
+            for (int sample = 0; sample < 3; sample++)
+            {
+                RuntimePressureMetrics.ReportScreenshot(1800, false, 3, 4);
+                gate.EvaluatePressureNow();
+            }
+            Eq(5, gate.GetSnapshot().CurrentLimit,
+                "three fresh pressure windows did not reduce concurrency once");
+        }
+        finally { RuntimePressureMetrics.Reset(); }
+    }
+
+    static void AdaptiveQueueSpikeDoesNotReduce()
+    {
+        RuntimePressureMetrics.Reset();
+        try
+        {
+            var gate = QueuePressureGate(initial: 6, healthySamples: 100);
+            RuntimePressureMetrics.ReportScreenshot(1800, false, 1, 4);
+            gate.EvaluatePressureNow();
+            gate.EvaluatePressureNow();
+            gate.EvaluatePressureNow();
+            Eq(6, gate.GetSnapshot().CurrentLimit,
+                "one aggregate sample was counted as multiple pressure windows");
+        }
+        finally { RuntimePressureMetrics.Reset(); }
+    }
+
+    static void AdaptiveStableHealthIncreases()
+    {
+        RuntimePressureMetrics.Reset();
+        try
+        {
+            var gate = QueuePressureGate(initial: 4, healthySamples: 3);
+            gate.EvaluatePressureNow();
+            gate.EvaluatePressureNow();
+            Eq(4, gate.GetSnapshot().CurrentLimit,
+                "concurrency increased before the stable window completed");
+            gate.EvaluatePressureNow();
+            Eq(5, gate.GetSnapshot().CurrentLimit,
+                "stable healthy windows did not increase concurrency");
+        }
+        finally { RuntimePressureMetrics.Reset(); }
+    }
+
+    static AdaptiveConcurrencyGate QueuePressureGate(int initial, int healthySamples) =>
+        new AdaptiveConcurrencyGate(new AdaptiveConcurrencyOptions(
+            minimumConcurrency: 2, initialConcurrency: initial, maximumConcurrency: 6,
+            sampleIntervalMs: 60000, healthySamplesToIncrease: healthySamples,
+            automationStaggerMinMs: 0, automationStaggerMaxMs: 0,
+            recoveryStaggerMinMs: 0, recoveryStaggerMaxMs: 0,
+            queuePressureWindows: 3, adjustmentCooldownMs: 0),
+            new FakeHostResourceProbe(10, 8L * 1024 * 1024 * 1024));
+
+    static void ScreenshotMetricsAreSeparated()
+    {
+        string metrics = File.ReadAllText(Path.Combine(Environment.CurrentDirectory,
+            "ADB", "Core", "ScreenshotCaptureMetrics.cs"));
+        string client = File.ReadAllText(Path.Combine(Environment.CurrentDirectory,
+            "ADB", "Infrastructure", "LDPlayer", "AutoLdPlayerClient.cs"));
+        foreach (string field in new[] { "ScreenshotGateWaitMs",
+            "ScreenshotCaptureDurationMs", "ScreenshotTotalDurationMs",
+            "ScreenshotRetryCount", "ScreenshotFailureCount", "ScreenshotQueueDepth",
+            "ActiveScreenshotOperations", "LastDeviceName", "LastDeviceIndex",
+            "LastWorkflowStage", "LastAttemptNumber" })
+            Is(metrics.Contains(field), "missing screenshot metric " + field);
+        Is(client.Contains("gateWait") && client.Contains("screenShootWatch")
+            && client.Contains("totalWatch"),
+            "screenshot timing phases share one ambiguous stopwatch");
+        using (ScreenshotCaptureContext.Push("Preflight"))
+            Eq("Preflight", ScreenshotCaptureContext.WorkflowStage, "workflow stage context");
+        Eq("Unspecified", ScreenshotCaptureContext.WorkflowStage, "workflow stage leaked");
+        Is(client.Contains("ScreenshotCaptureContext.WorkflowStage"),
+            "screenshot sample does not include the active workflow stage");
     }
 
     static void AdaptiveStaggerHonorsCancellation()
@@ -1106,6 +1237,8 @@ internal static class Program
             recoveryStaggerMinMs: 0, recoveryStaggerMaxMs: 0),
             new FakeHostResourceProbe(10, 8L * 1024 * 1024 * 1024));
         using (gate.AcquireAsync("May 1", AdaptiveOperationKind.Automation,
+            new AdaptiveAdmissionRequest { ApplyStartupStagger = true,
+                StaggerKey = "run-1", ExecutionPhase = AdaptiveExecutionPhase.Preflight },
             default(CancellationToken)).GetAwaiter().GetResult()) { }
         using (var source = new CancellationTokenSource(10))
         {
@@ -1113,12 +1246,191 @@ internal static class Program
             try
             {
                 gate.AcquireAsync("May 2", AdaptiveOperationKind.Automation,
+                    new AdaptiveAdmissionRequest { ApplyStartupStagger = true,
+                        StaggerKey = "run-1", ExecutionPhase = AdaptiveExecutionPhase.Preflight },
                     source.Token).GetAwaiter().GetResult();
             }
             catch (OperationCanceledException) { cancelled = true; }
             Is(cancelled, "stagger delay ignored cancellation");
         }
     }
+
+    static void ReadyPathUsesOneAdaptiveAdmission()
+    {
+        var availability = new DeviceReadinessAvailability(new[] { "Ready" });
+        var workflow = new CountingSuccessWorkflow();
+        var adaptive = new TrackingAdaptiveGate();
+        var runner = new MultiDeviceOneShotFarmRunner(() => workflow,
+            () => availability, 6, adaptive);
+        var request = new OneShotFarmRequest
+        {
+            RunId = "single-admission-run",
+            ReadyTeamWaitMode = ReadyTeamWaitMode.YieldToSupervisor
+        };
+
+        MultiDeviceOneShotFarmResult result = runner.RunAsync(new[] { "Ready" }, request,
+            null, default(CancellationToken)).GetAwaiter().GetResult();
+
+        Eq(MultiDeviceOneShotFarmStage.Completed, result.Devices[0].Stage,
+            "ready device did not complete");
+        Eq(1, adaptive.AcquireCalls, "preflight and gameplay acquired separate leases");
+        Eq(1, adaptive.DisposeCalls, "adaptive lease was not released exactly once");
+        Eq(0, adaptive.Active, "adaptive lease leaked");
+        Eq(AdaptiveExecutionPhase.Preflight, adaptive.LastRequest.ExecutionPhase,
+            "admission phase");
+        Is(adaptive.LastRequest.ApplyStartupStagger, "initial startup stagger not requested");
+    }
+
+    static void AdmissionWithoutStaggerStartsImmediately()
+    {
+        var gate = CreateFixedStaggerGate(1000);
+        using (gate.AcquireAsync("May 1", AdaptiveOperationKind.Automation,
+            new AdaptiveAdmissionRequest { ApplyStartupStagger = true, StaggerKey = "run-a" },
+            default(CancellationToken)).GetAwaiter().GetResult()) { }
+        var elapsed = Stopwatch.StartNew();
+        using (gate.AcquireAsync("May 2", AdaptiveOperationKind.Automation,
+            default(CancellationToken)).GetAwaiter().GetResult()) { }
+        elapsed.Stop();
+        Is(elapsed.ElapsedMilliseconds < 300,
+            "plain admission inherited startup stagger delay");
+    }
+
+    static void StartupStaggerIsAppliedOncePerRun()
+    {
+        var gate = CreateFixedStaggerGate(1000);
+        var request = new AdaptiveAdmissionRequest
+        {
+            ApplyStartupStagger = true,
+            StaggerKey = "same-run",
+            ExecutionPhase = AdaptiveExecutionPhase.Preflight
+        };
+        using (gate.AcquireAsync("May 1", AdaptiveOperationKind.Automation, request,
+            default(CancellationToken)).GetAwaiter().GetResult()) { }
+        var elapsed = Stopwatch.StartNew();
+        using (gate.AcquireAsync("May 1", AdaptiveOperationKind.Automation, request,
+            default(CancellationToken)).GetAwaiter().GetResult()) { }
+        elapsed.Stop();
+        Is(elapsed.ElapsedMilliseconds < 300,
+            "same device/run received startup stagger more than once");
+    }
+
+    static AdaptiveConcurrencyGate CreateFixedStaggerGate(int delayMs) =>
+        new AdaptiveConcurrencyGate(new AdaptiveConcurrencyOptions(
+            minimumConcurrency: 1, initialConcurrency: 1, maximumConcurrency: 1,
+            sampleIntervalMs: 60000, healthySamplesToIncrease: 100,
+            automationStaggerMinMs: delayMs, automationStaggerMaxMs: delayMs,
+            recoveryStaggerMinMs: 0, recoveryStaggerMaxMs: 0),
+            new FakeHostResourceProbe(10, 8L * 1024 * 1024 * 1024));
+
+    static void RecoveryCanRequestStaggerAgain()
+    {
+        var delays = new List<int>();
+        var gate = new AdaptiveConcurrencyGate(new AdaptiveConcurrencyOptions(
+            minimumConcurrency: 1, initialConcurrency: 1, maximumConcurrency: 1,
+            sampleIntervalMs: 60000, healthySamplesToIncrease: 100,
+            automationStaggerMinMs: 0, automationStaggerMaxMs: 0,
+            recoveryStaggerMinMs: 100, recoveryStaggerMaxMs: 100),
+            new FakeHostResourceProbe(10, 8L * 1024 * 1024 * 1024), null,
+            (delay, token) => { token.ThrowIfCancellationRequested(); delays.Add(delay); return Task.CompletedTask; });
+        var request = new AdaptiveAdmissionRequest
+        {
+            ApplyStartupStagger = true,
+            StaggerKey = "same-recovery-key",
+            ExecutionPhase = AdaptiveExecutionPhase.Recovery
+        };
+        using (gate.AcquireAsync("May 1", AdaptiveOperationKind.Recovery, request,
+            default(CancellationToken)).GetAwaiter().GetResult()) { }
+        using (gate.AcquireAsync("May 1", AdaptiveOperationKind.Recovery, request,
+            default(CancellationToken)).GetAwaiter().GetResult()) { }
+        Is(delays.Count == 1 && delays[0] > 0,
+            "a later recovery did not request a fresh stagger");
+        Eq(0, gate.GetSnapshot().ActiveExecutions, "recovery lease leaked");
+    }
+
+    static void AdaptiveLeaseReleasesAfterException()
+    {
+        var adaptive = new TrackingAdaptiveGate();
+        var runner = new MultiDeviceOneShotFarmRunner(() => new ThrowingWorkflow(),
+            null, 1, adaptive);
+        MultiDeviceOneShotFarmResult result = runner.RunAsync(new[] { "May 1" },
+            new OneShotFarmRequest(), null, default(CancellationToken)).GetAwaiter().GetResult();
+        Eq(MultiDeviceOneShotFarmStage.Failed, result.Devices[0].Stage,
+            "exception was not isolated");
+        Eq(0, adaptive.Active, "exception leaked adaptive lease");
+        Eq(1, adaptive.DisposeCalls, "exception did not dispose lease once");
+    }
+
+    static void AdaptiveLeaseReleasesAfterCancellation()
+    {
+        using (var source = new CancellationTokenSource())
+        {
+            var adaptive = new TrackingAdaptiveGate();
+            var runner = new MultiDeviceOneShotFarmRunner(
+                () => new CancellingWorkflow(source), null, 1, adaptive);
+            MultiDeviceOneShotFarmResult result = runner.RunAsync(new[] { "May 1" },
+                new OneShotFarmRequest(), null, source.Token).GetAwaiter().GetResult();
+            Eq(MultiDeviceOneShotFarmStage.Cancelled, result.Devices[0].Stage,
+                "cancellation outcome");
+            Eq(0, adaptive.Active, "cancellation leaked adaptive lease");
+            Eq(1, adaptive.DisposeCalls, "cancellation did not dispose lease once");
+        }
+    }
+
+    static void AdaptiveInvalidConfigUsesFallback()
+    {
+        NameValueCollection settings = ValidAdaptiveSettings();
+        settings["Operations.AdaptiveMaximumConcurrency"] = "not-a-number";
+        AdaptiveConcurrencyConfigurationResult result =
+            AppConfigAdaptiveConcurrencyOptionsProvider.LoadConfiguration(settings);
+        Eq(10, result.Options.MaximumConcurrency, "invalid maximum fallback");
+        Is(result.Warnings.Any(value => value.Contains("Operations.AdaptiveMaximumConcurrency")
+            && value.Contains("Fallback=10")), "invalid key warning omitted fallback");
+        Eq("App.config+Fallbacks", result.Source, "fallback source");
+    }
+
+    static void AdaptiveConfigurationSummaryIsComplete()
+    {
+        AdaptiveConcurrencyConfigurationResult result =
+            AppConfigAdaptiveConcurrencyOptionsProvider.LoadConfiguration(ValidAdaptiveSettings());
+        string summary = result.BuildSummary();
+        foreach (string expected in new[] { "Source='App.config'", "Min=4", "Initial=6",
+            "Max=10", "ScreenshotGate=4", "VisionGate=6",
+            "AutomationStaggerMinMs=2000", "AutomationStaggerMaxMs=10000" })
+            Is(summary.Contains(expected), "configuration summary missing " + expected);
+        Eq(0, result.Warnings.Count, "valid configuration emitted warnings");
+        string startup = File.ReadAllText(Path.Combine(Environment.CurrentDirectory,
+            "ADB", "MainWindow.xaml.cs"));
+        Is(startup.Contains("Logger.LogInfo(adaptiveConfiguration.BuildSummary())"),
+            "resolved configuration is not logged at startup");
+        Is(startup.Contains("Logger.LogWarning(\"[Adaptive Concurrency Config] \" + warning)"),
+            "configuration fallback warnings are not logged at startup");
+    }
+
+    static NameValueCollection ValidAdaptiveSettings() => new NameValueCollection
+    {
+        ["Operations.AdaptiveMinimumConcurrency"] = "4",
+        ["Operations.AdaptiveInitialConcurrency"] = "6",
+        ["Operations.AdaptiveMaximumConcurrency"] = "10",
+        ["Operations.AdaptiveSampleIntervalMs"] = "5000",
+        ["Operations.AdaptiveHealthySamplesToIncrease"] = "3",
+        ["Operations.AdaptiveHighCpuPercent"] = "88",
+        ["Operations.AdaptiveLowAvailableMemoryBytes"] = "2147483648",
+        ["Operations.AdaptiveHighTechnicalFailureRate"] = "0.25",
+        ["Operations.AdaptiveObservationWindowSize"] = "20",
+        ["Operations.AdaptiveHighPreflightLatencyMs"] = "30000",
+        ["Operations.AutomationStaggerMinMs"] = "2000",
+        ["Operations.AutomationStaggerMaxMs"] = "10000",
+        ["Operations.RecoveryStaggerMinMs"] = "30000",
+        ["Operations.RecoveryStaggerMaxMs"] = "60000",
+        ["Operations.AdaptiveHighScreenshotGateWaitMs"] = "1500",
+        ["Operations.AdaptiveHighVisionGateWaitMs"] = "1000",
+        ["Operations.AdaptiveHighIoFailureRate"] = "0.15",
+        ["Operations.AdaptiveQueuePressureWindows"] = "3",
+        ["Operations.AdaptiveAdjustmentCooldownMs"] = "10000",
+        ["Operations.AdaptiveHighGameplayLeaseWaitMs"] = "3000",
+        ["Operations.MaxConcurrentScreenshots"] = "4",
+        ["Operations.MaxConcurrentVisionOperations"] = "6"
+    };
 
     static void AdaptiveGateIncreasesWithinMaximum()
     {
@@ -1180,18 +1492,121 @@ internal static class Program
 
     static void MultiDevicePreflightBarrier()
     {
-        var availability = new MultiDevicePreflightAvailability(2);
-        var workflow = new PreflightAwareWorkflow(availability);
+        var availability = new SlowFastAvailability();
+        var workflow = new SignallingWorkflow();
         var runner = new MultiDeviceOneShotFarmRunner(() => workflow,
             () => availability, 2);
-        MultiDeviceOneShotFarmResult result = runner.RunAsync(
-            new[] { "May 1", "May 2" }, new H().Request, null,
-            default(CancellationToken)).GetAwaiter().GetResult();
-        Eq(2, availability.Calls, "preflight calls");
-        Is(workflow.AllPreflightsCompleted, "farm started before the preflight barrier");
+        Task<MultiDeviceOneShotFarmResult> pending = runner.RunAsync(
+            new[] { "Slow", "Fast" }, new H().Request, null,
+            default(CancellationToken));
+        Is(workflow.FastStarted.Task.Wait(TimeSpan.FromSeconds(2)),
+            "fast device waited for slow preflight");
+        availability.ReleaseSlow.TrySetResult(true);
+        MultiDeviceOneShotFarmResult result = pending.GetAwaiter().GetResult();
         Is(result.Devices.All(item => item.Stage == MultiDeviceOneShotFarmStage.Completed),
             "healthy devices did not run");
     }
+
+    static void PreflightTimeoutReleasesLease()
+    {
+        var adaptive = new TrackingAdaptiveGate();
+        var runner = new MultiDeviceOneShotFarmRunner(() => new CountingSuccessWorkflow(),
+            () => new BlockingAvailability(), 1, adaptive, null,
+            new MultiDeviceOneShotFarmRunnerOptions(50, 0, 4, 4, 1));
+        MultiDeviceOneShotFarmItemResult item = runner.RunAsync(new[] { "Timeout" },
+            new H().Request, null, default(CancellationToken)).GetAwaiter().GetResult().Devices[0];
+        Eq(MultiDeviceOneShotFarmStage.Failed, item.Stage, "timeout stage");
+        Eq(1, item.PreflightTimeoutCount, "timeout metric");
+        Eq(0, adaptive.Active, "timeout leaked admission lease");
+    }
+
+    static void OneTeamPerLease()
+    {
+        var workflow = new CooperativeWorkflow(2);
+        var adaptive = new TrackingAdaptiveGate();
+        var runner = FairRunner(workflow, adaptive, 1, 4);
+        MultiDeviceOneShotFarmItemResult item = runner.RunAsync(new[] { "May 1" },
+            FairRequest(), null, default(CancellationToken)).GetAwaiter().GetResult().Devices[0];
+        Eq(2, workflow.CallsFor("May 1"), "dispatch count");
+        Eq(2, adaptive.AcquireCalls, "one lease was reused for multiple teams");
+        Is(workflow.MaximumDispatchesInCall <= 1, "multiple teams dispatched in one lease");
+        Is(item.TeamsDispatchedPerLease <= 1, "lease metric exceeded one team");
+        Eq(0, adaptive.Active, "lease leaked");
+    }
+
+    static void MultiDeviceDispatchAlternates()
+    {
+        var workflow = new CooperativeWorkflow(2);
+        var runner = FairRunner(workflow, null, 1, 4);
+        runner.RunAsync(new[] { "May 1", "May 2" }, FairRequest(), null,
+            default(CancellationToken)).GetAwaiter().GetResult();
+        Eq(4, workflow.Order.Count, "total dispatches");
+        Is(workflow.Order[0] != workflow.Order[1],
+            "first device immediately jumped ahead of the queued device");
+        Eq(2, workflow.CallsFor("May 1"), "May 1 dispatches");
+        Eq(2, workflow.CallsFor("May 2"), "May 2 dispatches");
+    }
+
+    static void RequeueStopsWithoutReadyTeam()
+    {
+        var workflow = new CooperativeWorkflow(4);
+        var availability = new ReadyThenWaitingAvailability();
+        var runner = new MultiDeviceOneShotFarmRunner(() => workflow,
+            () => availability, 1, null, null,
+            new MultiDeviceOneShotFarmRunnerOptions(1000, 0, 4, 8, 2),
+            (delay, token) => Task.CompletedTask);
+        MultiDeviceOneShotFarmItemResult item = runner.RunAsync(new[] { "May 1" },
+            FairRequest(), null, default(CancellationToken)).GetAwaiter().GetResult().Devices[0];
+        Eq(1, workflow.CallsFor("May 1"), "workflow continued without a ready team");
+        Eq(MultiDeviceOneShotFarmStage.WaitingForReadyTeam, item.Stage, "waiting result");
+    }
+
+    static void RequeueStopsAtSafetyLimit()
+    {
+        var workflow = new CooperativeWorkflow(10);
+        var runner = FairRunner(workflow, new TrackingAdaptiveGate(), 1, 2);
+        MultiDeviceOneShotFarmItemResult item = runner.RunAsync(new[] { "May 1" },
+            FairRequest(), null, default(CancellationToken)).GetAwaiter().GetResult().Devices[0];
+        Eq(2, workflow.CallsFor("May 1"), "team safety limit ignored");
+        Eq(2, item.TeamsDispatchedPerDeviceCycle, "cycle dispatch metric");
+        Is(item.Result.RequeueRequested == false, "device remained queued at safety limit");
+    }
+
+    static void CancellationClearsPendingRequeue()
+    {
+        using (var source = new CancellationTokenSource())
+        {
+            var workflow = new CooperativeWorkflow(4);
+            var adaptive = new TrackingAdaptiveGate();
+            var delayEntered = new TaskCompletionSource<bool>();
+            var runner = new MultiDeviceOneShotFarmRunner(() => workflow, null, 1,
+                adaptive, null, new MultiDeviceOneShotFarmRunnerOptions(1000, 1, 4, 8, 2),
+                async (delay, token) =>
+                {
+                    delayEntered.TrySetResult(true);
+                    await Task.Delay(Timeout.Infinite, token);
+                });
+            Task<MultiDeviceOneShotFarmResult> pending = runner.RunAsync(new[] { "May 1" },
+                FairRequest(), null, source.Token);
+            Is(delayEntered.Task.Wait(TimeSpan.FromSeconds(2)), "requeue delay not reached");
+            source.Cancel();
+            MultiDeviceOneShotFarmItemResult item = pending.GetAwaiter().GetResult().Devices[0];
+            Eq(MultiDeviceOneShotFarmStage.Cancelled, item.Stage, "cancelled requeue stage");
+            Eq(0, adaptive.Active, "cancelled requeue leaked lease");
+        }
+    }
+
+    static MultiDeviceOneShotFarmRunner FairRunner(CooperativeWorkflow workflow,
+        IAdaptiveConcurrencyGate gate, int concurrency, int maxTeams) =>
+        new MultiDeviceOneShotFarmRunner(() => workflow, null, concurrency, gate, null,
+            new MultiDeviceOneShotFarmRunnerOptions(1000, 1, maxTeams,
+                Math.Max(maxTeams, 4), 2));
+
+    static OneShotFarmRequest FairRequest() => new OneShotFarmRequest
+    {
+        RunUntilNoReadyTeams = true,
+        ReadyTeamWaitMode = ReadyTeamWaitMode.YieldToSupervisor
+    };
 
     static void MultiDevicePreflightFailureIsIsolated()
     {
@@ -1491,6 +1906,142 @@ internal static class Program
     static void OneShotUiHasStop(){string root=Path.Combine(Environment.CurrentDirectory,"ADB","UI");string xaml=File.ReadAllText(Path.Combine(root,"DeviceDiagnosticWindow.xaml"));string code=File.ReadAllText(Path.Combine(root,"DeviceDiagnosticWindow.xaml.cs"));Is(xaml.Contains("RunContinuousFarmButton")&&!xaml.Contains("StopOneShotFarmButton"),"Run and Stop must use one button");Is(code.Contains("SetFarmActionButtonRunning()")&&code.Contains("SetFarmActionButtonIdle()")&&code.Contains("■  Dừng"),"toggle states missing");Is(code.Contains("CreateLinkedTokenSource")&&code.Contains("oneShotFarmCancellation")&&code.Contains("currentRun.Cancel()"),"per-run cancellation missing");int start=code.IndexOf("private async void RunContinuousFarm_Click",StringComparison.Ordinal);int end=code.IndexOf("private void ApplyContinuousFarmProgress",StringComparison.Ordinal);Is(start>=0&&end>start&&!code.Substring(start,end-start).Contains("RunOperationAsync"),"continuous run still disables the whole window");}
     static void OneShotUiIsFocused(){string root=Path.Combine(Environment.CurrentDirectory,"ADB","UI");string xaml=File.ReadAllText(Path.Combine(root,"DeviceDiagnosticWindow.xaml"));string code=File.ReadAllText(Path.Combine(root,"DeviceDiagnosticWindow.xaml.cs"));foreach(string hidden in new[]{"Tap Test","Swipe Test","Check Device","Launch Game","Capture Screenshot","Detect Current State","Ensure World Map","Open Search Panel","Configure Search","Search Iron","Verify Resource Popup","Open Team Selection","Select Farm Team","Dispatch Selected Team","Back Test","Text=\"Package name\"","Text=\"State name\"","Text=\"Note\"","Chỉ mục tiêu chưa có người khai thác","Thiết lập nâng cao","Chiến lược tìm kiếm","Thứ tự cấp","Thứ tự đội","Lịch chờ đội","Lưu cấu hình","Khôi phục mặc định","RunOneShotFarmButton","Chi tiết lần chạy gần nhất"})Is(!xaml.Contains(hidden),"manual control remains: "+hidden);Is(xaml.Contains("RunContinuousFarmButton")&&!xaml.Contains("StopOneShotFarmButton"),"single continuous farm toggle missing");Is(xaml.Contains("FarmProgressItemsControl"),"compact operations layout missing");Is(xaml.Contains("Binding StageDisplay")&&code.Contains("Đang khôi phục")&&code.Contains("Chu kỳ chưa hoàn tất; thiết bị này sẽ tự thử lại.")&&code.Contains("Không thể thiết lập cấp tài nguyên."),"Vietnamese farm progress localization is missing");Is(xaml.Contains("Binding TerritoryColor")&&xaml.Contains("Binding TeamsSummary")&&code.Contains("Màu vùng — Nhà:"),"compact territory-color progress is missing");Is(code.Contains("bool isAvailabilityUpdate")&&code.Contains("progress.CurrentExpectedTeam.HasValue"),"ready-team status is overwritten by non-availability progress");Is(xaml.Contains("Tối đa 25 thiết bị")&&xaml.Contains("DeviceSelectionListBox\" Grid.Row=\"1\"")&&xaml.Contains("VerticalAlignment=\"Stretch\""),"25-device full-height sidebar layout is missing");Is(xaml.Contains("InitialLoadingOverlay")&&xaml.Contains("Đang tải Farm Control...")&&code.Contains("Dispatcher.Yield(DispatcherPriority.Render)")&&code.Contains("InitialLoadingOverlay.Visibility = Visibility.Collapsed"),"initial Farm Control loading overlay is missing");}
     static void InitialLoadingSpinnerAnimates(){string code=File.ReadAllText(Path.Combine(Environment.CurrentDirectory,"ADB","UI","DeviceDiagnosticWindow.xaml.cs"));Is(code.Contains("StartInitialLoadingSpinner()")&&code.Contains("RepeatBehavior.Forever")&&code.Contains("BeginAnimation"),"spinner animation missing");Is(code.Contains("Task.Run(() =>")&&code.Contains("diagnosticService.CheckDeviceAsync"),"device checks can still freeze the spinner");}
+    static void ContinuousUiCoalescesProgress()
+    {
+        string code = File.ReadAllText(Path.Combine(Environment.CurrentDirectory,
+            "ADB", "UI", "DeviceDiagnosticWindow.xaml.cs"));
+        Is(code.Contains("Dictionary<string, PendingContinuousUpdate>")
+            && code.Contains("pendingContinuousUpdates[progress.Device.DeviceName]")
+            && code.Contains("TimeSpan.FromMilliseconds(350)"),
+            "latest device updates are not coalesced into a bounded timer flush");
+        Is(code.Contains("TimeSpan.FromSeconds(1)"),
+            "full health summary is rebuilt more often than once per second");
+    }
+    static void ContinuousUiFlushesCriticalProgress()
+    {
+        string code = File.ReadAllText(Path.Combine(Environment.CurrentDirectory,
+            "ADB", "UI", "DeviceDiagnosticWindow.xaml.cs"));
+        Is(code.Contains("ContinuousFarmDeviceState.Recovering")
+            && code.Contains("ContinuousFarmDeviceState.Quarantined")
+            && code.Contains("ContinuousFarmDeviceState.Stopped")
+            && code.Contains("Dispatcher.BeginInvoke"),
+            "critical recovery/failure/stop transitions are delayed by coalescing");
+        Is(code.Contains("DirectProgress<ContinuousFarmSupervisorProgress>"),
+            "Progress<T> still posts every event to the dispatcher");
+    }
+    static void DiagnosticScreenshotCooldown()
+    {
+        string root = Path.Combine(Path.GetTempPath(), "ikdiag-cooldown-" + Guid.NewGuid());
+        var client = new DiagnosticCaptureClient();
+        DateTimeOffset now = new DateTimeOffset(2026, 8, 2, 4, 0, 0, TimeSpan.Zero);
+        try
+        {
+            using (var service = new OneShotFarmDiagnosticService(client, root,
+                new OneShotFarmDiagnosticOptions(false, true, 30, 100, 7, 4),
+                () => now, null))
+            {
+                string first = service.CaptureAsync("May 2", OneShotFarmStep.ExecuteSearch,
+                    OneShotFarmOutcome.ResourceNotFound,
+                    default(CancellationToken)).GetAwaiter().GetResult();
+                string duplicate = service.CaptureAsync("May 2", OneShotFarmStep.ExecuteSearch,
+                    OneShotFarmOutcome.ResourceNotFound,
+                    default(CancellationToken)).GetAwaiter().GetResult();
+                service.FlushAsync().GetAwaiter().GetResult();
+                Is(!string.IsNullOrWhiteSpace(first), "first failure was not queued");
+                Is(duplicate == null, "duplicate failure bypassed cooldown");
+                Eq(1, client.Captures, "duplicate failure captured another large PNG");
+            }
+        }
+        finally { TryDeleteDirectory(root); }
+    }
+
+    static void DiagnosticQueueIsBounded()
+    {
+        string root = Path.Combine(Path.GetTempPath(), "ikdiag-capacity-" + Guid.NewGuid());
+        var client = new DiagnosticCaptureClient();
+        var entered = new TaskCompletionSource<bool>(TaskCreationOptions.RunContinuationsAsynchronously);
+        var release = new TaskCompletionSource<bool>(TaskCreationOptions.RunContinuationsAsynchronously);
+        Func<string, byte[], Task> writer = async (path, png) =>
+        {
+            entered.TrySetResult(true);
+            await release.Task;
+        };
+        try
+        {
+            using (var service = new OneShotFarmDiagnosticService(client, root,
+                new OneShotFarmDiagnosticOptions(false, true, 0, 100, 7, 1),
+                () => DateTimeOffset.UtcNow, writer))
+            {
+                Is(service.CaptureAsync("May 1", OneShotFarmStep.ExecuteSearch,
+                    OneShotFarmOutcome.ResourceNotFound, default(CancellationToken))
+                    .GetAwaiter().GetResult() != null, "first job was not accepted");
+                Is(entered.Task.Wait(1000), "diagnostic writer did not start");
+                Is(service.CaptureAsync("May 1", OneShotFarmStep.VerifyResourcePopup,
+                    OneShotFarmOutcome.ResourcePopupNotReady, default(CancellationToken))
+                    .GetAwaiter().GetResult() != null, "queued job was not accepted");
+                Is(service.CaptureAsync("May 1", OneShotFarmStep.SelectTeam,
+                    OneShotFarmOutcome.NoEligibleTeam, default(CancellationToken))
+                    .GetAwaiter().GetResult() == null, "full queue did not drop newest job");
+                release.TrySetResult(true);
+                service.FlushAsync().GetAwaiter().GetResult();
+            }
+        }
+        finally
+        {
+            release.TrySetResult(true);
+            TryDeleteDirectory(root);
+        }
+    }
+
+    static void DiagnosticSuccessIsDisabled()
+    {
+        string root = Path.Combine(Path.GetTempPath(), "ikdiag-success-" + Guid.NewGuid());
+        var client = new DiagnosticCaptureClient();
+        try
+        {
+            using (var service = new OneShotFarmDiagnosticService(client, root,
+                new OneShotFarmDiagnosticOptions(), () => DateTimeOffset.UtcNow, null))
+            {
+                string path = service.CaptureAsync("May 1", OneShotFarmStep.DispatchTeam,
+                    OneShotFarmOutcome.MarchStarted, default(CancellationToken))
+                    .GetAwaiter().GetResult();
+                Is(path == null, "success screenshot was enabled by default");
+                Eq(0, client.Captures, "disabled success screenshot still captured a frame");
+                Is(!Directory.Exists(root), "disabled success screenshot created files");
+            }
+        }
+        finally { TryDeleteDirectory(root); }
+    }
+
+    static void DiagnosticRetentionPreservesUserFiles()
+    {
+        string root = Path.Combine(Path.GetTempPath(), "ikdiag-retention-" + Guid.NewGuid());
+        string directory = Path.Combine(root, "May_1", "2026-07-01");
+        string diagnostic = Path.Combine(directory, "ikdiag_old.png");
+        string userFile = Path.Combine(directory, "user-screenshot.png");
+        var client = new DiagnosticCaptureClient();
+        DateTimeOffset now = new DateTimeOffset(2026, 8, 2, 4, 0, 0, TimeSpan.Zero);
+        try
+        {
+            Directory.CreateDirectory(directory);
+            File.WriteAllBytes(diagnostic, new byte[] { 1 });
+            File.WriteAllBytes(userFile, new byte[] { 2 });
+            File.SetLastWriteTimeUtc(diagnostic, now.UtcDateTime.AddDays(-8));
+            File.SetLastWriteTimeUtc(userFile, now.UtcDateTime.AddDays(-8));
+            using (var service = new OneShotFarmDiagnosticService(client, root,
+                new OneShotFarmDiagnosticOptions(false, true, 0, 100, 7, 4),
+                () => now, null))
+            {
+                service.CaptureAsync("May 1", OneShotFarmStep.ExecuteSearch,
+                    OneShotFarmOutcome.ResourceNotFound, default(CancellationToken))
+                    .GetAwaiter().GetResult();
+                service.FlushAsync().GetAwaiter().GetResult();
+            }
+            Is(!File.Exists(diagnostic), "expired diagnostic file was retained");
+            Is(File.Exists(userFile), "retention deleted a non-diagnostic user file");
+        }
+        finally { TryDeleteDirectory(root); }
+    }
     static void TeamSelectionClearsStaleTerritoryColor(){string code=File.ReadAllText(Path.Combine(Environment.CurrentDirectory,"ADB","UI","DeviceDiagnosticWindow.xaml.cs"));Is(code.Contains("progress.MapRepositionState != MapRepositionState.None")&&code.Contains("else\n                TerritoryColor = string.Empty"),"territory color is not scoped to active reposition state");}
     static OneShotFarmWorkflow PlanWorkflow(H h,FakePlan plan,FakeRegistry registry=null,FakeRandom random=null)=>new OneShotFarmWorkflow(h.Nav,new FakeFallback(h.Config,h.Search),h.Popup,h.Open,h.Select,h.Dispatch,h.Detector,h.Lock,new OneShotFarmWorkflowOptions(true,true,"Diagnostics/OneShotFarm"),h.Diag,new Log(),new ResourceFarmFallbackOptions(),plan,registry==null?null:new FakeProfiles(),registry,random);
 
@@ -1535,6 +2086,23 @@ internal static class Program
     sealed class AvailabilityFixture{public FakeNav Nav=new FakeNav();public AvailabilityDetector Detector=new AvailabilityDetector();public AvailabilityClient Client=new AvailabilityClient();public FakeRegistry Registry=new FakeRegistry();public AvailabilityMatcher Matcher=new AvailabilityMatcher();public WorldMapTeamAvailabilityService Service;public AvailabilityFixture(WorldMapTeamAvailabilityOptions options=null){Service=new WorldMapTeamAvailabilityService(Nav,Detector,Client,Registry,Matcher,new RecordingLock(),options??new WorldMapTeamAvailabilityOptions(new ImageRegion(0,290,150,280)),new Log());}}
     sealed class AvailabilityDetector:IGameStateDetector{public GameState State=GameState.WorldMap;public Task<GameDetectionResult> DetectAsync(string d,CancellationToken t)=>Task.FromResult(Result());public GameDetectionResult Detect(byte[] p)=>Result();GameDetectionResult Result()=>new GameDetectionResult{State=State,IsSuccessful=State!=GameState.Unknown,Evidence=new GameDetectionEvidence[0]};}
     sealed class AvailabilityMatcher:IImageMatcher,IFrameImageMatcher{public readonly HashSet<int> PresentRows=new HashSet<int>(new[]{1,2,3,4});public readonly HashSet<int> ReadyRows=new HashSet<int>();public readonly HashSet<int> SecondFrameReadyRows=new HashSet<int>();public readonly HashSet<int> BusyRows=new HashSet<int>();public readonly HashSet<int> LockedRows=new HashSet<int>();public readonly HashSet<int> HiddenBadgeBatches=new HashSet<int>();public readonly HashSet<int> HiddenReadyBatches=new HashSet<int>();public readonly List<ImageRegion?> Regions=new List<ImageRegion?>();public int FrameBatches;public ImageMatchResult Find(byte[] s,byte[] t,ImageRegion? r=null){Regions.Add(r);if(!r.HasValue||t==null||t.Length==0)return ImageMatchResult.NotFound();TemplateId id=(TemplateId)t[0];int badgeRow=id==TemplateId.Team1Badge?1:id==TemplateId.Team2Badge?2:id==TemplateId.Team3Badge?3:id==TemplateId.Team4Badge?4:0;if(badgeRow>0)return PresentRows.Contains(badgeRow)&&!HiddenBadgeBatches.Contains(FrameBatches)?ImageMatchResult.FoundAt(8,306+((badgeRow-1)*70),20,20):ImageMatchResult.NotFound();int canonicalTop=r.Value.Y+Math.Max(0,r.Value.Height-70);int row=((canonicalTop-290)/70)+1;bool secondFrame=FrameBatches>2;bool found=id==TemplateId.WorldMapTeamReadyAnchor&&!HiddenReadyBatches.Contains(FrameBatches)&&(ReadyRows.Contains(row)||(secondFrame&&SecondFrameReadyRows.Contains(row)))||id==TemplateId.TeamBusyStatusAnchor&&BusyRows.Contains(row)||id==TemplateId.TeamDisabledAnchor&&LockedRows.Contains(row);return found?ImageMatchResult.FoundAt(70,r.Value.Y+10,20,20):ImageMatchResult.NotFound();}public ImageMatchResult Find(CapturedFrame f,byte[] t,ImageRegion? r=null)=>Find(new byte[0],t,r);public IReadOnlyList<ImageMatchResult> FindMany(CapturedFrame f,IReadOnlyList<ImageMatchRequest> requests){FrameBatches++;return requests.Select(x=>Find(new byte[0],x.TemplatePng,x.SearchRegion)).ToArray();}}
+    sealed class DiagnosticCaptureClient:ILdPlayerClient
+    {
+        public int Captures;
+        public Task<byte[]> CaptureScreenshotPngAsync(string d,CancellationToken t){t.ThrowIfCancellationRequested();Captures++;return Task.FromResult(new byte[]{1,2,3});}
+        public Task<IReadOnlyList<string>> GetDeviceNamesAsync(CancellationToken t)=>Task.FromResult<IReadOnlyList<string>>(new[]{"May 1"});
+        public Task<bool> IsRunningAsync(string d,CancellationToken t)=>Task.FromResult(true);
+        public Task OpenAsync(string d,CancellationToken t)=>Task.CompletedTask;
+        public Task CloseAsync(string d,CancellationToken t)=>Task.CompletedTask;
+        public Task RunAppAsync(string d,string p,CancellationToken t)=>Task.CompletedTask;
+        public Task TapAsync(string d,int x,int y,CancellationToken t)=>Task.CompletedTask;
+        public Task TapByPercentAsync(string d,double x,double y,CancellationToken t)=>Task.CompletedTask;
+        public Task LongPressAsync(string d,int x,int y,int ms,CancellationToken t)=>Task.CompletedTask;
+        public Task SwipeByPercentAsync(string d,double sx,double sy,double ex,double ey,int ms,CancellationToken t)=>Task.CompletedTask;
+        public Task BackAsync(string d,CancellationToken t)=>Task.CompletedTask;
+        public Task InputTextAsync(string d,string v,CancellationToken t)=>Task.CompletedTask;
+        public Task PressKeyAsync(string d,AndroidKeyCode k,CancellationToken t)=>Task.CompletedTask;
+    }
     sealed class AvailabilityClient:ILdPlayerClient,IFrameCapturingLdPlayerClient{public int Captures,Inputs,PngCaptures;public Task<byte[]> CaptureScreenshotPngAsync(string d,CancellationToken t){t.ThrowIfCancellationRequested();PngCaptures++;return Task.FromResult(new byte[]{1});}public Task<CapturedFrame> CaptureFrameAsync(string d,CancellationToken t){t.ThrowIfCancellationRequested();Captures++;return Task.FromResult(new CapturedFrame(new Bitmap(1280,720),DateTimeOffset.UtcNow));}public Task<IReadOnlyList<string>> GetDeviceNamesAsync(CancellationToken t)=>Task.FromResult<IReadOnlyList<string>>(new[]{"LDPlayer"});public Task<bool> IsRunningAsync(string d,CancellationToken t)=>Task.FromResult(true);public Task OpenAsync(string d,CancellationToken t)=>Task.CompletedTask;public Task CloseAsync(string d,CancellationToken t)=>Task.CompletedTask;public Task RunAppAsync(string d,string p,CancellationToken t)=>Task.CompletedTask;public Task TapAsync(string d,int x,int y,CancellationToken t){Inputs++;return Task.CompletedTask;}public Task TapByPercentAsync(string d,double x,double y,CancellationToken t){Inputs++;return Task.CompletedTask;}public Task LongPressAsync(string d,int x,int y,int ms,CancellationToken t){Inputs++;return Task.CompletedTask;}public Task SwipeByPercentAsync(string d,double sx,double sy,double ex,double ey,int ms,CancellationToken t){Inputs++;return Task.CompletedTask;}public Task BackAsync(string d,CancellationToken t){Inputs++;return Task.CompletedTask;}public Task InputTextAsync(string d,string v,CancellationToken t){Inputs++;return Task.CompletedTask;}public Task PressKeyAsync(string d,AndroidKeyCode k,CancellationToken t){Inputs++;return Task.CompletedTask;}}
     sealed class InlineProgress<T>:IProgress<T>{readonly Action<T> action;public InlineProgress(Action<T> action){this.action=action;}public void Report(T value){action(value);}}
     sealed class FakeDeviceRecovery:IDeviceRecoveryService
@@ -1876,6 +2444,124 @@ internal static class Program
             });
         }
     }
+    sealed class SlowFastAvailability:IWorldMapTeamAvailabilityService
+    {
+        public readonly TaskCompletionSource<bool> ReleaseSlow = new TaskCompletionSource<bool>();
+        public async Task<WorldMapTeamAvailabilityResult> CheckAsync(string deviceName,
+            CancellationToken cancellationToken)
+        {
+            if (deviceName == "Slow")
+                using (cancellationToken.Register(() => ReleaseSlow.TrySetCanceled()))
+                    await ReleaseSlow.Task;
+            cancellationToken.ThrowIfCancellationRequested();
+            return ReadyAvailabilityResult();
+        }
+    }
+    sealed class BlockingAvailability:IWorldMapTeamAvailabilityService
+    {
+        public async Task<WorldMapTeamAvailabilityResult> CheckAsync(string deviceName,
+            CancellationToken cancellationToken)
+        {
+            await Task.Delay(Timeout.Infinite, cancellationToken);
+            throw new Exception("unreachable");
+        }
+    }
+    sealed class ReadyThenWaitingAvailability:IWorldMapTeamAvailabilityService
+    {
+        int calls;
+        public Task<WorldMapTeamAvailabilityResult> CheckAsync(string deviceName,
+            CancellationToken cancellationToken)
+        {
+            cancellationToken.ThrowIfCancellationRequested();
+            bool ready = Interlocked.Increment(ref calls) == 1;
+            WorldMapTeamAvailabilityResult result = ReadyAvailabilityResult();
+            if (!ready) result.ReadyTeams = new TeamNumber[0];
+            return Task.FromResult(result);
+        }
+    }
+    static WorldMapTeamAvailabilityResult ReadyAvailabilityResult() =>
+        new WorldMapTeamAvailabilityResult
+        {
+            Success = true,
+            AnyReadyTeam = true,
+            AvailableTeams = new[] { TeamNumber.Team1, TeamNumber.Team2,
+                TeamNumber.Team3, TeamNumber.Team4 },
+            ReadyTeams = new[] { TeamNumber.Team1, TeamNumber.Team2,
+                TeamNumber.Team3, TeamNumber.Team4 },
+            ReadyMatches = new ImageMatchResult[0],
+            FinalState = GameState.WorldMap,
+            Message = "ready"
+        };
+    sealed class SignallingWorkflow:IOneShotFarmWorkflow
+    {
+        public readonly TaskCompletionSource<bool> FastStarted = new TaskCompletionSource<bool>();
+        public Task<OneShotFarmResult> RunAsync(string deviceName, OneShotFarmRequest request,
+            CancellationToken cancellationToken) => RunAsync(deviceName, request, null,
+                cancellationToken);
+        public Task<OneShotFarmResult> RunAsync(string deviceName, OneShotFarmRequest request,
+            IProgress<OneShotFarmProgress> progress, CancellationToken cancellationToken)
+        {
+            cancellationToken.ThrowIfCancellationRequested();
+            if (deviceName == "Fast") FastStarted.TrySetResult(true);
+            return Task.FromResult(SuccessResult(deviceName));
+        }
+    }
+    sealed class CooperativeWorkflow:IOneShotFarmWorkflow
+    {
+        readonly object sync = new object();
+        readonly Dictionary<string, int> calls = new Dictionary<string, int>(StringComparer.OrdinalIgnoreCase);
+        readonly int dispatchesBeforeStop;
+        public CooperativeWorkflow(int dispatchesBeforeStop)
+        { this.dispatchesBeforeStop = dispatchesBeforeStop; }
+        public readonly List<string> Order = new List<string>();
+        public int MaximumDispatchesInCall { get; private set; }
+        public int CallsFor(string deviceName)
+        { lock (sync) return calls.TryGetValue(deviceName, out int value) ? value : 0; }
+        public Task<OneShotFarmResult> RunAsync(string deviceName, OneShotFarmRequest request,
+            CancellationToken cancellationToken) => RunAsync(deviceName, request, null,
+                cancellationToken);
+        public Task<OneShotFarmResult> RunAsync(string deviceName, OneShotFarmRequest request,
+            IProgress<OneShotFarmProgress> progress, CancellationToken cancellationToken)
+        {
+            cancellationToken.ThrowIfCancellationRequested();
+            int current;
+            lock (sync)
+            {
+                calls.TryGetValue(deviceName, out current);
+                current++;
+                calls[deviceName] = current;
+                Order.Add(deviceName);
+                MaximumDispatchesInCall = Math.Max(MaximumDispatchesInCall, 1);
+            }
+            TeamNumber team = (TeamNumber)Math.Min(current, 4);
+            TeamNumber[] teams = (request.CycleDispatchedTeams ?? new TeamNumber[0])
+                .Concat(new[] { team }).Distinct().ToArray();
+            ResourceType[] resources = (request.CycleDispatchedResources ?? new ResourceType[0])
+                .Concat(new[] { ResourceType.Iron }).ToArray();
+            OneShotFarmResult result = SuccessResult(deviceName);
+            result.DispatchedTeam = team;
+            result.SelectedTeam = team;
+            result.DispatchedResource = ResourceType.Iron;
+            result.BatchDispatchedTeams = teams;
+            result.DispatchedResources = resources;
+            result.CompletedDispatches = teams.Length;
+            result.RequeueRequested = current < dispatchesBeforeStop;
+            return Task.FromResult(result);
+        }
+    }
+    static OneShotFarmResult SuccessResult(string deviceName) =>
+        new OneShotFarmResult
+        {
+            DeviceName = deviceName,
+            Success = true,
+            Outcome = OneShotFarmOutcome.MarchStarted,
+            AttemptedLevels = new int[0],
+            AttemptedResources = new ResourceType[0],
+            MissingRuntimeTemplates = new MissingRuntimeTemplate[0],
+            StorageFullResources = new ResourceType[0],
+            LevelsExhaustedResources = new ResourceType[0],
+            Steps = new OneShotFarmStepResult[0]
+        };
     sealed class CountingSuccessWorkflow:IOneShotFarmWorkflow
     {
         int calls; public int Calls => Volatile.Read(ref calls);
@@ -1918,6 +2604,66 @@ internal static class Program
         public FakeHostResourceProbe(double cpu,long memory){this.cpu=cpu;this.memory=memory;}
         public HostResourceSnapshot Sample()=>new HostResourceSnapshot
             {CpuUsagePercent=cpu,AvailableMemoryBytes=memory};
+    }
+    sealed class ThrowingWorkflow:IOneShotFarmWorkflow
+    {
+        public Task<OneShotFarmResult> RunAsync(string deviceName, OneShotFarmRequest request,
+            CancellationToken cancellationToken) => throw new InvalidOperationException("test failure");
+        public Task<OneShotFarmResult> RunAsync(string deviceName, OneShotFarmRequest request,
+            IProgress<OneShotFarmProgress> progress, CancellationToken cancellationToken)
+            => throw new InvalidOperationException("test failure");
+    }
+    sealed class CancellingWorkflow:IOneShotFarmWorkflow
+    {
+        readonly CancellationTokenSource source;
+        public CancellingWorkflow(CancellationTokenSource source) { this.source = source; }
+        public Task<OneShotFarmResult> RunAsync(string deviceName, OneShotFarmRequest request,
+            CancellationToken cancellationToken) => RunAsync(deviceName, request, null,
+                cancellationToken);
+        public Task<OneShotFarmResult> RunAsync(string deviceName, OneShotFarmRequest request,
+            IProgress<OneShotFarmProgress> progress, CancellationToken cancellationToken)
+        {
+            source.Cancel();
+            cancellationToken.ThrowIfCancellationRequested();
+            throw new Exception("unreachable");
+        }
+    }
+    sealed class TrackingAdaptiveGate:IAdaptiveConcurrencyAdmissionGate
+    {
+        int active;
+        public int AcquireCalls { get; private set; }
+        public int DisposeCalls { get; private set; }
+        public int Active => Volatile.Read(ref active);
+        public AdaptiveAdmissionRequest LastRequest { get; private set; }
+        public Task<IAdaptiveConcurrencyLease> AcquireAsync(string deviceName,
+            AdaptiveOperationKind operationKind, CancellationToken cancellationToken)
+            => AcquireAsync(deviceName, operationKind, new AdaptiveAdmissionRequest(),
+                cancellationToken);
+        public Task<IAdaptiveConcurrencyLease> AcquireAsync(string deviceName,
+            AdaptiveOperationKind operationKind, AdaptiveAdmissionRequest request,
+            CancellationToken cancellationToken)
+        {
+            cancellationToken.ThrowIfCancellationRequested();
+            AcquireCalls++;
+            LastRequest = request;
+            Interlocked.Increment(ref active);
+            return Task.FromResult<IAdaptiveConcurrencyLease>(new TrackingLease(this));
+        }
+        public void Report(AdaptiveConcurrencyObservation observation) { }
+        public AdaptiveConcurrencySnapshot GetSnapshot() => new AdaptiveConcurrencySnapshot
+            { Enabled = true, CurrentLimit = 6, ActiveExecutions = Active };
+        sealed class TrackingLease:IAdaptiveConcurrencyLease
+        {
+            TrackingAdaptiveGate owner;
+            public TrackingLease(TrackingAdaptiveGate owner) { this.owner = owner; }
+            public void Dispose()
+            {
+                TrackingAdaptiveGate value = Interlocked.Exchange(ref owner, null);
+                if (value == null) return;
+                Interlocked.Decrement(ref value.active);
+                value.DisposeCalls++;
+            }
+        }
     }
     sealed class Log:IDiagnosticLogger{public void Info(string m){}public void Error(string m,Exception e){}}
 }

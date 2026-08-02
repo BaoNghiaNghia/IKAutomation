@@ -51,6 +51,8 @@ namespace ADB_Tool_Automation_Post_FB.Infrastructure.Workflows
             cancellationToken.ThrowIfCancellationRequested();
             if (request == null) throw new ArgumentNullException(nameof(request));
             request.ReadyTeamWaitMode = ReadyTeamWaitMode.YieldToSupervisor;
+            if (string.IsNullOrWhiteSpace(request.RunId))
+                request.RunId = Guid.NewGuid().ToString();
             string[] devices = (deviceNames ?? new string[0])
                 .Where(name => !string.IsNullOrWhiteSpace(name)).Select(name => name.Trim())
                 .Distinct(StringComparer.OrdinalIgnoreCase).ToArray();
@@ -73,9 +75,19 @@ namespace ADB_Tool_Automation_Post_FB.Infrastructure.Workflows
                 failureHistory[device] = technicalFailures;
             }
             var heartbeatState = new HeartbeatState();
+            var healthBuildSync = new object();
+            DateTimeOffset nextHealthBuildAt = DateTimeOffset.MinValue;
             var dashboardProgress = new InlineProgress<ContinuousFarmSupervisorProgress>(value =>
             {
-                value.Health = BuildHealthSnapshot(snapshots, startedAt, heartbeatState);
+                DateTimeOffset now = DateTimeOffset.UtcNow;
+                lock (healthBuildSync)
+                {
+                    if (now >= nextHealthBuildAt)
+                    {
+                        value.Health = BuildHealthSnapshot(snapshots, startedAt, heartbeatState);
+                        nextHealthBuildAt = now.AddSeconds(1);
+                    }
+                }
                 ReportSafely(progress, value);
             });
             using (var heartbeatCancellation = CancellationTokenSource
@@ -612,7 +624,11 @@ namespace ADB_Tool_Automation_Post_FB.Infrastructure.Workflows
             switch (progress.Stage)
             {
                 case MultiDeviceOneShotFarmStage.Preflight: state = ContinuousFarmDeviceState.Preflight; break;
+                case MultiDeviceOneShotFarmStage.PreflightFailed: state = ContinuousFarmDeviceState.Recovering; break;
                 case MultiDeviceOneShotFarmStage.Queued: state = ContinuousFarmDeviceState.Ready; break;
+                case MultiDeviceOneShotFarmStage.ReadyForGameplay: state = ContinuousFarmDeviceState.Ready; break;
+                case MultiDeviceOneShotFarmStage.DispatchingTeam: state = ContinuousFarmDeviceState.Running; break;
+                case MultiDeviceOneShotFarmStage.Requeued: state = ContinuousFarmDeviceState.Ready; break;
                 case MultiDeviceOneShotFarmStage.WaitingForReadyTeam: state = ContinuousFarmDeviceState.Waiting; break;
                 case MultiDeviceOneShotFarmStage.Completed: state = ContinuousFarmDeviceState.Waiting; break;
                 case MultiDeviceOneShotFarmStage.Failed: state = ContinuousFarmDeviceState.Recovering; break;
@@ -885,8 +901,18 @@ namespace ADB_Tool_Automation_Post_FB.Infrastructure.Workflows
         {
             if (adaptiveConcurrencyGate == null)
                 return await recoveryService.RecoverAsync(deviceName, cancellationToken);
-            using (IAdaptiveConcurrencyLease lease = await adaptiveConcurrencyGate.AcquireAsync(
-                deviceName, AdaptiveOperationKind.Recovery, cancellationToken))
+            using (IAdaptiveConcurrencyLease lease = adaptiveConcurrencyGate
+                is IAdaptiveConcurrencyAdmissionGate admissionGate
+                ? await admissionGate.AcquireAsync(deviceName, AdaptiveOperationKind.Recovery,
+                    new AdaptiveAdmissionRequest
+                    {
+                        ApplyStartupStagger = true,
+                        StaggerKey = Guid.NewGuid().ToString(),
+                        DeviceIndex = -1,
+                        ExecutionPhase = AdaptiveExecutionPhase.Recovery
+                    }, cancellationToken)
+                : await adaptiveConcurrencyGate.AcquireAsync(deviceName,
+                    AdaptiveOperationKind.Recovery, cancellationToken))
             {
                 DateTimeOffset started = DateTimeOffset.UtcNow;
                 try

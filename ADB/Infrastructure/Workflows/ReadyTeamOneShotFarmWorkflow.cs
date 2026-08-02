@@ -50,8 +50,10 @@ namespace ADB_Tool_Automation_Post_FB.Infrastructure.Workflows
             int checks = 0;
             IReadOnlyList<TeamNumber> eligibleReadyTeams = new TeamNumber[0];
             IReadOnlyList<TeamNumber> detectedTeams = new TeamNumber[0];
-            var dispatchedResources = new List<ResourceType>();
-            var dispatchedTeams = new List<TeamNumber>();
+            var dispatchedResources = new List<ResourceType>(
+                request.CycleDispatchedResources ?? new ResourceType[0]);
+            var dispatchedTeams = new List<TeamNumber>(
+                request.CycleDispatchedTeams ?? new TeamNumber[0]);
             OneShotFarmResult lastSuccessfulResult = null;
             int consecutiveNoReadyChecks = 0;
             WorldMapTeamAvailabilityResult initialAvailability =
@@ -171,6 +173,13 @@ namespace ADB_Tool_Automation_Post_FB.Infrastructure.Workflows
                             + $"DispatchedTeam='{dispatchedTeam}', "
                             + $"DispatchedResource='{dispatchedResource}', "
                             + $"NextResourceOrder='{string.Join(",", nextResourceOrder)}'");
+                        if (request.CooperativeDispatch)
+                        {
+                            result.RequeueRequested = true;
+                            result.Message = "Đã điều một đội; thiết bị đã nhường lượt để kiểm tra đội tiếp theo.";
+                            ApplyBatchSummary(result, dispatchedResources, dispatchedTeams);
+                            return result;
+                        }
                         continue;
                     }
 
@@ -327,7 +336,10 @@ namespace ADB_Tool_Automation_Post_FB.Infrastructure.Workflows
                 StorageLimitPolicy = source.StorageLimitPolicy,
                 AttemptsPerResourceLevel = source.AttemptsPerResourceLevel,
                 AllowedTeams = (source.AllowedTeams ?? new TeamNumber[0]).Distinct().ToArray(),
-                TeamPriority = (source.TeamPriority ?? source.AllowedTeams ?? new TeamNumber[0]).Distinct().ToArray(),
+                TeamPriority = new[] { expectedTeam }
+                    .Concat((source.TeamPriority ?? source.AllowedTeams
+                        ?? new TeamNumber[0]).Where(team => team != expectedTeam))
+                    .Distinct().ToArray(),
                 ExpectedTeam = expectedTeam,
                 WorldMapAvailableTeams = availability.AvailableTeams ?? new TeamNumber[0],
                 WorldMapReadyTeams = availability.ReadyTeams ?? new TeamNumber[0],
@@ -338,7 +350,10 @@ namespace ADB_Tool_Automation_Post_FB.Infrastructure.Workflows
                 RunUntilNoReadyTeams = source.RunUntilNoReadyTeams,
                 ReadyTeamWaitMode = source.ReadyTeamWaitMode,
                 ReadyTeamOptions = source.ReadyTeamOptions,
-                RunId = source.RunId
+                RunId = source.RunId,
+                CooperativeDispatch = source.CooperativeDispatch,
+                CycleDispatchedTeams = source.CycleDispatchedTeams,
+                CycleDispatchedResources = source.CycleDispatchedResources
             };
         }
 

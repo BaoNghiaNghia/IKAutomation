@@ -11,8 +11,16 @@ namespace ADB_Tool_Automation_Post_FB.Infrastructure.Workflows
     public static class AppConfigOneShotFarmWorkflowOptionsProvider
     {
         public static OneShotFarmWorkflowOptions Load() => new OneShotFarmWorkflowOptions(
-            Bool("SaveStepFailureScreenshots", true), Bool("SaveSuccessScreenshot", true),
+            Bool("SaveStepFailureScreenshots", true), Bool("SaveSuccessScreenshot", false),
             Text("ScreenshotDirectory", "Diagnostics/OneShotFarm"));
+        public static OneShotFarmDiagnosticOptions LoadDiagnosticOptions() =>
+            new OneShotFarmDiagnosticOptions(
+                Bool("SaveSuccessScreenshot", false),
+                Bool("EnableFailureScreenshots", true),
+                Int("DiagnosticScreenshotCooldownSeconds", 30),
+                Int("MaxDiagnosticScreenshotsPerDevice", 100),
+                Int("DiagnosticRetentionDays", 7),
+                Int("DiagnosticQueueCapacity", 16));
         public static OneShotFarmRequest LoadRequest()
         {
             ResourceFarmFallbackOptions fallback = AppConfigResourceFarmFallbackOptionsProvider.Load();

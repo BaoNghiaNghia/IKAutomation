@@ -1,6 +1,8 @@
 using ADB_Tool_Automation_Post_FB.Core.Workflows;
+using ADB_Tool_Automation_Post_FB.Core.Diagnostics;
 using System;
 using System.Collections.Generic;
+using System.Diagnostics;
 using System.Runtime.InteropServices;
 using System.Threading;
 using System.Threading.Tasks;
@@ -9,14 +11,22 @@ namespace ADB_Tool_Automation_Post_FB.Infrastructure.Workflows
 {
     public sealed class AdaptiveConcurrencyOptions
     {
-        public AdaptiveConcurrencyOptions(int minimumConcurrency = 4,
-            int initialConcurrency = 6, int maximumConcurrency = 25,
+        public const int DefaultMinimumConcurrency = 4;
+        public const int DefaultInitialConcurrency = 6;
+        public const int DefaultMaximumConcurrency = 10;
+
+        public AdaptiveConcurrencyOptions(int minimumConcurrency = DefaultMinimumConcurrency,
+            int initialConcurrency = DefaultInitialConcurrency,
+            int maximumConcurrency = DefaultMaximumConcurrency,
             int sampleIntervalMs = 5000, int healthySamplesToIncrease = 3,
             double highCpuPercent = 88d, long lowAvailableMemoryBytes = 2147483648L,
             double highTechnicalFailureRate = 0.25d, int observationWindowSize = 20,
             int highProbeLatencyMs = 30000,
             int automationStaggerMinMs = 2000, int automationStaggerMaxMs = 10000,
-            int recoveryStaggerMinMs = 30000, int recoveryStaggerMaxMs = 60000)
+            int recoveryStaggerMinMs = 30000, int recoveryStaggerMaxMs = 60000,
+            int highScreenshotGateWaitMs = 1500, int highVisionGateWaitMs = 1000,
+            double highIoFailureRate = 0.15d, int queuePressureWindows = 3,
+            int adjustmentCooldownMs = 10000, int highGameplayLeaseWaitMs = 3000)
         {
             if (minimumConcurrency < 1 || maximumConcurrency > 25
                 || initialConcurrency < minimumConcurrency
@@ -34,6 +44,11 @@ namespace ADB_Tool_Automation_Post_FB.Infrastructure.Workflows
                 throw new ArgumentOutOfRangeException(nameof(observationWindowSize));
             if (highProbeLatencyMs < 1)
                 throw new ArgumentOutOfRangeException(nameof(highProbeLatencyMs));
+            if (highScreenshotGateWaitMs < 1 || highVisionGateWaitMs < 1
+                || highGameplayLeaseWaitMs < 1 || queuePressureWindows < 2
+                || adjustmentCooldownMs < 0 || highIoFailureRate <= 0
+                || highIoFailureRate > 1)
+                throw new ArgumentOutOfRangeException(nameof(highScreenshotGateWaitMs));
             ValidateStagger(automationStaggerMinMs, automationStaggerMaxMs,
                 nameof(automationStaggerMinMs));
             ValidateStagger(recoveryStaggerMinMs, recoveryStaggerMaxMs,
@@ -52,6 +67,12 @@ namespace ADB_Tool_Automation_Post_FB.Infrastructure.Workflows
             AutomationStaggerMaxMs = automationStaggerMaxMs;
             RecoveryStaggerMinMs = recoveryStaggerMinMs;
             RecoveryStaggerMaxMs = recoveryStaggerMaxMs;
+            HighScreenshotGateWaitMs = highScreenshotGateWaitMs;
+            HighVisionGateWaitMs = highVisionGateWaitMs;
+            HighIoFailureRate = highIoFailureRate;
+            QueuePressureWindows = queuePressureWindows;
+            AdjustmentCooldownMs = adjustmentCooldownMs;
+            HighGameplayLeaseWaitMs = highGameplayLeaseWaitMs;
         }
 
         public int MinimumConcurrency { get; }
@@ -68,6 +89,12 @@ namespace ADB_Tool_Automation_Post_FB.Infrastructure.Workflows
         public int AutomationStaggerMaxMs { get; }
         public int RecoveryStaggerMinMs { get; }
         public int RecoveryStaggerMaxMs { get; }
+        public int HighScreenshotGateWaitMs { get; }
+        public int HighVisionGateWaitMs { get; }
+        public double HighIoFailureRate { get; }
+        public int QueuePressureWindows { get; }
+        public int AdjustmentCooldownMs { get; }
+        public int HighGameplayLeaseWaitMs { get; }
 
         private static void ValidateStagger(int minimum, int maximum, string name)
         {
@@ -87,42 +114,64 @@ namespace ADB_Tool_Automation_Post_FB.Infrastructure.Workflows
         public long AvailableMemoryBytes { get; set; }
     }
 
-    public sealed class AdaptiveConcurrencyGate : IAdaptiveConcurrencyGate
+    public sealed class AdaptiveConcurrencyGate : IAdaptiveConcurrencyAdmissionGate
     {
         private readonly object sync = new object();
         private readonly AdaptiveConcurrencyOptions options;
         private readonly IHostResourceProbe resourceProbe;
+        private readonly Action<string> infoLogger;
+        private readonly Func<int, CancellationToken, Task> delayAsync;
         private readonly Queue<PendingAdmission> pending = new Queue<PendingAdmission>();
         private readonly Queue<bool> technicalOutcomes = new Queue<bool>();
         private readonly Queue<bool> latencyOutcomes = new Queue<bool>();
+        private readonly HashSet<string> appliedStaggerKeys =
+            new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+        private readonly Queue<string> appliedStaggerKeyOrder = new Queue<string>();
         private int currentLimit;
         private int activeExecutions;
         private int healthySamples;
+        private int queuePressureSamples;
+        private long lastRuntimeSampleVersion;
+        private DateTimeOffset nextAdjustmentAt = DateTimeOffset.MinValue;
         private DateTimeOffset nextSampleAt = DateTimeOffset.MinValue;
         private DateTimeOffset nextAutomationAdmissionAt = DateTimeOffset.MinValue;
         private DateTimeOffset nextRecoveryAdmissionAt = DateTimeOffset.MinValue;
         private HostResourceSnapshot lastResources = new HostResourceSnapshot();
 
         public AdaptiveConcurrencyGate(AdaptiveConcurrencyOptions options,
-            IHostResourceProbe resourceProbe = null)
+            IHostResourceProbe resourceProbe = null, Action<string> infoLogger = null,
+            Func<int, CancellationToken, Task> delayAsync = null)
         {
             this.options = options ?? throw new ArgumentNullException(nameof(options));
             this.resourceProbe = resourceProbe ?? new WindowsHostResourceProbe();
+            this.infoLogger = infoLogger ?? (message => Trace.TraceInformation(message));
+            this.delayAsync = delayAsync ?? ((delay, token) => Task.Delay(delay, token));
             currentLimit = options.InitialConcurrency;
         }
 
         public async Task<IAdaptiveConcurrencyLease> AcquireAsync(string deviceName,
             AdaptiveOperationKind operationKind, CancellationToken cancellationToken)
         {
+            return await AcquireAsync(deviceName, operationKind, null, cancellationToken);
+        }
+
+        public async Task<IAdaptiveConcurrencyLease> AcquireAsync(string deviceName,
+            AdaptiveOperationKind operationKind, AdaptiveAdmissionRequest request,
+            CancellationToken cancellationToken)
+        {
             cancellationToken.ThrowIfCancellationRequested();
             if (string.IsNullOrWhiteSpace(deviceName))
                 throw new ArgumentException("Device name is required.", nameof(deviceName));
-            int staggerDelay = ReserveStaggerDelay(deviceName.Trim(), operationKind);
+            string normalizedDevice = deviceName.Trim();
+            int staggerDelay = request != null && request.ApplyStartupStagger
+                ? ReserveStaggerDelay(normalizedDevice, operationKind, request.StaggerKey)
+                : 0;
             if (staggerDelay > 0)
-                await Task.Delay(staggerDelay, cancellationToken);
+                await delayAsync(staggerDelay, cancellationToken);
             RefreshLimitIfDue();
 
             var admission = new PendingAdmission();
+            var wait = Stopwatch.StartNew();
             lock (sync)
             {
                 pending.Enqueue(admission);
@@ -132,6 +181,14 @@ namespace ADB_Tool_Automation_Post_FB.Infrastructure.Workflows
             {
                 await admission.Task;
             }
+            wait.Stop();
+            AdaptiveConcurrencySnapshot snapshot = GetSnapshot();
+            infoLogger($"[Adaptive Admission] DeviceName='{normalizedDevice}', "
+                + $"DeviceIndex={request?.DeviceIndex ?? -1}, "
+                + $"ExecutionPhase='{request?.ExecutionPhase.ToString() ?? "Unspecified"}', "
+                + $"AdaptiveGateWaitMs={wait.ElapsedMilliseconds}, "
+                + $"StartupStaggerDelayMs={staggerDelay}, Active={snapshot.ActiveExecutions}, "
+                + $"Queued={snapshot.QueuedExecutions}");
             return new Lease(this);
         }
 
@@ -170,10 +227,26 @@ namespace ADB_Tool_Automation_Post_FB.Infrastructure.Workflows
             }
         }
 
-        private int ReserveStaggerDelay(string deviceName, AdaptiveOperationKind kind)
+        /// <summary>Forces one evaluation using the latest aggregate samples.</summary>
+        public void EvaluatePressureNow()
+        {
+            lock (sync) nextSampleAt = DateTimeOffset.MinValue;
+            RefreshLimitIfDue();
+        }
+
+        private int ReserveStaggerDelay(string deviceName, AdaptiveOperationKind kind,
+            string staggerKey)
         {
             lock (sync)
             {
+                if (kind == AdaptiveOperationKind.Automation)
+                {
+                    string key = deviceName + "|" + (staggerKey ?? string.Empty);
+                    if (!appliedStaggerKeys.Add(key)) return 0;
+                    appliedStaggerKeyOrder.Enqueue(key);
+                    while (appliedStaggerKeyOrder.Count > 1024)
+                        appliedStaggerKeys.Remove(appliedStaggerKeyOrder.Dequeue());
+                }
                 DateTimeOffset now = DateTimeOffset.UtcNow;
                 DateTimeOffset scheduled;
                 int minimum;
@@ -233,19 +306,48 @@ namespace ADB_Tool_Automation_Post_FB.Infrastructure.Workflows
                 bool hasLatencyPressure = latencyOutcomes.Count >= 4
                     && GetPressureRateLocked(latencyOutcomes)
                         >= options.HighTechnicalFailureRate;
+                RuntimePressureSnapshot runtime = RuntimePressureMetrics.GetSnapshot();
+                bool hasFreshRuntimeSample = runtime.SampleVersion != lastRuntimeSampleVersion;
+                if (hasFreshRuntimeSample) lastRuntimeSampleVersion = runtime.SampleVersion;
+                bool queuePressure = runtime.ScreenshotP95WaitMs
+                        >= options.HighScreenshotGateWaitMs
+                    || runtime.VisionP95WaitMs >= options.HighVisionGateWaitMs
+                    || runtime.ScreenshotFailureRate >= options.HighIoFailureRate
+                    || runtime.VisionFailureRate >= options.HighIoFailureRate
+                    || runtime.AverageGameplayLeaseWaitMs
+                        >= options.HighGameplayLeaseWaitMs;
+                if (hasFreshRuntimeSample)
+                    queuePressureSamples = queuePressure ? queuePressureSamples + 1 : 0;
+                bool sustainedQueuePressure = queuePressureSamples
+                    >= options.QueuePressureWindows;
                 bool pressured = resources.CpuUsagePercent >= options.HighCpuPercent
                     || (resources.AvailableMemoryBytes > 0
                         && resources.AvailableMemoryBytes <= options.LowAvailableMemoryBytes)
-                    || hasFailurePressure || hasLatencyPressure;
-                if (pressured)
+                    || hasFailurePressure || hasLatencyPressure || sustainedQueuePressure;
+                if (pressured && now >= nextAdjustmentAt)
                 {
+                    int previous = currentLimit;
                     currentLimit = Math.Max(options.MinimumConcurrency, currentLimit - 1);
                     healthySamples = 0;
+                    nextAdjustmentAt = now.AddMilliseconds(options.AdjustmentCooldownMs);
+                    if (currentLimit != previous)
+                        infoLogger($"[Adaptive Concurrency] Concurrency {previous} -> {currentLimit}. "
+                            + (sustainedQueuePressure
+                                ? $"Reason: screenshot p95={runtime.ScreenshotP95WaitMs}ms, "
+                                    + $"vision p95={runtime.VisionP95WaitMs}ms for "
+                                    + $"{queuePressureSamples} windows."
+                                : "Reason: sustained host/failure pressure."));
                 }
-                else if (++healthySamples >= options.HealthySamplesToIncrease)
+                else if (!queuePressure && now >= nextAdjustmentAt
+                    && ++healthySamples >= options.HealthySamplesToIncrease)
                 {
+                    int previous = currentLimit;
                     currentLimit = Math.Min(options.MaximumConcurrency, currentLimit + 1);
                     healthySamples = 0;
+                    nextAdjustmentAt = now.AddMilliseconds(options.AdjustmentCooldownMs);
+                    if (currentLimit != previous)
+                        infoLogger($"[Adaptive Concurrency] Concurrency {previous} -> {currentLimit}. "
+                            + "Reason: CPU, memory, queues and failure rate remained healthy.");
                 }
                 PumpAdmissionsLocked();
             }

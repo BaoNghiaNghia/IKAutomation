@@ -86,6 +86,7 @@
     <Compile Include="Core\Diagnostics\IDeviceDiagnosticService.cs" />
     <Compile Include="Core\Diagnostics\IDiagnosticLogger.cs" />
     <Compile Include="Core\ScreenshotCaptureMetrics.cs" />
+    <Compile Include="Core\RuntimePressureMetrics.cs" />
     <Compile Include="Core\Diagnostics\ScreenshotCaptureResult.cs" />
     <Compile Include="Core\GameDetection\GameDetectionEvidence.cs" />
     <Compile Include="Core\GameDetection\GameDetectionOptions.cs" />
@@ -172,6 +173,7 @@
     <Compile Include="Core\TeamSelection\WorldMapTeamAvailabilityOptions.cs" />
     <Compile Include="Core\TeamSelection\WorldMapTeamAvailabilityResult.cs" />
     <Compile Include="Core\Vision\IImageMatcher.cs" />
+    <Compile Include="Core\Vision\VisionOperationMetrics.cs" />
     <Compile Include="Core\Vision\CapturedFrame.cs" />
     <Compile Include="Core\Vision\IFrameStabilityDetector.cs" />
     <Compile Include="Core\Vision\FrameComparisonResult.cs" />
@@ -291,6 +293,7 @@
     <Compile Include="Infrastructure\Workflows\AppConfigReadyTeamGateOptionsProvider.cs" />
     <Compile Include="Infrastructure\Workflows\LocalAppDataFarmUiPreferencesStore.cs" />
     <Compile Include="Infrastructure\Workflows\MultiDeviceOneShotFarmRunner.cs" />
+    <Compile Include="Infrastructure\Workflows\MultiDeviceOneShotFarmRunnerOptions.cs" />
     <Compile Include="Infrastructure\Workflows\AppConfigResourceFarmFallbackOptionsProvider.cs" />
     <Compile Include="Infrastructure\Workflows\OneShotFarmDiagnosticService.cs" />
     <Compile Include="Infrastructure\Workflows\OneShotFarmWorkflow.cs" />

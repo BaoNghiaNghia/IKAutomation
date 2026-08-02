@@ -18,6 +18,10 @@ namespace ADB_Tool_Automation_Post_FB.Core.Workflows
     {
         Queued,
         Preflight,
+        PreflightFailed,
+        ReadyForGameplay,
+        DispatchingTeam,
+        Requeued,
         WaitingForReadyTeam,
         Running,
         Completed,
@@ -33,6 +37,14 @@ namespace ADB_Tool_Automation_Post_FB.Core.Workflows
         public string Message { get; set; }
         public int ConcurrencyLimit { get; set; }
         public int ActiveExecutions { get; set; }
+        public long PreflightDurationMs { get; set; }
+        public long GameplayLeaseWaitMs { get; set; }
+        public long GameplayLeaseHeldMs { get; set; }
+        public int TeamsDispatchedPerLease { get; set; }
+        public int TeamsDispatchedPerDeviceCycle { get; set; }
+        public int DeviceRequeueCount { get; set; }
+        public int PreflightTimeoutCount { get; set; }
+        public int PreflightFailureCount { get; set; }
     }
 
     public sealed class MultiDeviceOneShotFarmItemResult
@@ -41,6 +53,14 @@ namespace ADB_Tool_Automation_Post_FB.Core.Workflows
         public MultiDeviceOneShotFarmStage Stage { get; set; }
         public OneShotFarmResult Result { get; set; }
         public string ErrorMessage { get; set; }
+        public long PreflightDurationMs { get; set; }
+        public long GameplayLeaseWaitMs { get; set; }
+        public long GameplayLeaseHeldMs { get; set; }
+        public int TeamsDispatchedPerLease { get; set; }
+        public int TeamsDispatchedPerDeviceCycle { get; set; }
+        public int DeviceRequeueCount { get; set; }
+        public int PreflightTimeoutCount { get; set; }
+        public int PreflightFailureCount { get; set; }
     }
 
     public sealed class MultiDeviceOneShotFarmResult

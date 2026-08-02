@@ -14,6 +14,13 @@ namespace ADB_Tool_Automation_Post_FB.Core.Workflows
         AdaptiveConcurrencySnapshot GetSnapshot();
     }
 
+    public interface IAdaptiveConcurrencyAdmissionGate : IAdaptiveConcurrencyGate
+    {
+        Task<IAdaptiveConcurrencyLease> AcquireAsync(string deviceName,
+            AdaptiveOperationKind operationKind, AdaptiveAdmissionRequest request,
+            CancellationToken cancellationToken);
+    }
+
     public interface IAdaptiveConcurrencyLease : IDisposable
     {
     }
@@ -22,6 +29,21 @@ namespace ADB_Tool_Automation_Post_FB.Core.Workflows
     {
         Automation,
         Recovery
+    }
+
+    public enum AdaptiveExecutionPhase
+    {
+        Preflight,
+        Gameplay,
+        Recovery
+    }
+
+    public sealed class AdaptiveAdmissionRequest
+    {
+        public bool ApplyStartupStagger { get; set; }
+        public string StaggerKey { get; set; }
+        public int DeviceIndex { get; set; }
+        public AdaptiveExecutionPhase ExecutionPhase { get; set; }
     }
 
     public sealed class AdaptiveConcurrencyObservation

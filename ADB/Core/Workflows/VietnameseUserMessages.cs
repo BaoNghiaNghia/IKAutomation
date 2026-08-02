@@ -113,7 +113,11 @@ namespace ADB_Tool_Automation_Post_FB.Core.Workflows
             switch (value)
             {
                 case MultiDeviceOneShotFarmStage.Preflight: return "Kiểm tra ban đầu";
+                case MultiDeviceOneShotFarmStage.PreflightFailed: return "Kiểm tra thất bại";
                 case MultiDeviceOneShotFarmStage.Queued: return "Đang xếp hàng";
+                case MultiDeviceOneShotFarmStage.ReadyForGameplay: return "Sẵn sàng thực hiện";
+                case MultiDeviceOneShotFarmStage.DispatchingTeam: return "Đang điều đội";
+                case MultiDeviceOneShotFarmStage.Requeued: return "Đã nhường lượt";
                 case MultiDeviceOneShotFarmStage.Running: return "Đang chạy";
                 case MultiDeviceOneShotFarmStage.WaitingForReadyTeam: return "Đang chờ đội";
                 case MultiDeviceOneShotFarmStage.Completed: return "Hoàn tất";

@@ -53,7 +53,8 @@ namespace ADB_Tool_Automation_Post_FB.Infrastructure.Workflows
             var inner = new OneShotFarmWorkflow(navigation, levelFallback, popup,
                 openTeam, selectTeam, dispatch, detector,
                 DeviceOperationLock.Shared, workflowOptions,
-                new OneShotFarmDiagnosticService(client, workflowOptions.ScreenshotDirectory), logger,
+                new OneShotFarmDiagnosticService(client, workflowOptions.ScreenshotDirectory,
+                    AppConfigOneShotFarmWorkflowOptionsProvider.LoadDiagnosticOptions(), null, null), logger,
                 fallbackOptions, resourceFallback, profiles, registry, new SystemRandomProvider());
             var availability = new WorldMapTeamAvailabilityService(navigation,
                 detector, client, registry, matcher, DeviceOperationLock.Shared,

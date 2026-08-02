@@ -54,6 +54,13 @@ namespace ADB_Tool_Automation_Post_FB.Infrastructure.LDPlayer
         private static long recoveryDirectoryScans;
         private static long screenshotRetries;
         private static long screenshotFailures;
+        private static long screenshotTotalDurationMs;
+        private static int screenshotQueueDepth;
+        private static int activeScreenshotOperations;
+        private static string lastScreenshotDeviceName;
+        private static string lastScreenshotWorkflowStage;
+        private static int lastScreenshotDeviceIndex = -1;
+        private static int lastScreenshotAttemptNumber;
 
         public static ScreenshotCaptureMetrics GetScreenshotCaptureMetrics()
         {
@@ -64,13 +71,24 @@ namespace ADB_Tool_Automation_Post_FB.Infrastructure.LDPlayer
                 PngEncodes = Interlocked.Read(ref framesEncodedToPng),
                 ScreenshotGateWaitMs = Interlocked.Read(ref screenshotGateWaitMs),
                 ScreenShootDurationMs = Interlocked.Read(ref screenShootDurationMs),
+                ScreenshotCaptureDurationMs = Interlocked.Read(ref screenShootDurationMs),
+                ScreenshotTotalDurationMs = Interlocked.Read(ref screenshotTotalDurationMs),
                 AdbHealthChecks = Interlocked.Read(ref adbHealthChecks),
                 AdbHealthCacheHits = Interlocked.Read(ref adbHealthCacheHits),
                 NormalBitmapCaptures = Interlocked.Read(ref normalBitmapCaptures),
                 RecoveredFileCaptures = Interlocked.Read(ref recoveredFileCaptures),
                 RecoveryDirectoryScans = Interlocked.Read(ref recoveryDirectoryScans),
                 ScreenshotRetries = Interlocked.Read(ref screenshotRetries),
-                ScreenshotFailures = Interlocked.Read(ref screenshotFailures)
+                ScreenshotFailures = Interlocked.Read(ref screenshotFailures),
+                ScreenshotRetryCount = Interlocked.Read(ref screenshotRetries),
+                ScreenshotFailureCount = Interlocked.Read(ref screenshotFailures),
+                ScreenshotQueueDepth = Volatile.Read(ref screenshotQueueDepth),
+                ActiveScreenshotOperations = Volatile.Read(ref activeScreenshotOperations),
+                LastDeviceName = Volatile.Read(ref lastScreenshotDeviceName),
+                LastDeviceIndex = Volatile.Read(ref lastScreenshotDeviceIndex),
+                LastWorkflowStage = Volatile.Read(ref lastScreenshotWorkflowStage)
+                    ?? "Unspecified",
+                LastAttemptNumber = Volatile.Read(ref lastScreenshotAttemptNumber)
             };
         }
 
@@ -186,6 +204,11 @@ namespace ADB_Tool_Automation_Post_FB.Infrastructure.LDPlayer
             ValidateDeviceName(deviceName);
 
             string normalizedDeviceName = deviceName.Trim();
+            var totalWatch = Stopwatch.StartNew();
+            Volatile.Write(ref lastScreenshotDeviceName, normalizedDeviceName);
+            Volatile.Write(ref lastScreenshotDeviceIndex, ParseDeviceIndex(normalizedDeviceName));
+            Volatile.Write(ref lastScreenshotWorkflowStage,
+                ScreenshotCaptureContext.WorkflowStage);
             SemaphoreSlim screenshotLock = ScreenshotLocks.GetOrAdd(
                 normalizedDeviceName,
                 _ => new SemaphoreSlim(1, 1));
@@ -230,6 +253,7 @@ namespace ADB_Tool_Automation_Post_FB.Infrastructure.LDPlayer
 
                 for (int attempt = 1; attempt <= ScreenshotCaptureAttempts; attempt++)
                 {
+                    Volatile.Write(ref lastScreenshotAttemptNumber, attempt);
                     cancellationToken.ThrowIfCancellationRequested();
                     if (attempt > 1)
                     {
@@ -257,10 +281,13 @@ namespace ADB_Tool_Automation_Post_FB.Infrastructure.LDPlayer
                     string screenshotFileName = $"ikautomation_{Guid.NewGuid():N}.png";
                     string generatedFilePrefix = Path.GetFileNameWithoutExtension(
                         screenshotFileName);
-                    Bitmap screenshot;
+                    Bitmap screenshot = null;
                     var gateWait = Stopwatch.StartNew();
-                    await ScreenshotGate.WaitAsync(cancellationToken);
+                    Interlocked.Increment(ref screenshotQueueDepth);
+                    try { await ScreenshotGate.WaitAsync(cancellationToken); }
+                    finally { Interlocked.Decrement(ref screenshotQueueDepth); }
                     gateWait.Stop();
+                    Interlocked.Increment(ref activeScreenshotOperations);
                     Interlocked.Add(ref screenshotGateWaitMs, gateWait.ElapsedMilliseconds);
                     try
                     {
@@ -279,7 +306,11 @@ namespace ADB_Tool_Automation_Post_FB.Infrastructure.LDPlayer
                     }
                     finally
                     {
+                        Interlocked.Decrement(ref activeScreenshotOperations);
                         ScreenshotGate.Release();
+                        RuntimePressureMetrics.ReportScreenshot(gateWait.ElapsedMilliseconds,
+                            screenshot == null, Volatile.Read(ref screenshotQueueDepth),
+                            Volatile.Read(ref activeScreenshotOperations));
                     }
                     if (screenshot != null)
                     {
@@ -325,11 +356,27 @@ namespace ADB_Tool_Automation_Post_FB.Infrastructure.LDPlayer
             catch (Exception ex)
             {
                 Interlocked.Increment(ref screenshotFailures);
+                RuntimePressureMetrics.ReportScreenshot(0, true,
+                    Volatile.Read(ref screenshotQueueDepth),
+                    Volatile.Read(ref activeScreenshotOperations));
                 HealthyDevices.TryRemove(normalizedDeviceName, out DateTimeOffset ignoredHealth);
                 throw new InvalidOperationException(
                     $"Failed to capture PNG screenshot from LDPlayer device '{deviceName}': {ex.Message}",
                     ex);
             }
+            finally
+            {
+                totalWatch.Stop();
+                Interlocked.Add(ref screenshotTotalDurationMs, totalWatch.ElapsedMilliseconds);
+            }
+        }
+
+        private static int ParseDeviceIndex(string deviceName)
+        {
+            int start = deviceName?.Length ?? 0;
+            while (start > 0 && char.IsDigit(deviceName[start - 1])) start--;
+            return start < (deviceName?.Length ?? 0)
+                && int.TryParse(deviceName.Substring(start), out int value) ? value : -1;
         }
 
         private static bool IsRecentlyHealthy(string deviceName)

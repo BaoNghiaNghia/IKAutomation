@@ -222,13 +222,19 @@ namespace ADB_Tool_Automation_Post_FB
                 return;
             }
 
+            AdaptiveConcurrencyConfigurationResult adaptiveConfiguration =
+                AppConfigAdaptiveConcurrencyOptionsProvider.LoadConfiguration();
+            foreach (string warning in adaptiveConfiguration.Warnings)
+                Logger.LogWarning("[Adaptive Concurrency Config] " + warning);
+            Logger.LogInfo(adaptiveConfiguration.BuildSummary());
             var adaptiveConcurrencyGate = new AdaptiveConcurrencyGate(
-                AppConfigAdaptiveConcurrencyOptionsProvider.Load());
+                adaptiveConfiguration.Options, null, Logger.LogInfo);
             var multiDeviceRunner = new MultiDeviceOneShotFarmRunner(
                 () => OneShotFarmWorkflowFactory.CreateFromAppConfig(),
                 () => OneShotFarmWorkflowFactory.CreateTeamAvailabilityFromAppConfig(),
                 MultiDeviceOneShotFarmRunner.MaximumSupportedConcurrency,
-                adaptiveConcurrencyGate);
+                adaptiveConcurrencyGate, Logger.LogInfo,
+                AppConfigMultiDeviceOneShotFarmRunnerOptionsProvider.Load());
             farmControlWindow = new DeviceDiagnosticWindow(
                 DeviceDiagnosticServiceFactory.CreateFromAppConfig(),
                 multiDeviceRunner,

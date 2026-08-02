@@ -131,7 +131,8 @@ namespace ADB_Tool_Automation_Post_FB.Infrastructure.TeamSelection
                 verifiedFrameCount++;
                 var badgeRequests = teams.Select((team, index) => new ImageMatchRequest(
                     registry.LoadBytes(BadgeTemplate(team)), layout.SearchRows[index])).ToArray();
-                IReadOnlyList<ImageMatchResult> badgeResults = FindMany(screenshot, badgeRequests);
+                IReadOnlyList<ImageMatchResult> badgeResults = await FindManyAsync(
+                    screenshot, badgeRequests, cancellationToken);
                 for (int index = 0; index < teams.Length; index++)
                 {
                     TeamNumber team = teams[index];
@@ -159,7 +160,8 @@ namespace ADB_Tool_Automation_Post_FB.Infrastructure.TeamSelection
                         TemplateId.TeamMarchTimerAnchor, rowRegion);
                 }
                 IReadOnlyList<ImageMatchResult> statusResults = statusRequests.Count == 0
-                    ? new ImageMatchResult[0] : FindMany(screenshot, statusRequests);
+                    ? new ImageMatchResult[0] : await FindManyAsync(
+                        screenshot, statusRequests, cancellationToken);
                 for (int index = 0; index < statusResults.Count; index++)
                 {
                     TeamNumber team = statusSignals[index].Item1;
@@ -405,9 +407,12 @@ namespace ADB_Tool_Automation_Post_FB.Infrastructure.TeamSelection
                 : detector.Detect(frame.GetPngBytes());
         }
 
-        private IReadOnlyList<ImageMatchResult> FindMany(CapturedFrame frame,
-            IReadOnlyList<ImageMatchRequest> requests)
+        private async Task<IReadOnlyList<ImageMatchResult>> FindManyAsync(CapturedFrame frame,
+            IReadOnlyList<ImageMatchRequest> requests, CancellationToken cancellationToken)
         {
+            var asyncMatcher = matcher as IAsyncFrameImageMatcher;
+            if (asyncMatcher != null)
+                return await asyncMatcher.FindManyAsync(frame, requests, cancellationToken);
             var frameMatcher = matcher as IFrameImageMatcher;
             if (frameMatcher != null) return frameMatcher.FindMany(frame, requests);
             var batchMatcher = matcher as IBatchImageMatcher;

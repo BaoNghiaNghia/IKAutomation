@@ -331,6 +331,14 @@ namespace ADB_Tool_Automation_Post_FB.Infrastructure.Navigation
             GameDetectionResult current = DetectionFrom(ensured);
             GameDetectionEvidence mapButton = FindFreshEvidence(current, TemplateId.WorldMapPinButton);
             if (mapButton == null)
+            {
+                current = await RefreshFullFrameEvidenceAsync(
+                    deviceName, transitions, cancellationToken);
+                mapButton = current.IsSuccessful && current.State == GameState.WorldMap
+                    ? FindFreshEvidence(current, TemplateId.WorldMapPinButton)
+                    : null;
+            }
+            if (mapButton == null)
                 return Result(false, initial, current, ensured.Attempts, watch,
                     "WorldMap pin-map button had no valid fresh bounds; no Tap was sent.", null, transitions);
 
@@ -1519,6 +1527,36 @@ namespace ADB_Tool_Automation_Post_FB.Infrastructure.Navigation
             GameDetectionResult result = await detector.DetectAsync(deviceName, token);
             AddTransition(transitions, "Detect", $"Detected {result.State}; success={result.IsSuccessful}.");
             return result;
+        }
+
+        private async Task<GameDetectionResult> RefreshFullFrameEvidenceAsync(
+            string deviceName,
+            IList<NavigationTransition> transitions,
+            CancellationToken cancellationToken)
+        {
+            IFrameCapturingLdPlayerClient frameClient = ldPlayerClient as IFrameCapturingLdPlayerClient;
+            IFrameGameStateDetector frameDetector = detector as IFrameGameStateDetector;
+            if (frameClient == null || frameDetector == null)
+            {
+                byte[] screenshot = await ldPlayerClient.CaptureScreenshotPngAsync(
+                    deviceName, cancellationToken);
+                GameDetectionResult compatibleResult = detector.Detect(screenshot);
+                AddTransition(transitions, "Detect",
+                    $"Performed one bounded full-scan evidence refresh; detected "
+                    + $"{compatibleResult.State}; success={compatibleResult.IsSuccessful}.");
+                return compatibleResult;
+            }
+
+            using (CapturedFrame frame = await frameClient.CaptureFrameAsync(
+                deviceName, cancellationToken))
+            {
+                GameDetectionResult result = frameDetector.Detect(
+                    frame, deviceName, context: null);
+                AddTransition(transitions, "Detect",
+                    $"Performed one bounded full-frame evidence refresh; detected "
+                    + $"{result.State}; success={result.IsSuccessful}.");
+                return result;
+            }
         }
 
         private async Task TapEvidenceAsync(string deviceName, GameDetectionEvidence evidence, string label,

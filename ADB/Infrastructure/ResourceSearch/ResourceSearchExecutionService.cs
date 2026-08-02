@@ -309,7 +309,8 @@ namespace ADB_Tool_Automation_Post_FB.Infrastructure.ResourceSearch
                     "Game state detection failed during search observation.", detection?.ErrorMessage);
             }
 
-            IReadOnlyList<ImageMatchResult> toastMatches = MatchToastAnchors(frame);
+            IReadOnlyList<ImageMatchResult> toastMatches = await MatchToastAnchorsAsync(
+                frame, cancellationToken);
             ImageMatchResult toastAnchor = toastMatches[0];
             ImageMatchResult actionAnchor = toastMatches[1];
             ImageMatchResult shortAnchor = toastMatches[2];
@@ -629,7 +630,8 @@ namespace ADB_Tool_Automation_Post_FB.Infrastructure.ResourceSearch
                 : imageMatcher.Find(frame.GetPngBytes(), template, region);
         }
 
-        private IReadOnlyList<ImageMatchResult> MatchToastAnchors(CapturedFrame frame)
+        private async Task<IReadOnlyList<ImageMatchResult>> MatchToastAnchorsAsync(
+            CapturedFrame frame, CancellationToken cancellationToken)
         {
             TemplateId[] ids = { TemplateId.ResourceNotFoundToastAnchor,
                 TemplateId.ResourceNotFoundToastActionAnchor,
@@ -647,8 +649,11 @@ namespace ADB_Tool_Automation_Post_FB.Infrastructure.ResourceSearch
                 indexes.Add(index);
             }
             IReadOnlyList<ImageMatchResult> matched;
+            var asyncMatcher = imageMatcher as IAsyncFrameImageMatcher;
             var frameMatcher = imageMatcher as IFrameImageMatcher;
-            if (frameMatcher != null) matched = frameMatcher.FindMany(frame, requests);
+            if (asyncMatcher != null)
+                matched = await asyncMatcher.FindManyAsync(frame, requests, cancellationToken);
+            else if (frameMatcher != null) matched = frameMatcher.FindMany(frame, requests);
             else
             {
                 var batchMatcher = imageMatcher as IBatchImageMatcher;

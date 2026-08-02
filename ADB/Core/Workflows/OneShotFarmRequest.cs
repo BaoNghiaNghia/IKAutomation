@@ -58,5 +58,9 @@ namespace ADB_Tool_Automation_Post_FB.Core.Workflows
         public string WorldMapRosterStatus { get; set; }
         public string WorldMapRosterConfidence { get; set; }
         public string RunId { get; set; }
+        // Set by the multi-device runner so one admission lease dispatches at most one team.
+        public bool CooperativeDispatch { get; set; }
+        public IReadOnlyList<TeamNumber> CycleDispatchedTeams { get; set; }
+        public IReadOnlyList<ResourceType> CycleDispatchedResources { get; set; }
     }
 }

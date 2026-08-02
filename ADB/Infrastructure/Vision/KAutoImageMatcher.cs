@@ -1,4 +1,5 @@
 using ADB_Tool_Automation_Post_FB.Core.Vision;
+using ADB_Tool_Automation_Post_FB.Core.Diagnostics;
 using System;
 using System.Collections.Generic;
 using System.Reflection;
@@ -6,20 +7,58 @@ using System.Drawing;
 using System.IO;
 using System.Linq;
 using System.Runtime.CompilerServices;
+using System.Diagnostics;
+using System.Threading;
+using System.Threading.Tasks;
 
 namespace ADB_Tool_Automation_Post_FB.Infrastructure.Vision
 {
-    public sealed class KAutoImageMatcher : IImageMatcher, IBatchImageMatcher, IFrameImageMatcher
+    public sealed class KAutoImageMatcher : IImageMatcher, IBatchImageMatcher,
+        IFrameImageMatcher, IAsyncFrameImageMatcher
     {
         private static readonly System.Threading.SemaphoreSlim VisionGate =
             new System.Threading.SemaphoreSlim(ReadPositiveSetting(
                 "Operations.MaxConcurrentVisionOperations", 6));
+        private readonly SemaphoreSlim visionGate;
+        private readonly Func<CancellationToken, Task> beforeProcessingAsync;
+        private static long visionGateWaitMs, visionProcessingDurationMs,
+            visionTotalDurationMs, templateCount, matchFound, visionFailures;
+        private static int visionQueueDepth, activeVisionOperations;
 
         // TemplateRegistry returns stable byte-array instances.  Keeping the decoded
         // bitmap alongside that instance removes a decode from every match while the
         // ConditionalWeakTable still releases dynamically-created fallback templates.
         private static readonly ConditionalWeakTable<byte[], Bitmap> DecodedTemplates =
             new ConditionalWeakTable<byte[], Bitmap>();
+
+        public KAutoImageMatcher() : this(VisionGate, null) { }
+
+        public KAutoImageMatcher(int maximumConcurrency,
+            Func<CancellationToken, Task> beforeProcessingAsync = null)
+            : this(new SemaphoreSlim(maximumConcurrency, maximumConcurrency),
+                beforeProcessingAsync)
+        {
+            if (maximumConcurrency < 1) throw new ArgumentOutOfRangeException(nameof(maximumConcurrency));
+        }
+
+        private KAutoImageMatcher(SemaphoreSlim visionGate,
+            Func<CancellationToken, Task> beforeProcessingAsync)
+        {
+            this.visionGate = visionGate ?? throw new ArgumentNullException(nameof(visionGate));
+            this.beforeProcessingAsync = beforeProcessingAsync;
+        }
+
+        public static VisionOperationMetrics GetMetrics() => new VisionOperationMetrics
+        {
+            VisionGateWaitMs = Interlocked.Read(ref visionGateWaitMs),
+            VisionProcessingDurationMs = Interlocked.Read(ref visionProcessingDurationMs),
+            VisionTotalDurationMs = Interlocked.Read(ref visionTotalDurationMs),
+            VisionQueueDepth = Volatile.Read(ref visionQueueDepth),
+            ActiveVisionOperations = Volatile.Read(ref activeVisionOperations),
+            TemplateCount = Interlocked.Read(ref templateCount),
+            MatchFound = Interlocked.Read(ref matchFound),
+            FailureCount = Interlocked.Read(ref visionFailures)
+        };
 
         private static int ReadPositiveSetting(string key, int fallback)
         {
@@ -45,13 +84,13 @@ namespace ADB_Tool_Automation_Post_FB.Infrastructure.Vision
         {
             ValidateImageBytes(screenshotPng, nameof(screenshotPng));
             if (requests == null) throw new ArgumentNullException(nameof(requests));
-            VisionGate.Wait();
+            visionGate.Wait();
             try
             {
             using (Bitmap screenshot = DecodeBitmap(screenshotPng, nameof(screenshotPng)))
                 return FindManyOnBitmap(screenshot, requests);
             }
-            finally { VisionGate.Release(); }
+            finally { visionGate.Release(); }
         }
 
         public IReadOnlyList<ImageMatchResult> FindMany(
@@ -61,12 +100,12 @@ namespace ADB_Tool_Automation_Post_FB.Infrastructure.Vision
             if (frame == null) throw new ArgumentNullException(nameof(frame));
             if (requests == null) throw new ArgumentNullException(nameof(requests));
 
-            VisionGate.Wait();
+            visionGate.Wait();
             try
             {
                 return FindManyOnBitmap(frame.Bitmap, requests);
             }
-            finally { VisionGate.Release(); }
+            finally { visionGate.Release(); }
         }
 
         public ImageMatchResult Find(byte[] screenshotPng, byte[] templatePng, ImageRegion? searchRegion = null)
@@ -74,13 +113,13 @@ namespace ADB_Tool_Automation_Post_FB.Infrastructure.Vision
             ValidateImageBytes(screenshotPng, nameof(screenshotPng));
             ValidateImageBytes(templatePng, nameof(templatePng));
 
-            VisionGate.Wait();
+            visionGate.Wait();
             try
             {
                 using (Bitmap screenshot = DecodeBitmap(screenshotPng, nameof(screenshotPng)))
                     return FindOnBitmap(screenshot, templatePng, searchRegion);
             }
-            finally { VisionGate.Release(); }
+            finally { visionGate.Release(); }
         }
 
         public ImageMatchResult Find(CapturedFrame frame, byte[] templatePng,
@@ -89,9 +128,91 @@ namespace ADB_Tool_Automation_Post_FB.Infrastructure.Vision
             if (frame == null) throw new ArgumentNullException(nameof(frame));
             ValidateImageBytes(templatePng, nameof(templatePng));
 
-            VisionGate.Wait();
+            visionGate.Wait();
             try { return FindOnBitmap(frame.Bitmap, templatePng, searchRegion); }
-            finally { VisionGate.Release(); }
+            finally { visionGate.Release(); }
+        }
+
+        public Task<ImageMatchResult> FindAsync(CapturedFrame frame, byte[] templatePng,
+            ImageRegion? searchRegion, CancellationToken cancellationToken)
+        {
+            if (frame == null) throw new ArgumentNullException(nameof(frame));
+            ValidateImageBytes(templatePng, nameof(templatePng));
+            return ExecuteAsync(() => FindOnBitmap(frame.Bitmap, templatePng, searchRegion),
+                1, cancellationToken);
+        }
+
+        public Task<IReadOnlyList<ImageMatchResult>> FindManyAsync(CapturedFrame frame,
+            IReadOnlyList<ImageMatchRequest> requests, CancellationToken cancellationToken)
+        {
+            if (frame == null) throw new ArgumentNullException(nameof(frame));
+            if (requests == null) throw new ArgumentNullException(nameof(requests));
+            return ExecuteAsync(() => FindManyOnBitmap(frame.Bitmap, requests),
+                requests.Count, cancellationToken);
+        }
+
+        private async Task<T> ExecuteAsync<T>(Func<T> operation, int templates,
+            CancellationToken cancellationToken)
+        {
+            cancellationToken.ThrowIfCancellationRequested();
+            var total = Stopwatch.StartNew();
+            var wait = Stopwatch.StartNew();
+            Interlocked.Increment(ref visionQueueDepth);
+            bool entered = false;
+            bool failed = false;
+            try
+            {
+                await visionGate.WaitAsync(cancellationToken);
+                entered = true;
+                wait.Stop();
+                Interlocked.Decrement(ref visionQueueDepth);
+                Interlocked.Increment(ref activeVisionOperations);
+                Interlocked.Add(ref visionGateWaitMs, wait.ElapsedMilliseconds);
+                if (beforeProcessingAsync != null)
+                    await beforeProcessingAsync(cancellationToken);
+                cancellationToken.ThrowIfCancellationRequested();
+                var processing = Stopwatch.StartNew();
+                try
+                {
+                    T result = operation();
+                    Interlocked.Add(ref templateCount, templates);
+                    Interlocked.Add(ref matchFound, CountMatches(result));
+                    return result;
+                }
+                finally
+                {
+                    processing.Stop();
+                    Interlocked.Add(ref visionProcessingDurationMs,
+                        processing.ElapsedMilliseconds);
+                }
+            }
+            catch
+            {
+                failed = true;
+                Interlocked.Increment(ref visionFailures);
+                throw;
+            }
+            finally
+            {
+                if (!entered) Interlocked.Decrement(ref visionQueueDepth);
+                if (entered)
+                {
+                    Interlocked.Decrement(ref activeVisionOperations);
+                    visionGate.Release();
+                }
+                total.Stop();
+                Interlocked.Add(ref visionTotalDurationMs, total.ElapsedMilliseconds);
+                RuntimePressureMetrics.ReportVision(wait.ElapsedMilliseconds, failed,
+                    Volatile.Read(ref visionQueueDepth),
+                    Volatile.Read(ref activeVisionOperations));
+            }
+        }
+
+        private static int CountMatches<T>(T result)
+        {
+            if (result is ImageMatchResult single) return single.Found ? 1 : 0;
+            var many = result as IEnumerable<ImageMatchResult>;
+            return many?.Count(match => match != null && match.Found) ?? 0;
         }
 
         private static ImageMatchResult FindOnBitmap(
