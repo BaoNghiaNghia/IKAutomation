@@ -73,11 +73,13 @@ namespace ADB_Tool_Automation_Post_FB.Infrastructure.Workflows
                 for (int searchAreaAttempt = 0; ; searchAreaAttempt++)
                 {
                     var attemptedThisPass = new HashSet<ResourceType>();
+                    int exhaustedResources = 0;
                     int searchTapNotAppliedResources = 0;
                     bool searchAreaRecoveryRequested = false;
-                    IEnumerable<ResourceType> passResources = retryResourceAfterReposition.HasValue
-                        ? new[] { retryResourceAfterReposition.Value }.Concat(request.ResourcePriority
-                            .Where(resource => resource != retryResourceAfterReposition.Value))
+                    ResourceType? preferredRetryResource = retryResourceAfterReposition;
+                    IEnumerable<ResourceType> passResources = preferredRetryResource.HasValue
+                        ? new[] { preferredRetryResource.Value }.Concat(request.ResourcePriority
+                            .Where(resource => resource != preferredRetryResource.Value))
                         : request.ResourcePriority;
                     retryResourceAfterReposition = null;
                     foreach (ResourceType resource in passResources)
@@ -161,6 +163,17 @@ namespace ADB_Tool_Automation_Post_FB.Infrastructure.Workflows
                                     $"SearchTapNotAppliedResources={searchTapNotAppliedResources}");
                                 break;
                             }
+                        }
+                        exhaustedResources++;
+                        if (exhaustedResources
+                            >= options.ExhaustedResourcesBeforeReposition)
+                        {
+                            searchAreaRecoveryRequested = true;
+                            retryResourceAfterReposition = resource;
+                            Log(runId, deviceName, resource, level.LocatedLevel,
+                                "SearchAreaRecovery",
+                                $"ExhaustedResources={exhaustedResources}");
+                            break;
                         }
                         if (options.SwitchWhenLevelsExhausted) continue;
                         return Complete(result, ResourceFarmFallbackOutcome.ResourcePlanExhausted,

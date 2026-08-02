@@ -61,11 +61,11 @@ internal static class Program
         Run("Iron and Stone storage full exhausts plan", BothStoragesFull);
         Run("Default resource priority has four resources", DefaultResourcePriority);
         Run("Four-resource plan advances after exhausted levels", ExhaustedAdvances);
-        Run("Exhausted four-resource pass repositions and retries", ExhaustedPassRepositionsAndRetries);
+        Run("Two exhausted resources reposition and retry", TwoExhaustedResourcesReposition);
         Run("Two ignored resource searches trigger map reposition", TwoIgnoredResourcesReposition);
         Run("Target-level-too-low toast tries a lower level before switching resource", TargetLevelTooLowRepositions);
         Run("Search-other-region toast repositions before trying lower levels", SearchOtherRegionRepositions);
-        Run("All four resources exhausted returns plan exhausted", AllResourcesExhausted);
+        Run("Repeated two-resource exhaustion stops after bounded recovery", RepeatedExhaustionStopsAfterBoundedRecovery);
         Run("All four resources storage full returns all full", AllResourcesStorageFull);
         Run("Mixed fallback reaches Wood", MixedFallbackReachesWood);
         Run("Technical search failure does not switch resource", TechnicalSearchDoesNotSwitch);
@@ -207,7 +207,7 @@ internal static class Program
         Run("Fair scheduling stops requeue when no team remains", RequeueStopsWithoutReadyTeam);
         Run("Fair scheduling stops at configured safety limit", RequeueStopsAtSafetyLimit);
         Run("Fair scheduling cancellation clears pending requeue", CancellationClearsPendingRequeue);
-        Run("One-Shot UI retries only failed devices", MultiDeviceUiRetriesFailures);
+        Run("Farm UI omits manual retry controls", FarmUiOmitsManualRetryControls);
         Run("Continuous supervisor keeps device states independent", ContinuousSupervisorIsolatesDevices);
         Run("Continuous supervisor cancellation stops waiting devices", ContinuousSupervisorCancellationStopsWaiting);
         Run("Continuous supervisor waits after inconclusive march verification", ContinuousSupervisorWaitsAfterDispatchTimeout);
@@ -1704,16 +1704,15 @@ internal static class Program
             "a global preflight barrier remains");
     }
 
-    static void MultiDeviceUiRetriesFailures()
+    static void FarmUiOmitsManualRetryControls()
     {
         string root = Path.Combine(Environment.CurrentDirectory, "ADB", "UI");
         string xaml = File.ReadAllText(Path.Combine(root, "DeviceDiagnosticWindow.xaml"));
         string code = File.ReadAllText(Path.Combine(root, "DeviceDiagnosticWindow.xaml.cs"));
-        Is(xaml.Contains("RetryFailedDevicesButton")
-            && xaml.Contains("RetryFailedDevices_Click"), "retry button missing");
-        Is(code.Contains("item.Stage == MultiDeviceOneShotFarmStage.Failed")
-            && code.Contains("RunDeviceBatchAsync(devices, retryRequest"),
-            "retry does not isolate failed devices");
+        Is(!xaml.Contains("RetryFailedDevicesButton")
+            && !xaml.Contains("RetryFailedDevices_Click")
+            && !code.Contains("RetryFailedDevices_Click"),
+            "manual retry controls remain visible or wired");
         Is(code.Contains("deviceAttemptVersions")
             && code.Contains("IsCurrentDeviceAttempt"),
             "stale device attempts can overwrite retry results");
@@ -1797,11 +1796,11 @@ internal static class Program
     }
     static void DefaultResourcePriority(){Is(new[]{ResourceType.Iron,ResourceType.Stone,ResourceType.Wood,ResourceType.Food}.SequenceEqual(new OneShotFarmRequest().ResourcePriority),"priority");}
     static void ExhaustedAdvances(){var h=new H();h.Search.Outcomes.Enqueue(ResourceSearchOutcome.ResourceNotFound);h.Search.Outcomes.Enqueue(ResourceSearchOutcome.ResourceNotFound);h.Search.Outcomes.Enqueue(ResourceSearchOutcome.ResourceNotFound);h.Search.Outcomes.Enqueue(ResourceSearchOutcome.ResourceLocated);var r=Plan(h);Eq(ResourceFarmFallbackOutcome.MarchStarted,r.Outcome,"outcome");Is(new[]{ResourceType.Iron,ResourceType.Stone}.SequenceEqual(r.AttemptedResources),"attempted");Is(new[]{ResourceType.Iron}.SequenceEqual(r.LevelsExhaustedResources),"exhausted");}
-    static void ExhaustedPassRepositionsAndRetries(){var h=new H();h.Request.ResourceLevelPriority=new[]{7};for(int i=0;i<4;i++)h.Search.Outcomes.Enqueue(ResourceSearchOutcome.ResourceNotFound);h.Search.Outcomes.Enqueue(ResourceSearchOutcome.ResourceLocated);var r=Plan(h);Eq(ResourceFarmFallbackOutcome.MarchStarted,r.Outcome,"outcome");Eq(1,h.Nav.RepositionCalls,"reposition");Eq(5,h.Search.Calls,"search calls");Eq((ResourceType?)ResourceType.Iron,r.DispatchedResource,"retried resource");Is(new[]{ResourceType.Iron,ResourceType.Stone,ResourceType.Wood,ResourceType.Food}.SequenceEqual(r.LevelsExhaustedResources),"exhausted pass");}
+    static void TwoExhaustedResourcesReposition(){var h=new H();h.Request.ResourceLevelPriority=new[]{7};h.Search.Outcomes.Enqueue(ResourceSearchOutcome.ResourceNotFound);h.Search.Outcomes.Enqueue(ResourceSearchOutcome.ResourceNotFound);h.Search.Outcomes.Enqueue(ResourceSearchOutcome.ResourceLocated);var r=Plan(h);Eq(ResourceFarmFallbackOutcome.MarchStarted,r.Outcome,"outcome");Eq(1,h.Nav.RepositionCalls,"reposition after two exhausted resources");Eq(3,h.Search.Calls,"two exhausted resources then retry");Eq((ResourceType?)ResourceType.Stone,r.DispatchedResource,"retry second resource on new map");Is(new[]{ResourceType.Iron,ResourceType.Stone}.SequenceEqual(r.LevelsExhaustedResources),"exhausted resources");}
     static void TwoIgnoredResourcesReposition(){var h=new H();h.Request.ResourceLevelPriority=new[]{7};h.Search.Outcomes.Enqueue(ResourceSearchOutcome.SearchTapNotApplied);h.Search.Outcomes.Enqueue(ResourceSearchOutcome.SearchTapNotApplied);h.Search.Outcomes.Enqueue(ResourceSearchOutcome.ResourceLocated);var r=Plan(h);Eq(ResourceFarmFallbackOutcome.MarchStarted,r.Outcome,"outcome");Eq(1,h.Nav.RepositionCalls,"map reposition after two resources");Eq(3,h.Search.Calls,"two ignored resources then retry");Is(new[]{ResourceType.Iron,ResourceType.Stone}.SequenceEqual(r.AttemptedResources),"must not scan resource three before reposition");Eq((ResourceType?)ResourceType.Stone,r.DispatchedResource,"retry second resource on new map");}
     static void TargetLevelTooLowRepositions(){var h=new H();h.Search.Outcomes.Enqueue(ResourceSearchOutcome.ResourceNotFound);h.Search.Outcomes.Enqueue(ResourceSearchOutcome.ResourceLocated);h.Search.MatchedNotFoundVariants.Enqueue("TargetLevelTooLow");h.Search.FailureReasons.Enqueue(ResourceSearchFailureReason.TargetLevelTooLow);var r=Plan(h);Eq(ResourceFarmFallbackOutcome.MarchStarted,r.Outcome,"outcome");Eq(0,h.Nav.RepositionCalls,"reposition");Eq(2,h.Search.Calls,"search calls");Eq((ResourceType?)ResourceType.Iron,r.DispatchedResource,"retried resource");Is(new[]{ResourceType.Iron}.SequenceEqual(r.AttemptedResources),"resource should be retried before switching");}
     static void SearchOtherRegionRepositions(){var h=new H();h.Search.Outcomes.Enqueue(ResourceSearchOutcome.ResourceNotFound);h.Search.Outcomes.Enqueue(ResourceSearchOutcome.ResourceLocated);h.Search.MatchedNotFoundVariants.Enqueue("SearchOtherRegion");h.Search.FailureReasons.Enqueue(ResourceSearchFailureReason.SearchOtherRegion);var r=Plan(h);Eq(ResourceFarmFallbackOutcome.MarchStarted,r.Outcome,"outcome");Eq(1,h.Nav.RepositionCalls,"map-pin reposition");Eq(2,h.Search.Calls,"search should retry after reposition without trying lower levels first");Eq((ResourceType?)ResourceType.Iron,r.DispatchedResource,"retried resource");Is(new[]{ResourceType.Iron}.SequenceEqual(r.AttemptedResources),"resource should be retried before switching");}
-    static void AllResourcesExhausted(){var h=new H();h.Search.Outcome=ResourceSearchOutcome.ResourceNotFound;var r=Plan(h);Eq(ResourceFarmFallbackOutcome.ResourcePlanExhausted,r.Outcome,"outcome");Is(new[]{ResourceType.Iron,ResourceType.Stone,ResourceType.Wood,ResourceType.Food}.SequenceEqual(r.LevelsExhaustedResources),"exhausted");Eq(0,h.Popup.Calls+h.Open.Calls+h.Select.Calls+h.Dispatch.Calls,"downstream");}
+    static void RepeatedExhaustionStopsAfterBoundedRecovery(){var h=new H();h.Search.Outcome=ResourceSearchOutcome.ResourceNotFound;var r=Plan(h);Eq(ResourceFarmFallbackOutcome.ResourcePlanExhausted,r.Outcome,"outcome; error="+r.ErrorMessage);Is(new[]{ResourceType.Iron,ResourceType.Stone}.SequenceEqual(r.LevelsExhaustedResources),"only two resources should be tried in each map area");Eq(3,h.Nav.RepositionCalls,"bounded reposition count");Eq(0,h.Popup.Calls+h.Open.Calls+h.Select.Calls+h.Dispatch.Calls,"downstream");}
     static void AllResourcesStorageFull(){var h=new H();for(int i=0;i<4;i++)h.Dispatch.Outcomes.Enqueue(DispatchMarchOutcome.StorageLimitResourceSwitchRequired);var r=Plan(h);Eq(ResourceFarmFallbackOutcome.AllCandidateStoragesFull,r.Outcome,"outcome");Is(new[]{ResourceType.Iron,ResourceType.Stone,ResourceType.Wood,ResourceType.Food}.SequenceEqual(r.StorageFullResources),"storage order");Eq(4,h.Dispatch.Calls,"dispatches");}
     static void MixedFallbackReachesWood(){var h=new H();h.Search.Outcomes.Enqueue(ResourceSearchOutcome.ResourceLocated);h.Search.Outcomes.Enqueue(ResourceSearchOutcome.ResourceNotFound);h.Search.Outcomes.Enqueue(ResourceSearchOutcome.ResourceNotFound);h.Search.Outcomes.Enqueue(ResourceSearchOutcome.ResourceNotFound);h.Search.Outcomes.Enqueue(ResourceSearchOutcome.ResourceLocated);h.Dispatch.Outcomes.Enqueue(DispatchMarchOutcome.StorageLimitResourceSwitchRequired);h.Dispatch.Outcomes.Enqueue(DispatchMarchOutcome.MarchStarted);var r=Plan(h);Eq(ResourceFarmFallbackOutcome.MarchStarted,r.Outcome,"outcome");Is(new[]{ResourceType.Iron,ResourceType.Stone,ResourceType.Wood}.SequenceEqual(r.AttemptedResources),"attempted");Is(new[]{ResourceType.Iron}.SequenceEqual(r.StorageFullResources),"storage");Is(new[]{ResourceType.Stone}.SequenceEqual(r.LevelsExhaustedResources),"exhausted");Eq((ResourceType?)ResourceType.Wood,r.DispatchedResource,"resource");Eq((int?)7,r.LocatedLevel,"level");}
     static void TechnicalSearchDoesNotSwitch(){var h=new H();h.Search.Outcome=ResourceSearchOutcome.Timeout;h.Search.Success=false;var r=Plan(h);Eq(ResourceFarmFallbackOutcome.SearchFailed,r.Outcome,"outcome");Is(new[]{ResourceType.Iron}.SequenceEqual(r.AttemptedResources),"switched");}

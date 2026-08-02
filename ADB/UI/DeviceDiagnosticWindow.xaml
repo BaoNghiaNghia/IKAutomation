@@ -245,8 +245,6 @@
                         <RowDefinition Height="Auto"/>
                         <RowDefinition Height="16"/>
                         <RowDefinition Height="Auto"/>
-                        <RowDefinition Height="16"/>
-                        <RowDefinition Height="Auto"/>
                     </Grid.RowDefinitions>
 
                     <Grid Margin="0,0,0,10">
@@ -310,14 +308,7 @@
                         </ListBox.ItemTemplate>
                     </ListBox>
 
-                    <WrapPanel Grid.Row="2" Margin="0,10,0,0">
-                        <Button Content="Chọn tất cả" Click="SelectAllDevices_Click"
-                                Style="{StaticResource SecondaryButtonStyle}" Margin="0,0,8,0"/>
-                        <Button Content="Bỏ chọn" Click="ClearDeviceSelection_Click"
-                                Style="{StaticResource SecondaryButtonStyle}"/>
-                    </WrapPanel>
-
-                    <StackPanel x:Name="OneShotFarmResourcesGroupBox" Grid.Row="4">
+                    <StackPanel x:Name="OneShotFarmResourcesGroupBox" Grid.Row="2">
                         <Border Height="1" Background="{StaticResource BorderBrush}"
                                 Margin="0,0,0,14"/>
                         <TextBlock Text="Cấu hình farm" Style="{StaticResource CardTitleStyle}"/>
@@ -329,27 +320,12 @@
                             <CheckBox x:Name="WoodResourceCheckBox" Content="Rừng" Margin="0,0,18,8"/>
                             <CheckBox x:Name="FoodResourceCheckBox" Content="Đất nông nghiệp" Margin="0,0,0,8"/>
                         </WrapPanel>
-                        <TextBlock Text="Cấp tài nguyên, đội khả dụng và lịch chờ được tự động xác định theo từng thiết bị."
-                                   Style="{StaticResource CaptionStyle}"
-                                   TextWrapping="Wrap"/>
                     </StackPanel>
 
-                    <Grid Grid.Row="6">
-                        <Grid.RowDefinitions>
-                            <RowDefinition Height="Auto"/>
-                            <RowDefinition Height="8"/>
-                            <RowDefinition Height="Auto"/>
-                        </Grid.RowDefinitions>
-                        <Button x:Name="RunContinuousFarmButton" Content="▶  Chạy liên tục"
-                                Click="RunContinuousFarm_Click"
-                                Style="{StaticResource ContinuousButtonStyle}"/>
-                        <Button x:Name="RetryFailedDevicesButton"
-                                Grid.Row="2"
-                                Content="Chạy lại thiết bị lỗi"
-                                Click="RetryFailedDevices_Click"
-                                Style="{StaticResource RetryButtonStyle}"
-                                IsEnabled="False"/>
-                    </Grid>
+                    <Button x:Name="RunContinuousFarmButton" Grid.Row="4"
+                            Content="▶  Chạy liên tục"
+                            Click="RunContinuousFarm_Click"
+                            Style="{StaticResource ContinuousButtonStyle}"/>
                 </Grid>
             </Border>
 

@@ -260,37 +260,6 @@ namespace ADB_Tool_Automation_Post_FB.UI
             DeviceSummaryTextBlock.Text = $"Tổng: {total} · Đang mở: {open} · Trong game: {inGame}";
         }
 
-        private void SelectAllDevices_Click(object sender, RoutedEventArgs e)
-        {
-            foreach (DeviceSelectionItem item in deviceSelections)
-                item.IsSelected = item.IsInGame;
-        }
-
-        private void ClearDeviceSelection_Click(object sender, RoutedEventArgs e)
-        {
-            foreach (DeviceSelectionItem item in deviceSelections) item.IsSelected = false;
-        }
-
-        private async void RetryFailedDevices_Click(object sender, RoutedEventArgs e)
-        {
-            if (oneShotFarmCancellationRequested) return;
-            string[] devices = failedDeviceNames
-                .Where(name => !activeDeviceNames.Contains(name))
-                .Where(name => deviceSelections.Any(item => string.Equals(
-                    item.DeviceName, name, StringComparison.OrdinalIgnoreCase) && item.IsInGame))
-                .ToArray();
-            if (devices.Length == 0 || retryRequest == null)
-            {
-                failedDeviceNames.Clear();
-                retryRequest = null;
-                RetryFailedDevicesButton.IsEnabled = false;
-                StatusTextBlock.Text = "Không còn thiết bị lỗi để chạy lại.";
-                return;
-            }
-
-            await RunDeviceBatchAsync(devices, retryRequest, null, true);
-        }
-
         private async void RunContinuousFarm_Click(object sender, RoutedEventArgs e)
         {
             if (oneShotFarmCancellation != null)
@@ -345,7 +314,6 @@ namespace ADB_Tool_Automation_Post_FB.UI
                 QueueContinuousFarmProgress(runGeneration, runCancellation,
                     attemptVersions, value));
             continuousProgressFlushTimer.Start();
-            RetryFailedDevicesButton.IsEnabled = false;
             SetFarmActionButtonRunning();
             OneShotFarmResourcesGroupBox.IsEnabled = false;
             StatusTextBlock.Text = $"Continuous supervisor đang quản lý {deviceNames.Length} thiết bị...";
@@ -382,7 +350,6 @@ namespace ADB_Tool_Automation_Post_FB.UI
                 runCancellation.Dispose();
                 SetFarmActionButtonIdle();
                 OneShotFarmResourcesGroupBox.IsEnabled = true;
-                RefreshRetryButtonState();
             }
         }
 
@@ -610,7 +577,6 @@ namespace ADB_Tool_Automation_Post_FB.UI
             foreach (DeviceSelectionItem item in deviceSelections.Where(item =>
                 deviceNames.Contains(item.DeviceName, StringComparer.OrdinalIgnoreCase)))
                 item.Status = "Queued";
-            RetryFailedDevicesButton.IsEnabled = false;
             SetFarmActionButtonRunning();
             OneShotFarmResourcesGroupBox.IsEnabled = false;
             StatusTextBlock.Text = isRetry
@@ -662,7 +628,6 @@ namespace ADB_Tool_Automation_Post_FB.UI
                     OneShotFarmResourcesGroupBox.IsEnabled = true;
                     if (failedDeviceNames.Count == 0) retryRequest = null;
                 }
-                RefreshRetryButtonState();
             }
         }
 
@@ -682,13 +647,6 @@ namespace ADB_Tool_Automation_Post_FB.UI
             retryRequest = failedDeviceNames.Count > 0 || activeDeviceBatchCount > 1
                 ? request
                 : null;
-        }
-
-        private void RefreshRetryButtonState()
-        {
-            RetryFailedDevicesButton.IsEnabled = !oneShotFarmCancellationRequested
-                && retryRequest != null
-                && failedDeviceNames.Any(name => !activeDeviceNames.Contains(name));
         }
 
         private void ApplyMultiDeviceFarmProgress(long runGeneration,
@@ -720,18 +678,15 @@ namespace ADB_Tool_Automation_Post_FB.UI
             {
                 activeDeviceNames.Remove(progress.DeviceName);
                 failedDeviceNames.Add(progress.DeviceName);
-                RefreshRetryButtonState();
             }
             else if (progress.Stage == MultiDeviceOneShotFarmStage.Completed)
             {
                 activeDeviceNames.Remove(progress.DeviceName);
                 failedDeviceNames.Remove(progress.DeviceName);
-                RefreshRetryButtonState();
             }
             else if (progress.Stage == MultiDeviceOneShotFarmStage.Cancelled)
             {
                 activeDeviceNames.Remove(progress.DeviceName);
-                RefreshRetryButtonState();
             }
             if (progress.DeviceProgress != null)
             {
@@ -756,7 +711,6 @@ namespace ADB_Tool_Automation_Post_FB.UI
             if (currentRun == null || oneShotFarmCancellationRequested) return;
             oneShotFarmCancellationRequested = true;
             SetFarmActionButtonStopping();
-            RetryFailedDevicesButton.IsEnabled = false;
             ProgressOverviewTextBlock.Text = "Đang dừng";
             foreach (DeviceFarmProgressItem item in farmProgressItems.Where(item =>
                 activeDeviceNames.Contains(item.DeviceName)))
