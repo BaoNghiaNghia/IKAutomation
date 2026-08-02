@@ -21,6 +21,10 @@ namespace ADB_Tool_Automation_Post_FB.Infrastructure.TeamSelection
         private const double MinimumBorderContrast = .35d;
         private const int RequiredBorderEdges = 2;
         private const int EdgeSearchBand = 6;
+        // The selected-border template is 16 px tall.  Never pass a smaller
+        // dynamically-resolved row to the matcher: a false/duplicate badge can
+        // otherwise create a 1-3 px row and abort the entire post-tap check.
+        private const int MinimumFreshRowHeight = 24;
 
         private readonly ILdPlayerClient client;
         private readonly ITemplateRegistry registry;
@@ -272,7 +276,10 @@ namespace ADB_Tool_Automation_Post_FB.Infrastructure.TeamSelection
 
             IReadOnlyDictionary<TeamNumber, ImageRegion> freshRows =
                 ResolveFreshBadgeRows(frame, context.TeamBadgeSearchRegion.Value, width, height);
-            if (freshRows.Count > 0)
+            if (freshRows.Count == rows.Count
+                && freshRows.All(item => Valid(item.Value, width, height)
+                    && item.Value.Height >= MinimumFreshRowHeight)
+                && !Overlaps(freshRows))
                 return freshRows;
             return rows;
         }

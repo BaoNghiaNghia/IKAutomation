@@ -55,6 +55,7 @@ namespace IKAutomation.TeamSelection.Tests
             Run("SelectedTeamDetector_DetectFrame_StrongTeam4Border_ReturnsTeam4", ()=>SelectedTeam(TeamNumber.Team4));
             Run("SelectedTeamDetector_DetectFrame_TemplateFreeTeam2Border_ReturnsTeam2", ()=>SelectedTeamWithoutTemplate(TeamNumber.Team2));
             Run("SelectedTeamDetector_DetectFrame_TemplateFreeTeam3Border_ReturnsTeam3", ()=>SelectedTeamWithoutTemplate(TeamNumber.Team3));
+            Run("SelectedTeamDetector_DetectFrame_MalformedFreshBadgeRows_FallsBackToConfiguredRows", MalformedFreshBadgeRows);
             Console.WriteLine($"Team Selection tests: {passed} passed, {failed} failed.");
             return failed == 0 ? 0 : 1;
         }
@@ -226,6 +227,24 @@ namespace IKAutomation.TeamSelection.Tests
         { var m=new FakeMatcher{SelectedTeam=team,Team2SelectionConfidence=.60}; var d=new SelectedTeamDetector(new FakeClient(),new FakeRegistry(),m); var rows=DetectorRows(); var c=new SelectedTeamDetectionContext{TeamRegions=rows,MinimumScore=.70,WinningMargin=.12}; var r=d.DetectFrame(TeamFrame(team),c); Assert(r.IsConfident&&r.Team==team,"Selected team"); Assert(r.RowDetails[team].BorderEdgesFound>=2,"edges"); Assert(r.RowDetails[team].CombinedScore>=.70,"score"); Assert(r.WinningMargin>=.12,"margin"); foreach(var other in rows.Keys.Where(x=>x!=team))Assert(r.RowDetails[team].CombinedScore>r.RowDetails[other].CombinedScore,"winner"); }
         private static void SelectedTeamWithoutTemplate(TeamNumber team)
         { var m=new FakeMatcher{SelectedTeam=team,Team2SelectionConfidence=0}; var d=new SelectedTeamDetector(new FakeClient(),new FakeRegistry(),m); var rows=DetectorRows(); var r=d.DetectFrame(TeamFrame(team),new SelectedTeamDetectionContext{TeamRegions=rows,MinimumScore=.70,WinningMargin=.12}); Assert(r.IsConfident&&r.Team==team,"Template-free selected team"); Assert(r.RowDetails[team].TemplateConfidence==0,"Template confidence must be zero"); Assert(r.RowDetails[team].BorderOnlyQualified,"Border-only qualification"); Assert(r.RowDetails[team].BorderPathScore>=.70,"Border-only score"); }
+        private static void MalformedFreshBadgeRows()
+        {
+            var matcher = new FakeMatcher { SelectedTeam = TeamNumber.Team2, Team2SelectionConfidence = .60 };
+            matcher.FreshBadgeMatches[TeamNumber.Team1] = ImageMatchResult.FoundAt(20, 80, 20, 20);
+            matcher.FreshBadgeMatches[TeamNumber.Team2] = ImageMatchResult.FoundAt(20, 83, 20, 20);
+            matcher.FreshBadgeMatches[TeamNumber.Team3] = ImageMatchResult.FoundAt(20, 360, 20, 20);
+            matcher.FreshBadgeMatches[TeamNumber.Team4] = ImageMatchResult.FoundAt(20, 500, 20, 20);
+            var result = new SelectedTeamDetector(new FakeClient(), new FakeRegistry(), matcher).DetectFrame(
+                TeamFrame(TeamNumber.Team2), new SelectedTeamDetectionContext
+                {
+                    TeamRegions = DetectorRows(), MinimumScore = .70, WinningMargin = .12,
+                    ResolveRowsFromFreshBadges = true,
+                    TeamBadgeSearchRegion = new ImageRegion(20, 80, 220, 540)
+                });
+            Assert(result.IsConfident && result.Team == TeamNumber.Team2,
+                "Malformed fresh rows must fall back to configured rows.");
+            Equal(DetectorRows()[TeamNumber.Team2].Height, result.Rows[TeamNumber.Team2].Height);
+        }
         private static Dictionary<TeamNumber,ImageRegion> DetectorRows()=>new Dictionary<TeamNumber,ImageRegion>{{TeamNumber.Team1,new ImageRegion(20,80,220,120)},{TeamNumber.Team2,new ImageRegion(20,220,220,120)},{TeamNumber.Team3,new ImageRegion(20,360,220,120)},{TeamNumber.Team4,new ImageRegion(20,500,220,120)}};
         private static byte[] TeamFrame(TeamNumber team){using(var b=new Bitmap(1280,720))using(var g=Graphics.FromImage(b))using(var s=new MemoryStream()){g.Clear(Color.FromArgb(30,30,30)); foreach(var row in DetectorRows().Values)g.FillRectangle(Brushes.DimGray,row.X,row.Y,row.Width,row.Height);var r=DetectorRows()[team];using(var p=new Pen(Color.White,5))g.DrawRectangle(p,r.X+2,r.Y+2,r.Width-4,r.Height-4); b.Save(s,ImageFormat.Png);return s.ToArray();}}
 
@@ -350,6 +369,7 @@ namespace IKAutomation.TeamSelection.Tests
             public bool StablePopupTitleOnly;
             public double Team2SelectionConfidence;
             public TeamNumber SelectedTeam;
+            public readonly Dictionary<TeamNumber, ImageMatchResult> FreshBadgeMatches = new Dictionary<TeamNumber, ImageMatchResult>();
             public void Add(byte marker, TemplateId id, int x, int y, int w, int h) => matches[marker + ":" + id] = ImageMatchResult.FoundAt(x, y, w, h);
             public ImageMatchResult Find(byte[] screenshot, byte[] template, ImageRegion? region = null)
             {
@@ -361,7 +381,13 @@ namespace IKAutomation.TeamSelection.Tests
                             ? ImageMatchResult.FoundAt(760, 260, bitmap.Width, bitmap.Height)
                             : ImageMatchResult.NotFound();
                 }
-                TemplateId id = (TemplateId)template[0]; Regions[id] = region; if(id==TemplateId.TeamSelectedBorderAnchor&&region.HasValue)return region.Value.Y==DetectorRows()[SelectedTeam].Y?ImageMatchResult.FoundAt(20,region.Value.Y,220,120,Team2SelectionConfidence):ImageMatchResult.FoundAt(20,region.Value.Y,1,1,.20); return matches.TryGetValue(screenshot[0] + ":" + id, out ImageMatchResult value) ? value : ImageMatchResult.NotFound();
+                TemplateId id = (TemplateId)template[0]; Regions[id] = region;
+                TeamNumber? badgeTeam = id == TemplateId.Team1Badge ? TeamNumber.Team1
+                    : id == TemplateId.Team2Badge ? TeamNumber.Team2
+                    : id == TemplateId.Team3Badge ? TeamNumber.Team3
+                    : id == TemplateId.Team4Badge ? TeamNumber.Team4 : (TeamNumber?)null;
+                if (badgeTeam.HasValue && FreshBadgeMatches.TryGetValue(badgeTeam.Value, out ImageMatchResult badge)) return badge;
+                if(id==TemplateId.TeamSelectedBorderAnchor&&region.HasValue)return region.Value.Y==DetectorRows()[SelectedTeam].Y?ImageMatchResult.FoundAt(20,region.Value.Y,220,120,Team2SelectionConfidence):ImageMatchResult.FoundAt(20,region.Value.Y,1,1,.20); return matches.TryGetValue(screenshot[0] + ":" + id, out ImageMatchResult value) ? value : ImageMatchResult.NotFound();
             }
         }
 
