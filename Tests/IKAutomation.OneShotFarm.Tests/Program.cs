@@ -58,6 +58,7 @@ internal static class Program
         Run("Structural fallback result is accepted", StructuralAccepted); Run("Success does not start second cycle", NoSecondCycle);
         Run("Iron storage full switches to Stone", IronFullSwitchesStone);
         Run("Resource expiry switches resource without marking storage full", ResourceExpirySwitchesResource);
+        Run("Two expiring resources reposition and retry", TwoExpiringResourcesReposition);
         Run("Iron and Stone storage full exhausts plan", BothStoragesFull);
         Run("Default resource priority has four resources", DefaultResourcePriority);
         Run("Four-resource plan advances after exhausted levels", ExhaustedAdvances);
@@ -1785,6 +1786,19 @@ internal static class Program
         Eq(0,r.StorageFullResources.Count,"storage list");
         Is(r.Attempts[0].ResourceExpiryDetected&&r.Attempts[0].RecoverySucceeded,"expiry recovery");
         Eq((ResourceType?)ResourceType.Stone,r.DispatchedResource,"dispatched resource"); Eq(2,h.Dispatch.Calls,"dispatch attempts");
+    }
+    static void TwoExpiringResourcesReposition()
+    {
+        var h=new H();
+        h.Dispatch.Outcomes.Enqueue(DispatchMarchOutcome.ResourceExpiryResourceSwitchRequired);
+        h.Dispatch.Outcomes.Enqueue(DispatchMarchOutcome.ResourceExpiryResourceSwitchRequired);
+        h.Dispatch.Outcomes.Enqueue(DispatchMarchOutcome.MarchStarted);
+        ResourceFarmFallbackResult r=Plan(h);
+        Eq(ResourceFarmFallbackOutcome.MarchStarted,r.Outcome,"outcome");
+        Eq(1,h.Nav.RepositionCalls,"map reposition after two expiring resources");
+        Is(new[]{ResourceType.Iron,ResourceType.Stone}.SequenceEqual(r.AttemptedResources),"only two resources before map reposition");
+        Eq((ResourceType?)ResourceType.Stone,r.DispatchedResource,"second resource retried after reposition");
+        Eq(3,h.Dispatch.Calls,"dispatch attempts");
     }
     static void BothStoragesFull()
     {

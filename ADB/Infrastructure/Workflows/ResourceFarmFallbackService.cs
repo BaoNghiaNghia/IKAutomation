@@ -278,6 +278,22 @@ namespace ADB_Tool_Automation_Post_FB.Infrastructure.Workflows
                                 dispatched.Message, dispatched.ErrorMessage);
                         if (resourceExpiry)
                         {
+                            // A resource that cannot carry the selected team is not a
+                            // viable target in this map area.  Count it together with
+                            // exhausted searches so two consecutive unusable resources
+                            // trigger the bounded X/Y reposition instead of walking the
+                            // remaining resource list on the same map.
+                            exhaustedResources++;
+                            if (exhaustedResources
+                                >= options.ExhaustedResourcesBeforeReposition)
+                            {
+                                searchAreaRecoveryRequested = true;
+                                retryResourceAfterReposition = resource;
+                                Log(runId, deviceName, resource, level.LocatedLevel,
+                                    "SearchAreaRecovery",
+                                    $"UnavailableResources={exhaustedResources}; Reason=ResourceExpiry");
+                                break;
+                            }
                             Log(runId, deviceName, resource, level.LocatedLevel,
                                 "ResourceExpiry", dispatched.Outcome.ToString());
                             continue;
