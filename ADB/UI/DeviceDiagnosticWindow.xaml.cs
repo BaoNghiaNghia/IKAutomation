@@ -1556,9 +1556,12 @@ namespace ADB_Tool_Automation_Post_FB.UI
                     new PropertyChangedEventArgs(nameof(Stage)));
                 PropertyChanged?.Invoke(this,
                     new PropertyChangedEventArgs(nameof(StageDisplay)));
+                PropertyChanged?.Invoke(this,
+                    new PropertyChangedEventArgs(nameof(StageBrush)));
             }
         }
         public string StageDisplay => FarmProgressVietnamese.Stage(Stage);
+        public Brush StageBrush => ResolveStageBrush(Stage);
         public string Message { get => message; private set => Set(ref message, value, nameof(Message)); }
         public string Detail { get => detail; private set => Set(ref detail, value, nameof(Detail)); }
         public string Schedule { get => schedule; private set => Set(ref schedule, value, nameof(Schedule)); }
@@ -1733,6 +1736,40 @@ namespace ADB_Tool_Automation_Post_FB.UI
             if (value == "Sẵn sàng · không được phép") return "sẵn sàng, không dùng";
             if (value == "Không được phép") return "không dùng";
             return string.IsNullOrWhiteSpace(value) ? "chưa rõ" : value.ToLowerInvariant();
+        }
+
+        private static Brush ResolveStageBrush(string value)
+        {
+            switch (value)
+            {
+                case "Queued": return new SolidColorBrush(Color.FromRgb(71, 85, 105));
+                case "Preflight": return new SolidColorBrush(Color.FromRgb(3, 105, 161));
+                case "Ready": return new SolidColorBrush(Color.FromRgb(5, 150, 105));
+                case "Running": return new SolidColorBrush(Color.FromRgb(37, 99, 235));
+                case "Waiting": return new SolidColorBrush(Color.FromRgb(180, 83, 9));
+                case "Recovering": return new SolidColorBrush(Color.FromRgb(234, 88, 12));
+                case "Quarantined": return new SolidColorBrush(Color.FromRgb(185, 28, 28));
+                case "Stopped": return new SolidColorBrush(Color.FromRgb(100, 116, 139));
+                case "Stopping": return new SolidColorBrush(Color.FromRgb(194, 65, 12));
+                case "CheckingTeamAvailability":
+                    return new SolidColorBrush(Color.FromRgb(2, 132, 199));
+                case "WaitingForReadyTeam":
+                    return new SolidColorBrush(Color.FromRgb(180, 83, 9));
+                case "ReadyTeamFound":
+                    return new SolidColorBrush(Color.FromRgb(5, 150, 105));
+                case "PreparingFarm":
+                    return new SolidColorBrush(Color.FromRgb(79, 70, 229));
+                case "RunningFarmStep":
+                    return new SolidColorBrush(Color.FromRgb(37, 99, 235));
+                case "Completed":
+                    return new SolidColorBrush(Color.FromRgb(21, 128, 61));
+                case "Failed":
+                    return new SolidColorBrush(Color.FromRgb(220, 38, 38));
+                case "Cancelled":
+                    return new SolidColorBrush(Color.FromRgb(100, 116, 139));
+                default:
+                    return new SolidColorBrush(Color.FromRgb(71, 85, 105));
+            }
         }
 
         private void Set(ref string field, string value, string propertyName)

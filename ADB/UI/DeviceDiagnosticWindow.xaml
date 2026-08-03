@@ -416,24 +416,28 @@
                             <RowDefinition Height="*"/>
                         </Grid.RowDefinitions>
                         <ScrollViewer VerticalScrollBarVisibility="Auto">
-                            <ItemsControl x:Name="FarmProgressItemsControl">
+                            <ItemsControl x:Name="FarmProgressItemsControl"
+                                          HorizontalContentAlignment="Stretch">
                                 <ItemsControl.ItemTemplate>
                                     <DataTemplate>
-                                        <Expander IsExpanded="True" Margin="0,0,0,8">
+                                        <Expander IsExpanded="True" Margin="0,0,0,8"
+                                                  HorizontalContentAlignment="Stretch">
                                             <Expander.Header>
-                                                <Grid>
+                                                <Grid HorizontalAlignment="Stretch">
                                                     <Grid.ColumnDefinitions>
                                                         <ColumnDefinition Width="Auto"/>
                                                         <ColumnDefinition Width="Auto"/>
-                                                        <ColumnDefinition Width="Auto"/>
+                                                        <ColumnDefinition Width="*"/>
                                                     </Grid.ColumnDefinitions>
                                                     <TextBlock Text="{Binding DeviceName}" FontWeight="SemiBold"
                                                                Foreground="{StaticResource TextPrimaryBrush}"/>
                                                     <TextBlock Grid.Column="1" Text="{Binding StageDisplay}"
-                                                               Foreground="#FF1D4ED8" Margin="18,0,0,0"/>
+                                                               Foreground="{Binding StageBrush}"
+                                                               FontWeight="Medium" Margin="18,0,0,0"/>
                                                     <ItemsControl Grid.Column="2"
                                                                   ItemsSource="{Binding Teams}"
                                                                   Margin="18,0,0,0"
+                                                                  HorizontalAlignment="Right"
                                                                   VerticalAlignment="Center"
                                                                   ToolTip="{Binding TeamsSummary}">
                                                         <ItemsControl.ItemsPanel>

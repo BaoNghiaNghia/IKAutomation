@@ -38,7 +38,11 @@ namespace IKAutomation.FarmTeamSelection.Tests
             Run("Selected border in Team3 does not verify Team4", WrongRoiNotSuccess);
             Run("Expected Team2 replaces initially selected Team3", ExpectedTeam2ReplacesTeam3);
             Run("Expected Team2 replaces initially selected Team1", ExpectedTeam2ReplacesTeam1);
+            Run("Expected Team2 tap Y follows fresh badge center", ExpectedTeam2TapUsesBadgeCenter);
             Run("Expected Team2 already selected sends no Tap", ExpectedTeam2AlreadySelected);
+            Run("Exact Team1 full scan overrides uncertain border detector", ExactTeam1FullScanOverridesBorderFailure);
+            Run("Post-tap Team2 accepts two of three exact full scans", PostTapTeam2TwoOfThreeFullScans);
+            Run("Enabled action without selected team is rejected", ActionWithoutSelectedTeamRejected);
             Run("Expected Team2 rejects post-tap Team3", ExpectedTeam2RejectsPostTapTeam3);
             Run("Expected Team2 missing badge never tries Team3", ExpectedTeam2MissingNeverTriesTeam3);
             Run("Expected Team2 retries only Team2", ExpectedTeam2RetriesOnlyTeam2);
@@ -168,8 +172,20 @@ namespace IKAutomation.FarmTeamSelection.Tests
         private static void ExpectedTeam2ReplacesTeam1()
         { Fixture f=Setup(maxAttempts:2,useProductionDetector:true);f.Matcher.Badges.UnionWith(new[]{TeamNumber.Team1,TeamNumber.Team2});f.Matcher.Selected.Add(TeamNumber.Team1);f.Matcher.SelectOnTap[TeamNumber.Team2]=TeamNumber.Team2;SelectFarmTeamResult r=Execute(f,Only(TeamNumber.Team2));Equal(SelectFarmTeamOutcome.TeamSelected,r.Outcome);Equal(TeamNumber.Team2,r.SelectedTeam.Value);Equal(1,r.TeamTapCount);Assert(f.Matcher.TappedTeams.All(team=>team==TeamNumber.Team2),"A team other than Team2 was tapped."); }
 
+        private static void ExpectedTeam2TapUsesBadgeCenter()
+        { Fixture f=Setup(maxAttempts:1,useProductionDetector:true);f.Matcher.Badges.Add(TeamNumber.Team2);f.Matcher.BaseY[TeamNumber.Team2]=208;f.Matcher.SelectOnTap[TeamNumber.Team2]=TeamNumber.Team2;SelectFarmTeamResult r=Execute(f,Only(TeamNumber.Team2));Equal(SelectFarmTeamOutcome.TeamSelected,r.Outcome);Equal("160,218",f.Client.Taps[0]); }
+
         private static void ExpectedTeam2AlreadySelected()
         { Fixture f=Setup(useProductionDetector:true);f.Matcher.Badges.Add(TeamNumber.Team2);f.Matcher.Selected.Add(TeamNumber.Team2);SelectFarmTeamResult r=Execute(f,Only(TeamNumber.Team2));Equal(SelectFarmTeamOutcome.AlreadySelected,r.Outcome);Equal(TeamNumber.Team2,r.SelectedTeam.Value);Equal(0,r.TeamTapCount);Equal(0,f.Client.Taps.Count); }
+
+        private static void ExactTeam1FullScanOverridesBorderFailure()
+        { Fixture f=Setup(useProductionDetector:true);f.SelectedDetector.AlwaysUncertain=true;f.Matcher.Badges.Add(TeamNumber.Team1);f.Matcher.Selected.Add(TeamNumber.Team1);SelectFarmTeamResult r=Execute(f,Only(TeamNumber.Team1));Equal(SelectFarmTeamOutcome.AlreadySelected,r.Outcome);Equal(TeamNumber.Team1,r.SelectedTeam.Value);Assert(r.SelectedStateVerified,"Exact full scan was not verified.");Equal(0,r.TeamTapCount); }
+
+        private static void PostTapTeam2TwoOfThreeFullScans()
+        { Fixture f=Setup(maxAttempts:1,useProductionDetector:true);f.Matcher.Badges.Add(TeamNumber.Team2);f.Matcher.SelectOnTap[TeamNumber.Team2]=TeamNumber.Team2;f.Matcher.HideSelectedForFirstPostTapScan=true;SelectFarmTeamResult r=Execute(f,Only(TeamNumber.Team2));Equal(SelectFarmTeamOutcome.TeamSelected,r.Outcome);Equal(TeamNumber.Team2,r.SelectedTeam.Value);Equal(3,r.SelectionVerificationFrames); }
+
+        private static void ActionWithoutSelectedTeamRejected()
+        { Fixture f=Setup(maxAttempts:1,useProductionDetector:true);f.Matcher.Badges.Add(TeamNumber.Team2);SelectFarmTeamResult r=Execute(f,Only(TeamNumber.Team2));Assert(!r.Success&&!r.SelectedTeam.HasValue,"ActionEnabled alone was accepted.");Equal(1,r.TeamTapCount); }
 
         private static void ExpectedTeam2RejectsPostTapTeam3()
         { Fixture f=Setup(maxAttempts:1,useProductionDetector:true);f.Matcher.Badges.UnionWith(new[]{TeamNumber.Team2,TeamNumber.Team3});f.Matcher.SelectOnTap[TeamNumber.Team2]=TeamNumber.Team3;SelectFarmTeamResult r=Execute(f,Only(TeamNumber.Team2));Equal(SelectFarmTeamOutcome.TeamSelectionMismatch,r.Outcome);Assert(!r.Success&&!r.SelectedTeam.HasValue,"Wrong Team3 was accepted.");Equal(TeamNumber.Team3,r.ActualSelectedTeam.Value);Equal(1,r.TeamTapCount); }
@@ -365,7 +381,7 @@ namespace IKAutomation.FarmTeamSelection.Tests
         { Fixture f = Setup(); var q = new TeamSelectionRequest { AllowedTeams = new[] { TeamNumber.Team1 }, Priority = new[] { TeamNumber.Team1 }, AllowTeam1 = false }; Equal(SelectFarmTeamOutcome.Failed, Execute(f, q).Outcome); }
 
         private static void AllowedTeam1UsesBounds()
-        { Fixture f = Successful(TeamNumber.Team1); SelectFarmTeamResult r = Execute(f, Only(TeamNumber.Team1)); Equal(SelectFarmTeamOutcome.TeamSelected, r.Outcome); Equal(TeamNumber.Team1, r.SelectedTeam.Value); Equal("160,42", f.Client.Taps[0]); Assert(f.Matcher.BadgeCalls[TeamNumber.Team1] >= 2, "Team1 badge was not refreshed before Tap."); }
+        { Fixture f = Successful(TeamNumber.Team1); SelectFarmTeamResult r = Execute(f, Only(TeamNumber.Team1)); Equal(SelectFarmTeamOutcome.TeamSelected, r.Outcome); Equal(TeamNumber.Team1, r.SelectedTeam.Value); Equal("160,35", f.Client.Taps[0]); Assert(f.Matcher.BadgeCalls[TeamNumber.Team1] >= 2, "Team1 badge was not refreshed before Tap."); }
 
         private static void EmptyListsRejected()
         { Fixture f = Setup(); var q = new TeamSelectionRequest { AllowedTeams = new TeamNumber[0], Priority = new TeamNumber[0] }; Equal(SelectFarmTeamOutcome.Failed, Execute(f, q).Outcome); }
@@ -392,9 +408,11 @@ namespace IKAutomation.FarmTeamSelection.Tests
             var f = new Fixture();
             f.Detector = new FakeDetector(); f.Registry = new FakeRegistry(); f.Matcher = new FakeMatcher();
             f.Client = new FakeClient(f.Matcher); f.Store = new FakeStore();
+            f.SelectedDetector = useProductionDetector
+                ? new FakeSelectedTeamDetector(f.Matcher) : null;
             f.Service = new SelectFarmTeamService(f.Detector, f.Client, f.Registry, f.Matcher,
                 new DeviceOperationLock(), Options(1, maxAttempts, timeoutSeconds), f.Store,
-                new FakeLogger(), useProductionDetector ? new FakeSelectedTeamDetector(f.Matcher) : null);
+                new FakeLogger(), f.SelectedDetector);
             return f;
         }
 
@@ -415,7 +433,7 @@ namespace IKAutomation.FarmTeamSelection.Tests
         private static void Throws<T>(Action action) where T : Exception { try { action(); } catch (T) { return; } throw new Exception("Expected " + typeof(T).Name); }
 
         private sealed class Fixture
-        { public FakeClient Client; public FakeDetector Detector; public FakeRegistry Registry; public FakeMatcher Matcher; public FakeStore Store; public ISelectFarmTeamService Service; }
+        { public FakeClient Client; public FakeDetector Detector; public FakeRegistry Registry; public FakeMatcher Matcher; public FakeStore Store; public FakeSelectedTeamDetector SelectedDetector; public ISelectFarmTeamService Service; }
 
         private sealed class FakeDetector : IGameStateDetector
         {
@@ -560,11 +578,19 @@ namespace IKAutomation.FarmTeamSelection.Tests
         private sealed class FakeSelectedTeamDetector : ISelectedTeamDetector
         {
             private readonly FakeMatcher matcher;
+            public bool AlwaysUncertain;
             public FakeSelectedTeamDetector(FakeMatcher matcher) { this.matcher = matcher; }
             public Task<SelectedTeamConsensusResult> DetectAsync(string d,
                 SelectedTeamDetectionContext c, CancellationToken t)
             {
                 t.ThrowIfCancellationRequested();
+                if (AlwaysUncertain)
+                    return Task.FromResult(new SelectedTeamConsensusResult
+                    {
+                        IsConfident = false,
+                        IsAmbiguous = false,
+                        FailureReason = "InsufficientConsensus"
+                    });
                 TeamNumber[] selected = matcher.Selected.OrderBy(team => (int)team).ToArray();
                 return Task.FromResult(new SelectedTeamConsensusResult
                 {
