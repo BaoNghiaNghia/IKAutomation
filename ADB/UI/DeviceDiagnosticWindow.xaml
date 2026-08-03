@@ -453,17 +453,17 @@
                                                         </ItemsControl.ItemsPanel>
                                                         <ItemsControl.ItemTemplate>
                                                             <DataTemplate>
-                                                                <Border BorderBrush="{Binding StatusBrush}"
+                                                                <Border BorderBrush="{Binding StatusBrush, Mode=OneWay}"
                                                                         BorderThickness="1"
                                                                         Background="#FFFFFFFF"
                                                                         CornerRadius="10"
                                                                         Padding="8,3"
                                                                         Margin="0,0,6,5">
-                                                                    <TextBlock Foreground="{Binding StatusBrush}"
+                                                                    <TextBlock Foreground="{Binding StatusBrush, Mode=OneWay}"
                                                                                FontSize="12">
-                                                                        <Run Text="{Binding TeamName}" FontWeight="SemiBold"/>
+                                                                        <Run Text="{Binding TeamName, Mode=OneTime}" FontWeight="SemiBold"/>
                                                                         <Run Text=": "/>
-                                                                        <Run Text="{Binding Status}"/>
+                                                                        <Run Text="{Binding Status, Mode=OneWay}"/>
                                                                     </TextBlock>
                                                                 </Border>
                                                             </DataTemplate>
