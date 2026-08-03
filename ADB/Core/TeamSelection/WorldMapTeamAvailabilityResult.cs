@@ -1,5 +1,6 @@
 using ADB_Tool_Automation_Post_FB.Core.GameDetection;
 using ADB_Tool_Automation_Post_FB.Core.Vision;
+using System;
 using System.Collections.Generic;
 
 namespace ADB_Tool_Automation_Post_FB.Core.TeamSelection
@@ -24,6 +25,11 @@ namespace ADB_Tool_Automation_Post_FB.Core.TeamSelection
 
     public sealed class WorldMapTeamAvailabilityResult
     {
+        // Identifies the concrete WorldMap observation used by a single gather
+        // operation.  Cached roster knowledge must never be mistaken for this.
+        public Guid RosterScanId { get; set; }
+        public DateTimeOffset? RosterCapturedAt { get; set; }
+        public bool IsFresh { get; set; }
         public bool Success { get; set; }
         public bool AnyReadyTeam { get; set; }
         public IReadOnlyList<TeamNumber> AvailableTeams { get; set; }

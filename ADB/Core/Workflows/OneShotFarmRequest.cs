@@ -53,6 +53,7 @@ namespace ADB_Tool_Automation_Post_FB.Core.Workflows
         public WorldMapTeamAvailabilityResult InitialTeamAvailability { get; set; }
         // Per-cycle evidence is deliberately kept separate from the user's policy.
         public TeamNumber? ExpectedTeam { get; set; }
+        public FarmTeamOperationContext TeamOperation { get; set; }
         public IReadOnlyList<TeamNumber> WorldMapAvailableTeams { get; set; }
         public IReadOnlyList<TeamNumber> WorldMapReadyTeams { get; set; }
         public string WorldMapRosterStatus { get; set; }

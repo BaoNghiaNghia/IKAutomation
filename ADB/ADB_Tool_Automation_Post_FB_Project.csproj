@@ -192,6 +192,7 @@
     <Compile Include="Core\Workflows\IDeviceRecoveryService.cs" />
     <Compile Include="Core\Workflows\IOperationalMaintenanceService.cs" />
     <Compile Include="Core\Workflows\FarmUiPreferences.cs" />
+    <Compile Include="Core\Workflows\FarmTeamOperationContext.cs" />
     <Compile Include="Core\Workflows\IOneShotFarmWorkflow.cs" />
     <Compile Include="Core\Workflows\IMultiDeviceOneShotFarmRunner.cs" />
     <Compile Include="Core\Workflows\IRandomProvider.cs" />

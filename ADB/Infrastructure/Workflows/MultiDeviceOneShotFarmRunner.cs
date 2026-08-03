@@ -494,7 +494,10 @@ namespace ADB_Tool_Automation_Post_FB.Infrastructure.Workflows
             OneShotFarmRequest source, WorldMapTeamAvailabilityResult availability)
         {
             OneShotFarmRequest request = CloneRequest(source);
-            request.InitialTeamAvailability = availability;
+            // Preflight intentionally does not become the operation's roster
+            // source. ReadyTeamOneShotFarmWorkflow performs a new scan immediately
+            // before selecting an immutable ExpectedTeam.
+            request.InitialTeamAvailability = null;
             return request;
         }
 
@@ -602,6 +605,8 @@ namespace ADB_Tool_Automation_Post_FB.Infrastructure.Workflows
                     : new ReadyTeamGateRunOptions(source.ReadyTeamOptions.CheckIntervalMs,
                         source.ReadyTeamOptions.MaxWaitMs),
                 InitialTeamAvailability = source.InitialTeamAvailability,
+                ExpectedTeam = source.ExpectedTeam,
+                TeamOperation = source.TeamOperation,
                 RunId = source.RunId,
                 CooperativeDispatch = source.CooperativeDispatch,
                 CycleDispatchedTeams = source.CycleDispatchedTeams?.ToArray(),

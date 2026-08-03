@@ -228,7 +228,9 @@ namespace ADB_Tool_Automation_Post_FB.Infrastructure.Workflows
                             // Preserve the ready-team decision made before resource
                             // search.  Without these fields this inner workflow falls
                             // back to global priority and can tap a non-ready team.
-                            ExpectedTeam = request.ExpectedTeam,
+                            ExpectedTeam = request.TeamOperation?.ExpectedTeam
+                                ?? request.ExpectedTeam,
+                            TeamOperation = request.TeamOperation,
                             WorldMapAvailableTeams = request.WorldMapAvailableTeams,
                             WorldMapReadyTeams = request.WorldMapReadyTeams,
                             WorldMapRosterStatus = request.WorldMapRosterStatus,
@@ -243,9 +245,16 @@ namespace ADB_Tool_Automation_Post_FB.Infrastructure.Workflows
                     if (!selected.Success || !selected.SelectedTeam.HasValue || !selected.SelectedStateVerified)
                         return CompleteAttempt(result, attempt, attemptWatch,
                             ResourceFarmFallbackOutcome.TeamSelectionFailed, watch, selected.Message, selected.ErrorMessage);
+                    if (request.TeamOperation != null
+                        && selected.SelectedTeam.Value != request.TeamOperation.ExpectedTeam)
+                        return CompleteAttempt(result, attempt, attemptWatch,
+                            ResourceFarmFallbackOutcome.TeamSelectionFailed, watch,
+                            "Đội được chọn không khớp đội sẵn sàng từ lần quét bản đồ mới.",
+                            "SelectedTeamDoesNotMatchExpectedTeam");
 
                     DispatchMarchResult dispatched = await dispatch.DispatchAsync(deviceName,
-                        new DispatchMarchRequest { ExpectedTeam = selected.SelectedTeam.Value,
+                        new DispatchMarchRequest { ExpectedTeam = request.TeamOperation?.ExpectedTeam
+                                ?? selected.SelectedTeam.Value,
                             // SelectFarmTeam has just tapped the WorldMap-confirmed
                             // ready team. Dispatch only needs a fresh Team Selection
                             // state and the current enabled yellow action button.

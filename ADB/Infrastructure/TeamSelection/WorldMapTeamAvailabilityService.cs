@@ -324,8 +324,13 @@ namespace ADB_Tool_Automation_Post_FB.Infrastructure.TeamSelection
                 + $"RosterConfidence='{(classification == TeamRosterClassification.Uncertain ? "Uncertain" : currentKnowledge?.EvidenceStrength ?? "Fresh")}', "
                 + $"{RowLog(rowObservations, TeamNumber.Team1)}, {RowLog(rowObservations, TeamNumber.Team2)}, "
                 + $"{RowLog(rowObservations, TeamNumber.Team3)}, {RowLog(rowObservations, TeamNumber.Team4)}, Cancellation=false");
+            DateTimeOffset rosterCapturedAt = DateTimeOffset.UtcNow;
+            bool isFreshRoster = freshExisting.Count > 0;
             return new WorldMapTeamAvailabilityResult
             {
+                RosterScanId = Guid.NewGuid(),
+                RosterCapturedAt = rosterCapturedAt,
+                IsFresh = isFreshRoster,
                 Success = true,
                 AnyReadyTeam = ready,
                 AvailableTeams = availableTeams.AsReadOnly(),

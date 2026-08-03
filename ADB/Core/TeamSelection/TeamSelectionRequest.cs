@@ -1,4 +1,5 @@
 using System.Collections.Generic;
+using ADB_Tool_Automation_Post_FB.Core.Workflows;
 
 namespace ADB_Tool_Automation_Post_FB.Core.TeamSelection
 {
@@ -14,6 +15,7 @@ namespace ADB_Tool_Automation_Post_FB.Core.TeamSelection
         public IReadOnlyList<TeamNumber> AllowedTeams { get; set; }
         public IReadOnlyList<TeamNumber> Priority { get; set; }
         public TeamNumber? ExpectedTeam { get; set; }
+        public FarmTeamOperationContext TeamOperation { get; set; }
         public IReadOnlyList<TeamNumber> WorldMapAvailableTeams { get; set; }
         public IReadOnlyList<TeamNumber> WorldMapReadyTeams { get; set; }
         public string WorldMapRosterStatus { get; set; }

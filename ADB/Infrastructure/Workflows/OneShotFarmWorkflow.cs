@@ -332,7 +332,8 @@ namespace ADB_Tool_Automation_Post_FB.Infrastructure.Workflows
                 token.ThrowIfCancellationRequested(); started = Start(runId, deviceName, OneShotFarmStep.SelectTeam);
                 SelectFarmTeamResult selected = await selectTeam.SelectAsync(deviceName, new TeamSelectionRequest
                 { AllowedTeams = request.AllowedTeams, Priority = request.TeamPriority,
-                    ExpectedTeam = request.ExpectedTeam,
+                    ExpectedTeam = AuthoritativeExpectedTeam(request),
+                    TeamOperation = request.TeamOperation,
                     WorldMapAvailableTeams = request.WorldMapAvailableTeams,
                     WorldMapReadyTeams = request.WorldMapReadyTeams,
                     WorldMapRosterStatus = request.WorldMapRosterStatus,
@@ -352,6 +353,14 @@ namespace ADB_Tool_Automation_Post_FB.Infrastructure.Workflows
                     return await StopAsync(result, OneShotFarmOutcome.TeamSelectionFailed, selected.Message,
                         selected.ErrorMessage, OneShotFarmStep.SelectTeam, watch, runId, token);
                 }
+                if (AuthoritativeExpectedTeam(request).HasValue
+                    && selected.SelectedTeam.Value != AuthoritativeExpectedTeam(request).Value)
+                {
+                    return await StopAsync(result, OneShotFarmOutcome.TeamSelectionFailed,
+                        "Đội được chọn không khớp đội sẵn sàng từ lần quét bản đồ mới.",
+                        "SelectedTeamDoesNotMatchExpectedTeam",
+                        OneShotFarmStep.SelectTeam, watch, runId, token);
+                }
                 result.SelectedTeam = selected.SelectedTeam;
                 Report(progress, OneShotFarmProgressStage.RunningFarmStep,
                     OneShotFarmStep.DispatchTeam, request, selected.SelectedTeam,
@@ -360,7 +369,7 @@ namespace ADB_Tool_Automation_Post_FB.Infrastructure.Workflows
 
                 token.ThrowIfCancellationRequested(); started = Start(runId, deviceName, OneShotFarmStep.DispatchTeam);
                 DispatchMarchResult dispatched = await dispatch.DispatchAsync(deviceName, new DispatchMarchRequest
-                { ExpectedTeam = selected.SelectedTeam.Value, RequireExpectedTeamSelected = false,
+                { ExpectedTeam = AuthoritativeExpectedTeam(request) ?? selected.SelectedTeam.Value, RequireExpectedTeamSelected = false,
                     AllowStructuralVerificationFallback = true, CurrentResource = request.ResourceType,
                     RunId = request.RunId }, token);
                 result.DispatchResult = dispatched; result.FinalState = dispatched.FinalState;
@@ -545,6 +554,14 @@ namespace ADB_Tool_Automation_Post_FB.Infrastructure.Workflows
             if (request.TeamPriority.Distinct().Count() != request.TeamPriority.Count) return "TeamPriority cannot contain duplicates.";
             if (request.TeamPriority.Any(x => !request.AllowedTeams.Contains(x))) return "TeamPriority must be a subset of AllowedTeams.";
             if (!request.AllowTeam1 && (request.AllowedTeams.Contains(TeamNumber.Team1) || request.TeamPriority.Contains(TeamNumber.Team1))) return "Team1 is not allowed.";
+            if (request.TeamOperation != null)
+            {
+                if (request.ExpectedTeam.HasValue
+                    && request.ExpectedTeam.Value != request.TeamOperation.ExpectedTeam)
+                    return "ExpectedTeam does not match the immutable farm team operation.";
+                if (!request.AllowedTeams.Contains(request.TeamOperation.ExpectedTeam))
+                    return "The immutable farm team operation is not allowed.";
+            }
             return null;
         }
 
@@ -651,9 +668,13 @@ namespace ADB_Tool_Automation_Post_FB.Infrastructure.Workflows
         }
         private static TeamNumber? FirstExpectedTeam(OneShotFarmRequest request)
         {
+            TeamNumber? authoritative = AuthoritativeExpectedTeam(request);
+            if (authoritative.HasValue) return authoritative;
             IReadOnlyList<TeamNumber> priority = request?.TeamPriority ?? request?.AllowedTeams;
             return priority != null && priority.Count > 0 ? priority[0] : (TeamNumber?)null;
         }
+        private static TeamNumber? AuthoritativeExpectedTeam(OneShotFarmRequest request) =>
+            request?.TeamOperation?.ExpectedTeam ?? request?.ExpectedTeam;
         private static OneShotFarmResult NewResult(string device, OneShotFarmRequest request, IReadOnlyList<OneShotFarmStepResult> steps) => new OneShotFarmResult { DeviceName = device, RequestedResource = request.ResourceType, RequestedLevel = request.TargetLevel, RequestedUnoccupiedOnly = request.UnoccupiedOnly, AttemptedLevels = new int[0], AttemptedResources = new[] { request.ResourceType }, SelectedResources = request.SelectedResources ?? request.ResourcePriority, ShuffledResourcePriority = request.ResourcePriority, MissingRuntimeTemplates = new MissingRuntimeTemplate[0], StorageFullResources = new ResourceType[0], InitialState = GameState.Unknown, FinalState = GameState.Unknown, LastCompletedStep = OneShotFarmStep.Preflight, Steps = steps };
         private static OneShotFarmResult Empty(string device, OneShotFarmRequest request, string error, OneShotFarmOutcome outcome = OneShotFarmOutcome.PreconditionFailed) => new OneShotFarmResult { Outcome = outcome, Success = false, DeviceName = device, RequestedResource = request == null ? ResourceType.Iron : request.ResourceType, RequestedLevel = request == null ? 7 : request.TargetLevel, RequestedUnoccupiedOnly = request == null || request.UnoccupiedOnly, AttemptedLevels = new int[0], AttemptedResources = request == null ? new ResourceType[0] : new[] { request.ResourceType }, SelectedResources = request?.SelectedResources ?? request?.ResourcePriority ?? new ResourceType[0], ShuffledResourcePriority = request?.ResourcePriority ?? new ResourceType[0], StorageFullResources = new ResourceType[0], InitialState = GameState.Unknown, FinalState = GameState.Unknown, LastCompletedStep = OneShotFarmStep.Preflight, Message = error, ErrorMessage = error, Steps = new OneShotFarmStepResult[0] };
 
@@ -669,7 +690,14 @@ namespace ADB_Tool_Automation_Post_FB.Infrastructure.Workflows
                 UnoccupiedOnly = source.UnoccupiedOnly, AllowedTeams = source.AllowedTeams,
                 TeamPriority = source.TeamPriority, AllowTeam1 = source.AllowTeam1,
                 RequireMarchVerification = source.RequireMarchVerification,
-                ReadyTeamOptions = source.ReadyTeamOptions
+                ReadyTeamOptions = source.ReadyTeamOptions,
+                ExpectedTeam = source.ExpectedTeam,
+                TeamOperation = source.TeamOperation,
+                WorldMapAvailableTeams = source.WorldMapAvailableTeams,
+                WorldMapReadyTeams = source.WorldMapReadyTeams,
+                WorldMapRosterStatus = source.WorldMapRosterStatus,
+                WorldMapRosterConfidence = source.WorldMapRosterConfidence,
+                RunId = source.RunId
             };
 
         private static void MergeResourceSwitchResult(OneShotFarmResult target, OneShotFarmResult next)

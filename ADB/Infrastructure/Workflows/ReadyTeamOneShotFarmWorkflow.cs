@@ -56,8 +56,6 @@ namespace ADB_Tool_Automation_Post_FB.Infrastructure.Workflows
                 request.CycleDispatchedTeams ?? new TeamNumber[0]);
             OneShotFarmResult lastSuccessfulResult = null;
             int consecutiveNoReadyChecks = 0;
-            WorldMapTeamAvailabilityResult initialAvailability =
-                request.InitialTeamAvailability;
             try
             {
                 while (true)
@@ -86,16 +84,10 @@ namespace ADB_Tool_Automation_Post_FB.Infrastructure.Workflows
                         Message = VietnameseUserMessageLocalizer.Default.Format(
                             UiMessageKey.CheckingAllowedTeams, checks + 1)
                     });
-                    WorldMapTeamAvailabilityResult check;
-                    if (initialAvailability != null)
-                    {
-                        check = initialAvailability;
-                        initialAvailability = null;
-                    }
-                    else
-                    {
-                        check = await availability.CheckAsync(deviceName, cancellationToken);
-                    }
+                    // Preflight is only an admission signal.  The operation itself
+                    // must always be bound to a new WorldMap observation made here.
+                    WorldMapTeamAvailabilityResult check = await availability.CheckAsync(
+                        deviceName, cancellationToken);
                     checks++;
                     if (!check.Success)
                     {
@@ -106,24 +98,31 @@ namespace ADB_Tool_Automation_Post_FB.Infrastructure.Workflows
                             check.Message, check.ErrorMessage, checks, watch.Elapsed);
                     }
                     detectedTeams = check.AvailableTeams ?? new TeamNumber[0];
+                    bool freshConfidentRoster = IsFreshConfidentRoster(check);
+                    LogFreshRosterScan(deviceName, check, freshConfidentRoster);
                     // Availability is evidence, not a rewrite of the configured
                     // policy.  A weak WorldMap frame must not permanently narrow
                     // the rows the TeamSelection screen is allowed to reconcile.
                     IReadOnlyList<TeamNumber> effectiveAllowedTeams = request.AllowedTeams
                         .Distinct().ToArray();
-                    eligibleReadyTeams = (check.ReadyTeams ?? new TeamNumber[0])
+                    eligibleReadyTeams = freshConfidentRoster
+                        ? (check.ReadyTeams ?? new TeamNumber[0])
                         .Where(team => effectiveAllowedTeams.Contains(team))
                         .Where(team => detectedTeams.Contains(team))
-                        .Where(team => !dispatchedTeams.Contains(team))
                         .Distinct()
-                        .ToArray();
+                        .OrderBy(team => (int)team)
+                        .ToArray()
+                        : new TeamNumber[0];
                     if (eligibleReadyTeams.Count > 0)
                     {
                         consecutiveNoReadyChecks = 0;
-                        TeamNumber expectedTeam = (request.TeamPriority ?? request.AllowedTeams)
-                            .First(team => eligibleReadyTeams.Contains(team));
+                        TeamNumber expectedTeam = eligibleReadyTeams[0];
                         OneShotFarmRequest cycleRequest = CreateCycleRequest(request,
                             expectedTeam, check, dispatchedResources);
+                        logger.Info($"[Farm Team Operation Selected] DeviceName='{deviceName}', "
+                            + $"RunId='{request.RunId ?? string.Empty}', RosterScanId='{check.RosterScanId}', "
+                            + $"ReadyTeams='{string.Join(",", eligibleReadyTeams)}', ExpectedTeam='{expectedTeam}', "
+                            + "SelectionOrder='Team1,Team2,Team3,Team4', TargetSource='FreshWorldMapReadyScan'");
                         Report(progress, new OneShotFarmProgress
                         {
                             Stage = OneShotFarmProgressStage.ReadyTeamFound,
@@ -146,6 +145,12 @@ namespace ADB_Tool_Automation_Post_FB.Infrastructure.Workflows
                         });
                         OneShotFarmResult result = await inner.RunAsync(
                             deviceName, cycleRequest, progress, cancellationToken);
+                        logger.Info($"[Farm Team Operation Result] DeviceName='{deviceName}', "
+                            + $"RunId='{request.RunId ?? string.Empty}', RosterScanId='{check.RosterScanId}', "
+                            + $"ExpectedTeam='{expectedTeam}', SelectedTeam='{result?.SelectedTeam}', "
+                            + $"DispatchedTeam='{result?.DispatchedTeam}', Success={result?.Success == true}, "
+                            + $"FailureReason='{result?.ErrorMessage ?? string.Empty}', "
+                            + "NextAction='RescanWorldMapReadyTeams'");
                         result.TeamAvailabilityChecks = checks;
                         result.ReadyTeamObserved = true;
                         result.DetectedTeams = detectedTeams;
@@ -161,7 +166,7 @@ namespace ADB_Tool_Automation_Post_FB.Infrastructure.Workflows
                             ?? result.LocatedResource ?? cycleRequest.ResourceType;
                         dispatchedResources.Add(dispatchedResource);
                         TeamNumber dispatchedTeam = result.DispatchedTeam
-                            ?? result.SelectedTeam ?? eligibleReadyTeams[0];
+                            ?? result.SelectedTeam ?? expectedTeam;
                         if (!dispatchedTeams.Contains(dispatchedTeam))
                             dispatchedTeams.Add(dispatchedTeam);
                         lastSuccessfulResult = result;
@@ -323,6 +328,10 @@ namespace ADB_Tool_Automation_Post_FB.Infrastructure.Workflows
             IReadOnlyList<ResourceType> priority = dispatchedResources.Count == 0
                 ? source.ResourcePriority ?? selected
                 : RotateAfter(selected, dispatchedResources[dispatchedResources.Count - 1]);
+            var operation = new FarmTeamOperationContext(expectedTeam,
+                availability.RosterScanId, availability.RosterCapturedAt
+                    ?? DateTimeOffset.UtcNow,
+                availability.RosterSource ?? availability.RosterStatus);
             return new OneShotFarmRequest
             {
                 ResourceType = priority.Count == 0 ? source.ResourceType : priority[0],
@@ -341,6 +350,7 @@ namespace ADB_Tool_Automation_Post_FB.Infrastructure.Workflows
                         ?? new TeamNumber[0]).Where(team => team != expectedTeam))
                     .Distinct().ToArray(),
                 ExpectedTeam = expectedTeam,
+                TeamOperation = operation,
                 WorldMapAvailableTeams = availability.AvailableTeams ?? new TeamNumber[0],
                 WorldMapReadyTeams = availability.ReadyTeams ?? new TeamNumber[0],
                 WorldMapRosterStatus = availability.RosterStatus,
@@ -355,6 +365,38 @@ namespace ADB_Tool_Automation_Post_FB.Infrastructure.Workflows
                 CycleDispatchedTeams = source.CycleDispatchedTeams,
                 CycleDispatchedResources = source.CycleDispatchedResources
             };
+        }
+
+        private static bool IsFreshConfidentRoster(WorldMapTeamAvailabilityResult check)
+        {
+            if (check == null || !check.Success || check.IsRosterUncertain
+                || check.RosterClassification == TeamRosterClassification.Uncertain
+                || check.RosterClassification == TeamRosterClassification.Failed
+                || string.Equals(check.RosterConfidence, "Uncertain",
+                    StringComparison.OrdinalIgnoreCase)
+                || string.Equals(check.RosterStatus, "Uncertain",
+                    StringComparison.OrdinalIgnoreCase))
+                return false;
+
+            // Older callers and focused fakes predate explicit scan metadata. They
+            // model a fresh confirmed roster with the enum default. Production scans
+            // always set the metadata and therefore must explicitly be fresh.
+            return !check.RosterCapturedAt.HasValue || check.IsFresh;
+        }
+
+        private void LogFreshRosterScan(string deviceName,
+            WorldMapTeamAvailabilityResult check, bool freshConfidentRoster)
+        {
+            logger.Info($"[Farm Ready Team Scan] DeviceName='{deviceName}', "
+                + $"RosterScanId='{check?.RosterScanId}', CapturedAt='{(check != null && check.RosterCapturedAt.HasValue ? check.RosterCapturedAt.Value.ToString("O") : string.Empty)}', "
+                + $"ReadyTeams='{string.Join(",", check?.ReadyTeams ?? new TeamNumber[0])}', "
+                + $"AvailableTeams='{string.Join(",", check?.AvailableTeams ?? new TeamNumber[0])}', "
+                + $"BusyTeams='{string.Join(",", check?.BusyTeams ?? new TeamNumber[0])}', "
+                + $"LockedTeams='{string.Join(",", check?.LockedTeams ?? new TeamNumber[0])}', "
+                + $"RosterStatus='{check?.RosterStatus ?? string.Empty}', "
+                + $"RosterConfidence='{check?.RosterConfidence ?? string.Empty}', "
+                + $"IsFresh={check?.IsFresh == true}, "
+                + $"NextAction='{(freshConfidentRoster ? "SelectFirstFreshReadyTeam" : "BoundedRescan")}'");
         }
 
         private static IReadOnlyList<ResourceType> RotateAfter(

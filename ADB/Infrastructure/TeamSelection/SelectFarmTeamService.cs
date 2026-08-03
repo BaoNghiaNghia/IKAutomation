@@ -792,6 +792,23 @@ namespace ADB_Tool_Automation_Post_FB.Infrastructure.TeamSelection
 
         private static TeamSelectionTargetResolution ResolveTarget(TeamSelectionRequest request)
         {
+            if (request.TeamOperation != null)
+            {
+                if (request.ExpectedTeam.HasValue
+                    && request.ExpectedTeam.Value != request.TeamOperation.ExpectedTeam)
+                    return TeamSelectionTargetResolution.Failure(
+                        SelectFarmTeamOutcome.ExpectedTeamNotAllowed,
+                        "Đội dự kiến không khớp lần quét đội sẵn sàng mới nhất.",
+                        "ExpectedTeamOperationMismatch");
+                if (!IsAllowedCandidate(request, request.TeamOperation.ExpectedTeam))
+                    return TeamSelectionTargetResolution.Failure(
+                        SelectFarmTeamOutcome.ExpectedTeamNotAllowed,
+                        "Đội từ lần quét mới không nằm trong danh sách được phép.",
+                        "ExpectedTeamNotAllowed");
+                return TeamSelectionTargetResolution.ForTarget(
+                    request.TeamOperation.ExpectedTeam,
+                    TeamSelectionTargetSource.FreshWorldMapReadyScan);
+            }
             if (request.ExpectedTeam.HasValue)
             {
                 TeamNumber expected = request.ExpectedTeam.Value;
@@ -862,6 +879,7 @@ namespace ADB_Tool_Automation_Post_FB.Infrastructure.TeamSelection
         private enum TeamSelectionTargetSource
         {
             ExpectedTeam,
+            FreshWorldMapReadyScan,
             WorldMapReadyTeams,
             WorldMapAvailableTeams,
             PriorityFallback,
