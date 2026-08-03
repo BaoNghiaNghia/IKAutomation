@@ -423,13 +423,42 @@
                                             <Expander.Header>
                                                 <Grid>
                                                     <Grid.ColumnDefinitions>
-                                                        <ColumnDefinition Width="*"/>
+                                                        <ColumnDefinition Width="Auto"/>
+                                                        <ColumnDefinition Width="Auto"/>
                                                         <ColumnDefinition Width="Auto"/>
                                                     </Grid.ColumnDefinitions>
                                                     <TextBlock Text="{Binding DeviceName}" FontWeight="SemiBold"
                                                                Foreground="{StaticResource TextPrimaryBrush}"/>
                                                     <TextBlock Grid.Column="1" Text="{Binding StageDisplay}"
                                                                Foreground="#FF1D4ED8" Margin="18,0,0,0"/>
+                                                    <ItemsControl Grid.Column="2"
+                                                                  ItemsSource="{Binding Teams}"
+                                                                  Margin="18,0,0,0"
+                                                                  VerticalAlignment="Center"
+                                                                  ToolTip="{Binding TeamsSummary}">
+                                                        <ItemsControl.ItemsPanel>
+                                                            <ItemsPanelTemplate>
+                                                                <StackPanel Orientation="Horizontal"/>
+                                                            </ItemsPanelTemplate>
+                                                        </ItemsControl.ItemsPanel>
+                                                        <ItemsControl.ItemTemplate>
+                                                            <DataTemplate>
+                                                                <Border BorderBrush="{Binding StatusBrush, Mode=OneWay}"
+                                                                        BorderThickness="1"
+                                                                        Background="#FFFFFFFF"
+                                                                        CornerRadius="10"
+                                                                        Padding="8,3"
+                                                                        Margin="0,0,6,0">
+                                                                    <TextBlock Foreground="{Binding StatusBrush, Mode=OneWay}"
+                                                                               FontSize="12">
+                                                                        <Run Text="{Binding TeamName, Mode=OneTime}" FontWeight="SemiBold"/>
+                                                                        <Run Text=": "/>
+                                                                        <Run Text="{Binding Status, Mode=OneWay}"/>
+                                                                    </TextBlock>
+                                                                </Border>
+                                                            </DataTemplate>
+                                                        </ItemsControl.ItemTemplate>
+                                                    </ItemsControl>
                                                 </Grid>
                                             </Expander.Header>
                                             <Border Background="#FFF8FAFC" BorderBrush="#FFE2E8F0"
@@ -444,31 +473,6 @@
                                                     <TextBlock Text="{Binding TerritoryColor}" Margin="0,5,0,0"
                                                                Foreground="#FF047857" FontWeight="SemiBold"
                                                                TextWrapping="Wrap"/>
-                                                    <ItemsControl ItemsSource="{Binding Teams}" Margin="0,7,0,0"
-                                                                  ToolTip="{Binding TeamsSummary}">
-                                                        <ItemsControl.ItemsPanel>
-                                                            <ItemsPanelTemplate>
-                                                                <WrapPanel/>
-                                                            </ItemsPanelTemplate>
-                                                        </ItemsControl.ItemsPanel>
-                                                        <ItemsControl.ItemTemplate>
-                                                            <DataTemplate>
-                                                                <Border BorderBrush="{Binding StatusBrush, Mode=OneWay}"
-                                                                        BorderThickness="1"
-                                                                        Background="#FFFFFFFF"
-                                                                        CornerRadius="10"
-                                                                        Padding="8,3"
-                                                                        Margin="0,0,6,5">
-                                                                    <TextBlock Foreground="{Binding StatusBrush, Mode=OneWay}"
-                                                                               FontSize="12">
-                                                                        <Run Text="{Binding TeamName, Mode=OneTime}" FontWeight="SemiBold"/>
-                                                                        <Run Text=": "/>
-                                                                        <Run Text="{Binding Status, Mode=OneWay}"/>
-                                                                    </TextBlock>
-                                                                </Border>
-                                                            </DataTemplate>
-                                                        </ItemsControl.ItemTemplate>
-                                                    </ItemsControl>
                                                     <TextBlock Text="{Binding Schedule}" Margin="0,5,0,0"
                                                                Foreground="#FF1D4ED8"
                                                                TextWrapping="Wrap"/>
