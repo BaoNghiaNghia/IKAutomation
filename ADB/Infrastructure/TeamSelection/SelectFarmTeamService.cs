@@ -83,10 +83,19 @@ namespace ADB_Tool_Automation_Post_FB.Infrastructure.TeamSelection
             var attempts = new List<TeamSelectionAttempt>();
             var attemptedTeams = new List<TeamNumber>();
             var result = NewResult(attempts, attemptedTeams);
+            TeamNumber? authoritativeTarget = request.ExpectedTeam;
+            TeamSelectionTargetResolution target = ResolveTarget(request);
+            result.ExpectedTeam = authoritativeTarget ?? target.TargetTeam;
             byte[] lastFrame = null;
             try
             {
-                logger.Info($"[Farm Team Selection] RunId='{request.RunId ?? string.Empty}', DeviceName='{deviceName}', Allowed='{Join(request.AllowedTeams)}', Priority='{Join(request.Priority)}', Cancellation=false, Phase='Starting'");
+                logger.Info($"[Farm Team Selection] RunId='{request.RunId ?? string.Empty}', DeviceName='{deviceName}', ExpectedTeam='{request.ExpectedTeam}', AuthoritativeTargetTeam='{authoritativeTarget}', TargetSource='{(authoritativeTarget.HasValue ? TeamSelectionTargetSource.ExpectedTeam.ToString() : target.Source.ToString())}', Allowed='{Join(request.AllowedTeams)}', Priority='{Join(request.Priority ?? new TeamNumber[0])}', Cancellation=false, Phase='Starting'");
+                if (!target.Success)
+                {
+                    result.FailureReason = target.FailureReason;
+                    return Complete(result, target.Outcome, target.Message,
+                        target.FailureReason, watch);
+                }
                 if (!RequiredScreenTemplatesExist(out string screenTemplateError)
                     || !registry.Exists(TemplateId.TeamSelectedBorderAnchor))
                 {
@@ -128,12 +137,7 @@ namespace ADB_Tool_Automation_Post_FB.Infrastructure.TeamSelection
                         "Selected border appeared in multiple team ROIs; no Tap was sent.",
                         "Ambiguous selected-team evidence.", lastFrame, watch, cancellationToken);
 
-                TeamSelectionTargetResolution target = ResolveTarget(request);
-                result.ExpectedTeam = target.TargetTeam;
-                logger.Info($"[Farm Team Selection Target] DeviceName='{deviceName}', RunId='{request.RunId ?? string.Empty}', ExpectedTeam='{request.ExpectedTeam}', ResolvedTargetTeam='{target.TargetTeam}', TargetSource='{target.Source}', PreTapSelectedTeam='{(selected.Teams.Count == 1 ? selected.Teams[0].ToString() : string.Empty)}', PreTapSelectedConfident={!selected.IsAmbiguous && selected.Teams.Count == 1}, AllowedTeams='{Join(request.AllowedTeams)}', WorldMapReadyTeams='{Join(request.WorldMapReadyTeams ?? new TeamNumber[0])}', WorldMapAvailableTeams='{Join(request.WorldMapAvailableTeams ?? new TeamNumber[0])}', RosterStatus='{request.WorldMapRosterStatus ?? string.Empty}', RosterConfidence='{request.WorldMapRosterConfidence ?? string.Empty}', AlreadySelectedAccepted=false, FailureReason='{target.FailureReason ?? string.Empty}'");
-                if (!target.Success)
-                    return await CompleteAsync(deviceName, result, target.Outcome,
-                        target.Message, target.FailureReason, lastFrame, watch, cancellationToken);
+                logger.Info($"[Farm Team Selection Target] DeviceName='{deviceName}', RunId='{request.RunId ?? string.Empty}', ExpectedTeam='{request.ExpectedTeam}', AuthoritativeTargetTeam='{authoritativeTarget}', ResolvedTargetTeam='{target.TargetTeam}', TargetSource='{target.Source}', PreTapSelectedTeam='{(selected.Teams.Count == 1 ? selected.Teams[0].ToString() : string.Empty)}', PreTapSelectedConfident={!selected.IsAmbiguous && selected.Teams.Count == 1}, AllowedTeams='{Join(request.AllowedTeams)}', WorldMapReadyTeams='{Join(request.WorldMapReadyTeams ?? new TeamNumber[0])}', WorldMapAvailableTeams='{Join(request.WorldMapAvailableTeams ?? new TeamNumber[0])}', RosterStatus='{request.WorldMapRosterStatus ?? string.Empty}', RosterConfidence='{request.WorldMapRosterConfidence ?? string.Empty}', AlreadySelectedAccepted=false, FailureReason='{target.FailureReason ?? string.Empty}'");
 
                 SelectedTeamConsensusResult detectedSelection = null;
                 if (selectedTeamDetector != null)
@@ -142,6 +146,7 @@ namespace ADB_Tool_Automation_Post_FB.Infrastructure.TeamSelection
                         new SelectedTeamDetectionContext
                         {
                             TeamRegions = initialRegions,
+                            ExpectedTeam = authoritativeTarget ?? target.TargetTeam,
                             ExpectedWidth = options.ExpectedWidth,
                             ExpectedHeight = options.ExpectedHeight,
                             ConsensusFrames = options.SelectedConsensusFrames,
@@ -157,8 +162,10 @@ namespace ADB_Tool_Automation_Post_FB.Infrastructure.TeamSelection
 
                 bool expectedAlreadySelected = selectedTeamDetector != null
                     ? detectedSelection != null && detectedSelection.IsConfident
+                        && !detectedSelection.IsAmbiguous
+                        && detectedSelection.Team.HasValue
                         && target.TargetTeam.HasValue
-                        && detectedSelection.Team == target.TargetTeam
+                        && detectedSelection.Team.Value == target.TargetTeam.Value
                     : target.TargetTeam.HasValue && selected.Teams.Contains(target.TargetTeam.Value);
                 if (expectedAlreadySelected
                     && HasEnabledAction(freshState))
@@ -175,6 +182,7 @@ namespace ADB_Tool_Automation_Post_FB.Infrastructure.TeamSelection
                             ? selected.Matches[target.TargetTeam.Value] : null,
                         Message = "Đội dự kiến đã được chọn sẵn; không gửi lệnh chọn."
                     });
+                    logger.Info($"[Farm Team Selection PreTap] DeviceName='{deviceName}', ExpectedTeam='{request.ExpectedTeam}', AuthoritativeTargetTeam='{authoritativeTarget}', TargetSource='{(authoritativeTarget.HasValue ? TeamSelectionTargetSource.ExpectedTeam.ToString() : target.Source.ToString())}', DetectedTeam='{(selectedTeamDetector != null ? detectedSelection?.Team : target.TargetTeam)}', AlreadySelectedAccepted=true, TeamTapCount={result.TeamTapCount}, Outcome='{SelectFarmTeamOutcome.AlreadySelected}'");
                     return Complete(result, SelectFarmTeamOutcome.AlreadySelected,
                         $"Đội {((int)target.TargetTeam.Value)} đã được chọn sẵn.", null, watch);
                 }
@@ -192,9 +200,11 @@ namespace ADB_Tool_Automation_Post_FB.Infrastructure.TeamSelection
                 // The detector-backed production path resolves exactly one target for
                 // this operation.  Priority is only a legacy compatibility plan.
                 TeamNumber resolvedTargetTeam = target.TargetTeam.Value;
-                IEnumerable<TeamNumber> candidateTeams = selectedTeamDetector != null
-                    ? new[] { resolvedTargetTeam }
-                    : BuildCandidatePlan(request, target);
+                IEnumerable<TeamNumber> candidateTeams = authoritativeTarget.HasValue
+                    ? new[] { authoritativeTarget.Value }
+                    : selectedTeamDetector != null
+                        ? new[] { resolvedTargetTeam }
+                        : BuildCandidatePlan(request, target);
                 foreach (TeamNumber team in candidateTeams)
                 {
                     cancellationToken.ThrowIfCancellationRequested();
@@ -234,7 +244,7 @@ namespace ADB_Tool_Automation_Post_FB.Infrastructure.TeamSelection
                             ScrollAttempt = result.ScrollAttempts,
                             Message = "Expected numbered team badge is not visible after bounded scrolling."
                         });
-                        if (selectedTeamDetector == null && request.Priority.Count == 1)
+                        if (authoritativeTarget.HasValue)
                         {
                             result.FailureReason = "ExpectedTeamNotVisible";
                             return await CompleteAsync(deviceName, result,
@@ -242,8 +252,7 @@ namespace ADB_Tool_Automation_Post_FB.Infrastructure.TeamSelection
                                 "Không tìm thấy đội dự kiến trong danh sách đội sau khi cuộn giới hạn.",
                                 null, lastFrame, watch, cancellationToken);
                         }
-                        if (selectedTeamDetector == null)
-                            continue;
+                        if (selectedTeamDetector == null) continue;
                     }
 
                     for (int attemptNumber = 1;
@@ -367,6 +376,7 @@ namespace ADB_Tool_Automation_Post_FB.Infrastructure.TeamSelection
                         LogMatch(deviceName, team, attemptNumber, region, badge, disabled);
                         if (!HasBounds(badge))
                         {
+                            result.FailureReason = "TargetBadgeNotFound";
                             attempt.Message = "Team badge was not found with valid bounds; no Tap was sent.";
                             LogTapPlanned(deviceName, resolvedTargetTeam, attemptNumber, badge,
                                 disabled, region, 0, 0, false, "BadgeBoundsInvalid",
@@ -375,6 +385,7 @@ namespace ADB_Tool_Automation_Post_FB.Infrastructure.TeamSelection
                         }
                         if (disabled)
                         {
+                            result.FailureReason = "TargetTeamDisabled";
                             attempt.Message = "Disabled team evidence was found; no Tap was sent.";
                             LogTapPlanned(deviceName, resolvedTargetTeam, attemptNumber, badge,
                                 true, region, 0, 0, false, "TargetDisabled",
@@ -392,6 +403,7 @@ namespace ADB_Tool_Automation_Post_FB.Infrastructure.TeamSelection
                             result.TeamTapCount);
                         if (!tapPointValid)
                         {
+                            result.FailureReason = tapSkipReason ?? "TargetGeometryInvalid";
                             attempt.Message = "The expected team row has no safe selectable area; no Tap was sent."
                                 + " Reason=" + tapSkipReason + ".";
                             continue;
@@ -428,25 +440,6 @@ namespace ADB_Tool_Automation_Post_FB.Infrastructure.TeamSelection
                                 await Task.Delay(options.TapRetryDelayMs, cancellationToken);
                             continue;
                         }
-                        // The ready-team decision was made on WorldMap and this exact
-                        // team row was just tapped from fresh badge bounds. Do not
-                        // spend the selection deadline on a second screen detector:
-                        // Dispatch owns the mandatory fresh TeamSelection/action
-                        // verification immediately before the yellow Gather tap.
-                        if (selectedTeamDetector != null)
-                        {
-                            attempt.SelectedAfter = team;
-                            attempt.SelectedVerified = true;
-                            attempt.Message = "Đội sẵn sàng đã được chọn; Dispatch sẽ kiểm tra lại nút Thu thập mới nhất.";
-                            result.SelectedTeam = team;
-                            result.ActualSelectedTeam = team;
-                            result.SelectedStateVerified = true;
-                            result.FinalState = GameState.TeamSelection;
-                            logger.Info($"[Farm Team Selection PostTap] DeviceName='{deviceName}', ExpectedTeam='{team}', ReadyTeamTapAccepted=true, Attempt={attemptNumber}, TeamTapCount={result.TeamTapCount}, NextAction='DispatchFreshAction'");
-                            return Complete(result, SelectFarmTeamOutcome.TeamSelected,
-                                $"{team} was tapped from the ready-team plan; Dispatch will rematch the fresh action.",
-                                null, watch);
-                        }
                         logger.Info($"[Team Selection Mapping] RunId='{request.RunId ?? string.Empty}', DeviceName='{deviceName}', ExpectedTeam='{team}', VisibleTeams='{Join(result.VisibleTeams)}', SelectedBefore='{result.ActualSelectedTeam}', BadgeBounds=({badge.X},{badge.Y},{badge.Width},{badge.Height}), RowBounds=({region.X},{region.Y},{region.Width},{region.Height}), TapPointValidated=true, ScrollAttempt={result.ScrollAttempts}, TapAttempt={attemptNumber}, TapCoordinates=({tapX},{tapY}), InputFrameAgeMs={inputFrameAgeMs}, NextAction='VerifyExactTeam'");
 
                         // Keep the legacy detector path only as a conservative fallback
@@ -461,30 +454,26 @@ namespace ADB_Tool_Automation_Post_FB.Infrastructure.TeamSelection
                         {
                             if (selectedTeamDetector != null)
                             {
-                                bool expectedTeamVerified = freshPostTap != null
-                                    && freshPostTap.Detection != null
+                                freshPostTap = await CaptureFreshPostTapVerificationAsync(
+                                    deviceName, attemptNumber, result.TeamTapCount, team,
+                                    cancellationToken);
+                                result.SelectionVerificationFrames++;
+                                bool expectedTeamVerified = freshPostTap.Detection != null
                                     && freshPostTap.Detection.IsConfident
                                     && !freshPostTap.Detection.IsAmbiguous
                                     && freshPostTap.Detection.Team.HasValue
-                                    && freshPostTap.Detection.Team.Value == team;
-                                // The panel can expose a false second candidate when a
-                                // missing badge stretches a neighbouring row.  For the
-                                // post-tap operation we know exactly which row was
-                                // tapped, so qualified fresh border evidence in that
-                                // row is sufficient; an unrelated row must not block
-                                // dispatch.
-                                bool expectedRowVerified = HasQualifiedExpectedRow(
-                                    freshPostTap?.Detection, team);
-                                expectedTeamVerified |= expectedRowVerified;
+                                    && freshPostTap.Detection.Team.Value == team
+                                    && freshPostTap.HasFreshFrameState
+                                    && IsSelectionScreen(freshPostTap.FrameState)
+                                    && HasEnabledAction(freshPostTap.FrameState);
                                 result.ActualSelectedTeam = expectedTeamVerified
-                                    ? (TeamNumber?)team : freshPostTap?.Detection?.Team;
+                                    ? (TeamNumber?)team : freshPostTap.Detection?.Team;
                                 attempt.SelectedAfter = result.ActualSelectedTeam;
+                                logger.Info($"[Farm Team Selection PostTap] DeviceName='{deviceName}', ExpectedTeam='{request.ExpectedTeam}', AuthoritativeTargetTeam='{authoritativeTarget}', TargetSource='{(authoritativeTarget.HasValue ? TeamSelectionTargetSource.ExpectedTeam.ToString() : target.Source.ToString())}', Attempt={attemptNumber}, Observation={postTapObservation}, TapTeam='{team}', TeamTapCount={result.TeamTapCount}, VerificationTeam='{freshPostTap.Detection?.Team}', VerificationConfident={freshPostTap.Detection?.IsConfident == true}, VerificationAmbiguous={freshPostTap.Detection?.IsAmbiguous == true}, ActionEnabled={HasEnabledAction(freshPostTap.FrameState)}, Outcome='{(expectedTeamVerified ? "Verified" : "Rejected")}', FailureReason='{freshPostTap.FailureReason ?? freshPostTap.Detection?.FailureReason ?? string.Empty}'");
                                 if (expectedTeamVerified)
                                 {
                                     attempt.SelectedVerified = true;
-                                    attempt.Message = expectedRowVerified
-                                        ? "Fresh target-row border verified the expected team after Tap."
-                                        : "Fresh detector consensus verified the expected team after Tap.";
+                                    attempt.Message = "Fresh detector consensus and action state verified the expected team after Tap.";
                                     result.SelectedTeam = team;
                                     result.ActualSelectedTeam = team;
                                     result.SelectedStateVerified = true;
@@ -493,10 +482,22 @@ namespace ADB_Tool_Automation_Post_FB.Infrastructure.TeamSelection
                                         $"{team} was selected and verified.", null, watch);
                                 }
                                 if (freshPostTap?.Detection?.IsConfident == true
+                                    && !freshPostTap.Detection.IsAmbiguous
                                     && freshPostTap.Detection.Team.HasValue
                                     && freshPostTap.Detection.Team.Value != team)
+                                {
                                     postTapDifferentExpectedTeamObserved = true;
+                                    result.FailureReason = "WrongTeamSelected";
+                                }
+                                else if (freshPostTap?.Detection?.IsAmbiguous == true)
+                                    result.FailureReason = "PostTapSelectionAmbiguous";
+                                else if (freshPostTap?.Detection?.IsConfident != true
+                                    || freshPostTap.Detection.Team.HasValue == false)
+                                    result.FailureReason = "PostTapSelectionUncertain";
+                                else if (!HasEnabledAction(freshPostTap.FrameState))
+                                    result.FailureReason = "PostTapActionDisabled";
                                 attempt.Message = "Fresh post-tap detector verification did not confirm the expected team.";
+                                if (postTapObservation < 2) continue;
                                 break;
                             }
                             await Task.Delay(options.PollIntervalMs, cancellationToken);
@@ -569,6 +570,22 @@ namespace ADB_Tool_Automation_Post_FB.Infrastructure.TeamSelection
                     && postTapDifferentExpectedTeamObserved;
                 SelectFarmTeamOutcome outcome = wrongTeam
                     ? SelectFarmTeamOutcome.TeamSelectionMismatch
+                    : authoritativeTarget.HasValue
+                        && string.Equals(result.FailureReason, "TargetBadgeNotFound",
+                            StringComparison.Ordinal)
+                    ? SelectFarmTeamOutcome.TargetBadgeNotFound
+                    : authoritativeTarget.HasValue
+                        && string.Equals(result.FailureReason, "TargetTeamDisabled",
+                            StringComparison.Ordinal)
+                    ? SelectFarmTeamOutcome.TargetTeamDisabled
+                    : authoritativeTarget.HasValue
+                        && (string.Equals(result.FailureReason, "PostTapSelectionUncertain",
+                                StringComparison.Ordinal)
+                            || string.Equals(result.FailureReason, "PostTapSelectionAmbiguous",
+                                StringComparison.Ordinal)
+                            || string.Equals(result.FailureReason, "PostTapActionDisabled",
+                                StringComparison.Ordinal))
+                    ? SelectFarmTeamOutcome.SelectionEvidenceUncertain
                     : DateTimeOffset.UtcNow >= selectionDeadline
                     ? SelectFarmTeamOutcome.SelectionTimeout
                     : SelectFarmTeamOutcome.NoEligibleTeam;
@@ -586,6 +603,12 @@ namespace ADB_Tool_Automation_Post_FB.Infrastructure.TeamSelection
                 return await CompleteAsync(deviceName, result, outcome,
                     outcome == SelectFarmTeamOutcome.TeamSelectionMismatch
                         ? "Không thể chuyển sang đội dự kiến sau các lần thử; đã dừng trước lệnh thu thập."
+                    : outcome == SelectFarmTeamOutcome.TargetBadgeNotFound
+                        ? "Không tìm thấy huy hiệu của đội dự kiến; không thử đội khác."
+                    : outcome == SelectFarmTeamOutcome.TargetTeamDisabled
+                        ? "Đội dự kiến đang bị khóa hoặc vô hiệu hóa; không thử đội khác."
+                    : outcome == SelectFarmTeamOutcome.SelectionEvidenceUncertain
+                        ? "Không thể xác minh chắc chắn đúng đội dự kiến và nút hành động mới; đã dừng an toàn."
                     : outcome == SelectFarmTeamOutcome.SelectionTimeout
                         ? "Farm team selection timed out without a verified team."
                         : "No eligible team could be selected and verified.",
@@ -632,7 +655,7 @@ namespace ADB_Tool_Automation_Post_FB.Infrastructure.TeamSelection
                     ConsensusFrames = 1,
                     RequiredMatchingFrames = 1,
                     FrameIntervalMs = 0,
-                    TimeoutMs = options.PollIntervalMs,
+                    TimeoutMs = options.SelectedDetectionTimeoutMs,
                     MinimumScore = options.SelectedMinimumScore,
                     WinningMargin = options.SelectedWinningMargin
                 }, cancellationToken);
@@ -660,20 +683,6 @@ namespace ADB_Tool_Automation_Post_FB.Infrastructure.TeamSelection
             if (result?.RowDetails == null) return;
             foreach (SelectedTeamRowScore row in result.RowDetails.Values)
                 logger.Info($"[Selected Team Frame Score] DeviceName='{deviceName}', Phase='{phase}', ExpectedTeam='{expectedTeam}', FrameIndex=0, Team='{row.Team}', RowBounds=({row.RowBounds.X},{row.RowBounds.Y},{row.RowBounds.Width},{row.RowBounds.Height}), GeometryValid={row.GeometryValid}, TemplateConfidence={row.TemplateConfidence:F3}, TopBorderScore={row.TopBorderScore:F3}, BottomBorderScore={row.BottomBorderScore:F3}, LeftBorderScore={row.LeftBorderScore:F3}, RightBorderScore={row.RightBorderScore:F3}, BorderEdgesFound={row.BorderEdgesFound}, BorderEvidenceScore={row.BorderEvidenceScore:F3}, ContrastScore={row.ContrastScore:F3}, TemplatePathScore={row.TemplatePathScore:F3}, BorderPathScore={row.BorderPathScore:F3}, EffectiveScore={row.EffectiveScore:F3}, BorderOnlyQualified={row.BorderOnlyQualified}, CandidateQualified={row.CandidateQualified}, Offsets=({row.TopBorderOffset},{row.BottomBorderOffset},{row.LeftBorderOffset},{row.RightBorderOffset}), FailureReason='{row.FailureReason ?? result.FailureReason ?? string.Empty}'");
-        }
-
-        private bool HasQualifiedExpectedRow(SelectedTeamConsensusResult detection,
-            TeamNumber expectedTeam)
-        {
-            if (detection?.RowDetails == null
-                || !detection.RowDetails.TryGetValue(expectedTeam,
-                    out SelectedTeamRowScore expectedRow))
-                return false;
-            return expectedRow.GeometryValid
-                && expectedRow.CandidateQualified
-                && expectedRow.BorderOnlyQualified
-                && expectedRow.BorderEdgesFound >= options.SelectedRequiredBorderEdges
-                && expectedRow.EffectiveScore >= options.SelectedMinimumScore;
         }
 
         private SelectedScan ScanSelected(byte[] frame,
@@ -792,26 +801,20 @@ namespace ADB_Tool_Automation_Post_FB.Infrastructure.TeamSelection
 
         private static TeamSelectionTargetResolution ResolveTarget(TeamSelectionRequest request)
         {
-            if (request.TeamOperation != null)
+            if (request.ExpectedTeam.HasValue)
             {
-                if (request.ExpectedTeam.HasValue
-                    && request.ExpectedTeam.Value != request.TeamOperation.ExpectedTeam)
+                TeamNumber expected = request.ExpectedTeam.Value;
+                if (!Enum.IsDefined(typeof(TeamNumber), expected))
+                    return TeamSelectionTargetResolution.Failure(
+                        SelectFarmTeamOutcome.ExpectedTeamNotAllowed,
+                        "Đội dự kiến nằm ngoài phạm vi hỗ trợ.",
+                        "ExpectedTeamInvalid");
+                if (request.TeamOperation != null
+                    && expected != request.TeamOperation.ExpectedTeam)
                     return TeamSelectionTargetResolution.Failure(
                         SelectFarmTeamOutcome.ExpectedTeamNotAllowed,
                         "Đội dự kiến không khớp lần quét đội sẵn sàng mới nhất.",
                         "ExpectedTeamOperationMismatch");
-                if (!IsAllowedCandidate(request, request.TeamOperation.ExpectedTeam))
-                    return TeamSelectionTargetResolution.Failure(
-                        SelectFarmTeamOutcome.ExpectedTeamNotAllowed,
-                        "Đội từ lần quét mới không nằm trong danh sách được phép.",
-                        "ExpectedTeamNotAllowed");
-                return TeamSelectionTargetResolution.ForTarget(
-                    request.TeamOperation.ExpectedTeam,
-                    TeamSelectionTargetSource.FreshWorldMapReadyScan);
-            }
-            if (request.ExpectedTeam.HasValue)
-            {
-                TeamNumber expected = request.ExpectedTeam.Value;
                 if (!IsAllowedCandidate(request, expected))
                     return TeamSelectionTargetResolution.Failure(
                         SelectFarmTeamOutcome.ExpectedTeamNotAllowed,
@@ -824,8 +827,26 @@ namespace ADB_Tool_Automation_Post_FB.Infrastructure.TeamSelection
                         SelectFarmTeamOutcome.ExpectedTeamUnavailable,
                         "Chưa thể xác nhận đội dự kiến khả dụng.",
                         "ExpectedTeamUnavailable");
+                if (IsTrustedRoster(request)
+                    && request.WorldMapReadyTeams != null
+                    && !request.WorldMapReadyTeams.Contains(expected))
+                    return TeamSelectionTargetResolution.Failure(
+                        SelectFarmTeamOutcome.ExpectedTeamUnavailable,
+                        "Đội dự kiến không nằm trong danh sách đội sẵn sàng mới nhất.",
+                        "ExpectedTeamNotReady");
                 return TeamSelectionTargetResolution.ForTarget(expected,
                     TeamSelectionTargetSource.ExpectedTeam);
+            }
+            if (request.TeamOperation != null)
+            {
+                if (!IsAllowedCandidate(request, request.TeamOperation.ExpectedTeam))
+                    return TeamSelectionTargetResolution.Failure(
+                        SelectFarmTeamOutcome.ExpectedTeamNotAllowed,
+                        "Đội từ lần quét mới không nằm trong danh sách được phép.",
+                        "ExpectedTeamNotAllowed");
+                return TeamSelectionTargetResolution.ForTarget(
+                    request.TeamOperation.ExpectedTeam,
+                    TeamSelectionTargetSource.FreshWorldMapReadyScan);
             }
 
             foreach (TeamNumber team in request.WorldMapReadyTeams ?? new TeamNumber[0])
@@ -927,12 +948,16 @@ namespace ADB_Tool_Automation_Post_FB.Infrastructure.TeamSelection
             if (string.IsNullOrWhiteSpace(deviceName)) return "LDPlayer device name is required.";
             if (request == null) return "Team selection request is required.";
             if (request.AllowedTeams == null || request.AllowedTeams.Count == 0) return "AllowedTeams cannot be empty.";
-            if (request.Priority == null || request.Priority.Count == 0) return "Priority cannot be empty.";
             if (request.AllowedTeams.Distinct().Count() != request.AllowedTeams.Count) return "AllowedTeams cannot contain duplicates.";
-            if (request.Priority.Distinct().Count() != request.Priority.Count) return "Priority cannot contain duplicates.";
-            if (request.Priority.Any(team => !request.AllowedTeams.Contains(team))) return "Priority can only contain allowed teams.";
+            if (!request.ExpectedTeam.HasValue)
+            {
+                if (request.Priority == null || request.Priority.Count == 0) return "Priority cannot be empty.";
+                if (request.Priority.Distinct().Count() != request.Priority.Count) return "Priority cannot contain duplicates.";
+                if (request.Priority.Any(team => !request.AllowedTeams.Contains(team))) return "Priority can only contain allowed teams.";
+            }
             if (!request.AllowTeam1 && (request.AllowedTeams.Contains(TeamNumber.Team1)
-                || request.Priority.Contains(TeamNumber.Team1))) return "Team1 is not allowed when AllowTeam1 is false.";
+                || (!request.ExpectedTeam.HasValue
+                    && request.Priority.Contains(TeamNumber.Team1)))) return "Team1 is not allowed when AllowTeam1 is false.";
             return null;
         }
 
@@ -974,7 +999,7 @@ namespace ADB_Tool_Automation_Post_FB.Infrastructure.TeamSelection
             result.Duration = watch.Elapsed;
             result.Message = message;
             result.ErrorMessage = error;
-            logger.Info($"[Farm Team Selection] ExpectedTeam='{result.ExpectedTeam}', ObservedSelectedTeam='{result.ActualSelectedTeam}', InitialState='{result.InitialState}', FinalState='{result.FinalState}', TeamTapCount={result.TeamTapCount}, SelectedTeam='{result.SelectedTeam}', SelectedVerified={result.SelectedStateVerified}, CleanupAttempted={result.CleanupAttempted}, CleanupSucceeded={result.CleanupSucceeded}, StateAfterCleanup='{result.StateAfterCleanup}', Outcome='{outcome}', DurationMs={result.Duration.TotalMilliseconds:F0}, Cancellation={outcome == SelectFarmTeamOutcome.Cancelled}, Error='{error ?? string.Empty}'");
+            logger.Info($"[Farm Team Selection] ExpectedTeam='{result.ExpectedTeam}', ObservedSelectedTeam='{result.ActualSelectedTeam}', InitialState='{result.InitialState}', FinalState='{result.FinalState}', TeamTapCount={result.TeamTapCount}, SelectedTeam='{result.SelectedTeam}', SelectedVerified={result.SelectedStateVerified}, CleanupAttempted={result.CleanupAttempted}, CleanupSucceeded={result.CleanupSucceeded}, StateAfterCleanup='{result.StateAfterCleanup}', Outcome='{outcome}', FailureReason='{result.FailureReason ?? string.Empty}', DurationMs={result.Duration.TotalMilliseconds:F0}, Cancellation={outcome == SelectFarmTeamOutcome.Cancelled}, Error='{error ?? string.Empty}'");
             return result;
         }
 

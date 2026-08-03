@@ -37,6 +37,13 @@ namespace IKAutomation.FarmTeamSelection.Tests
             Run("Team4 requires selected border in Team4 ROI", WrongRoiNotSuccess);
             Run("Selected border in Team3 does not verify Team4", WrongRoiNotSuccess);
             Run("Expected Team2 replaces initially selected Team3", ExpectedTeam2ReplacesTeam3);
+            Run("Expected Team2 replaces initially selected Team1", ExpectedTeam2ReplacesTeam1);
+            Run("Expected Team2 already selected sends no Tap", ExpectedTeam2AlreadySelected);
+            Run("Expected Team2 rejects post-tap Team3", ExpectedTeam2RejectsPostTapTeam3);
+            Run("Expected Team2 missing badge never tries Team3", ExpectedTeam2MissingNeverTriesTeam3);
+            Run("Expected Team2 retries only Team2", ExpectedTeam2RetriesOnlyTeam2);
+            Run("Expected Team2 cannot be overridden by priority", ExpectedTeam2OverridesPriority);
+            Run("Unavailable expected Team2 has no fallback", UnavailableExpectedTeam2HasNoFallback);
             Run("Expected team outside allowed list sends no Tap", ExpectedTeamNotAllowed);
             Run("Preselected different team never mismatches before target Tap", PreselectedTeamDoesNotMismatchWithoutTap);
             Run("Persistent wrong Team3 selection cleans up without success", PersistentWrongTeamCleansUp);
@@ -156,7 +163,28 @@ namespace IKAutomation.FarmTeamSelection.Tests
         { Fixture f = Setup(maxAttempts: 1); f.Matcher.Badges.Add(TeamNumber.Team4); f.Matcher.SelectOnTap[TeamNumber.Team4] = TeamNumber.Team3; SelectFarmTeamResult r = Execute(f); Assert(r.Outcome != SelectFarmTeamOutcome.TeamSelected || r.SelectedTeam != TeamNumber.Team4, "Wrong ROI verified Team4."); }
 
         private static void ExpectedTeam2ReplacesTeam3()
-        { Fixture f=Setup(maxAttempts:2);f.Matcher.Badges.UnionWith(new[]{TeamNumber.Team2,TeamNumber.Team3});f.Matcher.Selected.Add(TeamNumber.Team3);f.Matcher.SelectOnTap[TeamNumber.Team2]=TeamNumber.Team2;SelectFarmTeamResult r=Execute(f,Only(TeamNumber.Team2));Equal(SelectFarmTeamOutcome.TeamSelected,r.Outcome);Equal(TeamNumber.Team2,r.SelectedTeam.Value);Equal(TeamNumber.Team2,r.ActualSelectedTeam.Value);Equal(1,f.Client.Taps.Count); }
+        { Fixture f=Setup(maxAttempts:2,useProductionDetector:true);f.Matcher.Badges.UnionWith(new[]{TeamNumber.Team2,TeamNumber.Team3});f.Matcher.Selected.Add(TeamNumber.Team3);f.Matcher.SelectOnTap[TeamNumber.Team2]=TeamNumber.Team2;SelectFarmTeamResult r=Execute(f,Only(TeamNumber.Team2));Equal(SelectFarmTeamOutcome.TeamSelected,r.Outcome);Equal(TeamNumber.Team2,r.SelectedTeam.Value);Equal(TeamNumber.Team2,r.ActualSelectedTeam.Value);Equal(1,f.Client.Taps.Count); }
+
+        private static void ExpectedTeam2ReplacesTeam1()
+        { Fixture f=Setup(maxAttempts:2,useProductionDetector:true);f.Matcher.Badges.UnionWith(new[]{TeamNumber.Team1,TeamNumber.Team2});f.Matcher.Selected.Add(TeamNumber.Team1);f.Matcher.SelectOnTap[TeamNumber.Team2]=TeamNumber.Team2;SelectFarmTeamResult r=Execute(f,Only(TeamNumber.Team2));Equal(SelectFarmTeamOutcome.TeamSelected,r.Outcome);Equal(TeamNumber.Team2,r.SelectedTeam.Value);Equal(1,r.TeamTapCount);Assert(f.Matcher.TappedTeams.All(team=>team==TeamNumber.Team2),"A team other than Team2 was tapped."); }
+
+        private static void ExpectedTeam2AlreadySelected()
+        { Fixture f=Setup(useProductionDetector:true);f.Matcher.Badges.Add(TeamNumber.Team2);f.Matcher.Selected.Add(TeamNumber.Team2);SelectFarmTeamResult r=Execute(f,Only(TeamNumber.Team2));Equal(SelectFarmTeamOutcome.AlreadySelected,r.Outcome);Equal(TeamNumber.Team2,r.SelectedTeam.Value);Equal(0,r.TeamTapCount);Equal(0,f.Client.Taps.Count); }
+
+        private static void ExpectedTeam2RejectsPostTapTeam3()
+        { Fixture f=Setup(maxAttempts:1,useProductionDetector:true);f.Matcher.Badges.UnionWith(new[]{TeamNumber.Team2,TeamNumber.Team3});f.Matcher.SelectOnTap[TeamNumber.Team2]=TeamNumber.Team3;SelectFarmTeamResult r=Execute(f,Only(TeamNumber.Team2));Equal(SelectFarmTeamOutcome.TeamSelectionMismatch,r.Outcome);Assert(!r.Success&&!r.SelectedTeam.HasValue,"Wrong Team3 was accepted.");Equal(TeamNumber.Team3,r.ActualSelectedTeam.Value);Equal(1,r.TeamTapCount); }
+
+        private static void ExpectedTeam2MissingNeverTriesTeam3()
+        { Fixture f=Setup(maxAttempts:2,useProductionDetector:true);f.Matcher.Badges.Add(TeamNumber.Team3);var q=new TeamSelectionRequest{AllowedTeams=new[]{TeamNumber.Team2,TeamNumber.Team3},Priority=new[]{TeamNumber.Team3,TeamNumber.Team2},ExpectedTeam=TeamNumber.Team2,AllowTeam1=false};SelectFarmTeamResult r=Execute(f,q);Equal(SelectFarmTeamOutcome.ExpectedTeamNotVisible,r.Outcome);Equal(0,r.TeamTapCount);Assert(!r.AttemptedTeams.Contains(TeamNumber.Team3),"Team3 was attempted after Team2 was missing."); }
+
+        private static void ExpectedTeam2RetriesOnlyTeam2()
+        { Fixture f=Setup(maxAttempts:2,useProductionDetector:true);f.Matcher.Badges.UnionWith(new[]{TeamNumber.Team2,TeamNumber.Team3});f.Matcher.SelectOnTap[TeamNumber.Team2]=TeamNumber.Team3;var q=new TeamSelectionRequest{AllowedTeams=new[]{TeamNumber.Team2,TeamNumber.Team3},Priority=new[]{TeamNumber.Team3,TeamNumber.Team2},ExpectedTeam=TeamNumber.Team2,AllowTeam1=false};SelectFarmTeamResult r=Execute(f,q);Equal(2,r.TeamTapCount);Sequence(new[]{TeamNumber.Team2},r.AttemptedTeams);Assert(f.Matcher.TappedTeams.All(team=>team==TeamNumber.Team2),"A retry switched away from Team2."); }
+
+        private static void ExpectedTeam2OverridesPriority()
+        { Fixture f=Setup(maxAttempts:1,useProductionDetector:true);f.Matcher.Badges.UnionWith(new[]{TeamNumber.Team2,TeamNumber.Team3});f.Matcher.SelectOnTap[TeamNumber.Team2]=TeamNumber.Team2;var q=new TeamSelectionRequest{AllowedTeams=new[]{TeamNumber.Team2,TeamNumber.Team3},Priority=new[]{TeamNumber.Team3},ExpectedTeam=TeamNumber.Team2,AllowTeam1=false};SelectFarmTeamResult r=Execute(f,q);Equal(TeamNumber.Team2,r.SelectedTeam.Value);Sequence(new[]{TeamNumber.Team2},r.AttemptedTeams); }
+
+        private static void UnavailableExpectedTeam2HasNoFallback()
+        { Fixture f=Setup(useProductionDetector:true);f.Matcher.Badges.Add(TeamNumber.Team3);var q=new TeamSelectionRequest{AllowedTeams=new[]{TeamNumber.Team2,TeamNumber.Team3},Priority=new[]{TeamNumber.Team3},ExpectedTeam=TeamNumber.Team2,WorldMapAvailableTeams=new[]{TeamNumber.Team3},WorldMapReadyTeams=new[]{TeamNumber.Team3},WorldMapRosterStatus="FreshConfirmed",WorldMapRosterConfidence="Strong",AllowTeam1=false};SelectFarmTeamResult r=Execute(f,q);Equal(SelectFarmTeamOutcome.ExpectedTeamUnavailable,r.Outcome);Equal(0,r.TeamTapCount);Equal(0,f.Client.Taps.Count); }
 
         private static void ExpectedTeamNotAllowed()
         { Fixture f=Setup();var request=Only(TeamNumber.Team2);request.ExpectedTeam=TeamNumber.Team3;SelectFarmTeamResult r=Execute(f,request);Equal(SelectFarmTeamOutcome.ExpectedTeamNotAllowed,r.Outcome);Equal(0,f.Client.Taps.Count); }
@@ -366,7 +394,7 @@ namespace IKAutomation.FarmTeamSelection.Tests
             f.Client = new FakeClient(f.Matcher); f.Store = new FakeStore();
             f.Service = new SelectFarmTeamService(f.Detector, f.Client, f.Registry, f.Matcher,
                 new DeviceOperationLock(), Options(1, maxAttempts, timeoutSeconds), f.Store,
-                new FakeLogger(), useProductionDetector ? new FakeSelectedTeamDetector() : null);
+                new FakeLogger(), useProductionDetector ? new FakeSelectedTeamDetector(f.Matcher) : null);
             return f;
         }
 
@@ -428,6 +456,7 @@ namespace IKAutomation.FarmTeamSelection.Tests
             public readonly Dictionary<TeamNumber, int> BadgeCalls = new Dictionary<TeamNumber, int>();
             public readonly Dictionary<TeamNumber, ImageRegion> Regions = new Dictionary<TeamNumber, ImageRegion>();
             public readonly Dictionary<TeamNumber, ImageMatchResult> LastBadge = new Dictionary<TeamNumber, ImageMatchResult>();
+            public readonly List<TeamNumber> TappedTeams = new List<TeamNumber>();
             public bool MoveBadgeEachCall, HideSelectedForFirstPostTapScan, HideBadgeWhenSelected;
             private int hiddenSelectedChecksRemaining;
 
@@ -474,6 +503,7 @@ namespace IKAutomation.FarmTeamSelection.Tests
                     && y < item.Value.Y + item.Value.Height)
                     .OrderBy(item => Math.Abs(item.Value.Y + item.Value.Height / 2 - y))
                     .Select(item => (TeamNumber?)item.Key).FirstOrDefault();
+                if (tapped.HasValue) TappedTeams.Add(tapped.Value);
                 if (tapped.HasValue && SelectOnTap.TryGetValue(tapped.Value, out TeamNumber selected))
                 {
                     Selected.Clear(); Selected.Add(selected);
@@ -529,9 +559,22 @@ namespace IKAutomation.FarmTeamSelection.Tests
         { public bool Throw; public Task<string> SaveAsync(string d, SelectFarmTeamOutcome o, byte[] p, CancellationToken t) { if (Throw) throw new IOException("disk full"); return Task.FromResult("farm-team.png"); } }
         private sealed class FakeSelectedTeamDetector : ISelectedTeamDetector
         {
+            private readonly FakeMatcher matcher;
+            public FakeSelectedTeamDetector(FakeMatcher matcher) { this.matcher = matcher; }
             public Task<SelectedTeamConsensusResult> DetectAsync(string d,
-                SelectedTeamDetectionContext c, CancellationToken t) => Task.FromResult(
-                    new SelectedTeamConsensusResult { IsConfident = false });
+                SelectedTeamDetectionContext c, CancellationToken t)
+            {
+                t.ThrowIfCancellationRequested();
+                TeamNumber[] selected = matcher.Selected.OrderBy(team => (int)team).ToArray();
+                return Task.FromResult(new SelectedTeamConsensusResult
+                {
+                    Team = selected.Length == 1 ? (TeamNumber?)selected[0] : null,
+                    IsConfident = selected.Length == 1,
+                    IsAmbiguous = selected.Length > 1,
+                    FramesObserved = 1,
+                    MatchingFrames = selected.Length == 1 ? 1 : 0
+                });
+            }
             public SelectedTeamFrameResult DetectFrame(byte[] p,
                 SelectedTeamDetectionContext c) => new SelectedTeamFrameResult();
         }
