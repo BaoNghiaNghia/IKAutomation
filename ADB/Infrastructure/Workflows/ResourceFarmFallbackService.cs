@@ -26,13 +26,15 @@ namespace ADB_Tool_Automation_Post_FB.Infrastructure.Workflows
         private readonly IResourceTemplateProfileProvider profiles;
         private readonly ResourceFarmFallbackOptions options;
         private readonly IDiagnosticLogger logger;
+        private readonly IResourceAreaLv2RecoveryCoordinator areaLv2Recovery;
 
         public ResourceFarmFallbackService(IWorldMapNavigationService navigation,
             IResourceLevelFallbackService levelFallback,
             IResourceAwarePopupVerificationService popup,
             IOpenTeamSelectionService openTeam, ISelectFarmTeamService selectTeam,
             IDispatchSelectedTeamService dispatch, IResourceTemplateProfileProvider profiles,
-            ResourceFarmFallbackOptions options, IDiagnosticLogger logger)
+            ResourceFarmFallbackOptions options, IDiagnosticLogger logger,
+            IResourceAreaLv2RecoveryCoordinator areaLv2Recovery = null)
         {
             this.navigation = navigation ?? throw new ArgumentNullException(nameof(navigation));
             this.levelFallback = levelFallback ?? throw new ArgumentNullException(nameof(levelFallback));
@@ -43,6 +45,7 @@ namespace ADB_Tool_Automation_Post_FB.Infrastructure.Workflows
             this.profiles = profiles ?? throw new ArgumentNullException(nameof(profiles));
             this.options = options ?? throw new ArgumentNullException(nameof(options));
             this.logger = logger ?? throw new ArgumentNullException(nameof(logger));
+            this.areaLv2Recovery = areaLv2Recovery;
             options.Validate();
         }
 
@@ -60,6 +63,7 @@ namespace ADB_Tool_Automation_Post_FB.Infrastructure.Workflows
                 attempted, storageFull, exhausted);
             string runId = string.IsNullOrWhiteSpace(request?.RunId)
                 ? Guid.NewGuid().ToString() : request.RunId;
+            ResourceAreaLv2RecoveryRequest activeAreaLv2Request = null;
             try
             {
                 cancellationToken.ThrowIfCancellationRequested();
@@ -67,26 +71,27 @@ namespace ADB_Tool_Automation_Post_FB.Infrastructure.Workflows
                 if (validation != null) return Complete(result, ResourceFarmFallbackOutcome.Failed,
                     watch, "Resource fallback request is invalid.", validation);
 
-                var repositionsByResource = new Dictionary<ResourceType, int>();
-                int totalRepositions = 0;
-                ResourceType? retryResourceAfterReposition = null;
-                for (int searchAreaAttempt = 0; ; searchAreaAttempt++)
+                ResourceType[] resourceOrder = NormalizeResourceOrder(request.ResourcePriority);
+                if (resourceOrder.Length == 0)
+                    return Complete(result, ResourceFarmFallbackOutcome.Failed, watch,
+                        "Resource fallback request has no supported resource.", null);
+
+                result.RequestedResources = resourceOrder;
+                int areaEpoch = 0;
+                int repositionCount = 0;
+                int resourceIndex = 0;
+                var attemptedResourcesInCurrentArea = new HashSet<ResourceType>();
+                var failedResourcesInCurrentArea = new HashSet<ResourceType>();
+                LogAreaSweepStarted(runId, deviceName, areaEpoch, repositionCount, resourceOrder);
+
+                for (;;)
                 {
-                    var attemptedThisPass = new HashSet<ResourceType>();
-                    int exhaustedResources = 0;
-                    int searchTapNotAppliedResources = 0;
-                    bool searchAreaRecoveryRequested = false;
-                    ResourceType? preferredRetryResource = retryResourceAfterReposition;
-                    IEnumerable<ResourceType> passResources = preferredRetryResource.HasValue
-                        ? new[] { preferredRetryResource.Value }.Concat(request.ResourcePriority
-                            .Where(resource => resource != preferredRetryResource.Value))
-                        : request.ResourcePriority;
-                    retryResourceAfterReposition = null;
-                    foreach (ResourceType resource in passResources)
+                    for (; resourceIndex < resourceOrder.Length; resourceIndex++)
                     {
                     cancellationToken.ThrowIfCancellationRequested();
-                    if (attemptedThisPass.Contains(resource) || storageFull.Contains(resource)) continue;
-                    attemptedThisPass.Add(resource);
+                    ResourceType resource = resourceOrder[resourceIndex];
+                    if (attemptedResourcesInCurrentArea.Contains(resource) || storageFull.Contains(resource)) continue;
+                    attemptedResourcesInCurrentArea.Add(resource);
                     AddUnique(attempted, resource);
                     var attemptWatch = Stopwatch.StartNew();
                     var attempt = new ResourceFarmAttemptResult
@@ -135,46 +140,128 @@ namespace ADB_Tool_Automation_Post_FB.Infrastructure.Workflows
 
                     if (level.Outcome == ResourceLevelFallbackOutcome.Cancelled)
                         throw new OperationCanceledException(cancellationToken);
+                    if (level.Outcome == ResourceLevelFallbackOutcome.ResourceAreaLv2Redirect)
+                    {
+                        var exactFallback = levelFallback as IExactResourceLevelFallbackService;
+                        if (areaLv2Recovery == null || exactFallback == null)
+                            return Complete(result, ResourceFarmFallbackOutcome.ResourceAreaLv2Redirect,
+                                watch, level.Message, level.ErrorMessage);
+
+                        int exactLevel = level.LastAttemptedLevel
+                            ?? level.Attempts?.LastOrDefault()?.Level
+                            ?? request.ResourceLevelPriority.FirstOrDefault();
+                        TeamNumber? expectedTeam = request.TeamOperation?.ExpectedTeam
+                            ?? request.ExpectedTeam;
+                        ResourceLevelFallbackResult retryResult = level;
+                        ResourceAreaLv2RecoveryResult recovery = null;
+                        bool locatedBySpecialRetry = false;
+                        bool specialAttemptsExhausted = false;
+                        int maxSpecialAttempts = 0;
+                        int specialAttempt = 0;
+                        while (true)
+                        {
+                            specialAttempt++;
+                            var recoveryRequest = new ResourceAreaLv2RecoveryRequest
+                            {
+                                RunId = runId,
+                                DeviceName = deviceName,
+                                Resource = resource,
+                                Level = exactLevel,
+                                UnoccupiedOnly = request.UnoccupiedOnly,
+                                AreaEpoch = areaEpoch,
+                                ExpectedTeam = expectedTeam
+                            };
+                            activeAreaLv2Request = recoveryRequest;
+                            recovery = await areaLv2Recovery.RecoverAsync(
+                                recoveryRequest, cancellationToken);
+                            maxSpecialAttempts = recovery.MaxAttempts > 0
+                                ? recovery.MaxAttempts : specialAttempt;
+                            logger.Info($"[Resource Area Lv2 Retry Loop] RunId='{runId}', "
+                                + $"DeviceName='{deviceName}', ExpectedTeam='{expectedTeam}', "
+                                + $"Resource='{resource}', ExactRetryLevel={exactLevel}, "
+                                + $"UnoccupiedOnly={request.UnoccupiedOnly}, AreaEpoch={areaEpoch}, "
+                                + $"Attempt={specialAttempt}, MaxAttempts={maxSpecialAttempts}, "
+                                + $"NavigationOutcome='{(recovery.Success ? "Success" : "Failed")}', "
+                                + "GenericMapRecoveryInvoked=false, "
+                                + $"NextAction='{(recovery.Success ? "RetryExactLevel" : "Stop")}', "
+                                + $"FailureReason='{recovery.FailureReason ?? string.Empty}'");
+
+                            if (recovery.Exhausted)
+                                break;
+                            if (!recovery.Success)
+                                return Complete(result, ResourceFarmFallbackOutcome.RecoveryFailed,
+                                    watch, "Không thể chuyển tới khu tài nguyên Lv2.",
+                                    recovery.FailureReason);
+
+                            retryResult = await exactFallback.SearchSingleLevelAsync(
+                                deviceName, resource, exactLevel, request.UnoccupiedOnly,
+                                runId, cancellationToken);
+                            if (retryResult.Outcome == ResourceLevelFallbackOutcome.ResourceLocated)
+                            {
+                                locatedBySpecialRetry = true;
+                                areaLv2Recovery.Clear(recoveryRequest);
+                                level = retryResult;
+                                break;
+                            }
+                            if (retryResult.Outcome != ResourceLevelFallbackOutcome.ResourceAreaLv2Redirect)
+                            {
+                                areaLv2Recovery.Clear(recoveryRequest);
+                                level = retryResult;
+                                break;
+                            }
+                            if (specialAttempt >= maxSpecialAttempts)
+                            {
+                                specialAttemptsExhausted = true;
+                                break;
+                            }
+                        }
+
+                        if (!locatedBySpecialRetry)
+                        {
+                            if (specialAttemptsExhausted || (recovery != null && recovery.Exhausted))
+                            {
+                                areaLv2Recovery.Clear(new ResourceAreaLv2RecoveryRequest
+                                {
+                                    RunId = runId, DeviceName = deviceName, Resource = resource,
+                                    Level = exactLevel, AreaEpoch = areaEpoch
+                                });
+                                failedResourcesInCurrentArea.Add(resource);
+                                attempt.Message = "ResourceAreaLv2PointAttemptsExhausted";
+                                attempt.ErrorMessage = level.ErrorMessage;
+                                LogAreaSweepProgress(runId, deviceName, areaEpoch, repositionCount,
+                                    resourceIndex, resourceOrder, attemptedResourcesInCurrentArea,
+                                    failedResourcesInCurrentArea,
+                                    "ResourceAreaLv2PointAttemptsExhausted", true,
+                                    "ContinueResourceSweep");
+                                level = new ResourceLevelFallbackResult
+                                {
+                                    Outcome = ResourceLevelFallbackOutcome.ResourceLevelsExhausted,
+                                    ResourceType = resource,
+                                    LastAttemptedLevel = exactLevel,
+                                    FailureReason = ResourceSearchFailureReason.ResourceAreaLv2PointAttemptsExhausted,
+                                    Message = attempt.Message,
+                                    RequestedLevels = new[] { exactLevel },
+                                    Attempts = level.Attempts,
+                                    InitialState = level.InitialState,
+                                    FinalState = level.FinalState
+                                };
+                                retryResult = level;
+                            }
+                            if (retryResult.Outcome == ResourceLevelFallbackOutcome.ResourceAreaLv2Redirect)
+                                return Complete(result, ResourceFarmFallbackOutcome.ResourceAreaLv2Redirect,
+                                    watch, retryResult.Message, retryResult.ErrorMessage);
+                        }
+                    }
                     if (level.Outcome == ResourceLevelFallbackOutcome.ResourceLevelsExhausted)
                     {
                         attempt.SearchLevelsExhausted = true;
                         AddUnique(exhausted, resource);
                         attempt.Message = level.Message; attempt.Duration = attemptWatch.Elapsed;
-                        ResourceSearchFailureReason? searchAreaReason =
-                            GetSearchAreaRecoveryReason(level);
-                        if (searchAreaReason.HasValue)
-                        {
-                            searchAreaRecoveryRequested = true;
-                            retryResourceAfterReposition = resource;
-                            Log(runId, deviceName, resource, level.LocatedLevel,
-                                "SearchAreaRecovery", searchAreaReason.Value.ToString());
-                            break;
-                        }
-                        if (HasSearchTapNotApplied(level))
-                        {
-                            searchTapNotAppliedResources++;
-                            if (searchTapNotAppliedResources
-                                >= options.SearchTapNotAppliedResourcesBeforeReposition)
-                            {
-                                searchAreaRecoveryRequested = true;
-                                retryResourceAfterReposition = resource;
-                                Log(runId, deviceName, resource, level.LocatedLevel,
-                                    "SearchAreaRecovery",
-                                    $"SearchTapNotAppliedResources={searchTapNotAppliedResources}");
-                                break;
-                            }
-                        }
-                        exhaustedResources++;
-                        if (exhaustedResources
-                            >= options.ExhaustedResourcesBeforeReposition)
-                        {
-                            searchAreaRecoveryRequested = true;
-                            retryResourceAfterReposition = resource;
-                            Log(runId, deviceName, resource, level.LocatedLevel,
-                                "SearchAreaRecovery",
-                                $"ExhaustedResources={exhaustedResources}");
-                            break;
-                        }
+                        failedResourcesInCurrentArea.Add(resource);
+                        LogAreaSweepProgress(runId, deviceName, areaEpoch, repositionCount,
+                            resourceIndex, resourceOrder, attemptedResourcesInCurrentArea,
+                            failedResourcesInCurrentArea, level.Outcome.ToString(), true,
+                            "TryNextResource");
                         if (options.SwitchWhenLevelsExhausted) continue;
                         return Complete(result, ResourceFarmFallbackOutcome.ResourcePlanExhausted,
                             watch, "Resource level plan was exhausted.", null);
@@ -287,22 +374,11 @@ namespace ADB_Tool_Automation_Post_FB.Infrastructure.Workflows
                                 dispatched.Message, dispatched.ErrorMessage);
                         if (resourceExpiry)
                         {
-                            // A resource that cannot carry the selected team is not a
-                            // viable target in this map area.  Count it together with
-                            // exhausted searches so two consecutive unusable resources
-                            // trigger the bounded X/Y reposition instead of walking the
-                            // remaining resource list on the same map.
-                            exhaustedResources++;
-                            if (exhaustedResources
-                                >= options.ExhaustedResourcesBeforeReposition)
-                            {
-                                searchAreaRecoveryRequested = true;
-                                retryResourceAfterReposition = resource;
-                                Log(runId, deviceName, resource, level.LocatedLevel,
-                                    "SearchAreaRecovery",
-                                    $"UnavailableResources={exhaustedResources}; Reason=ResourceExpiry");
-                                break;
-                            }
+                            failedResourcesInCurrentArea.Add(resource);
+                            LogAreaSweepProgress(runId, deviceName, areaEpoch, repositionCount,
+                                resourceIndex, resourceOrder, attemptedResourcesInCurrentArea,
+                                failedResourcesInCurrentArea, dispatched.Outcome.ToString(), true,
+                                "TryNextResource");
                             Log(runId, deviceName, resource, level.LocatedLevel,
                                 "ResourceExpiry", dispatched.Outcome.ToString());
                             continue;
@@ -330,25 +406,31 @@ namespace ADB_Tool_Automation_Post_FB.Infrastructure.Workflows
                         $"{resource} march start was verified.", null);
                     }
 
-                    bool allStorageFull = storageFull.Count == request.ResourcePriority.Count;
+                    bool allStorageFull = resourceOrder.All(storageFull.Contains);
                     if (allStorageFull)
                         return Complete(result, ResourceFarmFallbackOutcome.AllCandidateStoragesFull, watch,
                             "Storage is full for every candidate resource.", null);
 
-                    if (searchAreaRecoveryRequested
-                        && (totalRepositions >= options.MaxAreaRepositionsPerFarmRun
-                            || (retryResourceAfterReposition.HasValue
-                                && repositionsByResource.TryGetValue(
-                                    retryResourceAfterReposition.Value, out int resourceRepositions)
-                                && resourceRepositions >= options.MaxAreaRepositionsPerResource)))
-                        return Complete(result, ResourceFarmFallbackOutcome.SearchAreaExhausted, watch,
-                            "Đã thử số lần chuyển khu vực tối đa nhưng vẫn chưa tìm thấy tài nguyên.", null);
-
-                    if (searchAreaAttempt >= options.MaxSearchAreaRecoveryAttempts)
+                    bool completeSweepFailed = failedResourcesInCurrentArea.Count == resourceOrder.Length;
+                    if (!completeSweepFailed)
                         return Complete(result, ResourceFarmFallbackOutcome.ResourcePlanExhausted, watch,
-                            searchAreaRecoveryRequested
-                                ? "Đã thử số lần chuyển khu vực tối đa nhưng vẫn chưa tìm thấy tài nguyên."
-                                : "The four-resource plan was exhausted without a march.", null);
+                            "The resource plan ended before every resource received a terminal search result.", null);
+
+                    if (repositionCount >= 1)
+                    {
+                        LogAreaSweepCompleted(runId, deviceName, areaEpoch, repositionCount,
+                            resourceOrder, attemptedResourcesInCurrentArea,
+                            failedResourcesInCurrentArea);
+                        return Complete(result, ResourceFarmFallbackOutcome.SearchAreaExhausted, watch,
+                            "NoResourceAfterReposition: the complete resource sweep failed after one verified map reposition.",
+                            $"AreaEpoch={areaEpoch}; ResourceOrder={string.Join(",", resourceOrder)}; "
+                            + $"Attempted={string.Join(",", attemptedResourcesInCurrentArea)}; "
+                            + $"Failed={string.Join(",", failedResourcesInCurrentArea)}; RepositionCount={repositionCount}");
+                    }
+
+                    LogSearchAreaRecoveryDecision(runId, deviceName, areaEpoch, repositionCount,
+                        resourceOrder, attemptedResourcesInCurrentArea,
+                        failedResourcesInCurrentArea, completeSweepFailed);
 
                     NavigationResult ensuredWorldMap = await navigation.EnsureWorldMapAsync(
                         deviceName, cancellationToken);
@@ -380,9 +462,7 @@ namespace ADB_Tool_Automation_Post_FB.Infrastructure.Workflows
                                     return;
                                 result.TerritoryColorSummary =
                                     transition.Message;
-                                ReportColor(progress,
-                                    searchAreaAttempt + 1,
-                                    transition.Message);
+                                ReportColor(progress, areaEpoch + 1, transition.Message);
                             });
                         repositionTask = progressNavigation
                             .RepositionToAllianceTerritoryAsync(
@@ -404,31 +484,35 @@ namespace ADB_Tool_Automation_Post_FB.Infrastructure.Workflows
                     NavigationResult reposition = await repositionTask;
                     result.TerritoryColorSummary =
                         GetTerritoryColorSummary(reposition);
-                    ReportColor(progress, searchAreaAttempt + 1,
+                    ReportColor(progress, areaEpoch + 1,
                         result.TerritoryColorSummary);
                     result.FinalState = reposition.FinalState;
                     result.RecoveryTransitions++;
-                    totalRepositions++;
-                    if (retryResourceAfterReposition.HasValue)
-                    {
-                        int count;
-                        repositionsByResource.TryGetValue(retryResourceAfterReposition.Value, out count);
-                        repositionsByResource[retryResourceAfterReposition.Value] = count + 1;
-                    }
                     LogRecovery(runId, deviceName, reposition.Success ? "Repositioned" : "Failed");
                     if (!reposition.Success || reposition.FinalState != GameState.WorldMap)
                         return Complete(result, ResourceFarmFallbackOutcome.SearchAreaRecoveryFailed, watch,
                             "Vị trí hiện tại không phù hợp để khai thác tài nguyên; đang chuyển sang khu vực bản đồ khác.",
                             reposition.ErrorMessage ?? reposition.Message);
+
+                    int previousAreaEpoch = areaEpoch;
+                    repositionCount = 1;
+                    areaEpoch++;
+                    resourceIndex = 0;
+                    attemptedResourcesInCurrentArea.Clear();
+                    failedResourcesInCurrentArea.Clear();
+                    LogAreaSweepReset(runId, deviceName, previousAreaEpoch, areaEpoch,
+                        repositionCount, resourceOrder);
                 }
             }
             catch (OperationCanceledException)
             {
+                areaLv2Recovery?.Clear(activeAreaLv2Request);
                 return Complete(result, ResourceFarmFallbackOutcome.Cancelled, watch,
                     "Resource fallback was cancelled.", null);
             }
             catch (Exception exception)
             {
+                areaLv2Recovery?.Clear(activeAreaLv2Request);
                 logger.Error($"[Resource Farm Fallback] RunId='{runId}', DeviceName='{deviceName}', Error='{exception.Message}'", exception);
                 return Complete(result, ResourceFarmFallbackOutcome.Failed, watch,
                     "Resource fallback failed.", exception.Message);
@@ -483,6 +567,77 @@ namespace ADB_Tool_Automation_Post_FB.Infrastructure.Workflows
         private static void AddUnique(IList<ResourceType> items, ResourceType resource)
         {
             if (!items.Contains(resource)) items.Add(resource);
+        }
+
+        private static ResourceType[] NormalizeResourceOrder(
+            IEnumerable<ResourceType> resources)
+        {
+            return (resources ?? Enumerable.Empty<ResourceType>())
+                .Where(resource => Enum.IsDefined(typeof(ResourceType), resource))
+                .Distinct()
+                .ToArray();
+        }
+
+        private void LogAreaSweepStarted(string runId, string deviceName, int areaEpoch,
+            int repositionCount, IReadOnlyList<ResourceType> resourceOrder)
+        {
+            logger.Info($"[Resource Area Sweep Started] RunId='{runId}', DeviceName='{deviceName}', "
+                + $"AreaEpoch={areaEpoch}, RepositionCount={repositionCount}, "
+                + $"ResourceOrder='{string.Join(",", resourceOrder)}', ResourceCount={resourceOrder.Count}, "
+                + $"StartResource='{resourceOrder[0]}', Reason='OperationStart'");
+        }
+
+        private void LogAreaSweepProgress(string runId, string deviceName, int areaEpoch,
+            int repositionCount, int resourceIndex, IReadOnlyList<ResourceType> resourceOrder,
+            ICollection<ResourceType> attemptedResources,
+            ICollection<ResourceType> failedResources, string resourceOutcome,
+            bool countsTowardAreaFailure, string nextAction)
+        {
+            logger.Info($"[Resource Area Sweep Progress] RunId='{runId}', DeviceName='{deviceName}', "
+                + $"AreaEpoch={areaEpoch}, RepositionCount={repositionCount}, ResourceIndex={resourceIndex}, "
+                + $"Resource='{resourceOrder[resourceIndex]}', ResourceOrder='{string.Join(",", resourceOrder)}', "
+                + $"AttemptedResources='{string.Join(",", attemptedResources)}', "
+                + $"FailedResources='{string.Join(",", failedResources)}', "
+                + $"DistinctFailedCount={failedResources.Count}, RequiredFailureCount={resourceOrder.Count}, "
+                + $"ResourceOutcome='{resourceOutcome}', CountsTowardAreaFailure={countsTowardAreaFailure}, "
+                + $"SweepComplete={failedResources.Count == resourceOrder.Count}, NextAction='{nextAction}'");
+        }
+
+        private void LogSearchAreaRecoveryDecision(string runId, string deviceName,
+            int areaEpoch, int repositionCount, IReadOnlyList<ResourceType> resourceOrder,
+            ICollection<ResourceType> attemptedResources, ICollection<ResourceType> failedResources,
+            bool completeSweepFailed)
+        {
+            logger.Info($"[Search Area Recovery Decision] RunId='{runId}', DeviceName='{deviceName}', "
+                + $"AreaEpoch={areaEpoch}, RepositionCount={repositionCount}, "
+                + $"ResourceOrder='{string.Join(",", resourceOrder)}', "
+                + $"AttemptedResources='{string.Join(",", attemptedResources)}', "
+                + $"FailedResources='{string.Join(",", failedResources)}', "
+                + $"DistinctFailedCount={failedResources.Count}, RequiredFailureCount={resourceOrder.Count}, "
+                + $"CompleteSweepFailed={completeSweepFailed}, RecoveryAllowed={repositionCount == 0}, "
+                + "Outcome='Reposition', FailureReason='CompleteResourceSweepFailed'");
+        }
+
+        private void LogAreaSweepReset(string runId, string deviceName, int previousAreaEpoch,
+            int newAreaEpoch, int repositionCount, IReadOnlyList<ResourceType> resourceOrder)
+        {
+            logger.Info($"[Resource Area Sweep Reset] RunId='{runId}', DeviceName='{deviceName}', "
+                + $"PreviousAreaEpoch={previousAreaEpoch}, NewAreaEpoch={newAreaEpoch}, "
+                + $"RepositionCount={repositionCount}, ClearedAttemptedResources=true, "
+                + $"ClearedFailedResources=true, RestartResourceIndex=0, "
+                + $"RestartResource='{resourceOrder[0]}', ResourceOrder='{string.Join(",", resourceOrder)}'");
+        }
+
+        private void LogAreaSweepCompleted(string runId, string deviceName, int areaEpoch,
+            int repositionCount, IReadOnlyList<ResourceType> resourceOrder,
+            ICollection<ResourceType> attemptedResources, ICollection<ResourceType> failedResources)
+        {
+            logger.Info($"[Resource Area Sweep Completed] RunId='{runId}', DeviceName='{deviceName}', "
+                + $"AreaEpoch={areaEpoch}, RepositionCount={repositionCount}, "
+                + $"ResourceOrder='{string.Join(",", resourceOrder)}', "
+                + $"AttemptedResources='{string.Join(",", attemptedResources)}', "
+                + $"FailedResources='{string.Join(",", failedResources)}', "
+                + "Outcome='NoResourceAfterReposition', RecoveryAttemptedAgain=false");
         }
 
         private static ResourceSearchFailureReason? GetSearchAreaRecoveryReason(

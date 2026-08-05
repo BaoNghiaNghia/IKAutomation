@@ -8,6 +8,8 @@ namespace ADB_Tool_Automation_Post_FB.Core.Navigation
     {
         Task<NavigationResult> EnsureWorldMapAsync(string deviceName, CancellationToken cancellationToken);
         Task<NavigationResult> OpenResourceSearchPanelAsync(string deviceName, CancellationToken cancellationToken);
+        Task<NavigationResult> TapWorldMapPointAsync(string deviceName, int x, int y,
+            CancellationToken cancellationToken);
         Task<NavigationResult> RepositionToAllianceTerritoryAsync(string deviceName, CancellationToken cancellationToken);
     }
 

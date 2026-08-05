@@ -19,8 +19,6 @@ namespace ADB_Tool_Automation_Post_FB.Core.Workflows
         public int RecoveryPollIntervalMs { get; set; } = 250;
         public int RecoveryTimeoutSeconds { get; set; } = 8;
         public int MaxSearchAreaRecoveryAttempts { get; set; } = 3;
-        public int ExhaustedResourcesBeforeReposition { get; set; } = 2;
-        public int SearchTapNotAppliedResourcesBeforeReposition { get; set; } = 2;
         public int MaxAreaRepositionsPerResource { get; set; } = 2;
         public int MaxAreaRepositionsPerFarmRun { get; set; } = 4;
         public int RepositionTimeoutMs { get; set; } = 120000;
@@ -46,12 +44,6 @@ namespace ADB_Tool_Automation_Post_FB.Core.Workflows
             if (RecoveryPollIntervalMs < 50 || RecoveryPollIntervalMs > 5000) throw new ArgumentOutOfRangeException(nameof(RecoveryPollIntervalMs));
             if (RecoveryTimeoutSeconds < 1 || RecoveryTimeoutSeconds > 60) throw new ArgumentOutOfRangeException(nameof(RecoveryTimeoutSeconds));
             if (MaxSearchAreaRecoveryAttempts < 0 || MaxSearchAreaRecoveryAttempts > 3) throw new ArgumentOutOfRangeException(nameof(MaxSearchAreaRecoveryAttempts));
-            if (ExhaustedResourcesBeforeReposition < 1
-                || ExhaustedResourcesBeforeReposition > 4)
-                throw new ArgumentOutOfRangeException(nameof(ExhaustedResourcesBeforeReposition));
-            if (SearchTapNotAppliedResourcesBeforeReposition < 1
-                || SearchTapNotAppliedResourcesBeforeReposition > 4)
-                throw new ArgumentOutOfRangeException(nameof(SearchTapNotAppliedResourcesBeforeReposition));
             if (MaxAreaRepositionsPerResource < 0 || MaxAreaRepositionsPerResource > 2) throw new ArgumentOutOfRangeException(nameof(MaxAreaRepositionsPerResource));
             if (MaxAreaRepositionsPerFarmRun < 0 || MaxAreaRepositionsPerFarmRun > 4) throw new ArgumentOutOfRangeException(nameof(MaxAreaRepositionsPerFarmRun));
             if (RepositionTimeoutMs < 1000 || RepositionTimeoutMs > 120000) throw new ArgumentOutOfRangeException(nameof(RepositionTimeoutMs));

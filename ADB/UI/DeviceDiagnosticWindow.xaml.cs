@@ -1325,7 +1325,7 @@ namespace ADB_Tool_Automation_Post_FB.UI
                 ["WaitingForReadyTeam"] = "Đang chờ đội",
                 ["ReadyTeamFound"] = "Đã tìm thấy đội",
                 ["PreparingFarm"] = "Đang chuẩn bị",
-                ["RunningFarmStep"] = "Đang thực hiện",
+                ["RunningFarmStep"] = "Đang chạy",
                 ["Stopping"] = "Đang dừng",
                 ["Completed"] = "Hoàn tất",
                 ["Failed"] = "Thất bại",
@@ -1629,6 +1629,7 @@ namespace ADB_Tool_Automation_Post_FB.UI
                     StringComparison.OrdinalIgnoreCase);
             if (isAvailabilityUpdate)
             {
+                bool scanCompleted = progress.Stage == OneShotFarmProgressStage.ReadyTeamFound;
                 if (rosterUncertain)
                     Teams.Clear();
                 else if (detected.Count > 0)
@@ -1641,6 +1642,7 @@ namespace ADB_Tool_Automation_Post_FB.UI
                     string status = isEligible ? "Sẵn sàng"
                         : isReady && isAllowed ? "Sẵn sàng"
                         : isReady ? "Sẵn sàng · không chọn"
+                        : !scanCompleted ? "Chờ quét"
                         : isAllowed ? "Bận"
                         : "Không dùng";
                     item.SetStatus(status, isEligible || isReady);
@@ -1667,6 +1669,8 @@ namespace ADB_Tool_Automation_Post_FB.UI
         {
             if (snapshot == null) return;
 
+            SynchronizeSnapshotTeams(snapshot);
+
             Stage = snapshot.State == ContinuousFarmDeviceState.Waiting
                 ? OneShotFarmProgressStage.WaitingForReadyTeam.ToString()
                 : snapshot.State.ToString();
@@ -1689,6 +1693,40 @@ namespace ADB_Tool_Automation_Post_FB.UI
             nextCheckAt = snapshot.NextAttemptAt;
             waitDeadline = snapshot.NextAttemptAt;
             UpdateCountdown(DateTimeOffset.UtcNow);
+        }
+
+        private void SynchronizeSnapshotTeams(ContinuousFarmDeviceSnapshot snapshot)
+        {
+            int knownCount = Math.Min(4, Math.Max(0, snapshot.ConfirmedRosterCount));
+            TeamNumber? activeTeam = ParseTeam(snapshot.CurrentSelectedTeam)
+                ?? ParseTeam(snapshot.CurrentExpectedTeam)
+                ?? ParseTeam(snapshot.CurrentTeam);
+            if (activeTeam.HasValue)
+                knownCount = Math.Max(knownCount, (int)activeTeam.Value);
+            if (knownCount == 0) return;
+
+            SynchronizeTeams(Enumerable.Range(1, knownCount)
+                .Select(value => (TeamNumber)value).ToArray());
+            foreach (TeamFarmProgressItem item in Teams)
+            {
+                if (activeTeam.HasValue && item.Team == activeTeam.Value)
+                    item.SetStatus("Đang xử lý", true);
+                else if (ParseTeam(snapshot.CurrentExpectedTeam) == item.Team)
+                    item.SetStatus("Sẵn sàng", true);
+                else if (string.IsNullOrWhiteSpace(item.Status)
+                    || item.Status == "Đang xử lý")
+                    item.SetStatus("Chưa rõ", false);
+            }
+            TeamsSummary = string.Join(" · ", Teams.Select(item =>
+                $"{item.TeamName}: {ShortTeamStatus(item.Status)}"));
+        }
+
+        private static TeamNumber? ParseTeam(string value)
+        {
+            TeamNumber parsed;
+            return Enum.TryParse(value, true, out parsed)
+                && Enum.IsDefined(typeof(TeamNumber), parsed)
+                ? parsed : (TeamNumber?)null;
         }
 
         private void SynchronizeTeams(IReadOnlyList<TeamNumber> visibleTeams)

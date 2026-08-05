@@ -46,6 +46,19 @@ namespace ADB_Tool_Automation_Post_FB.Infrastructure.Navigation
         private const double MinimumClassifiablePixelRatio = 0.35;
         private const double MinimumWinningGroupRatio = 0.58;
         private const double MinimumWinningMarginRatio = 0.18;
+        private const int SameTerritoryPatchSizePx = 7;
+        private const int SameTerritoryPatchRadiusPx = 3;
+        private const int SameTerritorySampleOffsetPx = 14;
+        private const int SameTerritoryMinimumVotes = 4;
+        private const int SameTerritoryMaximumCandidates = 3;
+        private const int SameTerritoryMinimumHomeDistancePx = 60;
+        private static readonly Point[] SameTerritoryScreenOffsets =
+        {
+            new Point(90, 0), new Point(-90, 0), new Point(0, 90), new Point(0, -90),
+            new Point(65, 65), new Point(-65, 65), new Point(65, -65), new Point(-65, -65),
+            new Point(150, 0), new Point(-150, 0), new Point(0, 150), new Point(0, -150),
+            new Point(105, 105), new Point(-105, 105), new Point(105, -105), new Point(-105, -105)
+        };
         // The coordinate fields are stable members of the same top-left toolbar as
         // ContinentMapPinButton. Deriving their centers from that freshly matched
         // button keeps the fallback resolution-independent within the supported
@@ -86,6 +99,84 @@ namespace ADB_Tool_Automation_Post_FB.Infrastructure.Navigation
         {
             return WithDeviceLockAsync(deviceName, "OpenResourceSearchPanel",
                 token => OpenResourceSearchPanelCoreAsync(deviceName, token), cancellationToken);
+        }
+
+        public Task<NavigationResult> TapWorldMapPointAsync(string deviceName, int x, int y,
+            CancellationToken cancellationToken)
+        {
+            return WithDeviceLockAsync(deviceName, "TapWorldMapPoint",
+                token => TapWorldMapPointCoreAsync(deviceName, x, y, token), cancellationToken);
+        }
+
+        private async Task<NavigationResult> TapWorldMapPointCoreAsync(string deviceName,
+            int x, int y, CancellationToken cancellationToken)
+        {
+            var watch = Stopwatch.StartNew();
+            var transitions = new List<NavigationTransition>();
+            NavigationResult ensured = await EnsureWorldMapCoreAsync(deviceName, null, cancellationToken);
+            if (!ensured.Success || ensured.FinalState != GameState.WorldMap)
+            {
+                ensured.FailureReason = "WorldMapUnavailable";
+                ensured.VerificationSucceeded = false;
+                return ensured;
+            }
+
+            GameDetectionResult initial = DetectionFrom(ensured);
+            int width;
+            int height;
+            try
+            {
+                FrameResolutionResult resolution = await CaptureFrameResolutionAsync(
+                    deviceName, cancellationToken);
+                width = resolution.Width;
+                height = resolution.Height;
+            }
+            catch (OperationCanceledException) { throw; }
+            catch (Exception exception)
+            {
+                return Result(false, initial, initial, 0, watch,
+                    "Không thể xác định độ phân giải bản đồ trước khi chạm điểm.",
+                    exception.Message, transitions, "FrameResolutionUnavailable");
+            }
+
+            if (x < 0 || y < 0 || x >= width || y >= height)
+                return Result(false, initial, initial, 0, watch,
+                    "Điểm bản đồ nằm ngoài khung hình; không gửi Tap.", null,
+                    transitions, "PointOutsideFrame", x, y, 0, false);
+
+            await ldPlayerClient.TapAsync(deviceName, x, y, cancellationToken);
+            AddTransition(transitions, "Tap", $"Tapped WorldMap point ({x},{y}).");
+            await Task.Delay(options.StatePollIntervalMs, cancellationToken);
+            GameDetectionResult current = await DetectAsync(deviceName, transitions, cancellationToken);
+            if (current.IsSuccessful && current.State == GameState.WorldMap)
+                return Result(true, initial, current, 1, watch,
+                    "WorldMap remained verified after tapping the point.", null,
+                    transitions, null, x, y, 1, true);
+
+            if (current.IsSuccessful && current.State == GameState.Unknown)
+            {
+                GameDetectionResult recovered = await TryCancelWorldMapBlockingDialogAsync(
+                    deviceName, current, transitions, cancellationToken);
+                if (recovered != null && recovered.IsSuccessful
+                    && recovered.State == GameState.WorldMap)
+                    return Result(true, initial, recovered, 2, watch,
+                        "WorldMap was re-verified after closing its blocking dialog.", null,
+                        transitions, null, x, y, 1, true);
+                current = recovered ?? current;
+            }
+
+            string reason = current != null && current.State == GameState.City
+                ? "CityAfterTap"
+                : current != null && current.State == GameState.ContinentMap
+                    ? "ContinentMapAfterTap"
+                    : current != null && current.State == GameState.TeamSelection
+                        ? "TeamSelectionAfterTap"
+                        : current != null && current.State == GameState.ResourceSearchPanel
+                            ? "ResourceSearchPanelAfterTap"
+                            : "WorldMapVerificationFailed";
+            return Result(false, initial, current, 1, watch,
+                "Điểm đã được chạm nhưng WorldMap không được xác minh an toàn.",
+                current?.ErrorMessage, transitions, reason, x, y, 1, false);
         }
 
         public Task<NavigationResult> RepositionToAllianceTerritoryAsync(string deviceName, CancellationToken cancellationToken)
@@ -349,51 +440,26 @@ namespace ADB_Tool_Automation_Post_FB.Infrastructure.Navigation
                 && options.AllowLegacyTerritoryFallback)
                 logger.Info("[World Map Navigation] Warning: strict same-territory mode disabled legacy territory fallback.");
 
-            if (options.PreferSameTerritoryCoordinateSearch)
-            {
-                AddTransition(transitions, "Strategy", "SameTerritoryCoordinate");
-                AddTransition(transitions, "HomeEvidence", "Đang xác định màu lãnh thổ tại vị trí nhà.");
-                HomeLocationEvidence home = await AcquireHomeLocationEvidenceAsync(
-                    deviceName, current, transitions, cancellationToken);
-                CoordinateSearchResult coordinate = await TrySameTerritoryCoordinateAsync(
-                    deviceName, initial, home.Latest ?? current, home.Pin, ensured.Attempts,
-                    watch, transitions, progress, cancellationToken);
-                AddTransition(transitions, "StrategyResult", coordinate.Status.ToString());
-                if (coordinate.Status == CoordinateSearchStatus.Succeeded)
-                    return coordinate.Navigation;
-                if (coordinate.Status != CoordinateSearchStatus.Unavailable)
-                    return coordinate.Navigation;
-                current = home.Latest ?? current;
-            }
-
             AddTransition(transitions, "Strategy", "ValidatedNearbyPin");
             PinObservation pinObservation = await ObserveNearbyPinPairAsync(
                 deviceName, current, transitions, cancellationToken);
             current = pinObservation.Latest;
             if (pinObservation.Pair == null)
             {
-                if (!options.PreferSameTerritoryCoordinateSearch)
-                {
-                    HomeLocationEvidence home = await AcquireHomeLocationEvidenceAsync(
-                        deviceName, current, transitions, cancellationToken);
-                    CoordinateSearchResult coordinate = await TrySameTerritoryCoordinateAsync(
-                        deviceName, initial, home.Latest ?? current, home.Pin,
-                        ensured.Attempts, watch, transitions, progress, cancellationToken);
-                    return coordinate.Navigation ?? Result(false, initial, current,
-                        ensured.Attempts + 1, watch,
-                        "Không thể xác định màu lãnh thổ đủ tin cậy.", null, transitions);
-                }
-                return Result(false, initial, current, ensured.Attempts + 1, watch,
-                    "Đã dừng để tránh di chuyển sang lãnh thổ khác: không có điểm đích gần đã được xác minh.", null, transitions);
+                AddTransition(transitions, "Strategy", "RelativeScreenCandidates");
+                return await TryScreenPointFallbackAsync(deviceName, initial, current,
+                    ensured.Attempts, watch, transitions, progress, cancellationToken);
             }
 
             TerritoryValidation nearbyValidation = await ValidateNearbyPinTerritoriesAsync(
                 deviceName, pinObservation.Pair.Home, transitions, cancellationToken);
             current = nearbyValidation.Latest ?? current;
             if (!nearbyValidation.Allowed)
-                return Result(false, initial, current, ensured.Attempts + 1, watch,
-                    "Đã dừng để tránh di chuyển sang lãnh thổ khác. " + nearbyValidation.Message,
-                    null, transitions);
+            {
+                AddTransition(transitions, "Strategy", "RelativeScreenCandidates");
+                return await TryScreenPointFallbackAsync(deviceName, initial, current,
+                    ensured.Attempts, watch, transitions, progress, cancellationToken);
+            }
 
             await TapEvidenceAsync(deviceName, nearbyValidation.Destination,
                 "ContinentMapSearchTargetPin", transitions, cancellationToken);
@@ -409,9 +475,11 @@ namespace ADB_Tool_Automation_Post_FB.Infrastructure.Navigation
             GameDetectionEvidence movePin = FindFreshEvidence(current,
                 TemplateId.ContinentMapPinButton);
             if (movePin == null)
-                return Result(false, initial, current, ensured.Attempts + 2, watch,
-                    "Không có nút di chuyển mới để xác nhận điểm cùng màu; không gửi lệnh di chuyển.",
-                    current?.ErrorMessage, transitions);
+            {
+                AddTransition(transitions, "Strategy", "RelativeScreenCandidates");
+                return await TryScreenPointFallbackAsync(deviceName, initial, current,
+                    ensured.Attempts + 2, watch, transitions, progress, cancellationToken);
+            }
             await TapEvidenceAsync(deviceName, movePin,
                 "ContinentMapPinButtonAfterNearbyTargetSelection", transitions,
                 cancellationToken);
@@ -463,6 +531,223 @@ namespace ADB_Tool_Automation_Post_FB.Infrastructure.Navigation
 
             return new HomeLocationEvidence(latest, null, "Unavailable");
         }
+
+        private async Task<NavigationResult> TryScreenPointFallbackAsync(
+            string deviceName,
+            GameDetectionResult initial,
+            GameDetectionResult current,
+            int priorAttempts,
+            Stopwatch watch,
+            IList<NavigationTransition> transitions,
+            IProgress<NavigationTransition> progress,
+            CancellationToken cancellationToken)
+        {
+            cancellationToken.ThrowIfCancellationRequested();
+            byte[] initialScreenshot = await ldPlayerClient.CaptureScreenshotPngAsync(
+                deviceName, cancellationToken);
+            GameDetectionResult initialMap = detector.Detect(initialScreenshot);
+            if (initialMap != null && initialMap.State == GameState.Unknown
+                && IsVerifiedContinentMapEvidence(initialMap))
+                initialMap.State = GameState.ContinentMap;
+            if (initialMap == null || initialMap.State != GameState.ContinentMap)
+                return ScreenPointFailure(initial, initialMap ?? current, priorAttempts,
+                    watch, transitions, "WorldMapTransitionFailed",
+                    "Không thể xác nhận màn hình bản đồ lục địa trước khi quét điểm tương đối.");
+
+            GameDetectionEvidence home = FindFreshEvidence(initialMap,
+                TemplateId.ContinentMapHomeLocationPin);
+            string homeSource = home == null ? string.Empty : home.TemplateId.ToString();
+            using (var stream = new MemoryStream(initialScreenshot, false))
+            using (var bitmap = new Bitmap(stream))
+            {
+                if (!HasValidBounds(home)
+                    && !TryLocateHomeLocationPin(initialScreenshot, out home))
+                {
+                    return ScreenPointFailure(initial, initialMap, priorAttempts, watch,
+                        transitions, "HomeMarkerNotFound",
+                        "Không tìm thấy marker vị trí nhà trên ảnh bản đồ mới.");
+                }
+                if (homeSource.Length == 0)
+                    homeSource = home.TemplateId.ToString();
+
+                TerritoryColorGroup homeColor;
+                if (!TryClassifyPinTerritory(bitmap, home, out homeColor)
+                    || homeColor == TerritoryColorGroup.Unknown)
+                {
+                    return ScreenPointFailure(initial, initialMap, priorAttempts, watch,
+                        transitions, "HomeTerritoryColorUnknown",
+                        "Không thể phân loại màu lãnh thổ tại vị trí nhà.");
+                }
+
+                int homeX = home.MatchResult.CenterX;
+                int homeY = home.MatchResult.CenterY;
+                ImageRegion safeRoi = CreateSameTerritorySafeMapRoi(bitmap.Width, bitmap.Height);
+                var qualified = new List<ScreenTerritoryCandidate>();
+                for (int offsetIndex = 0; offsetIndex < SameTerritoryScreenOffsets.Length; offsetIndex++)
+                {
+                    Point offset = SameTerritoryScreenOffsets[offsetIndex];
+                    int candidateX = homeX + offset.X;
+                    int candidateY = homeY + offset.Y;
+                    int distance = (int)Math.Round(Math.Sqrt(
+                        (offset.X * offset.X) + (offset.Y * offset.Y)));
+                    bool inside = ContainsPoint(safeRoi, candidateX, candidateY)
+                        && distance >= SameTerritoryMinimumHomeDistancePx;
+                    int votes = 0;
+                    string rejection = null;
+                    if (!inside)
+                        rejection = distance < SameTerritoryMinimumHomeDistancePx
+                            ? "TooCloseToHome" : "OutsideSafeMapRoi";
+                    else
+                    {
+                        Point[] samples =
+                        {
+                            new Point(candidateX, candidateY),
+                            new Point(candidateX - SameTerritorySampleOffsetPx, candidateY),
+                            new Point(candidateX + SameTerritorySampleOffsetPx, candidateY),
+                            new Point(candidateX, candidateY - SameTerritorySampleOffsetPx),
+                            new Point(candidateX, candidateY + SameTerritorySampleOffsetPx)
+                        };
+                        foreach (Point sample in samples)
+                        {
+                            TerritoryColorGroup sampleColor;
+                            if (TryClassifyTerritoryRegions(bitmap,
+                                new[] { PatchAround(sample) }, out sampleColor)
+                                && sampleColor == homeColor)
+                                votes++;
+                        }
+                        if (votes < SameTerritoryMinimumVotes)
+                            rejection = "InsufficientSameColorVotes";
+                        else
+                            qualified.Add(new ScreenTerritoryCandidate(candidateX,
+                                candidateY, offsetIndex, offsetIndex < 8 ? 0 : 1,
+                                votes, distance));
+                    }
+                    logger.Info($"[Same Territory Candidate Score] DeviceName='{deviceName}', CandidateIndex={offsetIndex + 1}, OffsetIndex={offsetIndex}, ScreenX={candidateX}, ScreenY={candidateY}, Ring={(offsetIndex < 8 ? "Near" : "Far")}, InsideSafeRoi={inside}, SameColorVotes={votes}, RequiredVotes={SameTerritoryMinimumVotes}, HomeColor={homeColor}, Qualified={votes >= SameTerritoryMinimumVotes && inside}, RejectionReason='{rejection ?? string.Empty}'");
+                }
+
+                List<ScreenTerritoryCandidate> attempts = qualified
+                    .OrderByDescending(item => item.SameColorVotes)
+                    .ThenBy(item => item.RingPriority)
+                    .ThenBy(item => item.OffsetIndex)
+                    .Take(SameTerritoryMaximumCandidates).ToList();
+                logger.Info($"[Same Territory Screen Scan] DeviceName='{deviceName}', Strategy='RelativeScreenCandidates', HomePoint=({homeX},{homeY}), HomeEvidenceSource='{homeSource}', HomeColor='{homeColor}', ScreenshotWidth={bitmap.Width}, ScreenshotHeight={bitmap.Height}, SafeMapRoi=({safeRoi.X},{safeRoi.Y},{safeRoi.Width},{safeRoi.Height}), GeneratedCandidateCount={SameTerritoryScreenOffsets.Length}, InsideSafeRoiCount={CountInsideSameTerritoryRoi(homeX, homeY, safeRoi)}, QualifiedCandidateCount={qualified.Count}, MaxCandidateAttempts={SameTerritoryMaximumCandidates}, Outcome='{(attempts.Count == 0 ? "NoCandidatePassedColorVotes" : "CandidatesReady")}', FailureReason='{(attempts.Count == 0 ? "NoCandidatePassedColorVotes" : string.Empty)}'");
+                if (attempts.Count == 0)
+                    return ScreenPointFailure(initial, initialMap, priorAttempts, watch,
+                        transitions, "NoCandidatePassedColorVotes",
+                        "Không có điểm màn hình nào đạt đủ 4/5 mẫu cùng màu lãnh thổ nhà.");
+
+                for (int attempt = 0; attempt < attempts.Count; attempt++)
+                {
+                    cancellationToken.ThrowIfCancellationRequested();
+                    ScreenTerritoryCandidate candidate = attempts[attempt];
+                    await ldPlayerClient.TapAsync(deviceName, candidate.X, candidate.Y,
+                        cancellationToken);
+                    AddTransition(transitions, "SameTerritoryCandidateTap",
+                        $"Candidate {attempt + 1}/{attempts.Count}: screen point ({candidate.X},{candidate.Y}) tapped.");
+                    await Task.Delay(options.StatePollIntervalMs, cancellationToken);
+                    byte[] verificationScreenshot = await ldPlayerClient.CaptureScreenshotPngAsync(
+                        deviceName, cancellationToken);
+                    GameDetectionResult verification = detector.Detect(verificationScreenshot);
+                    if (verification != null && verification.State == GameState.Unknown
+                        && IsVerifiedContinentMapEvidence(verification))
+                        verification.State = GameState.ContinentMap;
+                    GameDetectionEvidence target = FindFreshEvidence(verification,
+                        TemplateId.ContinentMapSearchTargetPin);
+                    string targetSource = target == null ? string.Empty : "ContinentMapSearchTargetPin";
+                    using (var verifyStream = new MemoryStream(verificationScreenshot, false))
+                    using (var verifyBitmap = new Bitmap(verifyStream))
+                    {
+                        if (!HasValidBounds(target))
+                        {
+                            GameDetectionEvidence pixelTarget;
+                            if (TryLocateYellowDestinationPin(verificationScreenshot,
+                                out pixelTarget))
+                            {
+                                target = pixelTarget;
+                                targetSource = "YellowPinPixels";
+                            }
+                        }
+                        TerritoryColorGroup targetColor = TerritoryColorGroup.Unknown;
+                        bool targetClassified = HasValidBounds(target)
+                            && TryClassifyPinTerritory(verifyBitmap, target, out targetColor)
+                            && targetColor != TerritoryColorGroup.Unknown;
+                        if (!targetClassified) targetColor = TerritoryColorGroup.Unknown;
+                        bool colorMatched = targetClassified && targetColor == homeColor;
+                        GameDetectionEvidence moveButton = colorMatched
+                            ? FindFreshEvidence(verification, TemplateId.ContinentMapPinButton)
+                            : null;
+                        bool moveFound = HasValidBounds(moveButton);
+                        string failure = !HasValidBounds(target) ? "TargetPinNotFound"
+                            : !targetClassified ? "TargetTerritoryColorUnknown"
+                            : !colorMatched ? "TargetTerritoryColorMismatch"
+                            : !moveFound ? "MoveButtonNotFound" : string.Empty;
+                        logger.Info($"[Same Territory Candidate Verification] DeviceName='{deviceName}', Attempt={attempt + 1}, ScreenX={candidate.X}, ScreenY={candidate.Y}, SameColorVotes={candidate.SameColorVotes}, TargetPinFound={HasValidBounds(target)}, TargetPinSource='{targetSource}', TargetPinBounds='{FormatBounds(target)}', HomeColor='{homeColor}', TargetColor='{targetColor}', TargetColorClassified={targetClassified}, ColorMatched={colorMatched}, MoveButtonFound={moveFound}, WorldMapVerified=false, Outcome='{(failure.Length == 0 ? "MovePending" : "Rejected")}', FailureReason='{failure}'");
+                        if (!colorMatched || !moveFound)
+                            continue;
+
+                        await TapEvidenceAsync(deviceName, moveButton,
+                            "ContinentMapPinButtonAfterScreenPoint", transitions,
+                            cancellationToken);
+                    }
+
+                    GameDetectionResult final = await PollAsync(deviceName,
+                        GameState.WorldMap, transitions, cancellationToken);
+                    bool worldMapVerified = final != null && final.IsSuccessful
+                        && final.State == GameState.WorldMap;
+                    logger.Info($"[Same Territory Candidate Result] DeviceName='{deviceName}', Attempt={attempt + 1}, ScreenX={candidate.X}, ScreenY={candidate.Y}, SameColorVotes={candidate.SameColorVotes}, WorldMapVerified={worldMapVerified}, Outcome='{(worldMapVerified ? "Verified" : "Rejected")}', FailureReason='{(worldMapVerified ? string.Empty : "WorldMapTransitionFailed")}'");
+                    if (worldMapVerified)
+                        return Result(true, initial, final, priorAttempts + attempt + 2,
+                            watch, "Đã di chuyển tới điểm cùng màu bằng chiến lược điểm màn hình.", null, transitions);
+                    if (final == null || final.State != GameState.ContinentMap)
+                        break;
+                }
+            }
+            return ScreenPointFailure(initial, initialMap, priorAttempts, watch,
+                transitions, "NoVerifiedSameColorScreenCandidate",
+                "Không có ứng viên điểm màn hình nào được xác minh đầy đủ.");
+        }
+
+        private static NavigationResult ScreenPointFailure(
+            GameDetectionResult initial, GameDetectionResult current, int attempts,
+            Stopwatch watch, IList<NavigationTransition> transitions,
+            string reason, string message)
+        {
+            AddTransition(transitions, "SameTerritoryScreenResult",
+                $"Outcome=Failed; FailureReason={reason}; {message}");
+            return Result(false, initial, current, attempts, watch, message, reason,
+                transitions);
+        }
+
+        private static ImageRegion CreateSameTerritorySafeMapRoi(int width, int height) =>
+            new ImageRegion(width * DestinationPinSearchLeftPx / ExpectedScreenshotWidth,
+                height * DestinationPinSearchTopPx / ExpectedScreenshotHeight,
+                Math.Max(1, width - (width * (DestinationPinSearchLeftPx
+                    + DestinationPinSearchRightMarginPx) / ExpectedScreenshotWidth)),
+                Math.Max(1, height - (height * (DestinationPinSearchTopPx
+                    + DestinationPinSearchBottomMarginPx) / ExpectedScreenshotHeight)));
+
+        private static int CountInsideSameTerritoryRoi(int homeX, int homeY,
+            ImageRegion roi)
+        {
+            return SameTerritoryScreenOffsets.Count(offset =>
+                ContainsPoint(roi, homeX + offset.X, homeY + offset.Y)
+                && Math.Sqrt((offset.X * offset.X) + (offset.Y * offset.Y))
+                    >= SameTerritoryMinimumHomeDistancePx);
+        }
+
+        private static ImageRegion PatchAround(Point point) => new ImageRegion(
+            point.X - SameTerritoryPatchRadiusPx,
+            point.Y - SameTerritoryPatchRadiusPx,
+            SameTerritoryPatchSizePx, SameTerritoryPatchSizePx);
+
+        private static bool ContainsPoint(ImageRegion region, int x, int y) =>
+            x >= region.X && x < region.X + region.Width
+            && y >= region.Y && y < region.Y + region.Height;
+
+        private static string FormatBounds(GameDetectionEvidence evidence) =>
+            HasValidBounds(evidence)
+                ? $"({evidence.MatchResult.X},{evidence.MatchResult.Y},{evidence.MatchResult.Width},{evidence.MatchResult.Height})"
+                : string.Empty;
 
         private async Task<CoordinateSearchResult> TrySameTerritoryCoordinateAsync(
             string deviceName,
@@ -1295,6 +1580,28 @@ namespace ADB_Tool_Automation_Post_FB.Infrastructure.Navigation
                 screenshotPng, regions, out group);
         }
 
+        private static bool TryClassifyPinTerritory(
+            Bitmap bitmap,
+            GameDetectionEvidence pin,
+            out TerritoryColorGroup group)
+        {
+            group = TerritoryColorGroup.Unknown;
+            if (bitmap == null || !HasValidBounds(pin)) return false;
+
+            ImageMatchResult bounds = pin.MatchResult;
+            int sampleY = bounds.Y + bounds.Height - PinBackgroundHeightPx;
+            var regions = new[]
+            {
+                new ImageRegion(bounds.X - PinBackgroundSideGapPx
+                    - PinBackgroundSideWidthPx, sampleY,
+                    PinBackgroundSideWidthPx, PinBackgroundHeightPx),
+                new ImageRegion(bounds.X + bounds.Width
+                    + PinBackgroundSideGapPx, sampleY,
+                    PinBackgroundSideWidthPx, PinBackgroundHeightPx)
+            };
+            return TryClassifyTerritoryRegions(bitmap, regions, out group);
+        }
+
         private static bool TryClassifyTerritoryRegions(
             byte[] screenshotPng,
             IEnumerable<ImageRegion> regions,
@@ -1372,6 +1679,81 @@ namespace ADB_Tool_Automation_Post_FB.Infrastructure.Navigation
                     group = (TerritoryColorGroup)(winnerIndex + 1);
                     return true;
                 }
+            }
+            catch (ArgumentException)
+            {
+                return false;
+            }
+            catch (ExternalException)
+            {
+                return false;
+            }
+        }
+
+        private static bool TryClassifyTerritoryRegions(
+            Bitmap bitmap,
+            IEnumerable<ImageRegion> regions,
+            out TerritoryColorGroup group)
+        {
+            group = TerritoryColorGroup.Unknown;
+            if (bitmap == null || regions == null) return false;
+            try
+            {
+                int sampled = 0;
+                int classifiable = 0;
+                var counts = new int[5];
+                foreach (ImageRegion region in regions)
+                {
+                    int left = Math.Max(0, region.X);
+                    int top = Math.Max(0, region.Y);
+                    int right = Math.Min(bitmap.Width, region.X + region.Width);
+                    int bottom = Math.Min(bitmap.Height, region.Y + region.Height);
+                    if (right <= left || bottom <= top) continue;
+
+                    for (int y = top; y < bottom; y++)
+                    for (int x = left; x < right; x++)
+                    {
+                        sampled++;
+                        Color pixel = bitmap.GetPixel(x, y);
+                        double hue;
+                        double saturation;
+                        double value;
+                        ToHsv(pixel, out hue, out saturation, out value);
+                        if (saturation < MinimumTerritoryPixelSaturation
+                            || value < MinimumTerritoryPixelValue
+                            || value > MaximumTerritoryPixelValue)
+                            continue;
+
+                        TerritoryColorGroup pixelGroup = GroupForHue(hue);
+                        counts[(int)pixelGroup - 1]++;
+                        classifiable++;
+                    }
+                }
+
+                if (sampled == 0
+                    || classifiable < sampled * MinimumClassifiablePixelRatio)
+                    return false;
+
+                int winnerIndex = 0;
+                int runnerUp = 0;
+                for (int index = 1; index < counts.Length; index++)
+                {
+                    if (counts[index] > counts[winnerIndex])
+                    {
+                        runnerUp = counts[winnerIndex];
+                        winnerIndex = index;
+                    }
+                    else if (counts[index] > runnerUp)
+                        runnerUp = counts[index];
+                }
+
+                int winner = counts[winnerIndex];
+                if (winner < classifiable * MinimumWinningGroupRatio
+                    || winner - runnerUp < classifiable * MinimumWinningMarginRatio)
+                    return false;
+
+                group = (TerritoryColorGroup)(winnerIndex + 1);
+                return true;
             }
             catch (ArgumentException)
             {
@@ -1753,6 +2135,27 @@ namespace ADB_Tool_Automation_Post_FB.Infrastructure.Navigation
             public int DeltaY { get; }
         }
 
+        private sealed class ScreenTerritoryCandidate
+        {
+            public ScreenTerritoryCandidate(int x, int y, int offsetIndex,
+                int ringPriority, int sameColorVotes, int distanceFromHome)
+            {
+                X = x;
+                Y = y;
+                OffsetIndex = offsetIndex;
+                RingPriority = ringPriority;
+                SameColorVotes = sameColorVotes;
+                DistanceFromHome = distanceFromHome;
+            }
+
+            public int X { get; }
+            public int Y { get; }
+            public int OffsetIndex { get; }
+            public int RingPriority { get; }
+            public int SameColorVotes { get; }
+            public int DistanceFromHome { get; }
+        }
+
         private sealed class CoordinateEditTransaction
         {
             public CoordinateEditTransaction(int originalX, int originalY)
@@ -1995,6 +2398,32 @@ namespace ADB_Tool_Automation_Post_FB.Infrastructure.Navigation
         private static GameDetectionResult DetectionFrom(NavigationResult result) => new GameDetectionResult
         { State = result.FinalState, Evidence = result.FinalEvidence, IsSuccessful = string.IsNullOrEmpty(result.ErrorMessage), ErrorMessage = result.ErrorMessage };
 
+        private async Task<FrameResolutionResult> CaptureFrameResolutionAsync(
+            string deviceName, CancellationToken cancellationToken)
+        {
+            var frameClient = ldPlayerClient as IFrameCapturingLdPlayerClient;
+            if (frameClient != null)
+            {
+                using (CapturedFrame frame = await frameClient.CaptureFrameAsync(
+                    deviceName, cancellationToken))
+                    return new FrameResolutionResult(frame.Width, frame.Height);
+            }
+
+            byte[] png = await ldPlayerClient.CaptureScreenshotPngAsync(
+                deviceName, cancellationToken);
+            using (var stream = new MemoryStream(png, false))
+            using (var image = Image.FromStream(stream, false, true))
+                return new FrameResolutionResult(image.Width, image.Height);
+        }
+
+        private sealed class FrameResolutionResult
+        {
+            public FrameResolutionResult(int width, int height)
+            { Width = width; Height = height; }
+            public int Width { get; }
+            public int Height { get; }
+        }
+
         private static NavigationResult Result(bool success, GameDetectionResult initial, GameDetectionResult final,
             int attempts, Stopwatch watch, string message, string error, IList<NavigationTransition> transitions) => new NavigationResult
         {
@@ -2003,6 +2432,22 @@ namespace ADB_Tool_Automation_Post_FB.Infrastructure.Navigation
             FinalEvidence = final?.Evidence ?? new GameDetectionEvidence[0],
             Transitions = new List<NavigationTransition>(transitions).AsReadOnly()
         };
+
+        private static NavigationResult Result(bool success, GameDetectionResult initial,
+            GameDetectionResult final, int attempts, Stopwatch watch, string message,
+            string error, IList<NavigationTransition> transitions, string failureReason,
+            int? tapX = null, int? tapY = null, int tapCount = 0,
+            bool verificationSucceeded = false)
+        {
+            NavigationResult result = Result(success, initial, final, attempts, watch,
+                message, error, transitions);
+            result.FailureReason = failureReason;
+            result.TapX = tapX;
+            result.TapY = tapY;
+            result.TapCount = tapCount;
+            result.VerificationSucceeded = verificationSucceeded;
+            return result;
+        }
 
         private static void AddTransition(IList<NavigationTransition> transitions, string operation, string message) =>
             transitions.Add(new NavigationTransition { Operation = operation, Message = message, OccurredAt = DateTimeOffset.Now });

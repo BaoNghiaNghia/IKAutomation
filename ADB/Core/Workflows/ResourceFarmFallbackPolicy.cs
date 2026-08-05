@@ -19,9 +19,8 @@ namespace ADB_Tool_Automation_Post_FB.Core.Workflows
 
         public void Validate()
         {
-            if (ResourcePriority == null || ResourcePriority.Count == 0
-                || ResourcePriority.Distinct().Count() != ResourcePriority.Count)
-                throw new ArgumentException("ResourcePriority must be non-empty and unique.");
+            if (ResourcePriority == null || ResourcePriority.Count == 0)
+                throw new ArgumentException("ResourcePriority must be non-empty.");
             if (ResourcePriority.Any(x => !Enum.IsDefined(typeof(ResourceType), x)))
                 throw new ArgumentException("ResourcePriority contains an unsupported resource.");
             if (LevelPriority == null || LevelPriority.Count == 0

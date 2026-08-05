@@ -674,6 +674,11 @@ namespace IKAutomation.ResourceSearch.Tests
             private int active;
             public bool Success = true; public int Calls, DelayMs, MaxActive;
             public Task<NavigationResult> EnsureWorldMapAsync(string d, CancellationToken t) => OpenResourceSearchPanelAsync(d, t);
+            public Task<NavigationResult> TapWorldMapPointAsync(string d, int x, int y, CancellationToken t) =>
+                Task.FromResult(new NavigationResult { Success = true, InitialState = GameState.WorldMap,
+                    FinalState = GameState.WorldMap, TapCount = 1, TapX = x, TapY = y,
+                    VerificationSucceeded = true, FinalEvidence = new GameDetectionEvidence[0],
+                    Transitions = new NavigationTransition[0], Message = "tap" });
             public Task<NavigationResult> RepositionToAllianceTerritoryAsync(string d, CancellationToken t) =>
                 Task.FromResult(new NavigationResult { Success = true, InitialState = GameState.WorldMap,
                     FinalState = GameState.WorldMap, FinalEvidence = new GameDetectionEvidence[0],

@@ -16,6 +16,8 @@ namespace ADB_Tool_Automation_Post_FB.Core.Workflows
         public IReadOnlyList<ResourceType> LevelsExhaustedResources { get; set; }
         public ResourceType? LocatedResource { get; set; }
         public int? LocatedLevel { get; set; }
+        public string MatchedNotFoundVariant { get; set; }
+        public ResourceSearchFailureReason FailureReason { get; set; }
         public ResourceType? DispatchedResource { get; set; }
         public TeamNumber? DispatchedTeam { get; set; }
         public IReadOnlyList<ResourceFarmAttemptResult> Attempts { get; set; }

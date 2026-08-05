@@ -1,0 +1,12 @@
+using System.Threading;
+using System.Threading.Tasks;
+
+namespace ADB_Tool_Automation_Post_FB.Core.ResourceSearch
+{
+    public interface IExactResourceLevelFallbackService
+    {
+        Task<ResourceLevelFallbackResult> SearchSingleLevelAsync(
+            string deviceName, ResourceType resourceType, int level,
+            bool unoccupiedOnly, string runId, CancellationToken cancellationToken);
+    }
+}

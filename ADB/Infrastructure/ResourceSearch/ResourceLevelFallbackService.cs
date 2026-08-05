@@ -13,7 +13,8 @@ using System.Threading.Tasks;
 
 namespace ADB_Tool_Automation_Post_FB.Infrastructure.ResourceSearch
 {
-    public sealed class ResourceLevelFallbackService : IResourceLevelFallbackService
+    public sealed class ResourceLevelFallbackService : IResourceLevelFallbackService,
+        IExactResourceLevelFallbackService
     {
         private const string TargetLevelTooLowVariant = "TargetLevelTooLow";
         private const string SearchOtherRegionVariant = "SearchOtherRegion";
@@ -74,6 +75,20 @@ namespace ADB_Tool_Automation_Post_FB.Infrastructure.ResourceSearch
             if (validation != null) return Task.FromResult(Invalid(resourceType, policy, validation));
             return operationLock.RunAsync(deviceName.Trim(), token => SearchCoreAsync(
                 deviceName.Trim(), resourceType, policy, unoccupiedOnly, token), cancellationToken);
+        }
+
+        public Task<ResourceLevelFallbackResult> SearchSingleLevelAsync(
+            string deviceName, ResourceType resourceType, int level,
+            bool unoccupiedOnly, string runId, CancellationToken cancellationToken)
+        {
+            return SearchAsync(deviceName, resourceType, new ResourceLevelFallbackPolicy
+            {
+                Levels = new[] { level },
+                AttemptsPerLevel = 1,
+                StopOnFirstLocated = true,
+                WaitForToastClearBetweenAttempts = true,
+                RunId = runId
+            }, unoccupiedOnly, cancellationToken);
         }
 
         private async Task<ResourceLevelFallbackResult> SearchCoreAsync(string deviceName,
@@ -233,6 +248,21 @@ namespace ADB_Tool_Automation_Post_FB.Infrastructure.ResourceSearch
                                     + "đang chuyển sang tài nguyên tiếp theo.",
                                 null, watch, $"level-{level}_searchtapnotapplied", token,
                                 options.SaveExhaustedScreenshot);
+                        }
+                        if (searched.Outcome == ResourceSearchOutcome.ResourceAreaLv2Redirect)
+                        {
+                            result.MatchedNotFoundVariant = searched.MatchedNotFoundVariant;
+                            result.FailureReason = searched.FailureReason;
+                            attempt.Message = searched.Message;
+                            attempt.ErrorMessage = searched.ErrorMessage;
+                            logger.Info($"[Resource Level Fallback] RunId='{runId}', DeviceName='{deviceName}', "
+                                + "Outcome='ResourceAreaLv2Redirect', "
+                                + $"MatchedNotFoundVariant='{searched.MatchedNotFoundVariant ?? string.Empty}', "
+                                + "CountsTowardAreaFailure=false, NextAction='ReturnToFarmCoordinator'");
+                            return await CompleteAsync(deviceName, runId, result,
+                                ResourceLevelFallbackOutcome.ResourceAreaLv2Redirect,
+                                searched.Message, searched.ErrorMessage, watch,
+                                $"level-{level}_resourcearealv2redirect", token, true);
                         }
                         if (searched.Outcome != ResourceSearchOutcome.ResourceNotFound)
                             return await CompleteAsync(deviceName, runId, result, ResourceLevelFallbackOutcome.SearchFailed,

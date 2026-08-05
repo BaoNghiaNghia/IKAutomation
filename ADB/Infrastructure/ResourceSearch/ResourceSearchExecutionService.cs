@@ -374,7 +374,10 @@ namespace ADB_Tool_Automation_Post_FB.Infrastructure.ResourceSearch
             // absent; otherwise TargetLevelTooLow keeps its existing semantics.
             bool seasonMapRestriction = HasBounds(seasonMapAnchor)
                 && !HasBounds(targetLevelTooLowAnchor);
-            string matchedVariant = seasonMapRestriction
+            bool resourceAreaLv2Evidence = targetLevelPairClose && panelConfirmed;
+            string matchedVariant = resourceAreaLv2Evidence
+                ? "ResourceAreaLv2Redirect"
+                : seasonMapRestriction
                 ? "SeasonMapRestriction"
                 : targetLevelPairClose ? TargetLevelTooLowVariant
                 : alternateConfirmed ? SearchOtherRegionVariant
@@ -408,6 +411,7 @@ namespace ADB_Tool_Automation_Post_FB.Infrastructure.ResourceSearch
                 OtherRegionAnchorFound = HasBounds(otherRegionAnchor),
                 TargetLevelTooLowAnchorFound = HasBounds(targetLevelTooLowAnchor),
                 SeasonMapAnchorFound = HasBounds(seasonMapAnchor),
+                ResourceAreaLv2EvidenceFound = resourceAreaLv2Evidence,
                 MatchedNotFoundVariant = toastVerified ? matchedVariant : null,
                 SearchPanelConfirmed = panelConfirmed,
                 FrameDifference = difference,
@@ -422,7 +426,9 @@ namespace ADB_Tool_Automation_Post_FB.Infrastructure.ResourceSearch
                 result.NotFoundObserved = true;
                 result.NotFoundToastVerified = true;
                 result.MatchedNotFoundVariant = matchedVariant;
-                result.FailureReason = matchedVariant == "SeasonMapRestriction"
+                result.FailureReason = matchedVariant == "ResourceAreaLv2Redirect"
+                    ? ResourceSearchFailureReason.ResourceAreaLv2Redirect
+                    : matchedVariant == "SeasonMapRestriction"
                     ? ResourceSearchFailureReason.SeasonMapRestriction
                     : matchedVariant == TargetLevelTooLowVariant
                         ? ResourceSearchFailureReason.TargetLevelTooLow
@@ -443,7 +449,9 @@ namespace ADB_Tool_Automation_Post_FB.Infrastructure.ResourceSearch
 
             if (toastVerified)
             {
-                return ObservationDecision.Decided(ResourceSearchOutcome.ResourceNotFound,
+                return ObservationDecision.Decided(matchedVariant == "ResourceAreaLv2Redirect"
+                        ? ResourceSearchOutcome.ResourceAreaLv2Redirect
+                        : ResourceSearchOutcome.ResourceNotFound,
                     $"ResourceNotFound toast variant '{matchedVariant}' was verified in one observation frame.", null);
             }
             if (!result.NotFoundObserved && detection.State == GameState.ResourcePopup)

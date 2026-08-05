@@ -1,3 +1,4 @@
+using ADB_Tool_Automation_Post_FB.Core.ResourceSearch;
 using ADB_Tool_Automation_Post_FB.Core.Workflows;
 using ADB_Tool_Automation_Post_FB.Core.TeamSelection;
 using ADB_Tool_Automation_Post_FB.Infrastructure.Concurrency;
@@ -46,10 +47,13 @@ namespace ADB_Tool_Automation_Post_FB.Infrastructure.Workflows
             var dispatch = DispatchSelectedTeamServiceFactory.CreateFromAppConfig();
             var fallbackOptions = AppConfigResourceFarmFallbackOptionsProvider.Load();
             var profiles = new ResourceTemplateProfileProvider(registry);
+            var areaLv2Selector = new ResourceAreaLv2PointSelector();
+            var areaLv2Recovery = new ResourceAreaLv2RecoveryCoordinator(
+                navigation, areaLv2Selector, client, logger);
             var resourceFallback = new ResourceFarmFallbackService(navigation, levelFallback,
                 (ADB_Tool_Automation_Post_FB.Core.ResourcePopup.IResourceAwarePopupVerificationService)popup,
                 openTeam, selectTeam, dispatch, profiles,
-                fallbackOptions, logger);
+                fallbackOptions, logger, areaLv2Recovery);
             var inner = new OneShotFarmWorkflow(navigation, levelFallback, popup,
                 openTeam, selectTeam, dispatch, detector,
                 DeviceOperationLock.Shared, workflowOptions,

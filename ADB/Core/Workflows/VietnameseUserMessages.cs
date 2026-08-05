@@ -156,6 +156,8 @@ namespace ADB_Tool_Automation_Post_FB.Core.Workflows
                 case OneShotFarmOutcome.SearchPanelUnavailable: return "Không mở được bảng tìm tài nguyên";
                 case OneShotFarmOutcome.SearchConfigurationFailed: return "Không thể thiết lập tìm kiếm";
                 case OneShotFarmOutcome.SearchExecutionFailed: return "Tìm kiếm tài nguyên thất bại";
+                case OneShotFarmOutcome.ResourceAreaLv2RedirectUnhandled: return "Cần chuyển khu tài nguyên cấp 2";
+                case OneShotFarmOutcome.ResourceAreaLv2PointAttemptsExhausted: return "Đã hết điểm thử khu tài nguyên cấp 2";
                 case OneShotFarmOutcome.ResourcePopupNotReady: return "Cửa sổ tài nguyên chưa sẵn sàng";
                 case OneShotFarmOutcome.TeamSelectionFailed: return "Không thể mở chọn đội";
                 case OneShotFarmOutcome.TeamSelectionNotReady: return "Màn hình chọn đội chưa sẵn sàng";

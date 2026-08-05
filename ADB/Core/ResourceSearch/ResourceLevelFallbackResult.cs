@@ -11,6 +11,8 @@ namespace ADB_Tool_Automation_Post_FB.Core.ResourceSearch
         public ResourceType ResourceType { get; set; }
         public int? LocatedLevel { get; set; }
         public int? LastAttemptedLevel { get; set; }
+        public string MatchedNotFoundVariant { get; set; }
+        public ResourceSearchFailureReason FailureReason { get; set; }
         public IReadOnlyList<int> RequestedLevels { get; set; }
         public IReadOnlyList<ResourceLevelAttemptResult> Attempts { get; set; }
         public GameState InitialState { get; set; }

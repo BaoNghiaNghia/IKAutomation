@@ -14,6 +14,7 @@ namespace ADB_Tool_Automation_Post_FB.Core.ResourceSearch
         public bool OtherRegionAnchorFound { get; set; }
         public bool TargetLevelTooLowAnchorFound { get; set; }
         public bool SeasonMapAnchorFound { get; set; }
+        public bool ResourceAreaLv2EvidenceFound { get; set; }
         public string MatchedNotFoundVariant { get; set; }
         public bool SearchPanelConfirmed { get; set; }
         public double? FrameDifference { get; set; }

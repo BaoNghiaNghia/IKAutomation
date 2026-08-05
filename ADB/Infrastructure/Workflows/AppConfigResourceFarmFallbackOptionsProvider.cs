@@ -23,10 +23,6 @@ namespace ADB_Tool_Automation_Post_FB.Infrastructure.Workflows
                 RecoveryPollIntervalMs = ReadInt("ResourceFarmFallback.RecoveryPollIntervalMs", 250),
                 RecoveryTimeoutSeconds = ReadInt("ResourceFarmFallback.RecoveryTimeoutSeconds", 8),
                 MaxSearchAreaRecoveryAttempts = ReadInt("ResourceFarmFallback.MaxSearchAreaRecoveryAttempts", 3),
-                ExhaustedResourcesBeforeReposition = ReadInt(
-                    "ResourceFarmFallback.ExhaustedResourcesBeforeReposition", 2),
-                SearchTapNotAppliedResourcesBeforeReposition = ReadInt(
-                    "ResourceFarmFallback.SearchTapNotAppliedResourcesBeforeReposition", 2),
                 MaxAreaRepositionsPerResource = ReadInt("Operations.ResourceSearch.MaxAreaRepositionsPerResource", 2),
                 MaxAreaRepositionsPerFarmRun = ReadInt("Operations.ResourceSearch.MaxAreaRepositionsPerFarmRun", 4),
                 RepositionTimeoutMs = ReadInt("Operations.ResourceSearch.RepositionTimeoutMs", 120000),

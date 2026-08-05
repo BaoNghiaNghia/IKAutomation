@@ -115,6 +115,7 @@
     <Compile Include="Core\ResourceSearch\IResourceSearchDiagnosticStore.cs" />
     <Compile Include="Core\ResourceSearch\IResourceSearchExecutionService.cs" />
     <Compile Include="Core\ResourceSearch\IResourceLevelFallbackService.cs" />
+    <Compile Include="Core\ResourceSearch\IExactResourceLevelFallbackService.cs" />
     <Compile Include="Core\ResourceSearch\IResourceLevelFallbackDiagnosticStore.cs" />
     <Compile Include="Core\ResourceSearch\ResourceLevelAttemptResult.cs" />
     <Compile Include="Core\ResourceSearch\ResourceLevelFallbackOptions.cs" />
@@ -131,6 +132,10 @@
     <Compile Include="Core\ResourceSearch\ResourceSearchToastEvidence.cs" />
     <Compile Include="Core\ResourceSearch\ResourceSearchFailureReason.cs" />
     <Compile Include="Core\ResourceSearch\ResourceSearchObservation.cs" />
+    <Compile Include="Core\ResourceSearch\ResourceAreaLv2PointSelector.cs" />
+    <Compile Include="Core\ResourceSearch\ResourceAreaLv2RecoveryRequest.cs" />
+    <Compile Include="Core\ResourceSearch\ResourceAreaLv2RecoveryResult.cs" />
+    <Compile Include="Core\ResourceSearch\IResourceAreaLv2RecoveryCoordinator.cs" />
     <Compile Include="Core\ResourceSearch\ResourceSearchOutcome.cs" />
     <Compile Include="Core\ResourceSearch\ResourceType.cs" />
     <Compile Include="Core\ResourceSearch\ResourceTemplateMap.cs" />
@@ -255,6 +260,7 @@
     <Compile Include="Infrastructure\ResourceSearch\ResourceLevelFallbackDiagnosticStore.cs" />
     <Compile Include="Infrastructure\ResourceSearch\ResourceLevelFallbackService.cs" />
     <Compile Include="Infrastructure\ResourceSearch\ResourceLevelFallbackServiceFactory.cs" />
+    <Compile Include="Infrastructure\ResourceSearch\ResourceAreaLv2RecoveryCoordinator.cs" />
     <Compile Include="Infrastructure\ResourceSearch\ResourceSearchDiagnosticStore.cs" />
     <Compile Include="Infrastructure\ResourceSearch\ResourceSearchConfigurationService.cs" />
     <Compile Include="Infrastructure\ResourceSearch\ResourceSearchConfigurationServiceFactory.cs" />

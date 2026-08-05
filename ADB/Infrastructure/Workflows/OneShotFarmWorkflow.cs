@@ -268,6 +268,8 @@ namespace ADB_Tool_Automation_Post_FB.Infrastructure.Workflows
                         result.LastCompletedStep = OneShotFarmStep.SearchWithLevelFallback;
                     OneShotFarmOutcome mapped = fallbackResult.Outcome == ResourceLevelFallbackOutcome.ResourceLevelsExhausted
                         ? OneShotFarmOutcome.ResourceLevelsExhausted
+                        : fallbackResult.Outcome == ResourceLevelFallbackOutcome.ResourceAreaLv2Redirect
+                            ? OneShotFarmOutcome.ResourceAreaLv2RedirectUnhandled
                         : fallbackResult.Outcome == ResourceLevelFallbackOutcome.ConfigurationFailed
                             ? OneShotFarmOutcome.SearchConfigurationFailed
                             : fallbackResult.Outcome == ResourceLevelFallbackOutcome.PanelUnavailable
@@ -798,6 +800,10 @@ namespace ADB_Tool_Automation_Post_FB.Infrastructure.Workflows
                 case ResourceFarmFallbackOutcome.DispatchFailed: return OneShotFarmOutcome.TeamDispatchFailed;
                 case ResourceFarmFallbackOutcome.RecoveryFailed: return OneShotFarmOutcome.RecoveryFailed;
                 case ResourceFarmFallbackOutcome.SearchFailed: return OneShotFarmOutcome.SearchExecutionFailed;
+                case ResourceFarmFallbackOutcome.ResourceAreaLv2Redirect:
+                    return OneShotFarmOutcome.ResourceAreaLv2RedirectUnhandled;
+                case ResourceFarmFallbackOutcome.ResourceAreaLv2PointAttemptsExhausted:
+                    return OneShotFarmOutcome.ResourceAreaLv2PointAttemptsExhausted;
                 case ResourceFarmFallbackOutcome.Cancelled: return OneShotFarmOutcome.Cancelled;
                 default: return OneShotFarmOutcome.Failed;
             }
