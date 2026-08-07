@@ -45,6 +45,13 @@ namespace ADB_Tool_Automation_Post_FB.Infrastructure.Vision
                 { TemplateId.ResourceNotFoundToastOtherRegionAnchor, Define(TemplateId.ResourceNotFoundToastOtherRegionAnchor, "Search/resource_not_found_toast_other_region_anchor.png") },
                 { TemplateId.ResourceTargetLevelTooLowToastAnchor, Define(TemplateId.ResourceTargetLevelTooLowToastAnchor, "Search/resource_target_level_too_low_toast_anchor.png") },
                 { TemplateId.ResourceTargetLevelSeasonMapToastAnchor, Define(TemplateId.ResourceTargetLevelSeasonMapToastAnchor, "Search/resource_target_level_season_map_toast_anchor.png") },
+                { TemplateId.ResourceAreaLv2RedirectAnchor, Define(TemplateId.ResourceAreaLv2RedirectAnchor, "Search/resource_target_level_season_map_toast_anchor.png") },
+                { TemplateId.ResourceAreaPhraseAnchor, Define(TemplateId.ResourceAreaPhraseAnchor, "Search/resource_area_phrase_anchor.png", 0.72) },
+                { TemplateId.ResourceAreaLv2Anchor, Define(TemplateId.ResourceAreaLv2Anchor, "Search/resource_area_lv2_anchor.png", 0.72) },
+                // Keep the existing deployed Lv2 crop as the ending-anchor slot until
+                // the tighter "Lv2 để tìm." crop is supplied. This preserves the
+                // canonical two-anchor decision without a missing runtime asset.
+                { TemplateId.ResourceAreaLv2EndingAnchor, Define(TemplateId.ResourceAreaLv2EndingAnchor, "Search/resource_area_lv2_anchor.png", 0.72) },
                 { TemplateId.ResourcePopup, Define(TemplateId.ResourcePopup, "Resources/resource_popup.png") },
                 { TemplateId.GatherButton, Define(TemplateId.GatherButton, "Resources/gather_button.png") },
                 { TemplateId.ResourcePopupInfoAnchor, Define(TemplateId.ResourcePopupInfoAnchor, "Resources/resource_popup_info_anchor.png") },
@@ -137,6 +144,11 @@ namespace ADB_Tool_Automation_Post_FB.Infrastructure.Vision
         private static TemplateDefinition Define(TemplateId id, string relativePath)
         {
             return new TemplateDefinition(id, relativePath, DefaultThreshold);
+        }
+
+        private static TemplateDefinition Define(TemplateId id, string relativePath, double threshold)
+        {
+            return new TemplateDefinition(id, relativePath, threshold);
         }
     }
 }

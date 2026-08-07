@@ -371,14 +371,17 @@ namespace ADB_Tool_Automation_Post_FB.Infrastructure.Navigation
             foreach (NavigationTransition transition in ensured.Transitions) transitions.Add(transition);
             if (!ensured.Success)
                 return Result(false, initial, DetectionFrom(ensured), ensured.Attempts, watch,
-                    "Could not ensure WorldMap; no Tap was sent.", ensured.ErrorMessage, transitions);
+                    "Could not ensure WorldMap; no Tap was sent.",
+                    ensured.ErrorMessage, transitions, ensured.FailureReason ?? "WorldMapUnavailable");
 
             GameDetectionResult current = DetectionFrom(ensured);
-            for (int attempt = 1; attempt <= options.MaxOpenSearchAttempts; attempt++)
+            int maxAttempts = Math.Min(options.MaxOpenSearchAttempts, 2);
+            for (int attempt = 1; attempt <= maxAttempts; attempt++)
             {
-                GameDetectionEvidence anchor = current.Evidence.FirstOrDefault(item => item.TemplateId == TemplateId.WorldMapAnchor);
+                GameDetectionEvidence anchor = FindFreshEvidence(current, TemplateId.WorldMapAnchor);
                 if (anchor?.MatchResult == null || !anchor.Found || anchor.MatchResult.Width <= 0 || anchor.MatchResult.Height <= 0)
-                    return Result(false, initial, current, attempt - 1, watch, "WorldMapAnchor has no valid bounds; no fallback Tap was sent.", null, transitions);
+                    return Result(false, initial, current, attempt - 1, watch, "WorldMapAnchor has no valid bounds; no fallback Tap was sent.", null, transitions,
+                        attempt > 1 ? "WorldMapAnchorNotFoundForPanelRetry" : "ResourceSearchPanelNotOpened");
 
                 int x = anchor.MatchResult.CenterX;
                 int y = anchor.MatchResult.CenterY;
@@ -386,15 +389,73 @@ namespace ADB_Tool_Automation_Post_FB.Infrastructure.Navigation
                     + $"Attempt={attempt}, TapX={x}, TapY={y}, Cancellation=false, Phase='Attempting'");
                 await ldPlayerClient.TapAsync(deviceName, x, y, cancellationToken);
                 AddTransition(transitions, "Tap", $"Attempt {attempt}: tapped WorldMapAnchor center ({x},{y}).");
-                current = await PollAsync(deviceName, GameState.ResourceSearchPanel, transitions, cancellationToken);
-                if (current.IsSuccessful && IsVerifiedResourceSearchPanel(current))
-                    return Result(true, initial, current, attempt, watch, "ResourceSearchPanel verified after Tap.", null, transitions);
-                if (!current.IsSuccessful || current.State != GameState.WorldMap)
-                    return Result(false, initial, current, attempt, watch, "Panel was not verified and retry is unsafe.", current.ErrorMessage, transitions);
+                ResourceSearchPanelScreenshotProbe probe = await ProbeResourceSearchPanelAsync(
+                    deviceName, transitions, cancellationToken);
+                current = probe.LastFrame ?? current;
+                if (probe.Confirmed)
+                {
+                    NavigationResult success = Result(true, initial, current, attempt, watch,
+                        "ResourceSearchPanel confirmed by two stable SearchButton screenshots.",
+                        null, transitions, null, x, y, attempt, true);
+                    ApplySearchPanelProbe(success, probe, attempt);
+                    // The bounded screenshot probe is the authoritative handoff
+                    // signal even when the full state classifier remains Unknown.
+                    success.FinalState = GameState.ResourceSearchPanel;
+                    return success;
+                }
+
+                if (probe.CityDetected)
+                {
+                    NavigationResult cityFailure = Result(false, initial, current, attempt, watch,
+                        "City was detected after opening the resource search panel; no Back was sent.",
+                        current?.ErrorMessage, transitions, "CityDetectedDuringPanelOpen", x, y, attempt, false);
+                    ApplySearchPanelProbe(cityFailure, probe, attempt);
+                    return cityFailure;
+                }
+
+                // Panel evidence is never routed through WorldMap retry. A later
+                // panel frame may be handled by the next bounded probe, but this
+                // operation must not send Back or reinterpret it as a missed tap.
+                if (probe.PanelEvidenceVisible)
+                {
+                    NavigationResult panelEvidenceFailure = Result(false, initial, current, attempt, watch,
+                        "ResourceSearchPanel evidence was visible but the screenshot probe needs another positive frame.",
+                        current?.ErrorMessage, transitions, probe.FailureReason ?? "ResourceSearchPanelEvidenceIncomplete", x, y, attempt, false);
+                    ApplySearchPanelProbe(panelEvidenceFailure, probe, attempt);
+                    if (panelEvidenceFailure.FinalState == GameState.ResourceSearchPanel)
+                        panelEvidenceFailure.FinalState = GameState.Unknown;
+                    return panelEvidenceFailure;
+                }
+
+                bool finalAttempt = attempt >= maxAttempts;
+                if (finalAttempt)
+                {
+                    NavigationResult failed = Result(false, initial, current, attempt, watch,
+                        "ResourceSearchPanel was not confirmed by a stable screenshot probe.",
+                        current?.ErrorMessage, transitions, probe.FailureReason ?? "ResourceSearchPanelNotOpened", x, y, attempt, false);
+                    ApplySearchPanelProbe(failed, probe, attempt);
+                    return failed;
+                }
+
+                // A retry is allowed only when a fresh WorldMap observation remains
+                // visible. We never send Back or run modal recovery in this path.
+                if (!IsFreshWorldMapAnchor(current))
+                {
+                    current = await DetectAsync(deviceName, transitions, cancellationToken);
+                    if (!IsFreshWorldMapAnchor(current))
+                    {
+                        NavigationResult failed = Result(false, initial, current, attempt, watch,
+                            "WorldMap was not freshly confirmed for the bounded panel retry; no Back was sent.",
+                            current?.ErrorMessage, transitions, "WorldMapNotConfirmedForPanelRetry", x, y, attempt, false);
+                        ApplySearchPanelProbe(failed, probe, attempt);
+                        return failed;
+                    }
+                }
             }
 
-            return Result(false, initial, current, options.MaxOpenSearchAttempts, watch,
-                "Maximum open-search attempts reached without verification.", current.ErrorMessage, transitions);
+            return Result(false, initial, current, maxAttempts, watch,
+                "Maximum open-search attempts reached without verification.", current?.ErrorMessage,
+                transitions, "ResourceSearchPanelNotOpened");
         }
 
         private async Task<NavigationResult> RepositionToAllianceTerritoryCoreAsync(
@@ -2259,6 +2320,51 @@ namespace ADB_Tool_Automation_Post_FB.Infrastructure.Navigation
             public GameDetectionEvidence SearchTarget { get; }
         }
 
+        private enum ResourceSearchPanelEvidenceState
+        {
+            None,
+            Partial,
+            Confirmed
+        }
+
+        private sealed class PanelOpenObservation
+        {
+            public PanelOpenObservation(GameDetectionResult lastFrame,
+                ResourceSearchPanelEvidenceState evidenceState, int partialFrames,
+                int confirmedFrames, int observedFrames, string failureReason)
+            {
+                LastFrame = lastFrame;
+                EvidenceState = evidenceState;
+                PartialFrames = partialFrames;
+                ConfirmedFrames = confirmedFrames;
+                ObservedFrames = observedFrames;
+                FailureReason = failureReason;
+            }
+
+            public GameDetectionResult LastFrame { get; }
+            public ResourceSearchPanelEvidenceState EvidenceState { get; }
+            public int PartialFrames { get; }
+            public int ConfirmedFrames { get; }
+            public int ObservedFrames { get; }
+            public string FailureReason { get; }
+            public bool Confirmed => EvidenceState == ResourceSearchPanelEvidenceState.Confirmed;
+        }
+
+        private sealed class PanelRetryRecovery
+        {
+            public PanelRetryRecovery(bool success, GameDetectionResult lastFrame,
+                string failureReason)
+            {
+                Success = success;
+                LastFrame = lastFrame;
+                FailureReason = failureReason;
+            }
+
+            public bool Success { get; }
+            public GameDetectionResult LastFrame { get; }
+            public string FailureReason { get; }
+        }
+
         private async Task<GameDetectionResult> PollAsync(string deviceName, GameState target,
             IList<NavigationTransition> transitions, CancellationToken cancellationToken)
         {
@@ -2324,7 +2430,360 @@ namespace ADB_Tool_Automation_Post_FB.Infrastructure.Navigation
                     || item.TemplateId == TemplateId.ResourceTabUnselected) && item.Found);
             bool searchButtonFound = result.Evidence.Any(item =>
                 item.TemplateId == TemplateId.SearchButtonEnabled && item.Found);
-            return (anchorFound || stableFallbackFound) && searchButtonFound;
+            return anchorFound || (stableFallbackFound && searchButtonFound);
+        }
+
+        private async Task<ResourceSearchPanelScreenshotProbe> ProbeResourceSearchPanelAsync(
+            string deviceName,
+            IList<NavigationTransition> transitions,
+            CancellationToken cancellationToken)
+        {
+            ImageMatchResult previousPositiveSearchButtonBounds = null;
+            int consecutivePositiveFrames = 0;
+            ResourceSearchPanelScreenshotProbe probe = new ResourceSearchPanelScreenshotProbe();
+            for (int frameNumber = 1; frameNumber <= 3; frameNumber++)
+            {
+                if (frameNumber > 1)
+                    await Task.Delay(options.StatePollIntervalMs, cancellationToken);
+
+                GameDetectionResult frame = await DetectAsync(deviceName, transitions, cancellationToken);
+                probe.LastFrame = frame;
+                GameDetectionEvidence search = FindFreshEvidence(frame, TemplateId.SearchButtonEnabled);
+                bool cityFound = HasEvidence(frame, TemplateId.CityToWorldMapButton);
+                bool anchorFound = HasEvidence(frame, TemplateId.ResourceSearchPanelAnchor);
+                probe.CityDetected = cityFound;
+                probe.PanelEvidenceVisible = anchorFound || search != null;
+
+                if (cityFound)
+                {
+                    probe.FailureReason = "CityDetectedDuringPanelOpen";
+                    LogSearchPanelProbe(deviceName, frameNumber, anchorFound, search,
+                        previousPositiveSearchButtonBounds, false, probe, consecutivePositiveFrames,
+                        "None", "Stop", probe.FailureReason);
+                    return probe;
+                }
+
+                if (search == null || !search.SearchRegion.HasValue
+                    || !IsInside(search.MatchResult, search.SearchRegion.Value))
+                {
+                    previousPositiveSearchButtonBounds = null;
+                    consecutivePositiveFrames = 0;
+                    probe.SearchButtonVisible = false;
+                    probe.ExpectedRegion = search != null && search.SearchRegion.HasValue;
+                    probe.InsideExpectedRegion = false;
+                    LogSearchPanelProbe(deviceName, frameNumber, anchorFound, search,
+                        previousPositiveSearchButtonBounds, false, probe, consecutivePositiveFrames,
+                        "None", probe.PanelEvidenceVisible ? "Continue" : "RetryOrFail",
+                        search == null ? string.Empty : "SearchButtonOutsideExpectedRegion");
+                    continue;
+                }
+
+                probe.SearchButtonVisible = true;
+                probe.ConfirmationFrames++;
+                probe.ExpectedRegion = true;
+                probe.InsideExpectedRegion = true;
+                probe.SearchButtonBounds = search.MatchResult;
+                bool comparisonPerformed = previousPositiveSearchButtonBounds != null;
+                bool stable = comparisonPerformed
+                    && AreStable(previousPositiveSearchButtonBounds, search.MatchResult);
+                probe.BoundsComparisonPerformed = comparisonPerformed;
+                probe.BoundsStable = stable;
+                if (stable)
+                    consecutivePositiveFrames++;
+                else
+                    consecutivePositiveFrames = 1;
+                probe.ConsecutivePositiveFrames = consecutivePositiveFrames;
+
+                // The dedicated panel anchor is authoritative on one fresh frame.
+                if (anchorFound)
+                {
+                    probe.Confirmed = true;
+                    probe.ConfirmationMode = "DedicatedAnchorPlusSearchButton";
+                    probe.FailureReason = null;
+                    LogSearchPanelProbe(deviceName, frameNumber, true, search,
+                        previousPositiveSearchButtonBounds, comparisonPerformed, probe,
+                        consecutivePositiveFrames, probe.ConfirmationMode,
+                        "ContinueResourceConfiguration", string.Empty);
+                    return probe;
+                }
+
+                LogSearchPanelProbe(deviceName, frameNumber, false, search,
+                    previousPositiveSearchButtonBounds, comparisonPerformed, probe,
+                    consecutivePositiveFrames, stable ? "StableSearchButtonPair" : "None",
+                    consecutivePositiveFrames >= 2 ? "ContinueResourceConfiguration" : "ConfirmWithNextScreenshot",
+                    string.Empty);
+                // Compare before replacing the baseline. A new Rectangle instance is
+                // expected on every matcher result.
+                previousPositiveSearchButtonBounds = search.MatchResult;
+                if (consecutivePositiveFrames >= 2)
+                {
+                    probe.Confirmed = true;
+                    probe.ConfirmationMode = "StableSearchButtonPair";
+                    probe.FailureReason = null;
+                    return probe;
+                }
+            }
+
+            if (probe.ConfirmationFrames == 0)
+                probe.FailureReason = "SearchButtonNotFoundInExpectedRegion";
+            else if (!probe.BoundsComparisonPerformed)
+                probe.FailureReason = "SearchButtonNeedsSecondPositiveFrame";
+            else if (!probe.BoundsStable)
+                probe.FailureReason = "SearchButtonBoundsNotStable";
+            return probe;
+        }
+
+        private static bool IsInside(ImageMatchResult match, ImageRegion region)
+        {
+            return match != null && match.Found && match.Width > 0 && match.Height > 0
+                && match.X >= region.X && match.Y >= region.Y
+                && match.X + match.Width <= region.X + region.Width
+                && match.Y + match.Height <= region.Y + region.Height;
+        }
+
+        private static bool AreStable(ImageMatchResult left, ImageMatchResult right)
+        {
+            return left != null && right != null
+                && Math.Abs(left.CenterX - right.CenterX) <= 8
+                && Math.Abs(left.CenterY - right.CenterY) <= 8
+                && Math.Abs(left.Width - right.Width) <= 10
+                && Math.Abs(left.Height - right.Height) <= 10;
+        }
+
+        private void LogSearchPanelProbe(string deviceName, int screenshotIndex,
+            bool anchorFound, GameDetectionEvidence search,
+            ImageMatchResult previousBounds, bool comparisonPerformed,
+            ResourceSearchPanelScreenshotProbe probe, int consecutivePositiveFrames,
+            string confirmationMode, string nextAction, string failureReason)
+        {
+            string bounds = search?.MatchResult != null
+                ? $"({search.MatchResult.X},{search.MatchResult.Y},{search.MatchResult.Width},{search.MatchResult.Height})"
+                : string.Empty;
+            string previous = previousBounds != null
+                ? $"({previousBounds.X},{previousBounds.Y},{previousBounds.Width},{previousBounds.Height})"
+                : string.Empty;
+            logger.Info($"[Resource Search Panel Screenshot Probe] DeviceName='{deviceName}', ScreenshotIndex={screenshotIndex}, ResourceSearchPanelAnchorFound={anchorFound}, SearchButtonFound={search != null}, SearchButtonBounds='{bounds}', PreviousSearchButtonBounds='{previous}', BoundsComparisonPerformed={comparisonPerformed}, SearchButtonBoundsStable={(comparisonPerformed ? probe.BoundsStable.ToString() : string.Empty)}, ConsecutivePositiveFrames={consecutivePositiveFrames}, SearchButtonInsideExpectedRegion={probe.InsideExpectedRegion}, CityDetected={probe.CityDetected}, ConfirmationMode='{confirmationMode}', ScreenshotConfirmed={probe.Confirmed}, NextAction='{nextAction}', FailureReason='{failureReason ?? string.Empty}'");
+        }
+
+        private static void ApplySearchPanelProbe(
+            NavigationResult result, ResourceSearchPanelScreenshotProbe probe, int tapCount)
+        {
+            result.ScreenshotConfirmed = probe.Confirmed;
+            result.ConfirmationFrames = probe.ConfirmationFrames;
+            result.SearchButtonBounds = probe.SearchButtonBounds;
+            result.SearchButtonBoundsStable = probe.BoundsStable;
+            result.SearchButtonBoundsComparisonPerformed = probe.BoundsComparisonPerformed;
+            result.SearchButtonExpectedRegion = probe.ExpectedRegion;
+            result.SearchButtonInsideExpectedRegion = probe.InsideExpectedRegion;
+            result.ConfirmationMode = probe.ConfirmationMode;
+            result.SearchIconTapCount = tapCount;
+            result.BackCount = 0;
+        }
+
+        private sealed class ResourceSearchPanelScreenshotProbe
+        {
+            public GameDetectionResult LastFrame { get; set; }
+            public ImageMatchResult SearchButtonBounds { get; set; }
+            public int ConfirmationFrames { get; set; }
+            public bool Confirmed { get; set; }
+            public bool BoundsStable { get; set; }
+            public bool BoundsComparisonPerformed { get; set; }
+            public int ConsecutivePositiveFrames { get; set; }
+            public bool ExpectedRegion { get; set; }
+            public bool InsideExpectedRegion { get; set; }
+            public bool SearchButtonVisible { get; set; }
+            public bool PanelEvidenceVisible { get; set; }
+            public bool CityDetected { get; set; }
+            public string ConfirmationMode { get; set; }
+            public string FailureReason { get; set; }
+        }
+
+        private async Task<PanelOpenObservation> ObserveResourceSearchPanelAsync(
+            string deviceName, int attempt,
+            IList<NavigationTransition> transitions,
+            CancellationToken cancellationToken)
+        {
+            const int maxFrames = 4;
+            GameDetectionResult last = null;
+            ResourceSearchPanelEvidenceState lastState = ResourceSearchPanelEvidenceState.None;
+            int partialFrames = 0;
+            int confirmedFrames = 0;
+            int consecutivePartialFrames = 0;
+            int consecutiveConfirmedFrames = 0;
+            int observedFrames = 0;
+            for (int frameIndex = 1; frameIndex <= maxFrames; frameIndex++)
+            {
+                observedFrames = frameIndex;
+                await Task.Delay(options.StatePollIntervalMs, cancellationToken);
+                last = await DetectAsync(deviceName, transitions, cancellationToken);
+                lastState = ClassifyResourceSearchPanelEvidence(last);
+                if (lastState == ResourceSearchPanelEvidenceState.Partial)
+                {
+                    partialFrames++;
+                    consecutivePartialFrames++;
+                    consecutiveConfirmedFrames = 0;
+                }
+                else if (lastState == ResourceSearchPanelEvidenceState.Confirmed)
+                {
+                    confirmedFrames++;
+                    consecutiveConfirmedFrames++;
+                    consecutivePartialFrames = 0;
+                }
+                else
+                {
+                    consecutivePartialFrames = 0;
+                    consecutiveConfirmedFrames = 0;
+                }
+                bool worldMapFound = HasEvidence(last, TemplateId.WorldMapAnchor);
+                bool anchorConfirmed = HasEvidence(last, TemplateId.ResourceSearchPanelAnchor);
+                bool confirmed = lastState == ResourceSearchPanelEvidenceState.Confirmed
+                    && (anchorConfirmed || consecutiveConfirmedFrames >= 2);
+                LogPanelOpenObservation(deviceName, attempt, frameIndex, last,
+                    lastState, consecutiveConfirmedFrames, consecutivePartialFrames,
+                    confirmed
+                        ? "Success" : "ContinuePolling", null);
+                if (confirmed)
+                    return new PanelOpenObservation(last, lastState, partialFrames,
+                        confirmedFrames, frameIndex, "");
+
+                // A verified WorldMap frame means the tap did not apply. It is safe
+                // to stop this observation and reacquire the map anchor if needed.
+                if (worldMapFound && last.State == GameState.WorldMap)
+                    break;
+            }
+
+            string reason = lastState == ResourceSearchPanelEvidenceState.Partial
+                ? "ResourceSearchPanelPartialEvidenceTimeout"
+                : "ResourceSearchPanelNotOpened";
+            LogPanelOpenObservation(deviceName, attempt, observedFrames, last, lastState,
+                consecutiveConfirmedFrames, consecutivePartialFrames, "RetryOrFail", reason);
+            return new PanelOpenObservation(last, lastState, partialFrames,
+                confirmedFrames, observedFrames, reason);
+        }
+
+        private async Task<PanelRetryRecovery> RecoverWorldMapForPanelRetryAsync(
+            string deviceName, GameDetectionResult current,
+            PanelOpenObservation observation,
+            IList<NavigationTransition> transitions,
+            CancellationToken cancellationToken)
+        {
+            GameDetectionResult latest = current;
+            bool verifiedMap = IsFreshWorldMapAnchor(latest);
+            bool backSent = false;
+            GameDetectionResult stateAfterBack = latest;
+            GameDetectionEvidence cleanupButton = null;
+            bool cancelFound = HasEvidence(latest, TemplateId.StorageLimitCancelButton);
+            bool resourceExpiryFound = HasEvidence(latest, TemplateId.ResourceExpiryDialogAnchor);
+            bool mapPinFound = HasEvidence(latest, TemplateId.WorldMapPinButton);
+            if (!verifiedMap)
+            {
+                // Back is safe only when the failed attempt left panel evidence. An
+                // unrelated Unknown frame must not trigger blind navigation input.
+                bool panelEvidence = observation != null
+                    && observation.EvidenceState != ResourceSearchPanelEvidenceState.None;
+                if (!panelEvidence)
+                {
+                    LogPanelRetryRecovery(deviceName, observation, false, latest, latest,
+                        false, cancelFound, resourceExpiryFound, mapPinFound, false,
+                        null, "WorldMapRecoveryBeforePanelRetryFailed");
+                    return new PanelRetryRecovery(false, latest,
+                        "WorldMapRecoveryBeforePanelRetryFailed");
+                }
+
+                await ldPlayerClient.BackAsync(deviceName, cancellationToken);
+                backSent = true;
+                AddTransition(transitions, "Back",
+                    "Sent one bounded Back command before retrying ResourceSearchPanel.");
+                stateAfterBack = await DetectAsync(deviceName, transitions, cancellationToken);
+                cleanupButton = FindFreshEvidence(stateAfterBack,
+                    TemplateId.StorageLimitCancelButton);
+                // Reuse the existing lock-free core. It owns the supported
+                // blocking-dialog predicate and bounded post-cleanup polling.
+                NavigationResult recovery = await EnsureWorldMapCoreAsync(
+                    deviceName, stateAfterBack, cancellationToken);
+                foreach (NavigationTransition transition in recovery.Transitions)
+                    transitions.Add(transition);
+                latest = DetectionFrom(recovery);
+                verifiedMap = recovery.Success && IsFreshWorldMapAnchor(latest);
+                cancelFound = HasEvidence(latest, TemplateId.StorageLimitCancelButton)
+                    || cancelFound;
+                resourceExpiryFound = HasEvidence(latest, TemplateId.ResourceExpiryDialogAnchor)
+                    || resourceExpiryFound;
+                mapPinFound = HasEvidence(latest, TemplateId.WorldMapPinButton)
+                    || mapPinFound;
+                string recoveryFailure = recovery.FailureReason
+                    ?? (verifiedMap ? null : recovery.Success
+                        ? "WorldMapNotVerifiedAfterBlockingDialogCleanup"
+                        : "WorldMapRecoveryBeforePanelRetryFailed");
+                LogPanelRetryRecovery(deviceName, observation, backSent, stateAfterBack, latest,
+                    recovery.Success, cancelFound, resourceExpiryFound, mapPinFound,
+                    cleanupButton != null && mapPinFound, cleanupButton, recoveryFailure);
+                if (!recovery.Success)
+                    return new PanelRetryRecovery(false, latest, recoveryFailure);
+            }
+
+            if (!verifiedMap)
+            {
+                LogPanelRetryRecovery(deviceName, observation, backSent, stateAfterBack, latest,
+                    false, cancelFound, resourceExpiryFound, mapPinFound,
+                    cleanupButton != null && mapPinFound, cleanupButton,
+                    "WorldMapNotVerifiedAfterBlockingDialogCleanup");
+                return new PanelRetryRecovery(false, latest,
+                    "WorldMapNotVerifiedAfterBlockingDialogCleanup");
+            }
+
+            return new PanelRetryRecovery(true, latest, null);
+        }
+
+        private static ResourceSearchPanelEvidenceState ClassifyResourceSearchPanelEvidence(
+            GameDetectionResult result)
+        {
+            if (result == null || !result.IsSuccessful) return ResourceSearchPanelEvidenceState.None;
+            bool panelAnchor = HasEvidence(result, TemplateId.ResourceSearchPanelAnchor);
+            bool searchButton = HasEvidence(result, TemplateId.SearchButtonEnabled);
+            bool stableSecondary = HasEvidence(result, TemplateId.LevelMinusButton)
+                || HasEvidence(result, TemplateId.ResourceTabSelected)
+                || HasEvidence(result, TemplateId.ResourceTabUnselected);
+            bool worldMapAnchor = HasEvidence(result, TemplateId.WorldMapAnchor);
+            if (panelAnchor || (searchButton && stableSecondary))
+                return ResourceSearchPanelEvidenceState.Confirmed;
+            if (searchButton && !worldMapAnchor)
+                return ResourceSearchPanelEvidenceState.Partial;
+            return ResourceSearchPanelEvidenceState.None;
+        }
+
+        private static bool IsFreshWorldMapAnchor(GameDetectionResult result) =>
+            result != null && result.IsSuccessful && result.State == GameState.WorldMap
+                && HasEvidence(result, TemplateId.WorldMapAnchor);
+
+        private static bool HasEvidence(GameDetectionResult result, TemplateId templateId) =>
+            result?.Evidence != null && result.Evidence.Any(item =>
+                item.TemplateId == templateId && item.Found
+                && (item.MatchResult == null || (item.MatchResult.Width > 0 && item.MatchResult.Height > 0)));
+
+        private void LogPanelOpenObservation(string deviceName, int attempt, int frameIndex,
+            GameDetectionResult frame, ResourceSearchPanelEvidenceState evidenceState,
+            int confirmedFrames, int partialFrames, string nextAction, string failureReason)
+        {
+            logger.Info($"[Resource Search Panel Open Observation] DeviceName='{deviceName}', Attempt={attempt}, FrameIndex={frameIndex}, DetectedState='{frame?.State}', ResourceSearchPanelAnchorFound={HasEvidence(frame, TemplateId.ResourceSearchPanelAnchor)}, SearchButtonFound={HasEvidence(frame, TemplateId.SearchButtonEnabled)}, LevelMinusFound={HasEvidence(frame, TemplateId.LevelMinusButton)}, ResourceTabSelectedFound={HasEvidence(frame, TemplateId.ResourceTabSelected)}, ResourceTabUnselectedFound={HasEvidence(frame, TemplateId.ResourceTabUnselected)}, WorldMapAnchorFound={HasEvidence(frame, TemplateId.WorldMapAnchor)}, EvidenceState='{evidenceState}', ConsecutiveConfirmedFrames={confirmedFrames}, ConsecutivePartialFrames={partialFrames}, NextAction='{nextAction}', FailureReason='{failureReason ?? string.Empty}'");
+        }
+
+        private void LogPanelOpenAttempt(string deviceName, int attempt, int maxAttempts,
+            GameDetectionEvidence anchor, int tapX, int tapY,
+            PanelOpenObservation observation, string outcome, string failureReason)
+        {
+            logger.Info($"[Resource Search Panel Open Attempt] DeviceName='{deviceName}', Attempt={attempt}, MaxAttempts={maxAttempts}, FreshWorldMapAnchorBounds='{FormatBounds(anchor)}', TapX={tapX}, TapY={tapY}, TapSent=true, ObservedFrames={observation?.ObservedFrames ?? 0}, PartialFrames={observation?.PartialFrames ?? 0}, ConfirmedFrames={observation?.ConfirmedFrames ?? 0}, FinalState='{observation?.LastFrame?.State}', Outcome='{outcome}', NextAction='{(outcome == "RetryRequired" ? "RecoverWorldMapAndRetry" : "Stop")}', FailureReason='{failureReason ?? string.Empty}'");
+        }
+
+        private void LogPanelRetryRecovery(string deviceName,
+            PanelOpenObservation observation, bool backSent,
+            GameDetectionResult stateAfterBack, GameDetectionResult recoveredState,
+            bool recoverySuccess,
+            bool cancelFound, bool resourceExpiryFound, bool mapPinFound,
+            bool cleanupTapSent, GameDetectionEvidence cleanupButton,
+            string failureReason)
+        {
+            logger.Info($"[Resource Search Panel Retry Recovery] DeviceName='{deviceName}', CompletedAttempt=1, NextAttempt=2, BackSent={backSent}, StateAfterBack='{stateAfterBack?.State}', StorageLimitCancelFound={cancelFound}, ResourceExpiryDialogFound={resourceExpiryFound}, WorldMapPinFound={mapPinFound}, WorldMapAnchorFound={HasEvidence(recoveredState, TemplateId.WorldMapAnchor)}, BlockingDialogRecognized={cancelFound && mapPinFound}, BlockingDialogType='{(cancelFound && mapPinFound ? "WorldMapBlockingDialog" : string.Empty)}', BlockingDialogBounds='{FormatBounds(cleanupButton)}', CleanupTapSent={cleanupTapSent}, CleanupTapX={(cleanupTapSent && cleanupButton != null ? cleanupButton.MatchResult.CenterX.ToString() : string.Empty)}, CleanupTapY={(cleanupTapSent && cleanupButton != null ? cleanupButton.MatchResult.CenterY.ToString() : string.Empty)}, WorldMapRecoverySuccess={recoverySuccess}, FreshWorldMapAnchorBounds='{FormatBounds(recoveredState?.Evidence?.FirstOrDefault(item => item.TemplateId == TemplateId.WorldMapAnchor && item.Found))}', NextAction='{(recoverySuccess ? "RetryOpenResourceSearchPanel" : "Stop")}', FailureReason='{failureReason ?? string.Empty}'");
         }
 
         private async Task<GameDetectionResult> DetectAsync(string deviceName, IList<NavigationTransition> transitions, CancellationToken token)

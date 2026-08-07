@@ -14,7 +14,10 @@ namespace ADB_Tool_Automation_Post_FB.Core.ResourceSearch
             int maxTransientUnknownFrames, bool saveResultScreenshots,
             bool saveObservationBurst, int maxObservationBurstFrames,
             string resultScreenshotDirectory, string observationBurstDirectory,
-            int expectedWidth, int expectedHeight, ImageRegion mapRegion)
+            int expectedWidth, int expectedHeight, ImageRegion mapRegion,
+            ImageRegion? resourceAreaLv2RedirectRegion = null,
+            ImageRegion? searchButtonRegion = null,
+            ImageRegion? cityButtonRegion = null)
         {
             if (notFoundObservationWindowMs <= 0) throw new ArgumentOutOfRangeException(nameof(notFoundObservationWindowMs));
             if (notFoundFastPollIntervalMs <= 0) throw new ArgumentOutOfRangeException(nameof(notFoundFastPollIntervalMs));
@@ -31,6 +34,12 @@ namespace ADB_Tool_Automation_Post_FB.Core.ResourceSearch
             if (expectedWidth <= 0 || expectedHeight <= 0) throw new ArgumentOutOfRangeException(nameof(expectedWidth));
             ValidateInside(toastRegion, expectedWidth, expectedHeight, nameof(toastRegion));
             ValidateInside(mapRegion, expectedWidth, expectedHeight, nameof(mapRegion));
+            ValidateInside(resourceAreaLv2RedirectRegion ?? new ImageRegion(210, 160, 860, 85),
+                expectedWidth, expectedHeight, nameof(resourceAreaLv2RedirectRegion));
+            ValidateInside(searchButtonRegion ?? new ImageRegion(880, 500, 300, 180),
+                expectedWidth, expectedHeight, nameof(searchButtonRegion));
+            ValidateInside(cityButtonRegion ?? new ImageRegion(0, expectedHeight / 2, expectedWidth / 2, expectedHeight - expectedHeight / 2),
+                expectedWidth, expectedHeight, nameof(cityButtonRegion));
             if (string.IsNullOrWhiteSpace(resultScreenshotDirectory)) throw new ArgumentException("Result screenshot directory is required.", nameof(resultScreenshotDirectory));
             if (string.IsNullOrWhiteSpace(observationBurstDirectory)) throw new ArgumentException("Observation directory is required.", nameof(observationBurstDirectory));
 
@@ -54,6 +63,10 @@ namespace ADB_Tool_Automation_Post_FB.Core.ResourceSearch
             ExpectedWidth = expectedWidth;
             ExpectedHeight = expectedHeight;
             MapRegion = mapRegion;
+            ResourceAreaLv2RedirectRegion = resourceAreaLv2RedirectRegion
+                ?? new ImageRegion(210, 160, 860, 85);
+            SearchButtonRegion = searchButtonRegion ?? new ImageRegion(880, 500, 300, 180);
+            CityButtonRegion = cityButtonRegion ?? new ImageRegion(0, expectedHeight / 2, expectedWidth / 2, expectedHeight - expectedHeight / 2);
         }
 
         public int NotFoundObservationWindowMs { get; }
@@ -76,6 +89,9 @@ namespace ADB_Tool_Automation_Post_FB.Core.ResourceSearch
         public int ExpectedWidth { get; }
         public int ExpectedHeight { get; }
         public ImageRegion MapRegion { get; }
+        public ImageRegion ResourceAreaLv2RedirectRegion { get; }
+        public ImageRegion SearchButtonRegion { get; }
+        public ImageRegion CityButtonRegion { get; }
 
         private static void ValidateInside(ImageRegion region, int width, int height, string name)
         {

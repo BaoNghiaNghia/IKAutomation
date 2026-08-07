@@ -41,10 +41,13 @@ namespace ADB_Tool_Automation_Post_FB.Infrastructure.ResourceSearch
             CancellationToken cancellationToken)
         {
             if (request == null) throw new ArgumentNullException(nameof(request));
+            LogCancellationTrace(request, "RecoveryStart", cancellationToken,
+                "FarmOperationToken", "ResourceAreaLv2RecoveryCoordinator");
             cancellationToken.ThrowIfCancellationRequested();
             var result = new ResourceAreaLv2RecoveryResult
             { MaxAttempts = ResourceAreaLv2PointSelector.MaxResourceAreaLv2PointAttempts };
 
+            logger.Info($"[Resource Area Lv2 Point Flow Started] RunId='{request.RunId ?? string.Empty}', DeviceName='{request.DeviceName}', Resource='{request.Resource}', EffectiveLevel={request.Level}, AreaEpoch={request.AreaEpoch}, ExpectedTeam='{request.ExpectedTeam?.ToString() ?? string.Empty}', SpecialAttemptNumber=1, RemainingUnusedPoints={ResourceAreaLv2PointSelector.Points1280x720.Count}, OperationTokenCancelled={cancellationToken.IsCancellationRequested}, NextAction='EnsureWorldMap'");
             NavigationResult ensured = await navigation.EnsureWorldMapAsync(
                 request.DeviceName, cancellationToken);
             result.EnsureWorldMapResult = ensured;
@@ -77,6 +80,9 @@ namespace ADB_Tool_Automation_Post_FB.Infrastructure.ResourceSearch
                 return result;
             }
 
+            logger.Info($"[Resource Area Lv2 Point Attempt] RunId='{request.RunId ?? string.Empty}', DeviceName='{request.DeviceName}', Resource='{request.Resource}', EffectiveLevel={request.Level}, AreaEpoch={request.AreaEpoch}, Attempt={point.Attempt}, MaxAttempts={point.MaxAttempts}, RemainingPointCount={point.RemainingPointCount}, BasePoint=({point.BasePoint.X},{point.BasePoint.Y}), ScaledPoint=({point.ScaledPoint.X},{point.ScaledPoint.Y}), PanelClosed={result.WorldMapVerifiedBeforeTap}, WorldMapVerifiedBeforeTap={result.WorldMapVerifiedBeforeTap}, PointTapSent=false, OperationTokenCancelled={cancellationToken.IsCancellationRequested}, NextAction='TapPredefinedPoint'");
+            LogCancellationTrace(request, "BeforePointTap", cancellationToken,
+                "FarmOperationToken", "ResourceAreaLv2RecoveryCoordinator");
             NavigationResult tapped = await navigation.TapWorldMapPointAsync(
                 request.DeviceName, point.ScaledPoint.X, point.ScaledPoint.Y,
                 cancellationToken);
@@ -103,11 +109,17 @@ namespace ADB_Tool_Automation_Post_FB.Infrastructure.ResourceSearch
             return result;
         }
 
+        private void LogCancellationTrace(ResourceAreaLv2RecoveryRequest request,
+            string stage, CancellationToken token, string tokenName, string sourceScope)
+        {
+            logger.Info($"[Resource Area Lv2 Cancellation Trace] RunId='{request.RunId ?? string.Empty}', DeviceName='{request.DeviceName}', Stage='{stage}', TokenName='{tokenName}', IsCancellationRequested={token.IsCancellationRequested}, SourceScope='{sourceScope}', SourceDeadline='', RemainingMs='', ParentOperationCancelled={token.IsCancellationRequested}, SearchAttemptCancelled=false, ToastWatchCancelled=false, Reason='{(token.IsCancellationRequested ? "FarmOperationTokenCancelled" : string.Empty)}'");
+        }
+
         private void Log(ResourceAreaLv2RecoveryRequest request,
             ResourceAreaLv2RecoveryResult result, ResourceAreaLv2PointSelection point,
             NavigationResult tapped, bool tapSent, bool reopened, string outcome)
         {
-            logger.Info("[Resource Area Lv2 Navigation Recovery] "
+            logger.Info("[Resource Area Lv2 Point Attempt] "
                 + $"RunId='{request.RunId}', DeviceName='{request.DeviceName}', "
                 + $"Resource='{request.Resource}', Level={request.Level}, AreaEpoch={request.AreaEpoch}, "
                 + $"Attempt={result.Attempt}, MaxAttempts={result.MaxAttempts}, "
@@ -115,9 +127,11 @@ namespace ADB_Tool_Automation_Post_FB.Infrastructure.ResourceSearch
                 + $"ScaledPoint=({result.ScaledPoint.X},{result.ScaledPoint.Y}), "
                 + $"ActualResolution='{(point == null ? string.Empty : point.ActualResolution.ToString())}', "
                 + $"RemainingPointCount={result.RemainingPointCount}, "
-                + $"EnsureWorldMapSuccess={result.WorldMapVerifiedBeforeTap}, "
-                + $"PointInsideBounds={tapSent}, TapCommandSent={tapSent}, "
+                + $"PanelClosed={result.WorldMapVerifiedBeforeTap}, "
+                + $"WorldMapVerifiedBeforeTap={result.WorldMapVerifiedBeforeTap}, "
+                + $"PointTapSent={tapSent}, "
                 + $"WorldMapVerifiedAfterTap={result.PointTapVerified}, "
+                + $"NextAction='{(reopened ? "RestoreResourceConfiguration" : outcome)}', "
                 + $"SearchPanelReopened={reopened}, Outcome='{outcome}', "
                 + $"FailureReason='{result.FailureReason ?? string.Empty}'");
         }

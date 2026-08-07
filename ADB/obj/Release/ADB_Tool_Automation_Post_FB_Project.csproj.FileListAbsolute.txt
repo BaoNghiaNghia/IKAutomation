@@ -412,3 +412,5 @@ D:\Bot_Tool_Auto_Game\IKAutomation\ADB\bin\Release\sv\ZedGraph.resources.dll
 D:\Bot_Tool_Auto_Game\IKAutomation\ADB\bin\Release\tr\ZedGraph.resources.dll
 D:\Bot_Tool_Auto_Game\IKAutomation\ADB\bin\Release\zh-cn\ZedGraph.resources.dll
 D:\Bot_Tool_Auto_Game\IKAutomation\ADB\bin\Release\zh-tw\ZedGraph.resources.dll
+D:\Bot_Tool_Auto_Game\IKAutomation\ADB\bin\Release\Data\InfinityKingdom\1280x720\vi\Search\resource_area_lv2_anchor.png
+D:\Bot_Tool_Auto_Game\IKAutomation\ADB\bin\Release\Data\InfinityKingdom\1280x720\vi\Search\resource_area_phrase_anchor.png

@@ -10,6 +10,9 @@ namespace ADB_Tool_Automation_Post_FB.Core.ResourceSearch
         public ResourceType RequestedResource { get; set; }
         public int RequestedLevel { get; set; }
         public int? ObservedLevel { get; set; }
+        public int? EffectiveLevel { get; set; }
+        public bool RequestedLevelReached { get; set; }
+        public bool LevelCapped { get; set; }
         public bool RequestedUnoccupiedOnly { get; set; }
         public bool ResourceVerified { get; set; }
         public bool LevelVerified { get; set; }

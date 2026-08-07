@@ -32,6 +32,8 @@
 [assembly: System.Windows.Resources.AssemblyAssociatedContentFileAttribute("data/infinitykingdom/1280x720/vi/search/level_value_5.png")]
 [assembly: System.Windows.Resources.AssemblyAssociatedContentFileAttribute("data/infinitykingdom/1280x720/vi/search/level_value_6.png")]
 [assembly: System.Windows.Resources.AssemblyAssociatedContentFileAttribute("data/infinitykingdom/1280x720/vi/search/level_value_7.png")]
+[assembly: System.Windows.Resources.AssemblyAssociatedContentFileAttribute("data/infinitykingdom/1280x720/vi/search/resource_area_lv2_anchor.png")]
+[assembly: System.Windows.Resources.AssemblyAssociatedContentFileAttribute("data/infinitykingdom/1280x720/vi/search/resource_area_phrase_anchor.png")]
 [assembly: System.Windows.Resources.AssemblyAssociatedContentFileAttribute("data/infinitykingdom/1280x720/vi/search/resource_food_selected.png")]
 [assembly: System.Windows.Resources.AssemblyAssociatedContentFileAttribute("data/infinitykingdom/1280x720/vi/search/resource_food_unselected.png")]
 [assembly: System.Windows.Resources.AssemblyAssociatedContentFileAttribute("data/infinitykingdom/1280x720/vi/search/resource_iron_selected.png")]

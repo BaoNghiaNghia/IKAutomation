@@ -113,12 +113,14 @@ namespace ADB_Tool_Automation_Post_FB.Infrastructure.Workflows
                     NavigationResult panel = await navigation.OpenResourceSearchPanelAsync(
                         deviceName, cancellationToken);
                     result.FinalState = panel.FinalState;
-                    if (!panel.Success || panel.FinalState != GameState.ResourceSearchPanel)
+                    if (!panel.Success || (panel.FinalState != GameState.ResourceSearchPanel
+                        && !panel.ScreenshotConfirmed))
                     {
                         attempt.Message = panel.Message; attempt.ErrorMessage = panel.ErrorMessage;
                         attempt.Duration = attemptWatch.Elapsed;
                         return Complete(result, ResourceFarmFallbackOutcome.RecoveryFailed, watch,
-                            "ResourceSearchPanel could not be prepared for the next resource.", panel.ErrorMessage);
+                            "ResourceSearchPanel could not be prepared for the next resource.",
+                            panel.FailureReason ?? panel.ErrorMessage ?? panel.Message);
                     }
 
                     var levelPolicy = new ResourceLevelFallbackPolicy
@@ -147,8 +149,11 @@ namespace ADB_Tool_Automation_Post_FB.Infrastructure.Workflows
                             return Complete(result, ResourceFarmFallbackOutcome.ResourceAreaLv2Redirect,
                                 watch, level.Message, level.ErrorMessage);
 
-                        int exactLevel = level.LastAttemptedLevel
-                            ?? level.Attempts?.LastOrDefault()?.Level
+                        var lastLevelAttempt = level.Attempts?.LastOrDefault();
+                        int exactLevel = lastLevelAttempt?.ConfigurationResult?.EffectiveLevel
+                            ?? lastLevelAttempt?.ConfigurationResult?.ObservedLevel
+                            ?? level.LastAttemptedLevel
+                            ?? lastLevelAttempt?.Level
                             ?? request.ResourceLevelPriority.FirstOrDefault();
                         TeamNumber? expectedTeam = request.TeamOperation?.ExpectedTeam
                             ?? request.ExpectedTeam;

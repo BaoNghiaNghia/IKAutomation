@@ -157,7 +157,8 @@ namespace ADB_Tool_Automation_Post_FB.Infrastructure.ResourceSearch
                         ResourceSearchConfigurationResult configured = await configuration.ConfigureAsync(deviceName, request, token);
                         attempt.ConfigurationResult = configured;
                         attempt.ConfigurationSucceeded = configured.Success && configured.ResourceVerified
-                            && configured.LevelVerified && configured.FilterVerified;
+                            && (configured.LevelVerified || configured.AccountCeilingAccepted)
+                            && configured.FilterVerified;
                         result.FinalState = configured.FinalState;
                         if (!attempt.ConfigurationSucceeded)
                         {
@@ -221,7 +222,15 @@ namespace ADB_Tool_Automation_Post_FB.Infrastructure.ResourceSearch
                         }
 
                         ResourceSearchExecutionResult searched = await search.ExecuteAsync(deviceName,
-                            new ResourceSearchExecutionRequest { Configuration = request, ConfigureBeforeSearch = false }, token);
+                            new ResourceSearchExecutionRequest
+                            {
+                                Configuration = request,
+                                ConfigureBeforeSearch = false,
+                                RunId = runId,
+                                EffectiveLevel = configured.EffectiveLevel ?? configured.ObservedLevel ?? level,
+                                LevelCapped = configured.LevelCapped,
+                                AreaEpoch = 0
+                            }, token);
                         attempt.SearchResult = searched; attempt.SearchOutcome = searched.Outcome;
                         attempt.MatchedNotFoundVariant = searched.MatchedNotFoundVariant;
                         attempt.FailureReason = searched.FailureReason;

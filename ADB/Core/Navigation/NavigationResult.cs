@@ -1,4 +1,5 @@
 using ADB_Tool_Automation_Post_FB.Core.GameDetection;
+using ADB_Tool_Automation_Post_FB.Core.Vision;
 using System;
 using System.Collections.Generic;
 
@@ -20,5 +21,17 @@ namespace ADB_Tool_Automation_Post_FB.Core.Navigation
         public string ErrorMessage { get; set; }
         public IReadOnlyList<GameDetectionEvidence> FinalEvidence { get; set; }
         public IReadOnlyList<NavigationTransition> Transitions { get; set; }
+
+        // Screenshot-probe diagnostics for resource search panel handoff.
+        public bool ScreenshotConfirmed { get; set; }
+        public int ConfirmationFrames { get; set; }
+        public ImageMatchResult SearchButtonBounds { get; set; }
+        public bool SearchButtonBoundsStable { get; set; }
+        public bool SearchButtonBoundsComparisonPerformed { get; set; }
+        public bool SearchButtonExpectedRegion { get; set; }
+        public bool SearchButtonInsideExpectedRegion { get; set; }
+        public string ConfirmationMode { get; set; }
+        public int SearchIconTapCount { get; set; }
+        public int BackCount { get; set; }
     }
 }

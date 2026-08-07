@@ -69,6 +69,7 @@ namespace IKAutomation.FarmTeamSelection.Tests
             Run("Retry uses fresh bounds", RetryFreshBounds);
             Run("Preflight does not consume selection timeout", PreflightDoesNotConsumeSelectionTimeout);
             Run("Tap near deadline still gets one verification frame", TapNearDeadlineIsVerified);
+            Run("Stale input frame is retryable and not NoEligibleTeam", StaleInputFrameIsRetryable);
             Run("Polling cancellation is returned", PollCancellation);
             Run("Retry cancellation is returned", RetryCancellation);
             Run("Lock-wait cancellation is returned", LockWaitCancellation);
@@ -324,6 +325,21 @@ namespace IKAutomation.FarmTeamSelection.Tests
             Equal(TeamNumber.Team3, r.SelectedTeam.Value); Equal(1, f.Client.Taps.Count);
         }
 
+        private static void StaleInputFrameIsRetryable()
+        {
+            Fixture f = Setup(maxAttempts: 2, timeoutSeconds: 1,
+                maxInputFrameAgeMs: 10);
+            f.Matcher.Badges.Add(TeamNumber.Team2);
+            f.Matcher.DelayMs = 20;
+            SelectFarmTeamResult result = Execute(f, Only(TeamNumber.Team2));
+            Equal(SelectFarmTeamOutcome.SelectionTimeout, result.Outcome);
+            Equal("SelectionFrameFreshnessTimeout", result.FailureReason);
+            Equal(0, result.TeamTapCount);
+            Equal(0, f.Client.Taps.Count);
+            Assert(f.Matcher.BadgeCalls[TeamNumber.Team2] >= 2,
+                "A stale plan did not trigger a fresh bounded re-scan.");
+        }
+
         private static void PollCancellation()
         { Fixture f = Setup(); f.Matcher.Badges.Add(TeamNumber.Team4); using (var source = new CancellationTokenSource()) { f.Client.CancelOnTap = source; Equal(SelectFarmTeamOutcome.Cancelled, Execute(f, Only(TeamNumber.Team4), source.Token).Outcome); } }
 
@@ -403,7 +419,7 @@ namespace IKAutomation.FarmTeamSelection.Tests
         // fake captures used by retry tests, which turns timing tests into host
         // scheduling tests.  TimeoutBounded supplies its own one-second limit.
         private static Fixture Setup(int maxAttempts = 2, int timeoutSeconds = 3,
-            bool useProductionDetector = false)
+            bool useProductionDetector = false, int maxInputFrameAgeMs = 1000)
         {
             var f = new Fixture();
             f.Detector = new FakeDetector(); f.Registry = new FakeRegistry(); f.Matcher = new FakeMatcher();
@@ -411,13 +427,17 @@ namespace IKAutomation.FarmTeamSelection.Tests
             f.SelectedDetector = useProductionDetector
                 ? new FakeSelectedTeamDetector(f.Matcher) : null;
             f.Service = new SelectFarmTeamService(f.Detector, f.Client, f.Registry, f.Matcher,
-                new DeviceOperationLock(), Options(1, maxAttempts, timeoutSeconds), f.Store,
+                new DeviceOperationLock(), Options(1, maxAttempts, timeoutSeconds,
+                    maxInputFrameAgeMs), f.Store,
                 new FakeLogger(), f.SelectedDetector);
             return f;
         }
 
-        private static FarmTeamSelectionOptions Options(int poll = 1, int attempts = 2, int timeout = 1) =>
-            new FarmTeamSelectionOptions(poll, timeout, attempts, 1, true, "Diagnostics/FarmTeamSelection", Regions());
+        private static FarmTeamSelectionOptions Options(int poll = 1, int attempts = 2,
+            int timeout = 1, int maxInputFrameAgeMs = 1000) =>
+            new FarmTeamSelectionOptions(poll, timeout, attempts, 1, true,
+                "Diagnostics/FarmTeamSelection", Regions(), 1280, 720, 3, 350, null,
+                80, 160, maxInputFrameAgeMs);
         private static Dictionary<TeamNumber, ImageRegion> Regions() => new Dictionary<TeamNumber, ImageRegion>
         {
             { TeamNumber.Team1, new ImageRegion(0, 0, 235, 150) },
@@ -476,10 +496,12 @@ namespace IKAutomation.FarmTeamSelection.Tests
             public readonly Dictionary<TeamNumber, ImageMatchResult> LastBadge = new Dictionary<TeamNumber, ImageMatchResult>();
             public readonly List<TeamNumber> TappedTeams = new List<TeamNumber>();
             public bool MoveBadgeEachCall, HideSelectedForFirstPostTapScan, HideBadgeWhenSelected;
+            public int DelayMs;
             private int hiddenSelectedChecksRemaining;
 
             public ImageMatchResult Find(byte[] screenshot, byte[] template, ImageRegion? region = null)
             {
+                if (DelayMs > 0) Thread.Sleep(DelayMs);
                 TemplateId id = (TemplateId)template[0];
                 TeamNumber team = TeamFromTemplate(id)
                     ?? TeamFromObservedRegion(region)

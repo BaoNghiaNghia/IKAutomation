@@ -209,7 +209,8 @@ namespace ADB_Tool_Automation_Post_FB.Infrastructure.Workflows
                 NavigationResult panel = await navigation.OpenResourceSearchPanelAsync(deviceName, token);
                 result.NavigationResult = panel; result.FinalState = panel.FinalState;
                 bool panelEvidence = HasResourceSearchPanelEvidence(panel.FinalEvidence);
-                if (!panel.Success || panel.FinalState != GameState.ResourceSearchPanel || !panelEvidence)
+                if (!panel.Success || (!panel.ScreenshotConfirmed
+                    && (panel.FinalState != GameState.ResourceSearchPanel || !panelEvidence)))
                 {
                     Add(steps, OneShotFarmStep.OpenSearchPanel, false, started, panel.Message, panel.ErrorMessage, panel);
                     return await StopAsync(result, OneShotFarmOutcome.SearchPanelUnavailable, panel.Message,

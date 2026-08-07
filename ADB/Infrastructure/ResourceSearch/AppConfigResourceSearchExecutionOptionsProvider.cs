@@ -22,7 +22,8 @@ namespace ADB_Tool_Automation_Post_FB.Infrastructure.ResourceSearch
                 Text("ResultScreenshotDirectory", "Diagnostics/SearchResults"),
                 Text("ObservationBurstDirectory", "Diagnostics/SearchObservation"),
                 Int("ExpectedWidth", 1280), Int("ExpectedHeight", 720),
-                Region("MapRegion", 160, 80, 960, 440));
+                Region("MapRegion", 160, 80, 960, 440),
+                Region("ResourceAreaLv2RedirectRegion", 210, 160, 860, 85));
         }
 
         private static string Key(string name) => "ResourceSearchExecution." + name;

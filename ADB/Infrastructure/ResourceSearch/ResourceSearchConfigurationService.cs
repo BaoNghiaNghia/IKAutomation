@@ -105,7 +105,7 @@ namespace ADB_Tool_Automation_Post_FB.Infrastructure.ResourceSearch
 
                 GameDetectionResult panel = await detector.DetectAsync(deviceName, cancellationToken);
                 List<ConfigurationTemplateEvidence> panelEvidence = PanelEvidence(panel);
-                if (!IsVerifiedPanel(panel))
+                if (!navigation.ScreenshotConfirmed && !IsVerifiedPanel(panel))
                 {
                     AddStep(steps, "EnsurePanel", false, 1, panelEvidence,
                         "ResourceSearchPanel did not have both required evidence signals.", panel.ErrorMessage);
@@ -247,6 +247,10 @@ namespace ADB_Tool_Automation_Post_FB.Infrastructure.ResourceSearch
             {
                 result.LevelVerified = true;
                 result.ObservedLevel = result.RequestedLevel;
+                result.EffectiveLevel = result.RequestedLevel;
+                result.RequestedLevelReached = true;
+                result.LevelCapped = false;
+                logger.Info($"[Resource Level Adjustment] RequestedLevel={result.RequestedLevel}, PreviousEffectiveLevel={result.RequestedLevel}, PlusTapSent=false, LevelRegionChanged=false, EffectiveLevel={result.EffectiveLevel}, RequestedLevelReached=true, LevelCapped=false, VerificationSource='ExistingLevelEvidence'");
                 AddStep(steps, "SetLevel", true, 1, evidence,
                     $"Level {result.RequestedLevel} was already verified; no level input was sent.", null);
                 return true;
@@ -266,6 +270,7 @@ namespace ADB_Tool_Automation_Post_FB.Infrastructure.ResourceSearch
             if (hasVisibleLevel)
             {
                 result.ObservedLevel = visibleLevel;
+                result.EffectiveLevel = visibleLevel;
                 evidence.Add(visibleLevelEvidence);
             }
 
@@ -317,6 +322,10 @@ namespace ADB_Tool_Automation_Post_FB.Infrastructure.ResourceSearch
                     evidence.Add(target);
                     result.LevelVerified = true;
                     result.ObservedLevel = result.RequestedLevel;
+                    result.EffectiveLevel = result.RequestedLevel;
+                    result.RequestedLevelReached = true;
+                    result.LevelCapped = false;
+                    logger.Info($"[Resource Level Adjustment] RequestedLevel={result.RequestedLevel}, PreviousEffectiveLevel={result.ObservedLevel}, PlusTapSent={(direction == TemplateId.LevelPlusButton)}, LevelRegionChanged=true, EffectiveLevel={result.EffectiveLevel}, RequestedLevelReached=true, LevelCapped=false, VerificationSource='LevelRegionChanged'");
                     AddStep(steps, "SetLevel", true, 1, evidence,
                         $"Level {result.RequestedLevel} verified after {tapsSent} "
                             + $"{(direction == TemplateId.LevelPlusButton ? "plus" : "minus")} Tap(s); "
@@ -341,8 +350,16 @@ namespace ADB_Tool_Automation_Post_FB.Infrastructure.ResourceSearch
                 if (direction == TemplateId.LevelPlusButton
                     && (unchangedObservedLevel || unchangedLevelValue))
                 {
-                    result.LevelVerified = true;
+                    result.LevelVerified = false;
                     result.AccountCeilingAccepted = true;
+                    result.RequestedLevelReached = false;
+                    result.LevelCapped = true;
+                    result.EffectiveLevel = result.ObservedLevel;
+                    logger.Info($"[Resource Level Adjustment] RequestedLevel={result.RequestedLevel}, "
+                        + $"PreviousEffectiveLevel={result.ObservedLevel?.ToString() ?? string.Empty}, "
+                        + "PlusTapSent=true, LevelRegionChanged=false, "
+                        + $"EffectiveLevel={result.EffectiveLevel?.ToString() ?? string.Empty}, "
+                        + "RequestedLevelReached=false, LevelCapped=true, VerificationSource='StableLevelRegion'");
                     AddStep(steps, "SetLevel", true, 1, evidence,
                         result.ObservedLevel.HasValue
                             ? $"Requested level {result.RequestedLevel} exceeds the account ceiling; "
@@ -362,7 +379,12 @@ namespace ADB_Tool_Automation_Post_FB.Infrastructure.ResourceSearch
             evidence.Add(level);
             result.LevelVerified = level.Found;
             if (result.LevelVerified)
+            {
                 result.ObservedLevel = result.RequestedLevel;
+                result.EffectiveLevel = result.RequestedLevel;
+                result.RequestedLevelReached = true;
+                result.LevelCapped = false;
+            }
             else if (!result.ObservedLevel.HasValue)
             {
                 byte[] finalScreenshot = await ldPlayerClient.CaptureScreenshotPngAsync(
@@ -379,6 +401,9 @@ namespace ADB_Tool_Automation_Post_FB.Infrastructure.ResourceSearch
                     finalMinus, finalPlus, finalSearch, out observedLevel, out lowerLevel))
                 {
                     result.ObservedLevel = observedLevel;
+                    result.EffectiveLevel = observedLevel;
+                    result.RequestedLevelReached = false;
+                    result.LevelCapped = true;
                     evidence.Add(lowerLevel);
                 }
             }
@@ -580,7 +605,9 @@ namespace ADB_Tool_Automation_Post_FB.Infrastructure.ResourceSearch
                 options.ActionVerificationTimeoutSeconds));
 
             result.ResourceVerified = evidence[1].Found;
-            result.LevelVerified = evidence[2].Found;
+            result.LevelVerified = result.AccountCeilingAccepted
+                ? false
+                : (result.RequestedLevelReached || evidence[2].Found);
             result.FilterVerified = evidence[3].Found;
             string missingEvidence = string.Join(", ", evidence
                 .Where(item => !item.Found)

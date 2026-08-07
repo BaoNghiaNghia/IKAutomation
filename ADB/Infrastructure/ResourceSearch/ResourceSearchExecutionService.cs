@@ -183,11 +183,25 @@ namespace ADB_Tool_Automation_Post_FB.Infrastructure.ResourceSearch
                     result.SearchButtonVerified = true;
                     int tapX = button.CenterX;
                     int tapY = button.CenterY;
+                    // Arm the lightweight frame request before the input so the
+                    // first post-tap frame can already be in flight.
+                    Task<CapturedFrame> armedToastFrame = CaptureFrameAsync(deviceName, cancellationToken);
                     logger.Info($"[Resource Search Execution] DeviceName='{deviceName}', Attempt={attempt}, "
                         + $"SearchButtonBounds=({button.X},{button.Y},{button.Width},{button.Height}), "
                         + $"SearchTap=({tapX},{tapY}), SearchTapCount={result.SearchTapCount + 1}");
                     await ldPlayerClient.TapAsync(deviceName, tapX, tapY, cancellationToken);
                     result.SearchTapCount++;
+                    DateTimeOffset searchTapCompletedAt = DateTimeOffset.UtcNow;
+                    ImmediateToastProbeResult immediateProbe = await ProbeImmediateToastAsync(
+                        deviceName, request, result, result.SearchTapCount,
+                        searchTapCompletedAt, armedToastFrame, cancellationToken);
+                    if (immediateProbe.Outcome.HasValue)
+                    {
+                        result.FailureReason = immediateProbe.FailureReason;
+                        return await CompleteAsync(deviceName, result, context,
+                            immediateProbe.Outcome.Value, immediateProbe.Message,
+                            immediateProbe.ErrorMessage, watch, cancellationToken);
+                    }
                     // Each freshly rematched Tap gets its own bounded verification
                     // window. A slow/Unknown observation after the first Tap must
                     // not consume the verification budget of later retries.
@@ -237,17 +251,17 @@ namespace ADB_Tool_Automation_Post_FB.Infrastructure.ResourceSearch
                     // instead of falling through to SearchTransitionTimeout.
                     if (IsUnchangedSearchPanel(result, context))
                     {
-                        if (attempt < options.MaxSearchTapAttempts)
-                            continue;
                         if (context.HasPartialToastEvidence)
                         {
-                            result.FailureReason = ResourceSearchFailureReason.ToastAmbiguous;
-                            result.ShouldRetrySearch = true;
+                            result.FailureReason = ResourceSearchFailureReason.ResourceToastUnclassified;
+                            result.ShouldRetrySearch = false;
                             return await CompleteAsync(deviceName, result, context,
-                                ResourceSearchOutcome.SearchTapNotApplied,
-                                "Chưa xác định rõ thông báo tìm kiếm; đang kiểm tra lại.",
+                                ResourceSearchOutcome.ResourceToastUnclassified,
+                                "Phát hiện toast chưa phân loại; dừng Search để tránh gửi lặp.",
                                 null, watch, cancellationToken);
                         }
+                        if (attempt < options.MaxSearchTapAttempts)
+                            continue;
                         result.FailureReason = ResourceSearchFailureReason
                             .SearchButtonStillVisibleAfterMaxAttempts;
                         result.ShouldRetrySearch = true;
@@ -289,6 +303,331 @@ namespace ADB_Tool_Automation_Post_FB.Infrastructure.ResourceSearch
             {
                 context.Dispose();
             }
+        }
+
+        private async Task<ImmediateToastProbeResult> ProbeImmediateToastAsync(
+            string deviceName, ResourceSearchExecutionRequest request,
+            ResourceSearchExecutionResult result, int searchTapCount,
+            DateTimeOffset searchTapCompletedAt, Task<CapturedFrame> armedToastFrame,
+            CancellationToken cancellationToken)
+        {
+            int settleMs = 350;
+            await Task.Delay(settleMs, cancellationToken);
+            DateTimeOffset captureStarted = DateTimeOffset.UtcNow;
+            CapturedFrame frame;
+            try
+            {
+                frame = armedToastFrame == null
+                    ? await CaptureFrameAsync(deviceName, cancellationToken)
+                    : await armedToastFrame;
+                // An armed request can complete just before the input. Never use a
+                // pre-tap frame as the post-tap Search-button gate.
+                if (frame.CapturedAt <= searchTapCompletedAt)
+                {
+                    frame.Dispose();
+                    frame = await CaptureFrameAsync(deviceName, cancellationToken);
+                }
+            }
+            catch (OperationCanceledException) { throw; }
+            catch (Exception exception)
+            {
+                logger.Error($"[Resource Area Lv2 Toast Burst] RunId='{request.RunId ?? string.Empty}', DeviceName='{deviceName}', Resource='{request.Configuration?.ResourceType}', SearchTapCount={searchTapCount}, FramesReceived=0, FramesInspected=0, TemplateFound=false, NextAction='RetrySearchWithinExistingLimit', FailureReason='CaptureUnavailable: {exception.Message}'", exception);
+                return ImmediateToastProbeResult.None;
+            }
+            try
+            {
+                // The pre-armed capture is the operation-local one-frame rolling buffer.
+                // Only a fresh Search-button-positive frame activates toast matching.
+                ImageRegion toastRoi = ScaleRegion(
+                    new ImageRegion(190, 105, 900, 180), frame.Width, frame.Height);
+
+                // Gate the transient watcher on the fresh post-tap Search button.
+                // If it disappeared, this frame belongs to the normal result flow.
+                ImageRegion searchButtonRoi = ScaleRegion(options.SearchButtonRegion, frame.Width, frame.Height);
+                ImageMatchResult postTapSearchButton;
+                try
+                {
+                    postTapSearchButton = Match(frame, TemplateId.SearchButtonEnabled, searchButtonRoi);
+                }
+                catch (Exception exception)
+                {
+                    logger.Info($"[Resource Area Lv2 Toast Burst] RunId='{request.RunId ?? string.Empty}', DeviceName='{deviceName}', Resource='{request.Configuration?.ResourceType}', SearchTapCount={searchTapCount}, SearchButtonState='Unknown', FramesReceived=1, FramesInspected=0, TemplateFound=false, NextAction='RetrySearchWithinExistingLimit', FailureReason='SearchButtonProbeFailed: {exception.Message}'");
+                    return ImmediateToastProbeResult.None;
+                }
+
+                bool searchButtonStillVisible = HasBounds(postTapSearchButton)
+                    && IsInside(postTapSearchButton, searchButtonRoi);
+                if (!searchButtonStillVisible)
+                {
+                    logger.Info($"[Resource Area Lv2 Toast Burst] RunId='{request.RunId ?? string.Empty}', DeviceName='{deviceName}', Resource='{request.Configuration?.ResourceType}', SearchTapCount={searchTapCount}, SearchButtonState='Disappeared', FramesReceived=1, FramesInspected=0, FirstFrameAfterTapMs={(frame.CapturedAt - searchTapCompletedAt).TotalMilliseconds:F0}, LastFrameAfterTapMs={(frame.CapturedAt - searchTapCompletedAt).TotalMilliseconds:F0}, TemplateFound=false, NextAction='ContinueNormalSearchObservation', FailureReason=''");
+                    return ImmediateToastProbeResult.None;
+                }
+
+                logger.Info($"[Resource Area Lv2 Toast Burst] RunId='{request.RunId ?? string.Empty}', DeviceName='{deviceName}', Resource='{request.Configuration?.ResourceType}', SearchTapCount={searchTapCount}, SearchButtonState='StillVisible', FramesReceived=1, FramesInspected=0, TemplateFound=false, NextAction='InspectToastBurst', FailureReason=''");
+
+                ResourceAreaLv2TemplateStatus phraseStatus = ValidateResourceAreaLv2Template(
+                    TemplateId.ResourceAreaPhraseAnchor, toastRoi);
+                ResourceAreaLv2TemplateStatus levelStatus = ValidateResourceAreaLv2Template(
+                    TemplateId.ResourceAreaLv2EndingAnchor, toastRoi);
+                LogResourceAreaLv2TemplateStatus(deviceName, request.RunId, toastRoi,
+                    "ResourceAreaPhraseAnchor", phraseStatus);
+                LogResourceAreaLv2TemplateStatus(deviceName, request.RunId, toastRoi,
+                    "ResourceAreaLv2EndingAnchor", levelStatus);
+                ResourceAreaLv2TemplateStatus unavailableStatus = !phraseStatus.Ready
+                    ? phraseStatus : (!levelStatus.Ready ? levelStatus : null);
+                if (unavailableStatus != null)
+                    return ImmediateToastProbeResult.Decided(
+                        ResourceSearchOutcome.ResourceAreaLv2TemplateUnavailable,
+                        "Resource Area Lv2 toast anchor is unavailable.",
+                        unavailableStatus.FailureReason);
+
+                const int watchStartMs = 350;
+                const int watchEndMs = 2100;
+                const int frameIntervalTargetMs = 125;
+                int framesReceived = 1;
+                int framesInspected = 0;
+                int bestFrameIndex = -1;
+                double phraseBestScore = 0;
+                double levelBestScore = 0;
+                ImageMatchResult phraseBestMatch = ImageMatchResult.NotFound();
+                ImageMatchResult levelBestMatch = ImageMatchResult.NotFound();
+                bool templateFound = false;
+                DateTimeOffset? firstFrameInsideWindow = null;
+                DateTimeOffset? lastFrameInsideWindow = null;
+                while ((DateTimeOffset.UtcNow - searchTapCompletedAt).TotalMilliseconds <= watchEndMs)
+                {
+                    double frameAfterTapMs = (frame.CapturedAt - searchTapCompletedAt).TotalMilliseconds;
+                    if (frameAfterTapMs >= watchStartMs && frameAfterTapMs <= watchEndMs)
+                    {
+                        framesInspected++;
+                        if (!firstFrameInsideWindow.HasValue)
+                            firstFrameInsideWindow = frame.CapturedAt;
+                        if (lastFrameInsideWindow.HasValue)
+                        {
+                        }
+                        lastFrameInsideWindow = frame.CapturedAt;
+                        IReadOnlyList<ImageMatchResult> matches;
+                        try
+                        {
+                            matches = await MatchResourceAreaLv2AnchorsAsync(frame, toastRoi,
+                                cancellationToken);
+                        }
+                        catch (Exception exception)
+                        {
+                            logger.Error($"[Resource Area Lv2 Toast Burst] DeviceName='{deviceName}', PhraseTemplatePath='{phraseStatus.ResolvedAbsolutePath}', Lv2TemplatePath='{levelStatus.ResolvedAbsolutePath}', FailureReason='MatcherExecutionFailed: {exception.Message}'", exception);
+                            return ImmediateToastProbeResult.Decided(
+                                ResourceSearchOutcome.ResourceAreaLv2TemplateUnavailable,
+                                "Resource Area Lv2 toast matcher failed.",
+                                "TemplateMatcherInitializationFailed");
+                        }
+                        ImageMatchResult phraseMatch = matches[0] ?? ImageMatchResult.NotFound();
+                        ImageMatchResult levelMatch = matches[1] ?? ImageMatchResult.NotFound();
+                        double phraseScore = phraseMatch.Confidence ?? (HasBounds(phraseMatch) ? 1.0 : 0.0);
+                        double levelScore = levelMatch.Confidence ?? (HasBounds(levelMatch) ? 1.0 : 0.0);
+                        if (phraseScore > phraseBestScore)
+                        {
+                            phraseBestScore = phraseScore;
+                            phraseBestMatch = phraseMatch;
+                        }
+                        if (levelScore > levelBestScore)
+                        {
+                            levelBestScore = levelScore;
+                            levelBestMatch = levelMatch;
+                        }
+                        bool phraseFound = HasBounds(phraseMatch);
+                        bool levelFound = HasBounds(levelMatch);
+                        if (phraseFound && levelFound)
+                        {
+                            templateFound = true;
+                            bestFrameIndex = framesInspected;
+                            phraseBestMatch = phraseMatch;
+                            levelBestMatch = levelMatch;
+                            break;
+                        }
+                    }
+                    if ((DateTimeOffset.UtcNow - searchTapCompletedAt).TotalMilliseconds >= watchEndMs)
+                        break;
+                    await Task.Delay(frameIntervalTargetMs, cancellationToken);
+                    CapturedFrame nextFrame;
+                    try
+                    {
+                        nextFrame = await CaptureFrameAsync(deviceName, cancellationToken);
+                    }
+                    catch (OperationCanceledException) { throw; }
+                    catch (Exception exception)
+                    {
+                        logger.Error($"[Resource Area Lv2 Toast Burst] RunId='{request.RunId ?? string.Empty}', DeviceName='{deviceName}', Resource='{request.Configuration?.ResourceType}', SearchTapCount={searchTapCount}, FramesReceived={framesReceived}, FramesInspected={framesInspected}, TemplateFound=false, NextAction='RetrySearchWithinExistingLimit', FailureReason='CaptureUnavailable: {exception.Message}'", exception);
+                        return ImmediateToastProbeResult.None;
+                    }
+                    frame.Dispose();
+                    frame = nextFrame;
+                    framesReceived++;
+                }
+
+                string toastRunId = request.RunId ?? string.Empty;
+                string toastNextAction = templateFound ? "StartPredefinedPointFlow" : "RetrySearchWithinExistingLimit";
+                logger.Info($"[Conditional Resource Area Lv2 Toast Watch] RunId='{toastRunId}', DeviceName='{deviceName}', Resource='{request.Configuration?.ResourceType}', SearchTapCount={searchTapCount}, FramesReceived={framesReceived}, FramesInspected={framesInspected}, FirstFrameAfterTapMs={(firstFrameInsideWindow.HasValue ? (firstFrameInsideWindow.Value - searchTapCompletedAt).TotalMilliseconds : (captureStarted - searchTapCompletedAt).TotalMilliseconds):F0}, LastFrameAfterTapMs={(lastFrameInsideWindow.HasValue ? (lastFrameInsideWindow.Value - searchTapCompletedAt).TotalMilliseconds : -1):F0}, PhraseBestScore={phraseBestScore:F3}, PhraseBestBounds='{FormatBounds(phraseBestMatch)}', Lv2EndingBestScore={levelBestScore:F3}, Lv2EndingBestBounds='{FormatBounds(levelBestMatch)}', MatchingFrameIndex={bestFrameIndex}, TemplateFound={templateFound}, NextAction='{toastNextAction}', FailureReason=''");
+                if (templateFound)
+                {
+                    result.FailureReason = ResourceSearchFailureReason.ResourceAreaLv2Redirect;
+                    result.MatchedNotFoundVariant = "ResourceAreaLv2Redirect";
+                    return ImmediateToastProbeResult.Decided(
+                        ResourceSearchOutcome.ResourceAreaLv2Redirect,
+                        "Đã phát hiện thông báo chuyển sang khu tài nguyên Lv2.", null);
+                }
+                return ImmediateToastProbeResult.None;
+
+            }
+            finally
+            {
+                frame.Dispose();
+            }
+        }
+
+        private ResourceAreaLv2TemplateStatus ValidateResourceAreaLv2Template(
+            TemplateId templateId, ImageRegion toastRoi)
+        {
+            var status = new ResourceAreaLv2TemplateStatus
+            {
+                AppBaseDirectory = AppContext.BaseDirectory ?? string.Empty
+            };
+            try
+            {
+                status.Definition = templateRegistry.GetDefinition(templateId);
+                status.ConfiguredRelativePath = status.Definition?.RelativePath ?? string.Empty;
+                status.Threshold = status.Definition?.DefaultThreshold ?? 0;
+                if (string.IsNullOrWhiteSpace(status.ConfiguredRelativePath))
+                {
+                    status.FailureReason = "TemplatePathNotConfigured";
+                    return status;
+                }
+
+                status.ResolvedAbsolutePath = templateRegistry.GetPath(templateId) ?? string.Empty;
+                string platformRelativePath = status.ConfiguredRelativePath.Replace('/', Path.DirectorySeparatorChar);
+                status.SourceAssetPath = Path.GetFullPath(Path.Combine(AppContext.BaseDirectory,
+                    "..", "..", "Data", "InfinityKingdom", "1280x720", "vi", platformRelativePath));
+                if (string.IsNullOrWhiteSpace(status.ResolvedAbsolutePath))
+                {
+                    status.FailureReason = "TemplatePathNotConfigured";
+                    return status;
+                }
+
+                status.Exists = File.Exists(status.ResolvedAbsolutePath);
+                if (!status.Exists)
+                {
+                    status.FailureReason = "TemplateFileMissing";
+                    return status;
+                }
+
+                status.FileLength = new FileInfo(status.ResolvedAbsolutePath).Length;
+                if (status.FileLength <= 0)
+                {
+                    status.FailureReason = "TemplateFileEmpty";
+                    return status;
+                }
+
+                status.DecodeAttempted = true;
+                byte[] bytes = templateRegistry.LoadBytes(templateId);
+                if (bytes == null || bytes.Length == 0)
+                {
+                    status.FailureReason = "TemplateFileEmpty";
+                    return status;
+                }
+
+                using (var stream = new MemoryStream(bytes, false))
+                using (var image = new Bitmap(stream))
+                {
+                    status.Width = image.Width;
+                    status.Height = image.Height;
+                    status.DecodeSuccess = status.Width > 0 && status.Height > 0;
+                }
+                if (!status.DecodeSuccess)
+                {
+                    status.FailureReason = "TemplateInvalidDimensions";
+                    return status;
+                }
+
+                status.FitsInsideToastRoi = status.Width <= toastRoi.Width
+                    && status.Height <= toastRoi.Height;
+                if (!status.FitsInsideToastRoi)
+                {
+                    status.FailureReason = "TemplateLargerThanToastRoi";
+                    return status;
+                }
+
+                status.MatcherReady = imageMatcher != null;
+                if (!status.MatcherReady)
+                {
+                    status.FailureReason = "TemplateMatcherInitializationFailed";
+                    return status;
+                }
+
+                status.Ready = true;
+                return status;
+            }
+            catch (Exception exception)
+            {
+                if (string.IsNullOrWhiteSpace(status.ConfiguredRelativePath)
+                    || string.IsNullOrWhiteSpace(status.ResolvedAbsolutePath))
+                    status.FailureReason = "TemplatePathNotConfigured";
+                else if (!status.Exists)
+                    status.FailureReason = "TemplateFileMissing";
+                else
+                    status.FailureReason = "TemplateDecodeFailed";
+                logger.Error($"[Resource Area Lv2 Toast Template Status] ValidationException='{exception.Message}', FailureReason='{status.FailureReason}'", exception);
+                return status;
+            }
+        }
+
+        private void LogResourceAreaLv2TemplateStatus(string deviceName, string runId,
+            ImageRegion toastRoi, string templateName, ResourceAreaLv2TemplateStatus status)
+        {
+            logger.Info($"[Resource Area Lv2 Toast Template Status] DeviceName='{deviceName}', RunId='{runId ?? string.Empty}', TemplateName='{templateName}', AppBaseDirectory='{status.AppBaseDirectory}', ConfiguredRelativePath='{status.ConfiguredRelativePath}', ResolvedAbsolutePath='{status.ResolvedAbsolutePath}', SourceAssetPath='{status.SourceAssetPath}', Exists={status.Exists}, FileLength={status.FileLength}, DecodeAttempted={status.DecodeAttempted}, DecodeSuccess={status.DecodeSuccess}, Width={status.Width}, Height={status.Height}, ToastRoi='{FormatRegion(toastRoi)}', FitsInsideToastRoi={status.FitsInsideToastRoi}, Threshold={status.Threshold:F3}, MatcherReady={status.MatcherReady}, Ready={status.Ready}, FailureReason='{status.FailureReason}'");
+        }
+
+        private sealed class ResourceAreaLv2TemplateStatus
+        {
+            public TemplateDefinition Definition { get; set; }
+            public string AppBaseDirectory { get; set; } = string.Empty;
+            public string ConfiguredRelativePath { get; set; } = string.Empty;
+            public string ResolvedAbsolutePath { get; set; } = string.Empty;
+            public string SourceAssetPath { get; set; } = string.Empty;
+            public bool Exists { get; set; }
+            public long FileLength { get; set; }
+            public bool DecodeAttempted { get; set; }
+            public bool DecodeSuccess { get; set; }
+            public int Width { get; set; }
+            public int Height { get; set; }
+            public bool FitsInsideToastRoi { get; set; }
+            public double Threshold { get; set; }
+            public bool MatcherReady { get; set; }
+            public bool Ready { get; set; }
+            public string FailureReason { get; set; } = string.Empty;
+        }
+
+        private sealed class ImmediateToastProbeResult
+        {
+            public ResourceSearchOutcome? Outcome { get; private set; }
+            public string Message { get; private set; }
+            public string ErrorMessage { get; private set; }
+            public ResourceSearchFailureReason FailureReason { get; private set; }
+            public static ImmediateToastProbeResult None => new ImmediateToastProbeResult();
+            public static ImmediateToastProbeResult Decided(ResourceSearchOutcome outcome, string message, string error) =>
+                new ImmediateToastProbeResult
+                {
+                    Outcome = outcome,
+                    Message = message,
+                    ErrorMessage = error,
+                    FailureReason = outcome == ResourceSearchOutcome.ResourceAreaLv2Redirect
+                        ? ResourceSearchFailureReason.ResourceAreaLv2Redirect
+                        : outcome == ResourceSearchOutcome.ResourceToastUnclassified
+                        ? ResourceSearchFailureReason.ResourceToastUnclassified
+                        : outcome == ResourceSearchOutcome.ResourceAreaLv2TemplateUnavailable
+                        ? ResourceSearchFailureReason.ResourceAreaLv2TemplateUnavailable
+                        : outcome == ResourceSearchOutcome.ResourceToastCaptureUnavailable
+                        ? ResourceSearchFailureReason.ResourceToastCaptureUnavailable
+                        : ResourceSearchFailureReason.ResourceToastProbeLate
+                };
         }
 
         private async Task<ObservationDecision> ObserveFrameAsync(string deviceName,
@@ -647,6 +986,30 @@ namespace ADB_Tool_Automation_Post_FB.Infrastructure.ResourceSearch
                 : imageMatcher.Find(frame.GetPngBytes(), template, region);
         }
 
+        private async Task<IReadOnlyList<ImageMatchResult>> MatchResourceAreaLv2AnchorsAsync(
+            CapturedFrame frame, ImageRegion toastRoi, CancellationToken cancellationToken)
+        {
+                TemplateId[] ids =
+                {
+                    TemplateId.ResourceAreaPhraseAnchor,
+                    TemplateId.ResourceAreaLv2EndingAnchor
+                };
+            var requests = ids.Select(id => new ImageMatchRequest(
+                templateRegistry.LoadBytes(id), toastRoi)).ToArray();
+            var asyncMatcher = imageMatcher as IAsyncFrameImageMatcher;
+            if (asyncMatcher != null)
+                return await asyncMatcher.FindManyAsync(frame, requests, cancellationToken);
+            var frameMatcher = imageMatcher as IFrameImageMatcher;
+            if (frameMatcher != null)
+                return frameMatcher.FindMany(frame, requests);
+            var batchMatcher = imageMatcher as IBatchImageMatcher;
+            if (batchMatcher != null)
+                return batchMatcher.FindMany(frame.GetPngBytes(), requests);
+            byte[] screenshot = frame.GetPngBytes();
+            return requests.Select(request => imageMatcher.Find(screenshot,
+                request.TemplatePng, request.SearchRegion)).ToArray();
+        }
+
         private async Task<IReadOnlyList<ImageMatchResult>> MatchToastAnchorsAsync(
             CapturedFrame frame, CancellationToken cancellationToken)
         {
@@ -732,6 +1095,39 @@ namespace ADB_Tool_Automation_Post_FB.Infrastructure.ResourceSearch
         private static bool HasBounds(ImageMatchResult match) =>
             match != null && match.Found && match.Width > 0 && match.Height > 0;
 
+        private static GameDetectionEvidence FindEvidence(GameDetectionResult result, TemplateId id)
+        {
+            return result?.Evidence?.FirstOrDefault(item => item.TemplateId == id);
+        }
+
+        private static bool IsInside(ImageMatchResult match, ImageRegion region)
+        {
+            return HasBounds(match)
+                && match.X >= region.X
+                && match.Y >= region.Y
+                && match.X + match.Width <= region.X + region.Width
+                && match.Y + match.Height <= region.Y + region.Height;
+        }
+
+        private static ImageRegion ScaleRegion(ImageRegion region, int width, int height)
+        {
+            int x = (int)Math.Round(region.X * width / 1280.0);
+            int y = (int)Math.Round(region.Y * height / 720.0);
+            int scaledWidth = Math.Max(1, (int)Math.Round(region.Width * width / 1280.0));
+            int scaledHeight = Math.Max(1, (int)Math.Round(region.Height * height / 720.0));
+            x = Math.Max(0, Math.Min(x, Math.Max(0, width - 1)));
+            y = Math.Max(0, Math.Min(y, Math.Max(0, height - 1)));
+            scaledWidth = Math.Min(scaledWidth, width - x);
+            scaledHeight = Math.Min(scaledHeight, height - y);
+            return new ImageRegion(x, y, Math.Max(1, scaledWidth), Math.Max(1, scaledHeight));
+        }
+
+        private static string FormatRegion(ImageRegion region) =>
+            $"({region.X},{region.Y},{region.Width},{region.Height})";
+
+        private static string FormatBounds(ImageMatchResult match) =>
+            HasBounds(match) ? $"({match.X},{match.Y},{match.Width},{match.Height})" : string.Empty;
+
         private static bool IsUnchangedSearchPanel(ResourceSearchExecutionResult result,
             ObservationContext context) => !result.CameraMovementObserved
             && (context.LastPanelConfirmed
@@ -771,6 +1167,9 @@ namespace ADB_Tool_Automation_Post_FB.Infrastructure.ResourceSearch
                 Duration = watch.Elapsed,
                 Message = message,
                 ErrorMessage = outcome == ResourceSearchOutcome.Failed ? message : null,
+                FailureReason = outcome == ResourceSearchOutcome.ResourceAreaLv2TemplateUnavailable
+                    ? ResourceSearchFailureReason.ResourceAreaLv2TemplateUnavailable
+                    : ResourceSearchFailureReason.None,
                 ToastEvidence = new ResourceSearchToastEvidence(),
                 Observations = new ResourceSearchObservation[0]
             };

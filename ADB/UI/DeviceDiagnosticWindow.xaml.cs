@@ -1536,6 +1536,7 @@ namespace ADB_Tool_Automation_Post_FB.UI
         private string teamsSummary = string.Empty;
         private DateTimeOffset? nextCheckAt;
         private DateTimeOffset? waitDeadline;
+        private bool rosterScanCompleted;
 
         public DeviceFarmProgressItem(string deviceName)
         {
@@ -1587,6 +1588,7 @@ namespace ADB_Tool_Automation_Post_FB.UI
             TerritoryColor = string.Empty;
             TeamsSummary = string.Empty;
             Teams.Clear();
+            rosterScanCompleted = false;
         }
 
         public void SetStopping()
@@ -1630,16 +1632,28 @@ namespace ADB_Tool_Automation_Post_FB.UI
             if (isAvailabilityUpdate)
             {
                 bool scanCompleted = progress.Stage == OneShotFarmProgressStage.ReadyTeamFound;
-                if (rosterUncertain)
-                    Teams.Clear();
+                rosterScanCompleted = scanCompleted && !rosterUncertain && detected.Count > 0;
+                // Keep the last confirmed rows visible while a new scan is in
+                // progress. Clearing the collection here made a device such
+                // as May_3 lose every team badge during the map step. Cached
+                // rows are deliberately shown as unverified; they are never
+                // relabeled as busy until a fresh scan confirms readiness.
+                if (scanCompleted && !rosterUncertain && detected.Count > 0)
+                    SynchronizeTeams(detected);
                 else if (detected.Count > 0)
                     SynchronizeTeams(detected);
+                else if (Teams.Count == 0 && progress.ConfirmedRosterCount > 0)
+                    SynchronizeTeams(Enumerable.Range(1,
+                        Math.Min(4, Math.Max(0, progress.ConfirmedRosterCount)))
+                        .Select(value => (TeamNumber)value).ToArray());
                 foreach (TeamFarmProgressItem item in Teams)
                 {
                     bool isAllowed = allowed.Contains(item.Team);
                     bool isReady = ready.Contains(item.Team);
                     bool isEligible = eligible.Contains(item.Team);
-                    string status = isEligible ? "Sẵn sàng"
+                    string status = isAvailabilityUpdate && (!scanCompleted || rosterUncertain)
+                        ? "Chưa kiểm tra"
+                        : isEligible ? "Sẵn sàng"
                         : isReady && isAllowed ? "Sẵn sàng"
                         : isReady ? "Sẵn sàng · không chọn"
                         : !scanCompleted ? "Chờ quét"
@@ -1654,14 +1668,24 @@ namespace ADB_Tool_Automation_Post_FB.UI
             {
                 TeamNumber activeTeam = progress.CurrentSelectedTeam
                     ?? progress.CurrentExpectedTeam ?? progress.CurrentTeam.Value;
+                // Running-step progress intentionally carries only the active
+                // team, not the full roster snapshot. Keep the header useful
+                // while the next availability scan is pending by materializing
+                // that team as an unverified badge instead of rendering none.
+                EnsureTeamVisible(activeTeam);
                 TeamFarmProgressItem current = Teams.FirstOrDefault(
                     item => item.Team == activeTeam);
                 current?.SetStatus("Đang xử lý", true);
             }
-            TeamsSummary = rosterUncertain
-                ? "Chưa xác định đủ số lượng đội; hệ thống sẽ kiểm tra lại."
-                : string.Join(" · ", Teams.Select(item =>
-                    $"{item.TeamName}: {ShortTeamStatus(item.Status)}"));
+            TeamsSummary = !isAvailabilityUpdate
+                ? string.Join(" · ", Teams.Select(item =>
+                    $"{item.TeamName}: {ShortTeamStatus(item.Status)}"))
+                : rosterUncertain
+                    ? "Chưa xác định đủ số lượng đội; hệ thống sẽ kiểm tra lại."
+                    : progress.Stage != OneShotFarmProgressStage.ReadyTeamFound
+                        ? "Đang quét đội..."
+                        : string.Join(" · ", Teams.Select(item =>
+                            $"{item.TeamName}: {ShortTeamStatus(item.Status)}"));
             UpdateCountdown(DateTimeOffset.UtcNow);
         }
 
@@ -1697,10 +1721,31 @@ namespace ADB_Tool_Automation_Post_FB.UI
 
         private void SynchronizeSnapshotTeams(ContinuousFarmDeviceSnapshot snapshot)
         {
-            int knownCount = Math.Min(4, Math.Max(0, snapshot.ConfirmedRosterCount));
             TeamNumber? activeTeam = ParseTeam(snapshot.CurrentSelectedTeam)
                 ?? ParseTeam(snapshot.CurrentExpectedTeam)
                 ?? ParseTeam(snapshot.CurrentTeam);
+            // A preflight snapshot may carry the last/default roster count.
+            // Never render it as current until the fresh availability scan
+            // has completed and published its progress result. Still retain a
+            // visible active-team badge so a running device never loses its
+            // status while the roster is being refreshed.
+            if (!rosterScanCompleted)
+            {
+                if (Teams.Count == 0 && snapshot.ConfirmedRosterCount > 0)
+                    SynchronizeTeams(Enumerable.Range(1,
+                        Math.Min(4, Math.Max(0, snapshot.ConfirmedRosterCount)))
+                        .Select(value => (TeamNumber)value).ToArray());
+                if (activeTeam.HasValue)
+                {
+                    EnsureTeamVisible(activeTeam.Value);
+                    TeamFarmProgressItem active = Teams.FirstOrDefault(
+                        item => item.Team == activeTeam.Value);
+                    active?.SetStatus("Đang xử lý", true);
+                }
+                TeamsSummary = "Đang quét đội...";
+                return;
+            }
+            int knownCount = Math.Min(4, Math.Max(0, snapshot.ConfirmedRosterCount));
             if (activeTeam.HasValue)
                 knownCount = Math.Max(knownCount, (int)activeTeam.Value);
             if (knownCount == 0) return;
@@ -1749,6 +1794,16 @@ namespace ADB_Tool_Automation_Post_FB.UI
                     if (currentIndex != index) Teams.Move(currentIndex, index);
                 }
             }
+        }
+
+        private void EnsureTeamVisible(TeamNumber team)
+        {
+            if (Teams.Any(item => item.Team == team)) return;
+            int insertIndex = Teams.Count == 0
+                ? 0
+                : Teams.TakeWhile(item => (int)item.Team < (int)team).Count();
+            Teams.Insert(Math.Min(insertIndex, Teams.Count),
+                new TeamFarmProgressItem(team));
         }
 
         public void UpdateCountdown(DateTimeOffset now)

@@ -217,6 +217,7 @@ namespace ADB_Tool_Automation_Post_FB.Infrastructure.TeamSelection
                 // The detector-backed production path resolves exactly one target for
                 // this operation.  Priority is only a legacy compatibility plan.
                 TeamNumber resolvedTargetTeam = target.TargetTeam.Value;
+                int staleInputFrameAttempts = 0;
                 IEnumerable<TeamNumber> candidateTeams = authoritativeTarget.HasValue
                     ? new[] { authoritativeTarget.Value }
                     : selectedTeamDetector != null
@@ -450,7 +451,7 @@ namespace ADB_Tool_Automation_Post_FB.Infrastructure.TeamSelection
                             out tapX, out tapY, out tapSkipReason);
                         LogTapPlanned(deviceName, resolvedTargetTeam, attemptNumber, badge,
                             false, region, tapX, tapY, tapPointValid, tapSkipReason,
-                            result.TeamTapCount);
+                            result.TeamTapCount, inputFrameCapturedAt);
                         if (!tapPointValid)
                         {
                             result.FailureReason = tapSkipReason ?? "TargetGeometryInvalid";
@@ -463,12 +464,15 @@ namespace ADB_Tool_Automation_Post_FB.Infrastructure.TeamSelection
                         if ((authoritativeTarget.HasValue || selectedTeamDetector == null)
                             && inputFrameAgeMs > options.MaxInputFrameAgeMs)
                         {
+                            staleInputFrameAttempts++;
                             attempt.Message = "The team-selection screenshot was stale; no Tap was sent.";
-                            LogTapPlanned(deviceName, resolvedTargetTeam, attemptNumber, badge,
-                                false, region, tapX, tapY, false, "InputFrameStale",
-                                result.TeamTapCount);
+                            result.FailureReason = "InputFrameStale";
+                            LogTapFreshness(deviceName, resolvedTargetTeam, attemptNumber,
+                                inputFrameCapturedAt, inputFrameAgeMs, false, "InputFrameStale");
                             continue;
                         }
+                        LogTapFreshness(deviceName, resolvedTargetTeam, attemptNumber,
+                            inputFrameCapturedAt, inputFrameAgeMs, true, null);
                         try
                         {
                             await client.TapAsync(deviceName, tapX, tapY, cancellationToken);
@@ -671,6 +675,12 @@ namespace ADB_Tool_Automation_Post_FB.Infrastructure.TeamSelection
                 bool wrongTeam = request.ExpectedTeam.HasValue
                     && result.TeamTapCount > 0
                     && postTapDifferentExpectedTeamObserved;
+                bool freshnessTimedOut = result.TeamTapCount == 0
+                    && staleInputFrameAttempts > 0
+                    && string.Equals(result.FailureReason, "InputFrameStale",
+                        StringComparison.Ordinal);
+                if (freshnessTimedOut)
+                    result.FailureReason = "SelectionFrameFreshnessTimeout";
                 SelectFarmTeamOutcome outcome = wrongTeam
                     ? SelectFarmTeamOutcome.TeamSelectionMismatch
                     : authoritativeTarget.HasValue
@@ -699,6 +709,8 @@ namespace ADB_Tool_Automation_Post_FB.Infrastructure.TeamSelection
                             || string.Equals(result.FailureReason, "ExpectedTeamBadgeMissing",
                                 StringComparison.Ordinal))
                     ? SelectFarmTeamOutcome.SelectionEvidenceUncertain
+                    : freshnessTimedOut
+                    ? SelectFarmTeamOutcome.SelectionTimeout
                     : DateTimeOffset.UtcNow >= selectionDeadline
                     ? SelectFarmTeamOutcome.SelectionTimeout
                     : SelectFarmTeamOutcome.NoEligibleTeam;
@@ -723,7 +735,10 @@ namespace ADB_Tool_Automation_Post_FB.Infrastructure.TeamSelection
                     : outcome == SelectFarmTeamOutcome.SelectionEvidenceUncertain
                         ? "Không thể xác minh chắc chắn đúng đội dự kiến và nút hành động mới; đã dừng an toàn."
                     : outcome == SelectFarmTeamOutcome.SelectionTimeout
-                        ? "Farm team selection timed out without a verified team."
+                        ? string.Equals(result.FailureReason,
+                            "SelectionFrameFreshnessTimeout", StringComparison.Ordinal)
+                            ? "Khung chọn đội bị cũ trước khi có thể gửi lệnh; đã chụp lại và hết số lần thử an toàn."
+                            : "Farm team selection timed out without a verified team."
                         : "No eligible team could be selected and verified.",
                     null, lastFrame, watch, cancellationToken);
             }
@@ -1277,11 +1292,18 @@ namespace ADB_Tool_Automation_Post_FB.Infrastructure.TeamSelection
         private void LogTapPlanned(string deviceName, TeamNumber resolvedTargetTeam,
             int attempt, ImageMatchResult badge, bool disabled, ImageRegion targetRow,
             int tapX, int tapY, bool tapPointValid, string skipReason,
-            int teamTapCountBefore)
+            int teamTapCountBefore, DateTimeOffset? capturedAtUtc = null)
         {
             string badgeBounds = HasBounds(badge)
                 ? $"({badge.X},{badge.Y},{badge.Width},{badge.Height})" : string.Empty;
-            logger.Info($"[Farm Team Selection Tap Planned] DeviceName='{deviceName}', ExpectedTeam='{resolvedTargetTeam}', ResolvedTargetTeam='{resolvedTargetTeam}', Attempt={attempt}, BadgeFound={HasBounds(badge)}, BadgeBounds={badgeBounds}, Disabled={disabled}, TargetRowBounds=({targetRow.X},{targetRow.Y},{targetRow.Width},{targetRow.Height}), TapX={tapX}, TapY={tapY}, TapPointValid={tapPointValid}, SkipReason='{skipReason ?? string.Empty}', TeamTapCountBefore={teamTapCountBefore}");
+            logger.Info($"[Farm Team Selection Tap Plan] DeviceName='{deviceName}', ExpectedTeam='{resolvedTargetTeam}', Attempt={attempt}, CapturedAtUtc='{(capturedAtUtc.HasValue ? capturedAtUtc.Value.ToString("O") : string.Empty)}', BadgeBounds={badgeBounds}, TargetRowBounds=({targetRow.X},{targetRow.Y},{targetRow.Width},{targetRow.Height}), TapX={tapX}, TapY={tapY}, GeometryValid={tapPointValid}, Disabled={disabled}, TargetResolvedFromSameFrame={tapPointValid && HasBounds(badge)}, Outcome='Planned', SkipReason='{skipReason ?? string.Empty}', TeamTapCountBefore={teamTapCountBefore}");
+        }
+
+        private void LogTapFreshness(string deviceName, TeamNumber resolvedTargetTeam,
+            int attempt, DateTimeOffset capturedAtUtc, int frameAgeMs,
+            bool isFresh, string failureReason)
+        {
+            logger.Info($"[Farm Team Selection Tap Freshness] DeviceName='{deviceName}', ExpectedTeam='{resolvedTargetTeam}', Attempt={attempt}, CapturedAtUtc='{capturedAtUtc:O}', FrameAgeMs={frameAgeMs}, FreshnessLimitMs={options.MaxInputFrameAgeMs}, IsFresh={isFresh}, NextAction='{(isFresh ? "Tap" : "Recapture")}', FailureReason='{failureReason ?? string.Empty}'");
         }
 
         private void LogTapIssued(string deviceName, TeamNumber resolvedTargetTeam,
@@ -1295,7 +1317,7 @@ namespace ADB_Tool_Automation_Post_FB.Infrastructure.TeamSelection
             TeamNumber resolvedTargetTeam, int attempt, string skipReason,
             int teamTapCountBefore)
         {
-            logger.Info($"[Farm Team Selection Tap Planned] DeviceName='{deviceName}', ExpectedTeam='{resolvedTargetTeam}', ResolvedTargetTeam='{resolvedTargetTeam}', Attempt={attempt}, BadgeFound=false, BadgeBounds='', Disabled=false, TargetRowBounds='', TapX=0, TapY=0, TapPointValid=false, SkipReason='{skipReason}', TeamTapCountBefore={teamTapCountBefore}");
+            logger.Info($"[Farm Team Selection Tap Plan] DeviceName='{deviceName}', ExpectedTeam='{resolvedTargetTeam}', Attempt={attempt}, BadgeBounds='', TargetRowBounds='', TapX=0, TapY=0, GeometryValid=false, Disabled=false, TargetResolvedFromSameFrame=false, Outcome='Planned', SkipReason='{skipReason}', TeamTapCountBefore={teamTapCountBefore}");
         }
 
         private void LogMatch(string deviceName, TeamNumber team, int attempt,
