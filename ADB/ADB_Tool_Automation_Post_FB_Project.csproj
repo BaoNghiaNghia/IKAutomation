@@ -116,6 +116,7 @@
     <Compile Include="Core\ResourceSearch\IResourceSearchExecutionService.cs" />
     <Compile Include="Core\ResourceSearch\IResourceLevelFallbackService.cs" />
     <Compile Include="Core\ResourceSearch\IExactResourceLevelFallbackService.cs" />
+    <Compile Include="Core\ResourceSearch\IResourceAreaLv2PointRetryFallbackService.cs" />
     <Compile Include="Core\ResourceSearch\IResourceLevelFallbackDiagnosticStore.cs" />
     <Compile Include="Core\ResourceSearch\ResourceLevelAttemptResult.cs" />
     <Compile Include="Core\ResourceSearch\ResourceLevelFallbackOptions.cs" />
@@ -128,6 +129,7 @@
     <Compile Include="Core\ResourceSearch\ResourceSearchConfigurationResult.cs" />
     <Compile Include="Core\ResourceSearch\ResourceSearchExecutionOptions.cs" />
     <Compile Include="Core\ResourceSearch\ResourceSearchExecutionRequest.cs" />
+    <Compile Include="Core\ResourceSearch\ResourceSearchExecutionMode.cs" />
     <Compile Include="Core\ResourceSearch\ResourceSearchExecutionResult.cs" />
     <Compile Include="Core\ResourceSearch\ResourceSearchToastEvidence.cs" />
     <Compile Include="Core\ResourceSearch\ResourceSearchFailureReason.cs" />

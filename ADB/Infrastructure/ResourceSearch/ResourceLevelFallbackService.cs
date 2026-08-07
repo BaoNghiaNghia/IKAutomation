@@ -3,6 +3,7 @@ using ADB_Tool_Automation_Post_FB.Core.Concurrency;
 using ADB_Tool_Automation_Post_FB.Core.Diagnostics;
 using ADB_Tool_Automation_Post_FB.Core.GameDetection;
 using ADB_Tool_Automation_Post_FB.Core.ResourceSearch;
+using ADB_Tool_Automation_Post_FB.Core.TeamSelection;
 using ADB_Tool_Automation_Post_FB.Core.Vision;
 using System;
 using System.Collections.Generic;
@@ -14,7 +15,7 @@ using System.Threading.Tasks;
 namespace ADB_Tool_Automation_Post_FB.Infrastructure.ResourceSearch
 {
     public sealed class ResourceLevelFallbackService : IResourceLevelFallbackService,
-        IExactResourceLevelFallbackService
+        IExactResourceLevelFallbackService, IResourceAreaLv2PointRetryFallbackService
     {
         private const string TargetLevelTooLowVariant = "TargetLevelTooLow";
         private const string SearchOtherRegionVariant = "SearchOtherRegion";
@@ -88,6 +89,24 @@ namespace ADB_Tool_Automation_Post_FB.Infrastructure.ResourceSearch
                 StopOnFirstLocated = true,
                 WaitForToastClearBetweenAttempts = true,
                 RunId = runId
+            }, unoccupiedOnly, cancellationToken);
+        }
+
+        public Task<ResourceLevelFallbackResult> SearchSingleLevelForPointRetryAsync(
+            string deviceName, ResourceType resourceType, int level,
+            bool unoccupiedOnly, string runId, int areaEpoch,
+            TeamNumber? expectedTeam, CancellationToken cancellationToken)
+        {
+            return SearchAsync(deviceName, resourceType, new ResourceLevelFallbackPolicy
+            {
+                Levels = new[] { level },
+                AttemptsPerLevel = 1,
+                StopOnFirstLocated = true,
+                WaitForToastClearBetweenAttempts = true,
+                RunId = runId,
+                AreaEpoch = areaEpoch,
+                ExpectedTeam = expectedTeam,
+                ExecutionMode = ResourceSearchExecutionMode.ResourceAreaLv2PointRetry
             }, unoccupiedOnly, cancellationToken);
         }
 
@@ -229,7 +248,9 @@ namespace ADB_Tool_Automation_Post_FB.Infrastructure.ResourceSearch
                                 RunId = runId,
                                 EffectiveLevel = configured.EffectiveLevel ?? configured.ObservedLevel ?? level,
                                 LevelCapped = configured.LevelCapped,
-                                AreaEpoch = 0
+                                AreaEpoch = policy.AreaEpoch,
+                                ExpectedTeam = policy.ExpectedTeam,
+                                ExecutionMode = policy.ExecutionMode
                             }, token);
                         attempt.SearchResult = searched; attempt.SearchOutcome = searched.Outcome;
                         attempt.MatchedNotFoundVariant = searched.MatchedNotFoundVariant;

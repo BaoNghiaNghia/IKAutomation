@@ -817,7 +817,10 @@ namespace ADB_Tool_Automation_Post_FB.Infrastructure.Workflows
         {
             if (progress == null || value == null) return;
             bool hasColor = !string.IsNullOrWhiteSpace(value.TerritoryColorSummary);
-            if (!hasColor && !value.ClearTerritoryColor && !value.CurrentStep.HasValue) return;
+            bool hasToast = !string.IsNullOrWhiteSpace(value.ResourceToastVariant)
+                || !string.IsNullOrWhiteSpace(value.ResourceToastState);
+            if (!hasColor && !value.ClearTerritoryColor && !value.CurrentStep.HasValue
+                && !hasToast) return;
             try
             {
                 progress.Report(new OneShotFarmProgress
@@ -826,8 +829,6 @@ namespace ADB_Tool_Automation_Post_FB.Infrastructure.Workflows
                     ReportedAt = DateTimeOffset.UtcNow,
                     AllowedTeams = request?.AllowedTeams ?? new TeamNumber[0],
                     CurrentStep = value.CurrentStep ?? OneShotFarmStep.ResourceFarmFallback,
-                    CurrentResource = request == null
-                        ? (ResourceType?)null : request.ResourceType,
                     Message = value.CurrentStep == OneShotFarmStep.OpenTeamSelection
                         ? "Opening team selection."
                         : value.CurrentStep == OneShotFarmStep.SelectTeam
@@ -835,7 +836,12 @@ namespace ADB_Tool_Automation_Post_FB.Infrastructure.Workflows
                             : "Running the resource and level fallback plan.",
                     TerritoryColorSummary = value.ClearTerritoryColor
                         ? null : value.TerritoryColorSummary,
-                    MapRepositionState = value.MapRepositionState
+                    MapRepositionState = value.MapRepositionState,
+                    CurrentResource = value.CurrentResource ?? request?.ResourceType,
+                    CurrentLevel = value.EffectiveLevel,
+                    ResourceToastVariant = value.ResourceToastVariant,
+                    ResourceToastDetectedAt = value.ResourceToastDetectedAt,
+                    ResourceToastState = value.ResourceToastState
                 });
             }
             catch (Exception exception)

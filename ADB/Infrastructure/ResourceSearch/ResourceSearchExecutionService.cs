@@ -132,7 +132,10 @@ namespace ADB_Tool_Automation_Post_FB.Infrastructure.ResourceSearch
                             current.ErrorMessage, watch, cancellationToken);
                 }
 
-                for (int attempt = 1; attempt <= options.MaxSearchTapAttempts; attempt++)
+                int maxSearchTapAttempts = request.ExecutionMode == ResourceSearchExecutionMode.ResourceAreaLv2PointRetry
+                    ? 1
+                    : options.MaxSearchTapAttempts;
+                for (int attempt = 1; attempt <= maxSearchTapAttempts; attempt++)
                 {
                     cancellationToken.ThrowIfCancellationRequested();
                     if (attempt > 1)
@@ -159,7 +162,7 @@ namespace ADB_Tool_Automation_Post_FB.Infrastructure.ResourceSearch
                         // previous resource/level input.  Treat this as an unchanged
                         // panel observation and use the next bounded fresh frame,
                         // rather than failing a device that has not left the panel.
-                        if (attempt < options.MaxSearchTapAttempts)
+                        if (attempt < maxSearchTapAttempts)
                         {
                             logger.Info($"[Resource Search Execution] DeviceName='{deviceName}', Attempt={attempt}, SearchButtonAvailable=false, Decision='RetryFreshFrame'");
                             continue;
@@ -260,14 +263,14 @@ namespace ADB_Tool_Automation_Post_FB.Infrastructure.ResourceSearch
                                 "Phát hiện toast chưa phân loại; dừng Search để tránh gửi lặp.",
                                 null, watch, cancellationToken);
                         }
-                        if (attempt < options.MaxSearchTapAttempts)
+                        if (attempt < maxSearchTapAttempts)
                             continue;
                         result.FailureReason = ResourceSearchFailureReason
                             .SearchButtonStillVisibleAfterMaxAttempts;
                         result.ShouldRetrySearch = true;
                         return await CompleteAsync(deviceName, result, context,
                             ResourceSearchOutcome.SearchTapNotApplied,
-                            $"Nút Tìm kiếm vẫn hiển thị sau {options.MaxSearchTapAttempts} lần thử; "
+                            $"Nút Tìm kiếm vẫn hiển thị sau {maxSearchTapAttempts} lần thử; "
                                 + "chuyển sang tài nguyên khác.",
                             null, watch, cancellationToken);
                     }

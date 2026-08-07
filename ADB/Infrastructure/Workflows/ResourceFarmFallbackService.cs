@@ -145,16 +145,20 @@ namespace ADB_Tool_Automation_Post_FB.Infrastructure.Workflows
                     if (level.Outcome == ResourceLevelFallbackOutcome.ResourceAreaLv2Redirect)
                     {
                         var exactFallback = levelFallback as IExactResourceLevelFallbackService;
-                        if (areaLv2Recovery == null || exactFallback == null)
-                            return Complete(result, ResourceFarmFallbackOutcome.ResourceAreaLv2Redirect,
-                                watch, level.Message, level.ErrorMessage);
-
+                        var pointRetryFallback = levelFallback as IResourceAreaLv2PointRetryFallbackService;
                         var lastLevelAttempt = level.Attempts?.LastOrDefault();
                         int exactLevel = lastLevelAttempt?.ConfigurationResult?.EffectiveLevel
                             ?? lastLevelAttempt?.ConfigurationResult?.ObservedLevel
                             ?? level.LastAttemptedLevel
                             ?? lastLevelAttempt?.Level
                             ?? request.ResourceLevelPriority.FirstOrDefault();
+                        ReportToast(progress, resource, exactLevel,
+                            lastLevelAttempt?.MatchedNotFoundVariant
+                                ?? level.MatchedNotFoundVariant
+                                ?? "ResourceAreaLv2Redirect");
+                        if (areaLv2Recovery == null || exactFallback == null)
+                            return Complete(result, ResourceFarmFallbackOutcome.ResourceAreaLv2Redirect,
+                                watch, level.Message, level.ErrorMessage);
                         TeamNumber? expectedTeam = request.TeamOperation?.ExpectedTeam
                             ?? request.ExpectedTeam;
                         ResourceLevelFallbackResult retryResult = level;
@@ -198,9 +202,13 @@ namespace ADB_Tool_Automation_Post_FB.Infrastructure.Workflows
                                     watch, "Không thể chuyển tới khu tài nguyên Lv2.",
                                     recovery.FailureReason);
 
-                            retryResult = await exactFallback.SearchSingleLevelAsync(
-                                deviceName, resource, exactLevel, request.UnoccupiedOnly,
-                                runId, cancellationToken);
+                            retryResult = pointRetryFallback != null
+                                ? await pointRetryFallback.SearchSingleLevelForPointRetryAsync(
+                                    deviceName, resource, exactLevel, request.UnoccupiedOnly,
+                                    runId, areaEpoch, expectedTeam, cancellationToken)
+                                : await exactFallback.SearchSingleLevelAsync(
+                                    deviceName, resource, exactLevel, request.UnoccupiedOnly,
+                                    runId, cancellationToken);
                             if (retryResult.Outcome == ResourceLevelFallbackOutcome.ResourceLocated)
                             {
                                 locatedBySpecialRetry = true;
@@ -714,6 +722,32 @@ namespace ADB_Tool_Automation_Post_FB.Infrastructure.Workflows
             catch
             {
                 // Progress reporting must never alter device recovery.
+            }
+        }
+
+        private static void ReportToast(
+            IProgress<ResourceFarmFallbackProgress> progress,
+            ResourceType resource,
+            int effectiveLevel,
+            string variant)
+        {
+            if (progress == null) return;
+            try
+            {
+                progress.Report(new ResourceFarmFallbackProgress
+                {
+                    CurrentStep = OneShotFarmStep.ResourceFarmFallback,
+                    CurrentResource = resource,
+                    EffectiveLevel = effectiveLevel > 0 ? effectiveLevel : (int?)null,
+                    ResourceToastVariant = variant,
+                    ResourceToastDetectedAt = DateTimeOffset.UtcNow,
+                    ResourceToastState = "Detected",
+                    MapRepositionState = MapRepositionState.None
+                });
+            }
+            catch
+            {
+                // Progress reporting must never alter recovery behavior.
             }
         }
 

@@ -87,8 +87,16 @@ namespace ADB_Tool_Automation_Post_FB.Infrastructure.ResourceSearch
                 request.DeviceName, point.ScaledPoint.X, point.ScaledPoint.Y,
                 cancellationToken);
             result.PointTapResult = tapped;
-            result.PointTapVerified = tapped != null && tapped.Success
-                && tapped.FinalState == GameState.WorldMap;
+            // A point can open a terrain/object popup while the WorldMap anchor
+            // remains visible. EnsureWorldMap is the bounded popup-dismissal and
+            // clean-map verification step before reopening the search panel.
+            NavigationResult cleanedAfterTap = tapped != null && tapped.Success
+                ? await navigation.EnsureWorldMapAsync(request.DeviceName, cancellationToken)
+                : null;
+            if (cleanedAfterTap != null)
+                result.PointTapResult = cleanedAfterTap;
+            result.PointTapVerified = cleanedAfterTap != null && cleanedAfterTap.Success
+                && cleanedAfterTap.FinalState == GameState.WorldMap;
             if (!result.PointTapVerified)
             {
                 result.FailureReason = tapped?.FailureReason ?? "WorldMapVerificationFailed";

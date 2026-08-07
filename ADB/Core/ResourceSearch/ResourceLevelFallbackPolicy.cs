@@ -1,6 +1,7 @@
 using System;
 using System.Collections.Generic;
 using System.Linq;
+using ADB_Tool_Automation_Post_FB.Core.TeamSelection;
 
 namespace ADB_Tool_Automation_Post_FB.Core.ResourceSearch
 {
@@ -19,6 +20,9 @@ namespace ADB_Tool_Automation_Post_FB.Core.ResourceSearch
         public bool StopOnFirstLocated { get; set; }
         public bool WaitForToastClearBetweenAttempts { get; set; }
         public string RunId { get; set; }
+        public int AreaEpoch { get; set; }
+        public TeamNumber? ExpectedTeam { get; set; }
+        public ResourceSearchExecutionMode ExecutionMode { get; set; }
 
         public string Validate(int minimumLevel, int maximumLevel)
         {

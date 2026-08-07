@@ -1534,6 +1534,10 @@ namespace ADB_Tool_Automation_Post_FB.UI
         private string schedule = string.Empty;
         private string territoryColor = string.Empty;
         private string teamsSummary = string.Empty;
+        private string resourceToastText = string.Empty;
+        private string resourceToastVariant = string.Empty;
+        private DateTimeOffset? resourceToastDetectedAt;
+        private string resourceToastState = string.Empty;
         private DateTimeOffset? nextCheckAt;
         private DateTimeOffset? waitDeadline;
         private bool rosterScanCompleted;
@@ -1568,6 +1572,14 @@ namespace ADB_Tool_Automation_Post_FB.UI
         public string Schedule { get => schedule; private set => Set(ref schedule, value, nameof(Schedule)); }
         public string TerritoryColor { get => territoryColor; private set => Set(
             ref territoryColor, value, nameof(TerritoryColor)); }
+        public string ResourceToastText { get => resourceToastText; private set => Set(
+            ref resourceToastText, value, nameof(ResourceToastText)); }
+        public string ResourceToastVariant { get => resourceToastVariant; private set => Set(
+            ref resourceToastVariant, value, nameof(ResourceToastVariant)); }
+        public DateTimeOffset? ResourceToastDetectedAt { get => resourceToastDetectedAt; private set => Set(
+            ref resourceToastDetectedAt, value, nameof(ResourceToastDetectedAt)); }
+        public string ResourceToastState { get => resourceToastState; private set => Set(
+            ref resourceToastState, value, nameof(ResourceToastState)); }
         public string TeamsSummary { get => teamsSummary; private set => Set(
             ref teamsSummary, value, nameof(TeamsSummary)); }
         public bool IsWaiting => string.Equals(Stage,
@@ -1586,6 +1598,10 @@ namespace ADB_Tool_Automation_Post_FB.UI
             Detail = "-";
             Schedule = string.Empty;
             TerritoryColor = string.Empty;
+            ResourceToastText = string.Empty;
+            ResourceToastVariant = string.Empty;
+            ResourceToastDetectedAt = null;
+            ResourceToastState = string.Empty;
             TeamsSummary = string.Empty;
             Teams.Clear();
             rosterScanCompleted = false;
@@ -1610,6 +1626,13 @@ namespace ADB_Tool_Automation_Post_FB.UI
                 + (progress.CurrentLevel.HasValue
                     ? $" · cấp {progress.CurrentLevel.Value}" : string.Empty));
             Detail = string.Join(" · ", details);
+            if (!string.IsNullOrWhiteSpace(progress.ResourceToastVariant))
+            {
+                ResourceToastVariant = progress.ResourceToastVariant;
+                ResourceToastDetectedAt = progress.ResourceToastDetectedAt;
+                ResourceToastState = progress.ResourceToastState;
+                ResourceToastText = BuildResourceToastText(progress);
+            }
             if (progress.MapRepositionState != MapRepositionState.None
                 && !string.IsNullOrWhiteSpace(progress.TerritoryColorSummary))
                 TerritoryColor = FarmProgressVietnamese.TerritoryColor(
@@ -1687,6 +1710,18 @@ namespace ADB_Tool_Automation_Post_FB.UI
                         : string.Join(" · ", Teams.Select(item =>
                             $"{item.TeamName}: {ShortTeamStatus(item.Status)}"));
             UpdateCountdown(DateTimeOffset.UtcNow);
+        }
+
+        private static string BuildResourceToastText(OneShotFarmProgress progress)
+        {
+            if (progress == null || !string.Equals(progress.ResourceToastVariant,
+                "ResourceAreaLv2Redirect", StringComparison.Ordinal))
+                return string.Empty;
+            string resource = FarmProgressVietnamese.Resource(
+                progress.CurrentResource?.ToString());
+            if (progress.CurrentLevel.HasValue && progress.CurrentLevel.Value > 0)
+                return $"Không tìm thấy {resource} Lv{progress.CurrentLevel.Value} chưa ai khai thác, hãy đến khu tài nguyên Lv2 để tìm.";
+            return "Không tìm thấy tài nguyên chưa ai khai thác, hãy đến khu tài nguyên Lv2 để tìm.";
         }
 
         public void ApplySupervisorSnapshot(ContinuousFarmDeviceSnapshot snapshot)
@@ -1868,6 +1903,13 @@ namespace ADB_Tool_Automation_Post_FB.UI
         private void Set(ref string field, string value, string propertyName)
         {
             if (string.Equals(field, value, StringComparison.Ordinal)) return;
+            field = value;
+            PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(propertyName));
+        }
+
+        private void Set<T>(ref T field, T value, string propertyName)
+        {
+            if (EqualityComparer<T>.Default.Equals(field, value)) return;
             field = value;
             PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(propertyName));
         }
