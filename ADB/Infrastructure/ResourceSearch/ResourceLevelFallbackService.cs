@@ -123,9 +123,12 @@ namespace ADB_Tool_Automation_Post_FB.Infrastructure.ResourceSearch
                 token.ThrowIfCancellationRequested();
                 GameDetectionResult initial = await detector.DetectAsync(deviceName, token);
                 result.InitialState = initial.State; result.FinalState = initial.State;
-                if (!IsPanel(initial))
+                ResourceSearchPanelReadinessResult readiness =
+                    ResourceSearchPanelReadinessVerifier.Evaluate(initial);
+                if (!readiness.IsReady)
                     return await CompleteAsync(deviceName, runId, result, ResourceLevelFallbackOutcome.PanelUnavailable,
-                        "ResourceSearchPanel is not open; no input was sent.", initial.ErrorMessage,
+                        "ResourceSearchPanel chưa sẵn sàng; chưa bắt đầu kiểm tra toast.",
+                        readiness.Reason ?? initial.ErrorMessage,
                         watch, "panel-unavailable", token, true);
 
                 bool needsToastClear = false;
@@ -171,7 +174,8 @@ namespace ADB_Tool_Automation_Post_FB.Infrastructure.ResourceSearch
 
                         var request = new ResourceSearchConfigurationRequest
                         {
-                            ResourceType = resourceType, TargetLevel = level, UnoccupiedOnly = unoccupiedOnly
+                            ResourceType = resourceType, TargetLevel = level,
+                            UnoccupiedOnly = unoccupiedOnly, PanelReady = true
                         };
                         ResourceSearchConfigurationResult configured = await configuration.ConfigureAsync(deviceName, request, token);
                         attempt.ConfigurationResult = configured;
@@ -345,11 +349,7 @@ namespace ADB_Tool_Automation_Post_FB.Infrastructure.ResourceSearch
         {
             token.ThrowIfCancellationRequested();
             byte[] screenshot = await client.CaptureScreenshotPngAsync(deviceName, token);
-            bool panel = MatchRequired(screenshot, TemplateId.SearchButtonEnabled, null)
-                && (MatchRequired(screenshot, TemplateId.ResourceSearchPanelAnchor, null)
-                    || MatchRequired(screenshot, TemplateId.LevelMinusButton, null)
-                    || MatchRequired(screenshot, TemplateId.ResourceTabSelected, null)
-                    || MatchRequired(screenshot, TemplateId.ResourceTabUnselected, null));
+            bool panel = IsPanelEvidence(screenshot);
             if (!panel) return NotFoundToastObservation.NotVerified;
 
             ImageMatchResult legacyStart = MatchOptionalResult(screenshot,
@@ -453,11 +453,7 @@ namespace ADB_Tool_Automation_Post_FB.Infrastructure.ResourceSearch
                     token.ThrowIfCancellationRequested();
                     byte[] screenshot = await client.CaptureScreenshotPngAsync(deviceName, token);
                     observed++;
-                    bool panel = MatchRequired(screenshot, TemplateId.SearchButtonEnabled, null)
-                        && (MatchRequired(screenshot, TemplateId.ResourceSearchPanelAnchor, null)
-                            || MatchRequired(screenshot, TemplateId.LevelMinusButton, null)
-                            || MatchRequired(screenshot, TemplateId.ResourceTabSelected, null)
-                            || MatchRequired(screenshot, TemplateId.ResourceTabUnselected, null));
+                    bool panel = IsPanelEvidence(screenshot);
                     if (!panel)
                         return ToastClear(false, false, observed, consecutive, watch,
                             "ResourceSearchPanel closed while waiting for the previous toast to clear.", null);
@@ -558,8 +554,17 @@ namespace ADB_Tool_Automation_Post_FB.Infrastructure.ResourceSearch
             return policy.Validate(configurationOptions.MinimumLevel, configurationOptions.MaximumLevel);
         }
 
-        private static bool IsPanel(GameDetectionResult detection) => detection != null
-            && detection.IsSuccessful && detection.State == GameState.ResourceSearchPanel;
+        private bool IsPanelEvidence(byte[] screenshot)
+        {
+            bool searchButton = MatchRequired(screenshot, TemplateId.SearchButtonEnabled, null);
+            bool panelAnchor = MatchRequired(screenshot, TemplateId.ResourceSearchPanelAnchor, null);
+            bool stableSecondary = MatchRequired(screenshot, TemplateId.LevelMinusButton, null)
+                || MatchRequired(screenshot, TemplateId.ResourceTabSelected, null)
+                || MatchRequired(screenshot, TemplateId.ResourceTabUnselected, null);
+            return ResourceSearchPanelReadinessVerifier.Evaluate(
+                panelAnchor, searchButton, stableSecondary).IsReady;
+        }
+
         private static ToastClearResult ToastClear(bool cleared, bool panel, int observed,
             int consecutive, Stopwatch watch, string message, string error) => new ToastClearResult
             { Cleared = cleared, PanelVerified = panel, ObservedFrames = observed,

@@ -75,6 +75,8 @@ namespace ADB_Tool_Automation_Post_FB.Infrastructure.Workflows
                     nameof(deviceNames));
             if (string.IsNullOrWhiteSpace(request.RunId))
                 request.RunId = Guid.NewGuid().ToString();
+            if (string.IsNullOrWhiteSpace(request.FarmRunId))
+                request.FarmRunId = request.RunId;
 
             // Each device is admitted as soon as its own preflight finishes. This avoids
             // a slow/offline device holding the entire selected set behind Task.WhenAll.
@@ -608,6 +610,8 @@ namespace ADB_Tool_Automation_Post_FB.Infrastructure.Workflows
                 ExpectedTeam = source.ExpectedTeam,
                 TeamOperation = source.TeamOperation,
                 RunId = source.RunId,
+                FarmRunId = source.FarmRunId,
+                TeamOperationRunId = source.TeamOperationRunId,
                 CooperativeDispatch = source.CooperativeDispatch,
                 CycleDispatchedTeams = source.CycleDispatchedTeams?.ToArray(),
                 CycleDispatchedResources = source.CycleDispatchedResources?.ToArray()

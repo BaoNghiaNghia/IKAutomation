@@ -137,6 +137,7 @@
     <Compile Include="Core\ResourceSearch\ResourceAreaLv2PointSelector.cs" />
     <Compile Include="Core\ResourceSearch\ResourceAreaLv2RecoveryRequest.cs" />
     <Compile Include="Core\ResourceSearch\ResourceAreaLv2RecoveryResult.cs" />
+    <Compile Include="Core\ResourceSearch\ResourceSearchPanelReadiness.cs" />
     <Compile Include="Core\ResourceSearch\IResourceAreaLv2RecoveryCoordinator.cs" />
     <Compile Include="Core\ResourceSearch\ResourceSearchOutcome.cs" />
     <Compile Include="Core\ResourceSearch\ResourceType.cs" />

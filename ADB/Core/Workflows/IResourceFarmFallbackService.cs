@@ -23,6 +23,7 @@ namespace ADB_Tool_Automation_Post_FB.Core.Workflows
         public MapRepositionState MapRepositionState { get; set; }
         public ResourceType? CurrentResource { get; set; }
         public int? EffectiveLevel { get; set; }
+        public string FarmRunId { get; set; }
         public string ResourceToastVariant { get; set; }
         public DateTimeOffset? ResourceToastDetectedAt { get; set; }
         public string ResourceToastState { get; set; }

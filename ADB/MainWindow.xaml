@@ -21,7 +21,7 @@
 
         <TextBlock Grid.Row="1"
                    Margin="0,8,0,0"
-                   Text="Legacy server workflows have been removed. Use Device Diagnostic to verify LDPlayer, capture screenshots, detect game state, and test navigation."
+                   Text="Các luồng máy chủ cũ đã được gỡ bỏ. Dùng Chẩn đoán thiết bị để kiểm tra LDPlayer, chụp màn hình, nhận diện trạng thái game và kiểm tra điều hướng."
                    TextWrapping="Wrap"
                    Foreground="#FF616161"/>
 
@@ -32,7 +32,6 @@
             </Grid.ColumnDefinitions>
 
             <Button Grid.Column="0"
-                    Content="Show Log"
                     Click="Button_Click_ShowLog"
                     Height="50"
                     Margin="0,0,6,0"
@@ -40,12 +39,17 @@
                     FontWeight="Bold"
                     Background="#2196F3"
                     Foreground="White"
-                    BorderBrush="#2196F3"/>
+                    BorderBrush="#2196F3">
+                <StackPanel Orientation="Horizontal" HorizontalAlignment="Center">
+                    <TextBlock Text="▤" FontSize="19" Margin="0,0,9,0"
+                               VerticalAlignment="Center"/>
+                    <TextBlock Text="Xem nhật ký" VerticalAlignment="Center"/>
+                </StackPanel>
+            </Button>
 
             <Button x:Name="DeviceDiagnosticButton"
                     Grid.Column="1"
-                    Content="Farm Control"
-                    ToolTip="Mở IKAutomation - Farm Control"
+                    ToolTip="Mở IKAutomation - Điều khiển Farm"
                     Click="Button_Click_DeviceDiagnostic"
                     Height="50"
                     Margin="6,0,0,0"
@@ -53,7 +57,14 @@
                     FontWeight="Bold"
                     Background="#7E57C2"
                     Foreground="White"
-                    BorderBrush="#7E57C2"/>
+                    BorderBrush="#7E57C2">
+                <StackPanel Orientation="Horizontal" HorizontalAlignment="Center">
+                    <TextBlock Text="⚙" FontSize="18" Margin="0,0,8,0"
+                               VerticalAlignment="Center"/>
+                    <TextBlock x:Name="DeviceDiagnosticButtonLabel"
+                               Text="Điều khiển Farm" VerticalAlignment="Center"/>
+                </StackPanel>
+            </Button>
         </Grid>
     </Grid>
 </Window>

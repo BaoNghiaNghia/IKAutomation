@@ -8,6 +8,7 @@
     <Compile Include="..\..\ADB\Core\Diagnostics\IDiagnosticLogger.cs" Link="Production\IDiagnosticLogger.cs" />
     <Compile Include="..\..\ADB\Core\GameDetection\*.cs" Link="Production\GameDetection\%(Filename)%(Extension)" />
     <Compile Include="..\..\ADB\Core\Navigation\*.cs" Link="Production\Navigation\%(Filename)%(Extension)" />
+    <Compile Include="..\..\ADB\Core\ResourceSearch\ResourceSearchPanelReadiness.cs" Link="Production\ResourceSearch\ResourceSearchPanelReadiness.cs" />
     <Compile Include="..\..\ADB\Core\Vision\*.cs" Link="Production\Vision\%(Filename)%(Extension)" />
     <Compile Include="..\..\ADB\Infrastructure\Navigation\WorldMapNavigationService.cs" Link="Production\WorldMapNavigationService.cs" />
     <Compile Include="..\..\ADB\Infrastructure\Concurrency\DeviceOperationLock.cs" Link="Production\DeviceOperationLock.cs" />

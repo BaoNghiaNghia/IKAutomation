@@ -152,7 +152,7 @@ namespace ADB_Tool_Automation_Post_FB.Infrastructure.Workflows
                             ?? level.LastAttemptedLevel
                             ?? lastLevelAttempt?.Level
                             ?? request.ResourceLevelPriority.FirstOrDefault();
-                        ReportToast(progress, resource, exactLevel,
+                        ReportToast(progress, deviceName, request.FarmRunId, resource, exactLevel,
                             lastLevelAttempt?.MatchedNotFoundVariant
                                 ?? level.MatchedNotFoundVariant
                                 ?? "ResourceAreaLv2Redirect");
@@ -725,8 +725,10 @@ namespace ADB_Tool_Automation_Post_FB.Infrastructure.Workflows
             }
         }
 
-        private static void ReportToast(
+        private void ReportToast(
             IProgress<ResourceFarmFallbackProgress> progress,
+            string deviceName,
+            string farmRunId,
             ResourceType resource,
             int effectiveLevel,
             string variant)
@@ -734,16 +736,21 @@ namespace ADB_Tool_Automation_Post_FB.Infrastructure.Workflows
             if (progress == null) return;
             try
             {
+                DateTimeOffset detectedAt = DateTimeOffset.UtcNow;
                 progress.Report(new ResourceFarmFallbackProgress
                 {
                     CurrentStep = OneShotFarmStep.ResourceFarmFallback,
                     CurrentResource = resource,
                     EffectiveLevel = effectiveLevel > 0 ? effectiveLevel : (int?)null,
                     ResourceToastVariant = variant,
-                    ResourceToastDetectedAt = DateTimeOffset.UtcNow,
+                    ResourceToastDetectedAt = detectedAt,
                     ResourceToastState = "Detected",
+                    FarmRunId = farmRunId,
                     MapRepositionState = MapRepositionState.None
                 });
+                logger.Info($"[Device Toast Status] DeviceName='{deviceName}', FarmRunId='{farmRunId ?? string.Empty}', "
+                    + $"Resource='{resource}', EffectiveLevel={effectiveLevel}, Variant='{variant}', "
+                    + $"DetectedAt='{detectedAt:O}', DisplayText='ResourceAreaLv2Redirect', State='Detected'");
             }
             catch
             {

@@ -100,6 +100,9 @@ namespace ADB_Tool_Automation_Post_FB.Infrastructure.Workflows
         public async Task<OneShotFarmResult> RunAsync(string deviceName, OneShotFarmRequest request,
             IProgress<OneShotFarmProgress> progress, CancellationToken cancellationToken)
         {
+            if (request != null && string.IsNullOrWhiteSpace(request.FarmRunId))
+                request.FarmRunId = string.IsNullOrWhiteSpace(request.RunId)
+                    ? Guid.NewGuid().ToString() : request.RunId;
             string validation = Validate(deviceName, request);
             if (validation != null)
             {
@@ -221,14 +224,19 @@ namespace ADB_Tool_Automation_Post_FB.Infrastructure.Workflows
                 else
                 {
                     started = Start(runId, deviceName, OneShotFarmStep.OpenSearchPanel);
-                    if (initial.State != GameState.ResourceSearchPanel)
+                    if (!ResourceSearchPanelReadinessVerifier.Evaluate(initial).IsReady)
                     {
                         Add(steps, OneShotFarmStep.OpenSearchPanel, false, started,
-                            "The confirmed SearchPanel state changed before the next resource; no input was sent.",
-                            initial.ErrorMessage, initial);
+                            "ResourceSearchPanel chưa sẵn sàng; chưa bắt đầu kiểm tra toast.",
+                            ResourceSearchPanelReadinessVerifier.Evaluate(initial).Reason
+                                ?? initial.ErrorMessage, initial);
+                        Report(progress, OneShotFarmProgressStage.RunningFarmStep,
+                            OneShotFarmStep.OpenSearchPanel, request, null,
+                            "ResourceSearchPanel chưa sẵn sàng; chưa bắt đầu kiểm tra toast.");
                         return await StopAsync(result, OneShotFarmOutcome.SearchPanelUnavailable,
-                            "ResourceSearchPanel was not re-verified for the next resource.",
-                            initial.ErrorMessage, OneShotFarmStep.OpenSearchPanel, watch, runId, token);
+                            "ResourceSearchPanel chưa sẵn sàng; chưa bắt đầu kiểm tra toast.",
+                            ResourceSearchPanelReadinessVerifier.Evaluate(initial).Reason
+                                ?? initial.ErrorMessage, OneShotFarmStep.OpenSearchPanel, watch, runId, token);
                     }
                     AddSuccess(result, steps, OneShotFarmStep.OpenSearchPanel, started,
                         "ResourceSearchPanel remained verified after storage confirmation; it was not opened again.", initial);
@@ -248,7 +256,7 @@ namespace ADB_Tool_Automation_Post_FB.Infrastructure.Workflows
                 };
                 Report(progress, OneShotFarmProgressStage.RunningFarmStep,
                     OneShotFarmStep.SearchWithLevelFallback, request, null,
-                    "Searching the configured resource levels.");
+                    "Đang kiểm tra thông báo sau khi bấm Tìm kiếm...");
                 token.ThrowIfCancellationRequested(); started = Start(runId, deviceName, OneShotFarmStep.SearchWithLevelFallback);
                 ResourceLevelFallbackResult fallbackResult = await fallback.SearchAsync(deviceName,
                     request.ResourceType, fallbackPolicy, request.UnoccupiedOnly, token);
@@ -572,13 +580,14 @@ namespace ADB_Tool_Automation_Post_FB.Infrastructure.Workflows
             IReadOnlyList<GameDetectionEvidence> evidence)
         {
             if (evidence == null) return false;
+            bool panelAnchor = evidence.Any(x => x.TemplateId == TemplateId.ResourceSearchPanelAnchor && x.Found);
             bool searchButton = evidence.Any(x => x.TemplateId == TemplateId.SearchButtonEnabled && x.Found);
-            bool panelChrome = evidence.Any(x => x.Found
-                && (x.TemplateId == TemplateId.ResourceSearchPanelAnchor
-                    || x.TemplateId == TemplateId.LevelMinusButton
+            bool stableSecondary = evidence.Any(x => x.Found
+                && (x.TemplateId == TemplateId.LevelMinusButton
                     || x.TemplateId == TemplateId.ResourceTabSelected
                     || x.TemplateId == TemplateId.ResourceTabUnselected));
-            return searchButton && panelChrome;
+            return ResourceSearchPanelReadinessVerifier.Evaluate(
+                panelAnchor, searchButton, stableSecondary).IsReady;
         }
 
         private async Task<OneShotFarmResult> StopAsync(OneShotFarmResult result,
@@ -627,7 +636,9 @@ namespace ADB_Tool_Automation_Post_FB.Infrastructure.Workflows
                     CurrentExpectedTeam = expectedTeam,
                     CurrentSelectedTeam = step == OneShotFarmStep.DispatchTeam ? team : null,
                     MapRepositionState = MapRepositionState.None,
-                    Message = message
+                    Message = message,
+                    FarmRunId = request?.FarmRunId,
+                    TeamOperationRunId = request?.TeamOperationRunId
                 });
             }
             catch (Exception exception)
@@ -661,6 +672,8 @@ namespace ADB_Tool_Automation_Post_FB.Infrastructure.Workflows
                     LastDispatchedTeam = stage == OneShotFarmProgressStage.Completed ? team : null,
                     MapRepositionState = MapRepositionState.None,
                     Message = message,
+                    FarmRunId = request?.FarmRunId,
+                    TeamOperationRunId = request?.TeamOperationRunId,
                     TerritoryColorSummary = null
                 });
             }
@@ -764,6 +777,16 @@ namespace ADB_Tool_Automation_Post_FB.Infrastructure.Workflows
             {
                 Add(steps, OneShotFarmStep.ResourceFarmFallback, false, started,
                     fallbackResult.Message, fallbackResult.ErrorMessage, fallbackResult);
+                string fallbackMessage = fallbackResult.Message ?? string.Empty;
+                string fallbackError = fallbackResult.ErrorMessage ?? string.Empty;
+                if (fallbackResult.Outcome == ResourceFarmFallbackOutcome.RecoveryFailed
+                    && (fallbackMessage.IndexOf("ResourceSearchPanel", StringComparison.OrdinalIgnoreCase) >= 0
+                        || fallbackError.IndexOf("ResourceSearchPanel", StringComparison.OrdinalIgnoreCase) >= 0))
+                {
+                    Report(progress, OneShotFarmProgressStage.RunningFarmStep,
+                        OneShotFarmStep.ResourceFarmFallback, request, null,
+                        "ResourceSearchPanel chưa sẵn sàng; chưa bắt đầu kiểm tra toast.");
+                }
                 return await StopAsync(result, MapFallbackOutcome(fallbackResult.Outcome),
                     fallbackResult.Message, fallbackResult.ErrorMessage,
                     OneShotFarmStep.ResourceFarmFallback, watch, runId, token);
@@ -837,6 +860,8 @@ namespace ADB_Tool_Automation_Post_FB.Infrastructure.Workflows
                     TerritoryColorSummary = value.ClearTerritoryColor
                         ? null : value.TerritoryColorSummary,
                     MapRepositionState = value.MapRepositionState,
+                    FarmRunId = value.FarmRunId ?? request?.FarmRunId,
+                    TeamOperationRunId = request?.TeamOperationRunId,
                     CurrentResource = value.CurrentResource ?? request?.ResourceType,
                     CurrentLevel = value.EffectiveLevel,
                     ResourceToastVariant = value.ResourceToastVariant,

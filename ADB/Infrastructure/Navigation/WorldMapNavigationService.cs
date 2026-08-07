@@ -3,6 +3,7 @@ using ADB_Tool_Automation_Post_FB.Core.Concurrency;
 using ADB_Tool_Automation_Post_FB.Core.Diagnostics;
 using ADB_Tool_Automation_Post_FB.Core.GameDetection;
 using ADB_Tool_Automation_Post_FB.Core.Navigation;
+using ADB_Tool_Automation_Post_FB.Core.ResourceSearch;
 using ADB_Tool_Automation_Post_FB.Core.Vision;
 using System;
 using System.Collections.Generic;
@@ -2419,18 +2420,9 @@ namespace ADB_Tool_Automation_Post_FB.Infrastructure.Navigation
 
         private static bool IsVerifiedResourceSearchPanel(GameDetectionResult result)
         {
-            if (result == null || result.State != GameState.ResourceSearchPanel || result.Evidence == null)
-                return false;
-
-            bool anchorFound = result.Evidence.Any(item =>
-                item.TemplateId == TemplateId.ResourceSearchPanelAnchor && item.Found);
-            bool stableFallbackFound = result.Evidence.Any(item =>
-                (item.TemplateId == TemplateId.LevelMinusButton
-                    || item.TemplateId == TemplateId.ResourceTabSelected
-                    || item.TemplateId == TemplateId.ResourceTabUnselected) && item.Found);
-            bool searchButtonFound = result.Evidence.Any(item =>
-                item.TemplateId == TemplateId.SearchButtonEnabled && item.Found);
-            return anchorFound || (stableFallbackFound && searchButtonFound);
+            ResourceSearchPanelReadinessResult readiness =
+                ResourceSearchPanelReadinessVerifier.Evaluate(result);
+            return readiness.IsReady;
         }
 
         private async Task<ResourceSearchPanelScreenshotProbe> ProbeResourceSearchPanelAsync(
@@ -2441,7 +2433,9 @@ namespace ADB_Tool_Automation_Post_FB.Infrastructure.Navigation
             ImageMatchResult previousPositiveSearchButtonBounds = null;
             int consecutivePositiveFrames = 0;
             ResourceSearchPanelScreenshotProbe probe = new ResourceSearchPanelScreenshotProbe();
-            for (int frameNumber = 1; frameNumber <= 3; frameNumber++)
+            // A single fresh Search-button ROI observation is authoritative. The
+            // caller owns the one bounded panel-open retry when it is absent.
+            for (int frameNumber = 1; frameNumber <= 1; frameNumber++)
             {
                 if (frameNumber > 1)
                     await Task.Delay(options.StatePollIntervalMs, cancellationToken);
@@ -2454,7 +2448,8 @@ namespace ADB_Tool_Automation_Post_FB.Infrastructure.Navigation
                 probe.CityDetected = cityFound;
                 probe.PanelEvidenceVisible = anchorFound || search != null;
 
-                if (cityFound)
+                if (cityFound && (search == null || !search.SearchRegion.HasValue
+                    || !IsInside(search.MatchResult, search.SearchRegion.Value)))
                 {
                     probe.FailureReason = "CityDetectedDuringPanelOpen";
                     LogSearchPanelProbe(deviceName, frameNumber, anchorFound, search,
@@ -2494,34 +2489,15 @@ namespace ADB_Tool_Automation_Post_FB.Infrastructure.Navigation
                     consecutivePositiveFrames = 1;
                 probe.ConsecutivePositiveFrames = consecutivePositiveFrames;
 
-                // The dedicated panel anchor is authoritative on one fresh frame.
-                if (anchorFound)
-                {
-                    probe.Confirmed = true;
-                    probe.ConfirmationMode = "DedicatedAnchorPlusSearchButton";
-                    probe.FailureReason = null;
-                    LogSearchPanelProbe(deviceName, frameNumber, true, search,
-                        previousPositiveSearchButtonBounds, comparisonPerformed, probe,
-                        consecutivePositiveFrames, probe.ConfirmationMode,
-                        "ContinueResourceConfiguration", string.Empty);
-                    return probe;
-                }
-
-                LogSearchPanelProbe(deviceName, frameNumber, false, search,
+                probe.Confirmed = true;
+                probe.ConfirmationMode = "SearchButtonOnly";
+                probe.FailureReason = null;
+                LogSearchPanelProbe(deviceName, frameNumber, anchorFound, search,
                     previousPositiveSearchButtonBounds, comparisonPerformed, probe,
-                    consecutivePositiveFrames, stable ? "StableSearchButtonPair" : "None",
-                    consecutivePositiveFrames >= 2 ? "ContinueResourceConfiguration" : "ConfirmWithNextScreenshot",
-                    string.Empty);
-                // Compare before replacing the baseline. A new Rectangle instance is
-                // expected on every matcher result.
-                previousPositiveSearchButtonBounds = search.MatchResult;
-                if (consecutivePositiveFrames >= 2)
-                {
-                    probe.Confirmed = true;
-                    probe.ConfirmationMode = "StableSearchButtonPair";
-                    probe.FailureReason = null;
-                    return probe;
-                }
+                    consecutivePositiveFrames, probe.ConfirmationMode,
+                    "ContinueResourceConfiguration", string.Empty);
+                return probe;
+
             }
 
             if (probe.ConfirmationFrames == 0)
@@ -2738,16 +2714,11 @@ namespace ADB_Tool_Automation_Post_FB.Infrastructure.Navigation
         private static ResourceSearchPanelEvidenceState ClassifyResourceSearchPanelEvidence(
             GameDetectionResult result)
         {
-            if (result == null || !result.IsSuccessful) return ResourceSearchPanelEvidenceState.None;
-            bool panelAnchor = HasEvidence(result, TemplateId.ResourceSearchPanelAnchor);
-            bool searchButton = HasEvidence(result, TemplateId.SearchButtonEnabled);
-            bool stableSecondary = HasEvidence(result, TemplateId.LevelMinusButton)
-                || HasEvidence(result, TemplateId.ResourceTabSelected)
-                || HasEvidence(result, TemplateId.ResourceTabUnselected);
-            bool worldMapAnchor = HasEvidence(result, TemplateId.WorldMapAnchor);
-            if (panelAnchor || (searchButton && stableSecondary))
+            ResourceSearchPanelReadinessResult readiness =
+                ResourceSearchPanelReadinessVerifier.Evaluate(result);
+            if (readiness.Status == ResourceSearchPanelReadiness.Ready)
                 return ResourceSearchPanelEvidenceState.Confirmed;
-            if (searchButton && !worldMapAnchor)
+            if (readiness.Status == ResourceSearchPanelReadiness.Animating)
                 return ResourceSearchPanelEvidenceState.Partial;
             return ResourceSearchPanelEvidenceState.None;
         }

@@ -48,6 +48,8 @@ namespace ADB_Tool_Automation_Post_FB.Core.Workflows
         public MapRepositionState MapRepositionState { get; set; }
         public string Message { get; set; }
         public string TerritoryColorSummary { get; set; }
+        public string FarmRunId { get; set; }
+        public string TeamOperationRunId { get; set; }
         // Template matching identifies the known redirect variant; the UI
         // renders a normalized message from these operation fields (no OCR).
         public string ResourceToastText { get; set; }

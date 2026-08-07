@@ -1538,6 +1538,8 @@ namespace ADB_Tool_Automation_Post_FB.UI
         private string resourceToastVariant = string.Empty;
         private DateTimeOffset? resourceToastDetectedAt;
         private string resourceToastState = string.Empty;
+        private string activeFarmRunId = string.Empty;
+        private string activeTeamOperationRunId = string.Empty;
         private DateTimeOffset? nextCheckAt;
         private DateTimeOffset? waitDeadline;
         private bool rosterScanCompleted;
@@ -1580,6 +1582,10 @@ namespace ADB_Tool_Automation_Post_FB.UI
             ref resourceToastDetectedAt, value, nameof(ResourceToastDetectedAt)); }
         public string ResourceToastState { get => resourceToastState; private set => Set(
             ref resourceToastState, value, nameof(ResourceToastState)); }
+        public string ActiveFarmRunId { get => activeFarmRunId; private set => Set(
+            ref activeFarmRunId, value, nameof(ActiveFarmRunId)); }
+        public string ActiveTeamOperationRunId { get => activeTeamOperationRunId; private set => Set(
+            ref activeTeamOperationRunId, value, nameof(ActiveTeamOperationRunId)); }
         public string TeamsSummary { get => teamsSummary; private set => Set(
             ref teamsSummary, value, nameof(TeamsSummary)); }
         public bool IsWaiting => string.Equals(Stage,
@@ -1602,6 +1608,8 @@ namespace ADB_Tool_Automation_Post_FB.UI
             ResourceToastVariant = string.Empty;
             ResourceToastDetectedAt = null;
             ResourceToastState = string.Empty;
+            ActiveFarmRunId = string.Empty;
+            ActiveTeamOperationRunId = string.Empty;
             TeamsSummary = string.Empty;
             Teams.Clear();
             rosterScanCompleted = false;
@@ -1615,6 +1623,17 @@ namespace ADB_Tool_Automation_Post_FB.UI
 
         public void Apply(OneShotFarmProgress progress)
         {
+            if (progress == null) return;
+            if (!string.IsNullOrWhiteSpace(progress.FarmRunId))
+            {
+                if (!string.IsNullOrWhiteSpace(ActiveFarmRunId)
+                    && !string.Equals(ActiveFarmRunId, progress.FarmRunId,
+                        StringComparison.OrdinalIgnoreCase))
+                    return;
+                ActiveFarmRunId = progress.FarmRunId;
+            }
+            if (!string.IsNullOrWhiteSpace(progress.TeamOperationRunId))
+                ActiveTeamOperationRunId = progress.TeamOperationRunId;
             Stage = progress.Stage.ToString();
             Message = FarmProgressVietnamese.Message(progress.Message);
             var details = new List<string>();
@@ -1674,12 +1693,16 @@ namespace ADB_Tool_Automation_Post_FB.UI
                     bool isAllowed = allowed.Contains(item.Team);
                     bool isReady = ready.Contains(item.Team);
                     bool isEligible = eligible.Contains(item.Team);
-                    string status = isAvailabilityUpdate && (!scanCompleted || rosterUncertain)
-                        ? "Chưa kiểm tra"
-                        : isEligible ? "Sẵn sàng"
+                    // Readiness is valid evidence even while a follow-up scan is
+                    // being published.  The previous ordering overwrote every
+                    // badge with "Chưa kiểm tra" during that window, hiding the
+                    // statuses that had just been detected.
+                    string status = isEligible ? "Sẵn sàng"
                         : isReady && isAllowed ? "Sẵn sàng"
                         : isReady ? "Sẵn sàng · không chọn"
-                        : !scanCompleted ? "Chờ quét"
+                        : isAvailabilityUpdate && (!scanCompleted || rosterUncertain)
+                            ? (string.IsNullOrWhiteSpace(item.Status)
+                                ? "Chưa kiểm tra" : item.Status)
                         : isAllowed ? "Bận"
                         : "Không dùng";
                     item.SetStatus(status, isEligible || isReady);

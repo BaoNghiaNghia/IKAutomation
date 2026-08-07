@@ -53,6 +53,8 @@ namespace ADB_Tool_Automation_Post_FB.Infrastructure.Workflows
             request.ReadyTeamWaitMode = ReadyTeamWaitMode.YieldToSupervisor;
             if (string.IsNullOrWhiteSpace(request.RunId))
                 request.RunId = Guid.NewGuid().ToString();
+            if (string.IsNullOrWhiteSpace(request.FarmRunId))
+                request.FarmRunId = request.RunId;
             string[] devices = (deviceNames ?? new string[0])
                 .Where(name => !string.IsNullOrWhiteSpace(name)).Select(name => name.Trim())
                 .Distinct(StringComparer.OrdinalIgnoreCase).ToArray();

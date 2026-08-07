@@ -94,27 +94,42 @@ namespace ADB_Tool_Automation_Post_FB.Infrastructure.ResourceSearch
             try
             {
                 LogStart(deviceName, request);
-                NavigationResult navigation = await navigationService.OpenResourceSearchPanelAsync(deviceName, cancellationToken);
-                result.InitialState = navigation.InitialState;
-                if (!navigation.Success)
+                if (request.PanelReady)
                 {
-                    AddStep(steps, "EnsurePanel", false, navigation.Attempts, null,
-                        navigation.Message, navigation.ErrorMessage);
-                    return Complete(result, watch, "ResourceSearchPanel could not be opened.", navigation.ErrorMessage);
+                    AddStep(steps, "EnsurePanel", true, 1, null,
+                        "SearchButton ROI was already verified; panel was not reopened or revalidated.", null);
                 }
+                else
+                {
+                    NavigationResult navigation = await navigationService.OpenResourceSearchPanelAsync(deviceName, cancellationToken);
+                    result.InitialState = navigation.InitialState;
+                    if (!navigation.Success)
+                    {
+                        AddStep(steps, "EnsurePanel", false, navigation.Attempts, null,
+                            navigation.Message, navigation.ErrorMessage);
+                        return Complete(result, watch, "ResourceSearchPanel could not be opened.", navigation.ErrorMessage);
+                    }
 
-                GameDetectionResult panel = await detector.DetectAsync(deviceName, cancellationToken);
-                List<ConfigurationTemplateEvidence> panelEvidence = PanelEvidence(panel);
-                if (!navigation.ScreenshotConfirmed && !IsVerifiedPanel(panel))
-                {
-                    AddStep(steps, "EnsurePanel", false, 1, panelEvidence,
-                        "ResourceSearchPanel did not have both required evidence signals.", panel.ErrorMessage);
+                    GameDetectionResult panel = await detector.DetectAsync(deviceName, cancellationToken);
+                    List<ConfigurationTemplateEvidence> panelEvidence = PanelEvidence(panel);
+                    ResourceSearchPanelReadinessResult panelReadiness =
+                        ResourceSearchPanelReadinessVerifier.Evaluate(
+                            panel, navigation.SearchButtonBoundsStable,
+                            navigation.ScreenshotConfirmed);
+                    if (!panelReadiness.IsReady)
+                    {
+                        AddStep(steps, "EnsurePanel", false, 1, panelEvidence,
+                            "ResourceSearchPanel chưa sẵn sàng; chưa bắt đầu kiểm tra toast.",
+                            panelReadiness.Reason ?? panel.ErrorMessage);
+                        result.FinalState = panel.State;
+                        return Complete(result, watch,
+                            "ResourceSearchPanel chưa sẵn sàng; chưa bắt đầu kiểm tra toast.",
+                            panelReadiness.Reason ?? panel.ErrorMessage);
+                    }
                     result.FinalState = panel.State;
-                    return Complete(result, watch, "Panel verification failed.", panel.ErrorMessage);
+                    AddStep(steps, "EnsurePanel", true, 1, panelEvidence,
+                        "ResourceSearchPanel verified by SearchButton ROI.", null);
                 }
-                result.FinalState = panel.State;
-                AddStep(steps, "EnsurePanel", true, 1, panelEvidence,
-                    "ResourceSearchPanel verified.", null);
 
                 if (!await EnsureResourceTabAsync(deviceName, result, steps, cancellationToken))
                     return Complete(result, watch, "Resource search tab could not be selected.", LastError(steps));
@@ -547,7 +562,6 @@ namespace ADB_Tool_Automation_Post_FB.Infrastructure.ResourceSearch
         {
             var watch = Stopwatch.StartNew();
             var attempt = 0;
-            GameDetectionResult state = null;
             List<ConfigurationTemplateEvidence> evidence = null;
             bool success = false;
 
@@ -555,9 +569,6 @@ namespace ADB_Tool_Automation_Post_FB.Infrastructure.ResourceSearch
             {
                 cancellationToken.ThrowIfCancellationRequested();
                 attempt++;
-                state = await detector.DetectAsync(deviceName, cancellationToken);
-                result.FinalState = state.State;
-
                 byte[] screenshot = await ldPlayerClient.CaptureScreenshotPngAsync(
                     deviceName, cancellationToken);
                 ConfigurationTemplateEvidence search = Match(
@@ -595,7 +606,9 @@ namespace ADB_Tool_Automation_Post_FB.Infrastructure.ResourceSearch
                         : TemplateId.UnoccupiedFilterUnchecked, search),
                     search
                 };
-                success = IsVerifiedPanel(state) && evidence.All(item => item.Found);
+                // PanelReady/SearchButton ROI is the authoritative panel handoff;
+                // configuration verification uses only the focused controls here.
+                success = evidence.All(item => item.Found);
                 if (success)
                     break;
 
@@ -614,9 +627,8 @@ namespace ADB_Tool_Automation_Post_FB.Infrastructure.ResourceSearch
                 .Select(item => item.TemplateId.ToString()));
             AddStep(steps, "FinalVerification", success, attempt, evidence,
                 success ? "Panel and all requested criteria were verified; Search was not pressed."
-                    : $"Final verification timed out. State='{state?.State}'; "
-                        + $"missing evidence='{missingEvidence}'.",
-                state?.ErrorMessage);
+                    : $"Final verification timed out; missing evidence='{missingEvidence}'.",
+                null);
             return success;
         }
 
@@ -1221,14 +1233,7 @@ namespace ADB_Tool_Automation_Post_FB.Infrastructure.ResourceSearch
 
         private static bool IsVerifiedPanel(GameDetectionResult result)
         {
-            return result != null && result.IsSuccessful && result.State == GameState.ResourceSearchPanel
-                && result.Evidence != null
-                && result.Evidence.Any(item =>
-                    (item.TemplateId == TemplateId.ResourceSearchPanelAnchor
-                        || item.TemplateId == TemplateId.LevelMinusButton
-                        || item.TemplateId == TemplateId.ResourceTabSelected
-                        || item.TemplateId == TemplateId.ResourceTabUnselected) && item.Found)
-                && result.Evidence.Any(item => item.TemplateId == TemplateId.SearchButtonEnabled && item.Found);
+            return ResourceSearchPanelReadinessVerifier.Evaluate(result).IsReady;
         }
 
         private static List<ConfigurationTemplateEvidence> PanelEvidence(GameDetectionResult result)
@@ -1317,7 +1322,7 @@ namespace ADB_Tool_Automation_Post_FB.Infrastructure.ResourceSearch
         {
             logger.Info($"[Resource Search Configuration] DeviceName='{deviceName}', "
                 + $"RequestedResource='{request.ResourceType}', RequestedLevel={request.TargetLevel}, "
-                + $"UnoccupiedOnly={request.UnoccupiedOnly}, Cancellation=false, Phase='Starting'");
+                + $"UnoccupiedOnly={request.UnoccupiedOnly}, PanelReady={request.PanelReady}, Cancellation=false, Phase='Starting'");
         }
     }
 }

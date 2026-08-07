@@ -361,6 +361,8 @@ namespace ADB_Tool_Automation_Post_FB.Infrastructure.Workflows
                 ReadyTeamWaitMode = source.ReadyTeamWaitMode,
                 ReadyTeamOptions = source.ReadyTeamOptions,
                 RunId = source.RunId,
+                FarmRunId = source.FarmRunId,
+                TeamOperationRunId = source.TeamOperationRunId,
                 CooperativeDispatch = source.CooperativeDispatch,
                 CycleDispatchedTeams = source.CycleDispatchedTeams,
                 CycleDispatchedResources = source.CycleDispatchedResources
