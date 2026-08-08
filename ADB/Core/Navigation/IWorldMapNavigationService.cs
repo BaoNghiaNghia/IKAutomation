@@ -20,4 +20,10 @@ namespace ADB_Tool_Automation_Post_FB.Core.Navigation
             IProgress<NavigationTransition> progress,
             CancellationToken cancellationToken);
     }
+
+    public interface IResourceAreaMapPointNavigationService
+    {
+        Task<NavigationResult> OpenMapAndTapPointAsync(
+            string deviceName, int x, int y, CancellationToken cancellationToken);
+    }
 }

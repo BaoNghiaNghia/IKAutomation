@@ -21,7 +21,8 @@ namespace ADB_Tool_Automation_Post_FB.Infrastructure.Navigation
 {
     public sealed class WorldMapNavigationService :
         IWorldMapNavigationService,
-        IWorldMapNavigationProgressService
+        IWorldMapNavigationProgressService,
+        IResourceAreaMapPointNavigationService
     {
         private const int ExpectedScreenshotWidth = 1280;
         private const int ExpectedScreenshotHeight = 720;
@@ -107,6 +108,95 @@ namespace ADB_Tool_Automation_Post_FB.Infrastructure.Navigation
         {
             return WithDeviceLockAsync(deviceName, "TapWorldMapPoint",
                 token => TapWorldMapPointCoreAsync(deviceName, x, y, token), cancellationToken);
+        }
+
+        public Task<NavigationResult> OpenMapAndTapPointAsync(string deviceName, int x, int y,
+            CancellationToken cancellationToken)
+        {
+            return WithDeviceLockAsync(deviceName, "OpenMapAndTapResourceAreaPoint",
+                token => OpenMapAndTapPointCoreAsync(deviceName, x, y, token), cancellationToken);
+        }
+
+        private async Task<NavigationResult> OpenMapAndTapPointCoreAsync(string deviceName,
+            int x, int y, CancellationToken cancellationToken)
+        {
+            var watch = Stopwatch.StartNew();
+            var transitions = new List<NavigationTransition>();
+            NavigationResult ensured = await EnsureWorldMapCoreAsync(
+                deviceName, null, cancellationToken);
+            if (!ensured.Success || ensured.FinalState != GameState.WorldMap)
+                return ensured;
+
+            GameDetectionResult initial = DetectionFrom(ensured);
+            GameDetectionResult current = initial;
+            GameDetectionEvidence mapButton = FindFreshEvidence(
+                current, TemplateId.WorldMapPinButton);
+            if (mapButton == null)
+            {
+                current = await RefreshFullFrameEvidenceAsync(
+                    deviceName, transitions, cancellationToken);
+                mapButton = current.IsSuccessful && current.State == GameState.WorldMap
+                    ? FindFreshEvidence(current, TemplateId.WorldMapPinButton)
+                    : null;
+            }
+            if (mapButton == null)
+                return Result(false, initial, current, ensured.Attempts, watch,
+                    "Không tìm thấy biểu tượng bản đồ với bounds mới; không gửi Tap.",
+                    null, transitions, "WorldMapPinButtonUnavailable");
+
+            await TapEvidenceAsync(deviceName, mapButton,
+                "WorldMapPinButtonForResourceAreaLv2", transitions, cancellationToken);
+            current = await PollAsync(deviceName, GameState.ContinentMap,
+                transitions, cancellationToken);
+            if (!current.IsSuccessful || current.State != GameState.ContinentMap)
+                return Result(false, initial, current, ensured.Attempts + 1, watch,
+                    "Đã bấm biểu tượng map nhưng chưa xác minh được ContinentMap.",
+                    current?.ErrorMessage, transitions, "ContinentMapNotVerified");
+
+            FrameResolutionResult resolution = await CaptureFrameResolutionAsync(
+                deviceName, cancellationToken);
+            if (x < 0 || y < 0 || x >= resolution.Width || y >= resolution.Height)
+                return Result(false, initial, current, ensured.Attempts + 1, watch,
+                    "Điểm ContinentMap nằm ngoài khung hình; không gửi Tap.", null,
+                    transitions, "PointOutsideFrame", x, y, 0, false);
+
+            await ldPlayerClient.TapAsync(deviceName, x, y, cancellationToken);
+            AddTransition(transitions, "Tap",
+                $"Tapped predefined ContinentMap point ({x},{y}).");
+            await Task.Delay(options.StatePollIntervalMs, cancellationToken);
+            current = await DetectAsync(deviceName, transitions, cancellationToken);
+            if (current.IsSuccessful && current.State == GameState.Unknown
+                && IsVerifiedContinentMapEvidence(current))
+                current.State = GameState.ContinentMap;
+            if (!current.IsSuccessful || current.State != GameState.ContinentMap)
+                return Result(false, initial, current, ensured.Attempts + 2, watch,
+                    "Điểm đã được chọn nhưng ContinentMap không còn được xác minh.",
+                    current?.ErrorMessage, transitions, "ContinentMapPointNotVerified", x, y, 1, false);
+
+            GameDetectionEvidence moveButton = FindFreshEvidence(
+                current, TemplateId.ContinentMapPinButton);
+            if (moveButton == null)
+            {
+                current = await RefreshFullFrameEvidenceAsync(
+                    deviceName, transitions, cancellationToken);
+                moveButton = FindFreshEvidence(current, TemplateId.ContinentMapPinButton);
+            }
+            if (moveButton == null)
+                return Result(false, initial, current, ensured.Attempts + 2, watch,
+                    "Không tìm thấy nút di chuyển trên ContinentMap; không gửi Tap.",
+                    null, transitions, "ContinentMapPinButtonUnavailable", x, y, 1, false);
+
+            await TapEvidenceAsync(deviceName, moveButton,
+                "ContinentMapPinButtonForResourceAreaLv2", transitions, cancellationToken);
+            GameDetectionResult final = await PollAsync(deviceName, GameState.WorldMap,
+                transitions, cancellationToken);
+            return final.IsSuccessful && final.State == GameState.WorldMap
+                ? Result(true, initial, final, ensured.Attempts + 3, watch,
+                    "Đã mở map, chọn điểm ngẫu nhiên và quay lại WorldMap.", null,
+                    transitions, null, x, y, 2, true)
+                : Result(false, initial, final, ensured.Attempts + 3, watch,
+                    "Đã chọn điểm nhưng chưa xác minh quay lại WorldMap.",
+                    final?.ErrorMessage, transitions, "WorldMapNotVerifiedAfterPoint", x, y, 2, false);
         }
 
         private async Task<NavigationResult> TapWorldMapPointCoreAsync(string deviceName,
@@ -438,11 +528,42 @@ namespace ADB_Tool_Automation_Post_FB.Infrastructure.Navigation
                     return failed;
                 }
 
-                // A retry is allowed only when a fresh WorldMap observation remains
-                // visible. We never send Back or run modal recovery in this path.
+                // Before requiring WorldMap for another tap, accept a later fresh
+                // Search-button observation. The initial probe can land while the
+                // panel is still animating and must not overwrite this success.
                 if (!IsFreshWorldMapAnchor(current))
                 {
                     current = await DetectAsync(deviceName, transitions, cancellationToken);
+                    GameDetectionEvidence refreshedSearchButton = FindFreshEvidence(
+                        current, TemplateId.SearchButtonEnabled);
+                    bool refreshedPanelConfirmed = refreshedSearchButton?.SearchRegion != null
+                        && IsInside(refreshedSearchButton.MatchResult,
+                            refreshedSearchButton.SearchRegion.Value);
+                    if (refreshedPanelConfirmed)
+                    {
+                        probe.LastFrame = current;
+                        probe.Confirmed = true;
+                        probe.SearchButtonVisible = true;
+                        probe.ConfirmationFrames = Math.Max(probe.ConfirmationFrames, 1);
+                        probe.ExpectedRegion = true;
+                        probe.InsideExpectedRegion = true;
+                        probe.SearchButtonBounds = refreshedSearchButton.MatchResult;
+                        probe.ConfirmationMode = "FreshSearchButtonAfterProbe";
+                        probe.FailureReason = null;
+                        LogSearchPanelProbe(deviceName, 2,
+                            HasEvidence(current, TemplateId.ResourceSearchPanelAnchor),
+                            refreshedSearchButton, null, false, probe, 1,
+                            probe.ConfirmationMode,
+                            "ContinueResourceConfiguration", string.Empty);
+
+                        NavigationResult success = Result(true, initial, current,
+                            attempt, watch,
+                            "ResourceSearchPanel confirmed by a fresh SearchButton screenshot after the initial probe.",
+                            null, transitions, null, x, y, attempt, true);
+                        ApplySearchPanelProbe(success, probe, attempt);
+                        success.FinalState = GameState.ResourceSearchPanel;
+                        return success;
+                    }
                     if (!IsFreshWorldMapAnchor(current))
                     {
                         NavigationResult failed = Result(false, initial, current, attempt, watch,

@@ -637,6 +637,9 @@ namespace ADB_Tool_Automation_Post_FB.Infrastructure.Workflows
                     CurrentSelectedTeam = step == OneShotFarmStep.DispatchTeam ? team : null,
                     MapRepositionState = MapRepositionState.None,
                     Message = message,
+                    ResourceToastText = message != null
+                        && message.IndexOf("thông báo", StringComparison.OrdinalIgnoreCase) >= 0
+                        ? message : null,
                     FarmRunId = request?.FarmRunId,
                     TeamOperationRunId = request?.TeamOperationRunId
                 });

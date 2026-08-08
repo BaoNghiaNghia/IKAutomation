@@ -22,6 +22,7 @@ namespace ADB_Tool_Automation_Post_FB.Infrastructure.ResourceSearch
         private const string LegacyMoveAreaVariant = "LegacyMoveArea";
         private const string SearchOtherRegionVariant = "SearchOtherRegion";
         private const string TargetLevelTooLowVariant = "TargetLevelTooLow";
+        private static readonly int[] ToastScreenshotDelaysMs = { 650, 1100, 1600 };
 
         private static readonly TemplateId[] RequiredTemplates =
         {
@@ -177,9 +178,6 @@ namespace ADB_Tool_Automation_Post_FB.Infrastructure.ResourceSearch
                     result.SearchButtonVerified = true;
                     int tapX = button.CenterX;
                     int tapY = button.CenterY;
-                    // Arm the lightweight frame request before the input so the
-                    // first post-tap frame can already be in flight.
-                    Task<CapturedFrame> armedToastFrame = CaptureFrameAsync(deviceName, cancellationToken);
                     logger.Info($"[Resource Search Execution] DeviceName='{deviceName}', Attempt={attempt}, "
                         + $"SearchButtonBounds=({button.X},{button.Y},{button.Width},{button.Height}), "
                         + $"SearchTap=({tapX},{tapY}), SearchTapCount={result.SearchTapCount + 1}");
@@ -188,7 +186,7 @@ namespace ADB_Tool_Automation_Post_FB.Infrastructure.ResourceSearch
                     DateTimeOffset searchTapCompletedAt = DateTimeOffset.UtcNow;
                     ImmediateToastProbeResult immediateProbe = await ProbeImmediateToastAsync(
                         deviceName, request, result, result.SearchTapCount,
-                        searchTapCompletedAt, armedToastFrame, cancellationToken);
+                        searchTapCompletedAt, cancellationToken);
                     if (immediateProbe.Outcome.HasValue)
                     {
                         result.FailureReason = immediateProbe.FailureReason;
@@ -302,148 +300,68 @@ namespace ADB_Tool_Automation_Post_FB.Infrastructure.ResourceSearch
         private async Task<ImmediateToastProbeResult> ProbeImmediateToastAsync(
             string deviceName, ResourceSearchExecutionRequest request,
             ResourceSearchExecutionResult result, int searchTapCount,
-            DateTimeOffset searchTapCompletedAt, Task<CapturedFrame> armedToastFrame,
+            DateTimeOffset searchTapCompletedAt,
             CancellationToken cancellationToken)
         {
-            int settleMs = 350;
-            await Task.Delay(settleMs, cancellationToken);
-            DateTimeOffset captureStarted = DateTimeOffset.UtcNow;
-            CapturedFrame frame;
-            try
-            {
-                frame = armedToastFrame == null
-                    ? await CaptureFrameAsync(deviceName, cancellationToken)
-                    : await armedToastFrame;
-                // An armed request can complete just before the input. Never use a
-                // pre-tap frame as the post-tap Search-button gate.
-                if (frame.CapturedAt <= searchTapCompletedAt)
-                {
-                    frame.Dispose();
-                    frame = await CaptureFrameAsync(deviceName, cancellationToken);
-                }
-            }
-            catch (OperationCanceledException) { throw; }
-            catch (Exception exception)
-            {
-                logger.Error($"[Resource Area Lv2 Toast Burst] RunId='{request.RunId ?? string.Empty}', DeviceName='{deviceName}', Resource='{request.Configuration?.ResourceType}', SearchTapCount={searchTapCount}, FramesReceived=0, FramesInspected=0, TemplateFound=false, NextAction='RetrySearchWithinExistingLimit', FailureReason='CaptureUnavailable: {exception.Message}'", exception);
-                return ImmediateToastProbeResult.None;
-            }
-            try
-            {
-                // The pre-armed capture is the operation-local one-frame rolling buffer.
-                // Only a fresh Search-button-positive frame activates toast matching.
-                ImageRegion toastRoi = ScaleRegion(
-                    new ImageRegion(190, 105, 900, 180), frame.Width, frame.Height);
+            DateTimeOffset? lastFrameAt = null;
+            double bestScore = 0;
 
-                // Gate the transient watcher on the fresh post-tap Search button.
-                // If it disappeared, this frame belongs to the normal result flow.
-                ImageRegion searchButtonRoi = ScaleRegion(options.SearchButtonRegion, frame.Width, frame.Height);
-                ImageMatchResult postTapSearchButton;
+            for (int screenshotNumber = 0; screenshotNumber < ToastScreenshotDelaysMs.Length; screenshotNumber++)
+            {
+                int waitMs = ToastScreenshotDelaysMs[screenshotNumber]
+                    - (int)(DateTimeOffset.UtcNow - searchTapCompletedAt).TotalMilliseconds;
+                if (waitMs > 0)
+                    await Task.Delay(waitMs, cancellationToken);
+
+                CapturedFrame frame = null;
                 try
                 {
-                    postTapSearchButton = Match(frame, TemplateId.SearchButtonEnabled, searchButtonRoi);
+                    frame = await CaptureFrameAsync(deviceName, cancellationToken);
+                    lastFrameAt = frame.CapturedAt;
+                    ImageRegion searchButtonRoi = ScaleRegion(options.SearchButtonRegion, frame.Width, frame.Height);
+                    ImageMatchResult searchButton = Match(frame, TemplateId.SearchButtonEnabled, searchButtonRoi);
+                    bool searchButtonFound = HasBounds(searchButton) && IsInside(searchButton, searchButtonRoi);
+                    if (!searchButtonFound)
+                    {
+                        logger.Info($"[Simple Screenshot Toast Check] RunId='{request.RunId ?? string.Empty}', DeviceName='{deviceName}', Resource='{request.Configuration?.ResourceType}', EffectiveLevel={request.EffectiveLevel ?? 0}, SearchTapCount={searchTapCount}, ScreenshotNumber={screenshotNumber + 1}, ScheduledAfterTapMs={ToastScreenshotDelaysMs[screenshotNumber]}, ActualAfterTapMs={(frame.CapturedAt - searchTapCompletedAt).TotalMilliseconds:F0}, SearchButtonFound=false, PhraseScore=0, PhraseThreshold=0, PhraseFound=false, Outcome='ContinueNormalSearchObservation'");
+                        return ImmediateToastProbeResult.None;
+                    }
+
+                    ImageRegion toastRoi = ScaleRegion(new ImageRegion(190, 105, 900, 180), frame.Width, frame.Height);
+                    ResourceAreaLv2TemplateStatus phraseStatus = ValidateResourceAreaLv2Template(
+                        TemplateId.ResourceAreaPhraseAnchor, toastRoi);
+                    if (!phraseStatus.Ready)
+                        return ImmediateToastProbeResult.Decided(
+                            ResourceSearchOutcome.ResourceAreaLv2TemplateUnavailable,
+                            "Resource Area Lv2 toast anchor is unavailable.", phraseStatus.FailureReason);
+
+                    IReadOnlyList<ImageMatchResult> matches = await MatchResourceAreaLv2AnchorsAsync(
+                        frame, toastRoi, cancellationToken);
+                    ImageMatchResult phraseMatch = matches.Count == 0 || matches[0] == null
+                        ? ImageMatchResult.NotFound() : matches[0];
+                    double phraseScore = phraseMatch.Confidence ?? (HasBounds(phraseMatch) ? 1.0 : 0.0);
+                    if (phraseScore > bestScore) bestScore = phraseScore;
+                    bool phraseFound = HasBounds(phraseMatch) && IsInside(phraseMatch, toastRoi);
+                    logger.Info($"[Simple Screenshot Toast Check] RunId='{request.RunId ?? string.Empty}', DeviceName='{deviceName}', Resource='{request.Configuration?.ResourceType}', EffectiveLevel={request.EffectiveLevel ?? 0}, SearchTapCount={searchTapCount}, ScreenshotNumber={screenshotNumber + 1}, ScheduledAfterTapMs={ToastScreenshotDelaysMs[screenshotNumber]}, ActualAfterTapMs={(frame.CapturedAt - searchTapCompletedAt).TotalMilliseconds:F0}, SearchButtonFound=true, PhraseScore={phraseScore:F3}, PhraseThreshold={phraseStatus.Threshold:F3}, PhraseFound={phraseFound}, Outcome='{(phraseFound ? "ResourceAreaLv2Redirect" : "ContinueFixedScreenshotCheck")}'");
+                    if (phraseFound)
+                    {
+                        result.FailureReason = ResourceSearchFailureReason.ResourceAreaLv2Redirect;
+                        result.MatchedNotFoundVariant = "ResourceAreaLv2Redirect";
+                        return ImmediateToastProbeResult.Decided(
+                            ResourceSearchOutcome.ResourceAreaLv2Redirect,
+                            "Đã phát hiện thông báo chuyển sang khu tài nguyên Lv2.", null);
+                    }
                 }
+                catch (OperationCanceledException) { throw; }
                 catch (Exception exception)
                 {
-                    logger.Info($"[Resource Area Lv2 Toast Burst] RunId='{request.RunId ?? string.Empty}', DeviceName='{deviceName}', Resource='{request.Configuration?.ResourceType}', SearchTapCount={searchTapCount}, SearchButtonState='Unknown', FramesReceived=1, FramesInspected=0, TemplateFound=false, NextAction='RetrySearchWithinExistingLimit', FailureReason='SearchButtonProbeFailed: {exception.Message}'");
-                    return ImmediateToastProbeResult.None;
+                    logger.Info($"[Simple Screenshot Toast Check] RunId='{request.RunId ?? string.Empty}', DeviceName='{deviceName}', Resource='{request.Configuration?.ResourceType}', EffectiveLevel={request.EffectiveLevel ?? 0}, SearchTapCount={searchTapCount}, ScreenshotNumber={screenshotNumber + 1}, ScheduledAfterTapMs={ToastScreenshotDelaysMs[screenshotNumber]}, ActualAfterTapMs=-1, SearchButtonFound=false, PhraseScore=0, PhraseThreshold=0, PhraseFound=false, Outcome='RecoverableScreenshotFailure', FailureReason='{exception.Message}'");
                 }
-
-                bool searchButtonStillVisible = HasBounds(postTapSearchButton)
-                    && IsInside(postTapSearchButton, searchButtonRoi);
-                if (!searchButtonStillVisible)
-                {
-                    logger.Info($"[Resource Area Lv2 Toast Burst] RunId='{request.RunId ?? string.Empty}', DeviceName='{deviceName}', Resource='{request.Configuration?.ResourceType}', SearchTapCount={searchTapCount}, SearchButtonState='Disappeared', FramesReceived=1, FramesInspected=0, FirstFrameAfterTapMs={(frame.CapturedAt - searchTapCompletedAt).TotalMilliseconds:F0}, LastFrameAfterTapMs={(frame.CapturedAt - searchTapCompletedAt).TotalMilliseconds:F0}, TemplateFound=false, NextAction='ContinueNormalSearchObservation', FailureReason=''");
-                    return ImmediateToastProbeResult.None;
-                }
-
-                logger.Info($"[Resource Area Lv2 Toast Burst] RunId='{request.RunId ?? string.Empty}', DeviceName='{deviceName}', Resource='{request.Configuration?.ResourceType}', SearchTapCount={searchTapCount}, SearchButtonState='StillVisible', FramesReceived=1, FramesInspected=0, TemplateFound=false, NextAction='InspectToastBurst', FailureReason=''");
-
-                ResourceAreaLv2TemplateStatus phraseStatus = ValidateResourceAreaLv2Template(
-                    TemplateId.ResourceAreaPhraseAnchor, toastRoi);
-                LogResourceAreaLv2TemplateStatus(deviceName, request.RunId, toastRoi,
-                    "ResourceAreaPhraseAnchor", phraseStatus);
-                if (!phraseStatus.Ready)
-                    return ImmediateToastProbeResult.Decided(
-                        ResourceSearchOutcome.ResourceAreaLv2TemplateUnavailable,
-                        "Resource Area Lv2 toast anchor is unavailable.",
-                        phraseStatus.FailureReason);
-
-                const int watchStartMs = 350;
-                const int watchEndMs = 2100;
-                int framesReceived = 1;
-                int framesInspected = 0;
-                int bestFrameIndex = -1;
-                double phraseBestScore = 0;
-                ImageMatchResult phraseBestMatch = ImageMatchResult.NotFound();
-                bool templateFound = false;
-                DateTimeOffset? firstFrameInsideWindow = null;
-                DateTimeOffset? lastFrameInsideWindow = null;
-                while ((DateTimeOffset.UtcNow - searchTapCompletedAt).TotalMilliseconds <= watchEndMs)
-                {
-                    double frameAfterTapMs = (frame.CapturedAt - searchTapCompletedAt).TotalMilliseconds;
-                    if (frameAfterTapMs >= watchStartMs && frameAfterTapMs <= watchEndMs)
-                    {
-                        framesInspected++;
-                        if (!firstFrameInsideWindow.HasValue)
-                            firstFrameInsideWindow = frame.CapturedAt;
-                        if (lastFrameInsideWindow.HasValue)
-                        {
-                        }
-                        lastFrameInsideWindow = frame.CapturedAt;
-                        IReadOnlyList<ImageMatchResult> matches;
-                        try
-                        {
-                            matches = await MatchResourceAreaLv2AnchorsAsync(frame, toastRoi,
-                                cancellationToken);
-                        }
-                        catch (Exception exception)
-                        {
-                            logger.Error($"[Resource Area Lv2 Toast Burst] DeviceName='{deviceName}', PhraseTemplatePath='{phraseStatus.ResolvedAbsolutePath}', FailureReason='MatcherExecutionFailed: {exception.Message}'", exception);
-                            return ImmediateToastProbeResult.Decided(
-                                ResourceSearchOutcome.ResourceAreaLv2TemplateUnavailable,
-                                "Resource Area Lv2 toast matcher failed.",
-                                "TemplateMatcherInitializationFailed");
-                        }
-                        ImageMatchResult phraseMatch = matches[0] ?? ImageMatchResult.NotFound();
-                        double phraseScore = phraseMatch.Confidence ?? (HasBounds(phraseMatch) ? 1.0 : 0.0);
-                        if (phraseScore > phraseBestScore)
-                        {
-                            phraseBestScore = phraseScore;
-                            phraseBestMatch = phraseMatch;
-                        }
-                        bool phraseFound = HasBounds(phraseMatch);
-                        if (phraseFound)
-                        {
-                            templateFound = true;
-                            bestFrameIndex = framesInspected;
-                            phraseBestMatch = phraseMatch;
-                            break;
-                        }
-                    }
-                    // This dedicated flow intentionally owns one lightweight
-                    // post-tap frame; normal observation handles a negative result.
-                    break;
-                }
-
-                string toastRunId = request.RunId ?? string.Empty;
-                string toastNextAction = templateFound ? "StartPredefinedPointFlow" : "RetrySearchWithinExistingLimit";
-                logger.Info($"[Conditional Resource Area Lv2 Toast Watch] RunId='{toastRunId}', DeviceName='{deviceName}', Resource='{request.Configuration?.ResourceType}', SearchTapCount={searchTapCount}, FramesReceived={framesReceived}, FramesInspected={framesInspected}, FirstFrameAfterTapMs={(firstFrameInsideWindow.HasValue ? (firstFrameInsideWindow.Value - searchTapCompletedAt).TotalMilliseconds : (captureStarted - searchTapCompletedAt).TotalMilliseconds):F0}, LastFrameAfterTapMs={(lastFrameInsideWindow.HasValue ? (lastFrameInsideWindow.Value - searchTapCompletedAt).TotalMilliseconds : -1):F0}, PhraseBestScore={phraseBestScore:F3}, PhraseBestBounds='{FormatBounds(phraseBestMatch)}', MatchingFrameIndex={bestFrameIndex}, TemplateFound={templateFound}, NextAction='{toastNextAction}', FailureReason=''");
-                if (templateFound)
-                {
-                    result.FailureReason = ResourceSearchFailureReason.ResourceAreaLv2Redirect;
-                    result.MatchedNotFoundVariant = "ResourceAreaLv2Redirect";
-                    return ImmediateToastProbeResult.Decided(
-                        ResourceSearchOutcome.ResourceAreaLv2Redirect,
-                        "Đã phát hiện thông báo chuyển sang khu tài nguyên Lv2.", null);
-                }
-                return ImmediateToastProbeResult.None;
-
+                finally { if (frame != null) frame.Dispose(); }
             }
-            finally
-            {
-                frame.Dispose();
-            }
+
+            logger.Info($"[Simple Screenshot Toast Check] RunId='{request.RunId ?? string.Empty}', DeviceName='{deviceName}', Resource='{request.Configuration?.ResourceType}', EffectiveLevel={request.EffectiveLevel ?? 0}, SearchTapCount={searchTapCount}, ScreenshotNumber=3, ScheduledAfterTapMs=1600, ActualAfterTapMs={(lastFrameAt.HasValue ? (lastFrameAt.Value - searchTapCompletedAt).TotalMilliseconds : -1):F0}, SearchButtonFound=true, PhraseScore={bestScore:F3}, PhraseThreshold=0, PhraseFound=false, Outcome='RetrySearchWithinExistingLimit'");
+            return ImmediateToastProbeResult.None;
         }
 
         private ResourceAreaLv2TemplateStatus ValidateResourceAreaLv2Template(

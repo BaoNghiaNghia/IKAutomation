@@ -1574,8 +1574,22 @@ namespace ADB_Tool_Automation_Post_FB.UI
         public string Schedule { get => schedule; private set => Set(ref schedule, value, nameof(Schedule)); }
         public string TerritoryColor { get => territoryColor; private set => Set(
             ref territoryColor, value, nameof(TerritoryColor)); }
-        public string ResourceToastText { get => resourceToastText; private set => Set(
-            ref resourceToastText, value, nameof(ResourceToastText)); }
+        public string ResourceToastText
+        {
+            get => resourceToastText;
+            private set
+            {
+                if (string.Equals(resourceToastText, value, StringComparison.Ordinal)) return;
+                resourceToastText = value ?? string.Empty;
+                PropertyChanged?.Invoke(this,
+                    new PropertyChangedEventArgs(nameof(ResourceToastText)));
+                PropertyChanged?.Invoke(this,
+                    new PropertyChangedEventArgs(nameof(ResourceToastDisplayText)));
+            }
+        }
+        public string ResourceToastDisplayText => string.IsNullOrWhiteSpace(ResourceToastText)
+            ? string.Empty
+            : $"Toast: \"{ResourceToastText}\"";
         public string ResourceToastVariant { get => resourceToastVariant; private set => Set(
             ref resourceToastVariant, value, nameof(ResourceToastVariant)); }
         public DateTimeOffset? ResourceToastDetectedAt { get => resourceToastDetectedAt; private set => Set(
@@ -1645,6 +1659,8 @@ namespace ADB_Tool_Automation_Post_FB.UI
                 + (progress.CurrentLevel.HasValue
                     ? $" · cấp {progress.CurrentLevel.Value}" : string.Empty));
             Detail = string.Join(" · ", details);
+            if (!string.IsNullOrWhiteSpace(progress.ResourceToastText))
+                ResourceToastText = progress.ResourceToastText;
             if (!string.IsNullOrWhiteSpace(progress.ResourceToastVariant))
             {
                 ResourceToastVariant = progress.ResourceToastVariant;

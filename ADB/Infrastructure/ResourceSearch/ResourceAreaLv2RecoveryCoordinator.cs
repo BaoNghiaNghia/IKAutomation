@@ -83,7 +83,14 @@ namespace ADB_Tool_Automation_Post_FB.Infrastructure.ResourceSearch
             logger.Info($"[Resource Area Lv2 Point Attempt] RunId='{request.RunId ?? string.Empty}', DeviceName='{request.DeviceName}', Resource='{request.Resource}', EffectiveLevel={request.Level}, AreaEpoch={request.AreaEpoch}, Attempt={point.Attempt}, MaxAttempts={point.MaxAttempts}, RemainingPointCount={point.RemainingPointCount}, BasePoint=({point.BasePoint.X},{point.BasePoint.Y}), ScaledPoint=({point.ScaledPoint.X},{point.ScaledPoint.Y}), PanelClosed={result.WorldMapVerifiedBeforeTap}, WorldMapVerifiedBeforeTap={result.WorldMapVerifiedBeforeTap}, PointTapSent=false, OperationTokenCancelled={cancellationToken.IsCancellationRequested}, NextAction='TapPredefinedPoint'");
             LogCancellationTrace(request, "BeforePointTap", cancellationToken,
                 "FarmOperationToken", "ResourceAreaLv2RecoveryCoordinator");
-            NavigationResult tapped = await navigation.TapWorldMapPointAsync(
+            var mapPointNavigation = navigation as IResourceAreaMapPointNavigationService;
+            if (mapPointNavigation == null)
+            {
+                result.FailureReason = "ResourceAreaMapPointNavigationUnavailable";
+                Log(request, result, point, null, false, false, "Failed");
+                return result;
+            }
+            NavigationResult tapped = await mapPointNavigation.OpenMapAndTapPointAsync(
                 request.DeviceName, point.ScaledPoint.X, point.ScaledPoint.Y,
                 cancellationToken);
             result.PointTapResult = tapped;
@@ -107,8 +114,11 @@ namespace ADB_Tool_Automation_Post_FB.Infrastructure.ResourceSearch
             NavigationResult panel = await navigation.OpenResourceSearchPanelAsync(
                 request.DeviceName, cancellationToken);
             result.SearchPanelResult = panel;
-            result.SearchPanelReopened = panel != null && panel.Success
-                && panel.FinalState == GameState.ResourceSearchPanel;
+            // OpenResourceSearchPanelAsync now treats a freshly matched Search
+            // button in its configured ROI as authoritative. Requiring the broad
+            // GameState result here could reject the same verified panel when the
+            // detector reports Unknown and stop the 25-point retry loop early.
+            result.SearchPanelReopened = panel != null && panel.Success;
             result.Success = result.SearchPanelReopened;
             if (!result.SearchPanelReopened)
                 result.FailureReason = "ResourceSearchPanelReopenFailed";
