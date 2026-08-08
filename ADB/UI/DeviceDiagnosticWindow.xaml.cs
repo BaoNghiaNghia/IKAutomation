@@ -1618,10 +1618,10 @@ namespace ADB_Tool_Automation_Post_FB.UI
             Detail = "-";
             Schedule = string.Empty;
             TerritoryColor = string.Empty;
-            ResourceToastText = string.Empty;
-            ResourceToastVariant = string.Empty;
-            ResourceToastDetectedAt = null;
-            ResourceToastState = string.Empty;
+            // Keep the last detected resource toast on this device card while
+            // the supervisor queues or reschedules its next cycle. Queued and
+            // supervisor snapshots do not carry toast payloads, so clearing it
+            // here made a valid per-device toast disappear immediately.
             ActiveFarmRunId = string.Empty;
             ActiveTeamOperationRunId = string.Empty;
             TeamsSummary = string.Empty;
