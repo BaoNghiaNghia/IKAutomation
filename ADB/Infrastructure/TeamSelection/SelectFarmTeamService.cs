@@ -981,7 +981,7 @@ namespace ADB_Tool_Automation_Post_FB.Infrastructure.TeamSelection
                 TeamNumber.Team3, TeamNumber.Team4 };
             var requests = teams.Select(team => new ImageMatchRequest(
                 registry.LoadBytes(BadgeId(team).Value),
-                options.TeamSelectionRosterRegion)).ToArray();
+                options.TeamRegions[team])).ToArray();
             IReadOnlyList<ImageMatchResult> results = matcher is IBatchImageMatcher batch
                 ? batch.FindMany(frame, requests)
                 : requests.Select(item => matcher.Find(frame, item.TemplatePng,
