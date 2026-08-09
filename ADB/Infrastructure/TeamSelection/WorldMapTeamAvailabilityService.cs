@@ -168,9 +168,12 @@ namespace ADB_Tool_Automation_Post_FB.Infrastructure.TeamSelection
                         screenshot, statusRequests, cancellationToken);
                 for (int index = 0; index < statusResults.Count; index++)
                 {
-                    TeamNumber team = statusSignals[index].Item1;
+                    TeamNumber requestedTeam = statusSignals[index].Item1;
                     string signal = statusSignals[index].Item2;
                     ImageMatchResult rowMatch = statusResults[index] ?? ImageMatchResult.NotFound();
+                    TeamNumber team = signal == "Ready"
+                        ? ResolveStatusTeam(requestedTeam, rowMatch, badgeMatches, layout)
+                        : requestedTeam;
                     if (IsMatchInsideRow(rowMatch, layout.Rows[(int)team - 1]))
                     {
                         if (signal == "Ready") readyMatchesByTeam[team] = rowMatch;
@@ -539,6 +542,34 @@ namespace ADB_Tool_Automation_Post_FB.Infrastructure.TeamSelection
             int tolerance = options.RowVerticalTolerance;
             return match.Y >= row.Y - tolerance
                 && match.Y + match.Height <= row.Y + row.Height + tolerance;
+        }
+
+        private static TeamNumber ResolveStatusTeam(TeamNumber requestedTeam,
+            ImageMatchResult match,
+            IReadOnlyDictionary<TeamNumber, ImageMatchResult> badgeMatches,
+            WorldMapTeamRosterLayout layout)
+        {
+            if (match == null || !match.Found || layout == null
+                || badgeMatches == null || badgeMatches.Count < 2
+                || !badgeMatches.ContainsKey(requestedTeam))
+                return requestedTeam;
+
+            double statusCenterY = match.Y + (match.Height / 2d);
+            var nearest = badgeMatches
+                .Where(item => item.Value != null && item.Value.Found
+                    && (int)item.Key >= 1 && (int)item.Key <= layout.Rows.Count)
+                .Select(item => new
+                {
+                    Team = item.Key,
+                    Distance = Math.Abs(statusCenterY
+                        - (item.Value.Y + (item.Value.Height / 2d)))
+                })
+                .OrderBy(item => item.Distance)
+                .ThenBy(item => (int)item.Team)
+                .FirstOrDefault();
+            if (nearest == null || nearest.Distance > layout.Rows[0].Height)
+                return requestedTeam;
+            return nearest.Team;
         }
 
     }
