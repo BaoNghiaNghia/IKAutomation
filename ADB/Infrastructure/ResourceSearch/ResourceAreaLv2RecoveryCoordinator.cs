@@ -47,7 +47,7 @@ namespace ADB_Tool_Automation_Post_FB.Infrastructure.ResourceSearch
             var result = new ResourceAreaLv2RecoveryResult
             { MaxAttempts = ResourceAreaLv2PointSelector.MaxResourceAreaLv2PointAttempts };
 
-            logger.Info($"[Resource Area Lv2 Point Flow Started] RunId='{request.RunId ?? string.Empty}', DeviceName='{request.DeviceName}', Resource='{request.Resource}', EffectiveLevel={request.Level}, AreaEpoch={request.AreaEpoch}, ExpectedTeam='{request.ExpectedTeam?.ToString() ?? string.Empty}', SpecialAttemptNumber=1, RemainingUnusedPoints={ResourceAreaLv2PointSelector.Points1280x720.Count}, OperationTokenCancelled={cancellationToken.IsCancellationRequested}, NextAction='EnsureWorldMap'");
+            logger.Info($"[Resource Area Lv2 Point Flow Started] RunId='{request.RunId ?? string.Empty}', DeviceName='{request.DeviceName}', Resource='{request.Resource}', EffectiveLevel={request.Level}, AreaEpoch={request.AreaEpoch}, ExpectedTeam='{request.ExpectedTeam?.ToString() ?? string.Empty}', Strategy='PredefinedContinentMapScreenPoint', CoordinateInputInvoked=false, TerritoryColorScanInvoked=false, SpecialAttemptNumber=1, RemainingUnusedPoints={ResourceAreaLv2PointSelector.Points1280x720.Count}, OperationTokenCancelled={cancellationToken.IsCancellationRequested}, NextAction='EnsureWorldMap'");
             NavigationResult ensured = await navigation.EnsureWorldMapAsync(
                 request.DeviceName, cancellationToken);
             result.EnsureWorldMapResult = ensured;

@@ -746,7 +746,10 @@ namespace ADB_Tool_Automation_Post_FB.UI
                 oneShotFarmCancellation)) return;
             try
             {
-                GetOrCreateFarmProgress(deviceName).Apply(progress);
+                DeviceFarmProgressItem progressItem = GetOrCreateFarmProgress(deviceName);
+                progressItem.Apply(progress);
+                if (progressItem.HasVisibleResourceToast)
+                    oneShotFarmProgressTimer.Start();
 
                 if (progress.Stage == OneShotFarmProgressStage.WaitingForReadyTeam)
                 {
@@ -776,10 +779,15 @@ namespace ADB_Tool_Automation_Post_FB.UI
             DateTimeOffset now = DateTimeOffset.UtcNow;
             foreach (DeviceFarmProgressItem item in farmProgressItems)
                 item.UpdateCountdown(now);
+            if (!farmProgressItems.Any(item => item.IsWaiting
+                || item.HasVisibleResourceToast))
+                oneShotFarmProgressTimer.Stop();
         }
 
         private void StopOneShotFarmProgressTimer()
         {
+            if (farmProgressItems.Any(item => item.IsWaiting
+                || item.HasVisibleResourceToast)) return;
             oneShotFarmProgressTimer.Stop();
         }
 
@@ -1605,6 +1613,9 @@ namespace ADB_Tool_Automation_Post_FB.UI
 
     internal sealed class DeviceFarmProgressItem : INotifyPropertyChanged
     {
+        private static readonly TimeSpan ResourceToastDisplayDuration =
+            TimeSpan.FromMinutes(2);
+
         private string stage = "Queued";
         private string message = "Đang chờ thực thi.";
         private string detail = "-";
@@ -1614,6 +1625,7 @@ namespace ADB_Tool_Automation_Post_FB.UI
         private string resourceToastText = string.Empty;
         private string resourceToastVariant = string.Empty;
         private DateTimeOffset? resourceToastDetectedAt;
+        private DateTimeOffset? resourceToastExpiresAt;
         private string resourceToastState = string.Empty;
         private string activeFarmRunId = string.Empty;
         private string activeTeamOperationRunId = string.Empty;
@@ -1667,6 +1679,8 @@ namespace ADB_Tool_Automation_Post_FB.UI
         public string ResourceToastDisplayText => string.IsNullOrWhiteSpace(ResourceToastText)
             ? string.Empty
             : $"Toast: \"{ResourceToastText}\"";
+        public bool HasVisibleResourceToast =>
+            !string.IsNullOrWhiteSpace(ResourceToastText);
         public string ResourceToastVariant { get => resourceToastVariant; private set => Set(
             ref resourceToastVariant, value, nameof(ResourceToastVariant)); }
         public DateTimeOffset? ResourceToastDetectedAt { get => resourceToastDetectedAt; private set => Set(
@@ -1736,15 +1750,7 @@ namespace ADB_Tool_Automation_Post_FB.UI
                 + (progress.CurrentLevel.HasValue
                     ? $" · cấp {progress.CurrentLevel.Value}" : string.Empty));
             Detail = string.Join(" · ", details);
-            if (!string.IsNullOrWhiteSpace(progress.ResourceToastText))
-                ResourceToastText = progress.ResourceToastText;
-            if (!string.IsNullOrWhiteSpace(progress.ResourceToastVariant))
-            {
-                ResourceToastVariant = progress.ResourceToastVariant;
-                ResourceToastDetectedAt = progress.ResourceToastDetectedAt;
-                ResourceToastState = progress.ResourceToastState;
-                ResourceToastText = BuildResourceToastText(progress);
-            }
+            ApplyResourceToast(progress);
             if (progress.MapRepositionState != MapRepositionState.None
                 && !string.IsNullOrWhiteSpace(progress.TerritoryColorSummary))
                 TerritoryColor = FarmProgressVietnamese.TerritoryColor(
@@ -1841,6 +1847,43 @@ namespace ADB_Tool_Automation_Post_FB.UI
             if (progress.CurrentLevel.HasValue && progress.CurrentLevel.Value > 0)
                 return $"Không tìm thấy {resource} Lv{progress.CurrentLevel.Value} chưa ai khai thác, hãy đến khu tài nguyên Lv2 để tìm.";
             return "Không tìm thấy tài nguyên chưa ai khai thác, hãy đến khu tài nguyên Lv2 để tìm.";
+        }
+
+        private void ApplyResourceToast(OneShotFarmProgress progress)
+        {
+            bool hasText = !string.IsNullOrWhiteSpace(progress.ResourceToastText);
+            bool hasVariant = !string.IsNullOrWhiteSpace(progress.ResourceToastVariant);
+            if (!hasText && !hasVariant) return;
+
+            string replacement = hasVariant
+                ? BuildResourceToastText(progress)
+                : progress.ResourceToastText;
+            if (string.IsNullOrWhiteSpace(replacement))
+                replacement = progress.ResourceToastText;
+            if (string.IsNullOrWhiteSpace(replacement)) return;
+
+            // The expiry belongs to the currently displayed value. Replacing a
+            // toast always creates a fresh two-minute display window, so an old
+            // expiry can never clear a newer toast.
+            resourceToastExpiresAt = DateTimeOffset.UtcNow
+                .Add(ResourceToastDisplayDuration);
+            ResourceToastVariant = progress.ResourceToastVariant ?? string.Empty;
+            ResourceToastDetectedAt = progress.ResourceToastDetectedAt
+                ?? DateTimeOffset.UtcNow;
+            ResourceToastState = progress.ResourceToastState ?? string.Empty;
+            ResourceToastText = replacement;
+        }
+
+        private void ExpireResourceToast(DateTimeOffset now)
+        {
+            if (!resourceToastExpiresAt.HasValue
+                || now < resourceToastExpiresAt.Value) return;
+
+            resourceToastExpiresAt = null;
+            ResourceToastText = string.Empty;
+            ResourceToastVariant = string.Empty;
+            ResourceToastDetectedAt = null;
+            ResourceToastState = string.Empty;
         }
 
         public void ApplySupervisorSnapshot(ContinuousFarmDeviceSnapshot snapshot)
@@ -1977,6 +2020,7 @@ namespace ADB_Tool_Automation_Post_FB.UI
 
         public void UpdateCountdown(DateTimeOffset now)
         {
+            ExpireResourceToast(now);
             TimeSpan next = OneShotFarmProgressUtilities.Remaining(now, nextCheckAt);
             TimeSpan wait = OneShotFarmProgressUtilities.Remaining(now, waitDeadline);
             Schedule = nextCheckAt.HasValue

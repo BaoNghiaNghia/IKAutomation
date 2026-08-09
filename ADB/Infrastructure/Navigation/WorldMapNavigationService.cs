@@ -619,13 +619,31 @@ namespace ADB_Tool_Automation_Post_FB.Infrastructure.Navigation
                     "Pin-map button was tapped but ContinentMap was not verified before timeout.",
                     current.ErrorMessage, transitions);
 
-            // Keep territory reposition deterministic: one fresh ContinentMap
-            // screenshot supplies the home colour and candidate scan. The
-            // selected point is rechecked on another fresh frame immediately
-            // before input, then the resulting pin is verified after input.
-            AddTransition(transitions, "Strategy", "FreshScreenshotColorScan");
-            return await TryScreenPointFallbackAsync(deviceName, initial, current,
-                ensured.Attempts, watch, transitions, progress, cancellationToken);
+            // Generic same-territory reposition owns coordinate editing only.
+            // The ResourceAreaLv2 branch has a separate coordinator and is the
+            // sole owner of the predefined ContinentMap screen-point pool.
+            // Keeping the two strategies disjoint prevents a toast redirect
+            // from being mistaken for a territory-colour reposition (or vice
+            // versa).
+            AddTransition(transitions, "Strategy",
+                "SameTerritoryCoordinateInput; ResourceAreaLv2PointPool=false");
+            HomeLocationEvidence home = await AcquireHomeLocationEvidenceAsync(
+                deviceName, current, transitions, cancellationToken);
+            current = home.Latest ?? current;
+            if (!HasValidBounds(home.Pin))
+                return Result(false, initial, current, ensured.Attempts + 1, watch,
+                    "Không tìm thấy pin nhà để xác định màu trước khi thử tọa độ X/Y.",
+                    null, transitions, "HomeMarkerNotFoundForCoordinateSearch");
+
+            CoordinateSearchResult coordinate = await TrySameTerritoryCoordinateAsync(
+                deviceName, initial, current, home.Pin, ensured.Attempts, watch,
+                transitions, progress, cancellationToken);
+            if (coordinate != null && coordinate.Navigation != null)
+                return coordinate.Navigation;
+
+            return Result(false, initial, current, ensured.Attempts + 1, watch,
+                "Không thể khởi tạo quy trình nhập tọa độ X/Y để tìm lãnh thổ cùng màu.",
+                null, transitions, "CoordinateColorSearchUnavailable");
         }
 
         private async Task<HomeLocationEvidence> AcquireHomeLocationEvidenceAsync(
