@@ -1235,7 +1235,11 @@ namespace ADB_Tool_Automation_Post_FB.Infrastructure.Navigation
                     throw new InvalidOperationException(
                         $"Derived ContinentMap coordinate {axis} field is outside the supported viewport.");
                 await ldPlayerClient.TapAsync(deviceName, x, y, cancellationToken);
-                await ReplaceFocusedCoordinateAsync(deviceName, oldValue, targetValue, cancellationToken);
+                AddTransition(transitions, "CoordinateFieldFocused",
+                    $"Axis={axis}; Field=Focused; BoundsSource=FreshMapPin; Position=({x},{y}).");
+                await Task.Delay(options.StatePollIntervalMs, cancellationToken);
+                await ReplaceFocusedCoordinateAsync(deviceName, axis, oldValue, targetValue,
+                    transitions, cancellationToken);
                 int observed = await focusedInputValueReader.ReadFocusedIntegerAsync(deviceName, cancellationToken);
                 AddTransition(transitions, "CoordinateInputVerified",
                     $"Axis={axis}; ExpectedValue={targetValue}; ObservedValue={observed}; "
@@ -1352,10 +1356,10 @@ namespace ADB_Tool_Automation_Post_FB.Infrastructure.Navigation
             int offset = NextCoordinateOffset(currentValue, attempt, axis);
             int targetValue = checked(currentValue + offset);
             await ReplaceFocusedCoordinateAsync(
-                deviceName, currentValue, targetValue, cancellationToken);
+                deviceName, axis, currentValue, targetValue, transitions, cancellationToken);
             AddTransition(transitions, "CoordinateCandidateInput",
-                $"Set coordinate {axis}: {currentValue} + {offset} = {targetValue}, "
-                + "then confirmed with Enter.");
+                $"Set coordinate {axis}: {currentValue} + {offset} = {targetValue}; "
+                + "waiting to submit the complete X/Y pair with the map pin.");
             await Task.Delay(options.StatePollIntervalMs, cancellationToken);
             AddTransition(transitions, "Wait",
                 $"Waited {options.StatePollIntervalMs} ms after confirming coordinate {axis}.");
@@ -1412,8 +1416,8 @@ namespace ADB_Tool_Automation_Post_FB.Infrastructure.Navigation
 
             await ldPlayerClient.TapAsync(deviceName, x, y, cancellationToken);
             await ReplaceFocusedCoordinateAsync(
-                deviceName, edit.TargetValue, edit.OriginalValue,
-                cancellationToken);
+                deviceName, edit.Axis, edit.TargetValue, edit.OriginalValue,
+                transitions, cancellationToken);
             AddTransition(transitions, "CoordinateCandidateRollback",
                 $"Restored coordinate {edit.Axis} from {edit.TargetValue} "
                 + $"to {edit.OriginalValue}.");
@@ -1422,8 +1426,10 @@ namespace ADB_Tool_Automation_Post_FB.Infrastructure.Navigation
 
         private async Task ReplaceFocusedCoordinateAsync(
             string deviceName,
+            string axis,
             int oldValue,
             int newValue,
+            IList<NavigationTransition> transitions,
             CancellationToken cancellationToken)
         {
             string oldText = oldValue.ToString(CultureInfo.InvariantCulture);
@@ -1431,8 +1437,14 @@ namespace ADB_Tool_Automation_Post_FB.Infrastructure.Navigation
             for (int index = 0; index < oldText.Length; index++)
                 await ldPlayerClient.PressKeyAsync(
                     deviceName, AndroidKeyCode.Delete, cancellationToken);
+            AddTransition(transitions, "CoordinateValueCleared",
+                $"Axis={axis}; DeletedCharacters={oldText.Length}; OldValue={oldText}.");
+            await Task.Delay(options.StatePollIntervalMs, cancellationToken);
             await ldPlayerClient.InputTextAsync(
                 deviceName, newText, cancellationToken);
+            AddTransition(transitions, "CoordinateValueEntered",
+                $"Axis={axis}; NewValue={newText}; Submission=PendingPinTap.");
+            await Task.Delay(options.StatePollIntervalMs, cancellationToken);
         }
 
         private async Task<TerritoryValidation> ValidateNearbyPinTerritoriesAsync(

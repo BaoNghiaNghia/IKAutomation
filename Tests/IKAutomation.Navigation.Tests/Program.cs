@@ -162,6 +162,19 @@ namespace IKAutomation.Navigation.Tests
             Equal("Tap:143,37",f.Client.Actions[2],"Y field Tap.");
             Equal("Input:450",f.Client.Actions[3],"Y input.");
             Equal("Tap:197,37",f.Client.Actions[4],"Map-pin Tap.");
+            string[] visibleSteps=transitions
+                .Where(item=>item.Operation=="CoordinateFieldFocused"
+                    || item.Operation=="CoordinateValueCleared"
+                    || item.Operation=="CoordinateValueEntered")
+                .Select(item=>item.Operation+":"+(item.Message.Contains("Axis=X")?"X":"Y"))
+                .ToArray();
+            Equal(6,visibleSteps.Length,"Visible coordinate-step count.");
+            Equal("CoordinateFieldFocused:X",visibleSteps[0],"X focus transition.");
+            Equal("CoordinateValueCleared:X",visibleSteps[1],"X clear transition.");
+            Equal("CoordinateValueEntered:X",visibleSteps[2],"X input transition.");
+            Equal("CoordinateFieldFocused:Y",visibleSteps[3],"Y focus transition.");
+            Equal("CoordinateValueCleared:Y",visibleSteps[4],"Y clear transition.");
+            Equal("CoordinateValueEntered:Y",visibleSteps[5],"Y input transition.");
         }
         private static void TerritoryRepositionRejectsFarSearchPin() { var f=Setup(WorldMapWithPin(),ContinentMapWithPinPair(300,300,900,600)); var r=f.Service.RepositionToAllianceTerritoryAsync("d",Token).GetAwaiter().GetResult(); Assert(!r.Success,"Far target unexpectedly succeeded."); Equal(1,f.Client.TapCalls,"Far yellow pin must not be tapped."); }
         private static void SameTerritoryColorAllowsMovement() { var f=Setup(WorldMapWithPin(),ContinentMapWithPinPair(670,390,710,350),ContinentMapWithPinPair(676,406,714,365),State(GameState.WorldMap)); f.Client.Screenshots.Enqueue(PinTerritoryScreenshot(TerritoryGreen,TerritoryGreen,false)); var r=f.Service.RepositionToAllianceTerritoryAsync("d",Token).GetAwaiter().GetResult(); Assert(r.Success,"Matching territory groups should allow the yellow-pin Tap."); Equal(2,f.Client.TapCalls,"Expected ContinentMap and yellow-pin Taps."); }
