@@ -1026,7 +1026,7 @@ namespace ADB_Tool_Automation_Post_FB.Infrastructure.Navigation
             CoordinateEditTransaction transaction;
             try
             {
-                transaction = await ReadCoordinateTransactionAsync(deviceName, initialPin,
+                transaction = await ReadCoordinateTransactionAsync(deviceName,
                     transitions, cancellationToken);
             }
             catch (Exception exception) when (!(exception is OperationCanceledException))
@@ -1048,8 +1048,8 @@ namespace ADB_Tool_Automation_Post_FB.Infrastructure.Navigation
                         $"Candidate {candidate.Attempt}/{candidates.Count}: X={candidate.TargetX}; Y={candidate.TargetY}; "
                         + $"Delta=({candidate.DeltaX},{candidate.DeltaY}).");
 
-                    current = await ApplyCoordinateCandidateAsync(deviceName, coordinatePin,
-                        transaction, candidate, transitions, cancellationToken);
+                    current = await ApplyCoordinateCandidateAsync(deviceName, transaction,
+                        candidate, transitions, cancellationToken);
                     GameDetectionEvidence movePin = FindFreshEvidence(current,
                         TemplateId.ContinentMapPinButton);
                     if (movePin == null)
@@ -1121,23 +1121,33 @@ namespace ADB_Tool_Automation_Post_FB.Infrastructure.Navigation
         // Invariant: until Commit is called after a verified WorldMap transition,
         // OriginalX/OriginalY remain authoritative and every exit restores them.
         private async Task<CoordinateEditTransaction> ReadCoordinateTransactionAsync(
-            string deviceName, GameDetectionEvidence pin,
+            string deviceName,
             IList<NavigationTransition> transitions, CancellationToken cancellationToken)
         {
             int originalX = await ReadCoordinateValueAsync(deviceName,
-                pin.MatchResult.CenterX + CoordinateXOffsetFromPinCenterPx,
-                pin.MatchResult.CenterY, "X", transitions, cancellationToken);
+                "X", transitions, cancellationToken);
             int originalY = await ReadCoordinateValueAsync(deviceName,
-                pin.MatchResult.CenterX + CoordinateYOffsetFromPinCenterPx,
-                pin.MatchResult.CenterY, "Y", transitions, cancellationToken);
+                "Y", transitions, cancellationToken);
             AddTransition(transitions, "CoordinateTransaction",
                 $"Đã đọc X/Y gốc trước khi chỉnh sửa: X={originalX}; Y={originalY}.");
             return new CoordinateEditTransaction(originalX, originalY);
         }
 
-        private async Task<int> ReadCoordinateValueAsync(string deviceName, int x, int y,
+        private async Task<int> ReadCoordinateValueAsync(string deviceName,
             string axis, IList<NavigationTransition> transitions, CancellationToken cancellationToken)
         {
+            GameDetectionResult fresh = await DetectContinentMapAfterCoordinateEditAsync(
+                deviceName, axis + " read", transitions, cancellationToken, true);
+            GameDetectionEvidence pin = FindFreshEvidence(
+                fresh, TemplateId.ContinentMapPinButton);
+            if (pin == null)
+                throw new InvalidOperationException(
+                    $"Coordinate {axis} field cannot be derived without a fresh map-pin match.");
+            int x = pin.MatchResult.CenterX
+                + (string.Equals(axis, "X", StringComparison.Ordinal)
+                    ? CoordinateXOffsetFromPinCenterPx
+                    : CoordinateYOffsetFromPinCenterPx);
+            int y = pin.MatchResult.CenterY;
             if (x < 0 || x >= ExpectedScreenshotWidth || y < 0 || y >= ExpectedScreenshotHeight)
                 throw new InvalidOperationException($"Derived ContinentMap coordinate {axis} field is outside the supported viewport.");
             await ldPlayerClient.TapAsync(deviceName, x, y, cancellationToken);
@@ -1173,42 +1183,63 @@ namespace ADB_Tool_Automation_Post_FB.Infrastructure.Navigation
         }
 
         private async Task<GameDetectionResult> ApplyCoordinateCandidateAsync(string deviceName,
-            GameDetectionEvidence pin, CoordinateEditTransaction transaction,
+            CoordinateEditTransaction transaction,
             CoordinateCandidate candidate, IList<NavigationTransition> transitions,
             CancellationToken cancellationToken)
         {
             await SetCoordinateValueVerifiedAsync(deviceName,
-                pin.MatchResult.CenterX + CoordinateXOffsetFromPinCenterPx,
-                pin.MatchResult.CenterY, "X", transaction.CurrentX, candidate.TargetX,
+                "X", transaction.CurrentX, candidate.TargetX,
                 transitions, cancellationToken);
             transaction.SetX(candidate.TargetX);
-            GameDetectionResult current = await DetectContinentMapAfterCoordinateEditAsync(
-                deviceName, "X", transitions, cancellationToken);
-            GameDetectionEvidence pinAfterX = FindFreshEvidence(current, TemplateId.ContinentMapPinButton);
-            if (pinAfterX == null)
-                return current;
             await SetCoordinateValueVerifiedAsync(deviceName,
-                pinAfterX.MatchResult.CenterX + CoordinateYOffsetFromPinCenterPx,
-                pinAfterX.MatchResult.CenterY, "Y", transaction.CurrentY, candidate.TargetY,
+                "Y", transaction.CurrentY, candidate.TargetY,
                 transitions, cancellationToken);
             transaction.SetY(candidate.TargetY);
-            return await DetectContinentMapAfterCoordinateEditAsync(deviceName, "Y", transitions,
+            GameDetectionResult current = await DetectContinentMapAfterCoordinateEditAsync(deviceName, "Y", transitions,
+                cancellationToken, true);
+            GameDetectionEvidence submitPin = FindFreshEvidence(
+                current, TemplateId.ContinentMapPinButton);
+            if (submitPin == null)
+                return current;
+
+            await TapEvidenceAsync(deviceName, submitPin,
+                "ContinentMapPinButtonAfterCoordinateEntry", transitions, cancellationToken);
+            AddTransition(transitions, "CoordinateCandidateSubmitted",
+                $"Submitted coordinate pair X={candidate.TargetX}; Y={candidate.TargetY} "
+                + "after both fields were entered.");
+            await Task.Delay(options.StatePollIntervalMs, cancellationToken);
+            return await DetectContinentMapAfterCoordinateEditAsync(deviceName, "pin", transitions,
                 cancellationToken, true);
         }
 
-        private async Task SetCoordinateValueVerifiedAsync(string deviceName, int x, int y,
-            string axis, int oldValue, int targetValue, IList<NavigationTransition> transitions,
+        private async Task SetCoordinateValueVerifiedAsync(string deviceName, string axis,
+            int oldValue, int targetValue, IList<NavigationTransition> transitions,
             CancellationToken cancellationToken)
         {
-            if (x < 0 || x >= ExpectedScreenshotWidth || y < 0 || y >= ExpectedScreenshotHeight)
-                throw new InvalidOperationException($"Derived ContinentMap coordinate {axis} field is outside the supported viewport.");
             for (int verificationAttempt = 1; verificationAttempt <= options.CoordinateInputVerificationAttempts; verificationAttempt++)
             {
+                GameDetectionResult fresh = await DetectContinentMapAfterCoordinateEditAsync(
+                    deviceName, axis + " input", transitions, cancellationToken, true);
+                GameDetectionEvidence pin = FindFreshEvidence(
+                    fresh, TemplateId.ContinentMapPinButton);
+                if (pin == null)
+                    throw new InvalidOperationException(
+                        $"Coordinate {axis} field cannot be derived without a fresh map-pin match.");
+                int x = pin.MatchResult.CenterX
+                    + (string.Equals(axis, "X", StringComparison.Ordinal)
+                        ? CoordinateXOffsetFromPinCenterPx
+                        : CoordinateYOffsetFromPinCenterPx);
+                int y = pin.MatchResult.CenterY;
+                if (x < 0 || x >= ExpectedScreenshotWidth
+                    || y < 0 || y >= ExpectedScreenshotHeight)
+                    throw new InvalidOperationException(
+                        $"Derived ContinentMap coordinate {axis} field is outside the supported viewport.");
                 await ldPlayerClient.TapAsync(deviceName, x, y, cancellationToken);
                 await ReplaceFocusedCoordinateAsync(deviceName, oldValue, targetValue, cancellationToken);
                 int observed = await focusedInputValueReader.ReadFocusedIntegerAsync(deviceName, cancellationToken);
                 AddTransition(transitions, "CoordinateInputVerified",
-                    $"Axis={axis}; ExpectedValue={targetValue}; ObservedValue={observed}; VerificationAttempt={verificationAttempt}.");
+                    $"Axis={axis}; ExpectedValue={targetValue}; ObservedValue={observed}; "
+                    + $"VerificationAttempt={verificationAttempt}; Submission=PendingPinTap.");
                 if (observed == targetValue)
                     return;
             }
@@ -1226,22 +1257,40 @@ namespace ADB_Tool_Automation_Post_FB.Infrastructure.Navigation
             var watch = Stopwatch.StartNew();
             try
             {
+                GameDetectionResult current = null;
+                GameDetectionEvidence currentPin = pin;
                 if (transaction.XChanged)
+                {
                     await SetCoordinateValueVerifiedAsync(deviceName,
-                        pin.MatchResult.CenterX + CoordinateXOffsetFromPinCenterPx, pin.MatchResult.CenterY,
                         "X", transaction.CurrentX, transaction.OriginalX, transitions, cancellationToken);
+                    current = await DetectContinentMapAfterCoordinateEditAsync(
+                        deviceName, "X rollback", transitions, cancellationToken, true);
+                    currentPin = FindFreshEvidence(current, TemplateId.ContinentMapPinButton);
+                    if (currentPin == null)
+                        return CoordinateRollbackResult.VerificationUnavailable(current);
+                }
                 if (transaction.YChanged)
+                {
                     await SetCoordinateValueVerifiedAsync(deviceName,
-                        pin.MatchResult.CenterX + CoordinateYOffsetFromPinCenterPx, pin.MatchResult.CenterY,
                         "Y", transaction.CurrentY, transaction.OriginalY, transitions, cancellationToken);
+                    current = await DetectContinentMapAfterCoordinateEditAsync(
+                        deviceName, "Y rollback", transitions, cancellationToken, true);
+                    currentPin = FindFreshEvidence(current, TemplateId.ContinentMapPinButton);
+                    if (currentPin == null)
+                        return CoordinateRollbackResult.VerificationUnavailable(current);
+                }
+
+                await TapEvidenceAsync(deviceName, currentPin,
+                    "ContinentMapPinButtonAfterCoordinateRollback", transitions, cancellationToken);
+                await Task.Delay(options.StatePollIntervalMs, cancellationToken);
+                current = await DetectContinentMapAfterCoordinateEditAsync(
+                    deviceName, "rollback pin", transitions, cancellationToken, true);
+                if (FindFreshEvidence(current, TemplateId.ContinentMapPinButton) == null)
+                    return CoordinateRollbackResult.VerificationUnavailable(current);
                 transaction.Restored();
                 AddTransition(transitions, "CoordinateRollback",
                     $"RollbackStatus=RestoredAndVerified; RollbackDurationMs={watch.ElapsedMilliseconds}.");
-                // The candidate observation already verified ContinentMap and fresh
-                // controls.  Re-reading both focused values above is the rollback
-                // verification; avoid another state transition that could consume a
-                // final move verification frame.
-                return CoordinateRollbackResult.Restored(null);
+                return CoordinateRollbackResult.Restored(current);
             }
             catch (Exception exception) when (!(exception is OperationCanceledException))
             {
@@ -1384,8 +1433,6 @@ namespace ADB_Tool_Automation_Post_FB.Infrastructure.Navigation
                     deviceName, AndroidKeyCode.Delete, cancellationToken);
             await ldPlayerClient.InputTextAsync(
                 deviceName, newText, cancellationToken);
-            await ldPlayerClient.PressKeyAsync(
-                deviceName, AndroidKeyCode.Enter, cancellationToken);
         }
 
         private async Task<TerritoryValidation> ValidateNearbyPinTerritoriesAsync(
