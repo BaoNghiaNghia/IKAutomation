@@ -45,6 +45,7 @@ namespace IKAutomation.FarmTeamSelection.Tests
             Run("Enabled action without selected team is rejected", ActionWithoutSelectedTeamRejected);
             Run("Expected Team2 rejects post-tap Team3", ExpectedTeam2RejectsPostTapTeam3);
             Run("Expected Team2 missing badge never tries Team3", ExpectedTeam2MissingNeverTriesTeam3);
+            Run("Trusted ready Team2 uses configured row when badge is obscured", TrustedReadyTeam2UsesConfiguredRow);
             Run("Expected Team2 retries only Team2", ExpectedTeam2RetriesOnlyTeam2);
             Run("Expected Team2 cannot be overridden by priority", ExpectedTeam2OverridesPriority);
             Run("Unavailable expected Team2 has no fallback", UnavailableExpectedTeam2HasNoFallback);
@@ -193,6 +194,33 @@ namespace IKAutomation.FarmTeamSelection.Tests
 
         private static void ExpectedTeam2MissingNeverTriesTeam3()
         { Fixture f=Setup(maxAttempts:2,useProductionDetector:true);f.Matcher.Badges.Add(TeamNumber.Team3);var q=new TeamSelectionRequest{AllowedTeams=new[]{TeamNumber.Team2,TeamNumber.Team3},Priority=new[]{TeamNumber.Team3,TeamNumber.Team2},ExpectedTeam=TeamNumber.Team2,AllowTeam1=false};SelectFarmTeamResult r=Execute(f,q);Equal(SelectFarmTeamOutcome.ExpectedTeamNotVisible,r.Outcome);Equal(0,r.TeamTapCount);Assert(!r.AttemptedTeams.Contains(TeamNumber.Team3),"Team3 was attempted after Team2 was missing."); }
+
+        private static void TrustedReadyTeam2UsesConfiguredRow()
+        {
+            Fixture f = Setup(maxAttempts: 1, useProductionDetector: true);
+            f.Matcher.Badges.UnionWith(new[] { TeamNumber.Team1, TeamNumber.Team3 });
+            f.Matcher.SelectOnTap[TeamNumber.Team2] = TeamNumber.Team2;
+            var request = new TeamSelectionRequest
+            {
+                AllowedTeams = new[] { TeamNumber.Team1, TeamNumber.Team2, TeamNumber.Team3 },
+                Priority = new[] { TeamNumber.Team2, TeamNumber.Team3, TeamNumber.Team1 },
+                ExpectedTeam = TeamNumber.Team2,
+                WorldMapAvailableTeams = new[] { TeamNumber.Team1, TeamNumber.Team2, TeamNumber.Team3 },
+                WorldMapReadyTeams = new[] { TeamNumber.Team2, TeamNumber.Team3 },
+                WorldMapRosterStatus = "FreshConfirmed",
+                WorldMapRosterConfidence = "Strong",
+                AllowTeam1 = true
+            };
+
+            SelectFarmTeamResult result = Execute(f, request);
+
+            Equal(SelectFarmTeamOutcome.TeamSelected, result.Outcome);
+            Equal(TeamNumber.Team2, result.SelectedTeam.Value);
+            Equal(1, result.TeamTapCount);
+            Equal(0, result.ScrollAttempts);
+            Equal("160,217", f.Client.Taps.Single());
+            Equal(0, f.Matcher.SelectedBorderCalls);
+        }
 
         private static void ExpectedTeam2RetriesOnlyTeam2()
         { Fixture f=Setup(maxAttempts:2,useProductionDetector:true);f.Matcher.Badges.UnionWith(new[]{TeamNumber.Team2,TeamNumber.Team3});f.Matcher.SelectOnTap[TeamNumber.Team2]=TeamNumber.Team3;var q=new TeamSelectionRequest{AllowedTeams=new[]{TeamNumber.Team2,TeamNumber.Team3},Priority=new[]{TeamNumber.Team3,TeamNumber.Team2},ExpectedTeam=TeamNumber.Team2,AllowTeam1=false};SelectFarmTeamResult r=Execute(f,q);Equal(2,r.TeamTapCount);Sequence(new[]{TeamNumber.Team2},r.AttemptedTeams);Assert(f.Matcher.TappedTeams.All(team=>team==TeamNumber.Team2),"A retry switched away from Team2."); }
@@ -496,7 +524,7 @@ namespace IKAutomation.FarmTeamSelection.Tests
             public readonly Dictionary<TeamNumber, ImageMatchResult> LastBadge = new Dictionary<TeamNumber, ImageMatchResult>();
             public readonly List<TeamNumber> TappedTeams = new List<TeamNumber>();
             public bool MoveBadgeEachCall, HideSelectedForFirstPostTapScan, HideBadgeWhenSelected;
-            public int DelayMs;
+            public int DelayMs, SelectedBorderCalls;
             private int hiddenSelectedChecksRemaining;
 
             public ImageMatchResult Find(byte[] screenshot, byte[] template, ImageRegion? region = null)
@@ -509,6 +537,7 @@ namespace IKAutomation.FarmTeamSelection.Tests
                 if (region.HasValue && !IsBadge(id)) Regions[team] = region.Value;
                 if (id == TemplateId.TeamSelectedBorderAnchor)
                 {
+                    SelectedBorderCalls++;
                     if (hiddenSelectedChecksRemaining > 0)
                     {
                         hiddenSelectedChecksRemaining--;
