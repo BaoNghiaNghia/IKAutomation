@@ -192,7 +192,7 @@ namespace ADB_Tool_Automation_Post_FB.UI
                     deviceSelections.Add(new DeviceSelectionItem(deviceName)
                     {
                         IsSelected = found ? existing.IsSelected : initialLoad,
-                        Status = found ? existing.Status : "Ready"
+                        Status = found ? existing.Status : "Đã tắt"
                     });
                 }
 
@@ -236,11 +236,8 @@ namespace ADB_Tool_Automation_Post_FB.UI
                             && result.MatchesExpectedResolution;
                         if (!item.IsInGame)
                             item.IsSelected = false;
-                        item.Status = !item.IsRunning
-                            ? "Đã tắt"
-                            : item.IsInGame
-                                ? "Đang mở · Trong game"
-                                : "Đang mở";
+                        if (!activeDeviceNames.Contains(deviceName))
+                            item.Status = item.IsRunning ? "Đang mở" : "Đã tắt";
                     }
                     finally
                     {
@@ -372,17 +369,9 @@ namespace ADB_Tool_Automation_Post_FB.UI
                     StringComparison.OrdinalIgnoreCase));
             if (item != null)
             {
-                string retry = snapshot.NextAttemptAt.HasValue
-                    ? $"; next={snapshot.NextAttemptAt.Value.ToLocalTime():HH:mm:ss}"
-                    : string.Empty;
-                string storage = snapshot.DiagnosticWritesSuspended
-                    ? "; diagnostics suspended (low disk)" : string.Empty;
-                string concurrency = snapshot.ConcurrencyLimit > 0
-                    ? $"; load={snapshot.ActiveExecutions}/{snapshot.ConcurrencyLimit}"
-                    : string.Empty;
                 item.IsRunning = true;
                 item.IsInGame = true;
-                item.Status = $"{snapshot.State}: {snapshot.Message}{retry}{storage}{concurrency}";
+                item.Status = FarmProgressVietnamese.Stage(snapshot.State.ToString());
                 UpdateDeviceSummary();
             }
             if (snapshot.State == ContinuousFarmDeviceState.Stopped)
@@ -576,7 +565,7 @@ namespace ADB_Tool_Automation_Post_FB.UI
                     attemptVersions, value));
             foreach (DeviceSelectionItem item in deviceSelections.Where(item =>
                 deviceNames.Contains(item.DeviceName, StringComparer.OrdinalIgnoreCase)))
-                item.Status = "Queued";
+                item.Status = "Đang xếp hàng";
             SetFarmActionButtonRunning();
             OneShotFarmResourcesGroupBox.IsEnabled = false;
             StatusTextBlock.Text = isRetry
@@ -663,15 +652,8 @@ namespace ADB_Tool_Automation_Post_FB.UI
                     StringComparison.OrdinalIgnoreCase));
             if (item != null)
             {
-                // A yielded readiness check is scheduled by the supervisor; it no
-                // longer owns a farm slot and must not appear as actively running.
-                item.IsRunning = progress.Stage == MultiDeviceOneShotFarmStage.Running
-                    || progress.Stage == MultiDeviceOneShotFarmStage.DispatchingTeam;
                 item.IsInGame = true;
-                item.Status = string.IsNullOrWhiteSpace(progress.Message)
-                    ? FarmProgressVietnamese.Stage(progress.Stage.ToString())
-                    : $"{FarmProgressVietnamese.Stage(progress.Stage.ToString())}: "
-                        + FarmProgressVietnamese.Message(progress.Message);
+                item.Status = FarmProgressVietnamese.Stage(progress.Stage.ToString());
                 UpdateDeviceSummary();
             }
             if (progress.Stage == MultiDeviceOneShotFarmStage.Failed)
@@ -1280,7 +1262,53 @@ namespace ADB_Tool_Automation_Post_FB.UI
                 status = value;
                 PropertyChanged?.Invoke(this,
                     new PropertyChangedEventArgs(nameof(Status)));
+                PropertyChanged?.Invoke(this,
+                    new PropertyChangedEventArgs(nameof(StatusForeground)));
+                PropertyChanged?.Invoke(this,
+                    new PropertyChangedEventArgs(nameof(StatusBackground)));
+                PropertyChanged?.Invoke(this,
+                    new PropertyChangedEventArgs(nameof(StatusBorderBrush)));
             }
+        }
+
+        public Brush StatusForeground => StatusColors().Item1;
+        public Brush StatusBackground => StatusColors().Item2;
+        public Brush StatusBorderBrush => StatusColors().Item3;
+
+        private Tuple<Brush, Brush, Brush> StatusColors()
+        {
+            string value = status ?? string.Empty;
+            if (value.StartsWith("Thất bại", StringComparison.Ordinal)
+                || value.StartsWith("Tạm cách ly", StringComparison.Ordinal))
+                return Colors(185, 28, 28, 254, 242, 242, 254, 202, 202);
+            if (value.StartsWith("Đang khôi phục", StringComparison.Ordinal)
+                || value.StartsWith("Đang dừng", StringComparison.Ordinal))
+                return Colors(194, 65, 12, 255, 247, 237, 254, 215, 170);
+            if (value.StartsWith("Đang chờ", StringComparison.Ordinal)
+                || value.StartsWith("Đang xếp hàng", StringComparison.Ordinal))
+                return Colors(180, 83, 9, 255, 251, 235, 253, 230, 138);
+            if (value.StartsWith("Đang chạy", StringComparison.Ordinal))
+                return Colors(29, 78, 216, 239, 246, 255, 191, 219, 254);
+            if (value.StartsWith("Sẵn sàng", StringComparison.Ordinal)
+                || value.StartsWith("Hoàn tất", StringComparison.Ordinal)
+                || value.StartsWith("Đã tìm thấy đội", StringComparison.Ordinal)
+                || value.StartsWith("Đang mở", StringComparison.Ordinal))
+                return Colors(4, 120, 87, 236, 253, 245, 167, 243, 208);
+            if (value.StartsWith("Đang kiểm tra", StringComparison.Ordinal)
+                || value.StartsWith("Đang chuẩn bị", StringComparison.Ordinal))
+                return Colors(3, 105, 161, 240, 249, 255, 186, 230, 253);
+            return Colors(71, 85, 105, 248, 250, 252, 226, 232, 240);
+        }
+
+        private static Tuple<Brush, Brush, Brush> Colors(
+            byte foregroundR, byte foregroundG, byte foregroundB,
+            byte backgroundR, byte backgroundG, byte backgroundB,
+            byte borderR, byte borderG, byte borderB)
+        {
+            return Tuple.Create<Brush, Brush, Brush>(
+                new SolidColorBrush(Color.FromRgb(foregroundR, foregroundG, foregroundB)),
+                new SolidColorBrush(Color.FromRgb(backgroundR, backgroundG, backgroundB)),
+                new SolidColorBrush(Color.FromRgb(borderR, borderG, borderB)));
         }
 
         public bool IsRunning
@@ -1315,6 +1343,10 @@ namespace ADB_Tool_Automation_Post_FB.UI
             {
                 ["Queued"] = "Đang xếp hàng",
                 ["Preflight"] = "Đang kiểm tra",
+                ["PreflightFailed"] = "Kiểm tra lỗi",
+                ["ReadyForGameplay"] = "Sẵn sàng",
+                ["DispatchingTeam"] = "Đang điều đội",
+                ["Requeued"] = "Đang chờ",
                 ["Ready"] = "Sẵn sàng",
                 ["Running"] = "Đang chạy",
                 ["Waiting"] = "Đang chờ",
