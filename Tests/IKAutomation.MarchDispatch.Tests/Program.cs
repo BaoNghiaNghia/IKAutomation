@@ -93,11 +93,13 @@ internal static class Program
         Run("GameState has no MarchStarted value", NoMarchGameState);
         Run("Storage limit requests resource switch", StorageLimitRequestsSwitch);
         Run("Resource expiry requests resource switch", ResourceExpiryRequestsSwitch);
+        Run("Unknown post-Gather Cancel requests resource switch", UnknownPostGatherCancelRequestsSwitch);
         Run("Storage cancel uses fresh bounds center", StorageCancelUsesCenter);
         Run("Storage cancel returns directly to WorldMap without Back", StorageCancelReturnsWorld);
         Run("Storage cancel returns SearchPanel without Back", StorageCancelReturnsPanel);
         Run("Storage cancel verifies TeamSelection then sends one Back", StorageCancelTeamThenBack);
         Run("Resource expiry cancel verifies TeamSelection then sends one Escape", ResourceExpiryCancelTeamThenEscape);
+        Run("Resource expiry accepts fresh post-Gather Cancel without text anchor", ResourceExpiryCancelOnlyFallback);
         Run("Post-Back exit confirmation is cancelled before recovery continues", PostBackConfirmationCancelled);
         Run("Delayed post-Back exit confirmation is cancelled once", DelayedPostBackConfirmationCancelled);
         Run("Storage transient Unknown sends no Back", StorageUnknownNoBack);
@@ -215,6 +217,26 @@ internal static class Program
         Eq<TeamNumber?>(null, result.DispatchedTeam, "team must not be dispatched");
         Eq(1, result.ActionTapCount, "dispatch action must not retry");
     }
+    private static void UnknownPostGatherCancelRequestsSwitch()
+    {
+        var h = new Harness(); h.Detector.AfterState = GameState.Unknown;
+        h.Matcher.Rule = (frame, id, region) =>
+            id == TemplateId.StorageLimitCancelButton && frame > 2
+                ? Found(300,400,80,40)
+                : h.Matcher.Default(frame,id,region);
+        h.Storage.Result = new StorageLimitDialogResult
+        {
+            Outcome = StorageLimitDialogOutcome.CancelledForResourceSwitch,
+            DialogVerified = true, CancelButtonVerified = true,
+            ReturnedToTeamSelection = true, EscapeSent = true, EscapeCount = 1,
+            ReturnedToWorldMap = true, FinalState = GameState.WorldMap
+        };
+        h.Rebuild(); DispatchMarchResult result = Execute(h);
+        Eq(DispatchMarchOutcome.ResourceExpiryResourceSwitchRequired, result.Outcome, "outcome");
+        Eq(1, h.Storage.ResourceExpiryCalls, "expiry handler calls");
+        Is(result.ResourceExpiryDialogDetected && result.ResourceExpiryCancelled,
+            "cancel-only expiry flags");
+    }
     private static StorageDialogHarness StorageHarness(GameState finalState)
     {
         var h = new StorageDialogHarness();
@@ -263,6 +285,20 @@ internal static class Program
         Eq(1, result.ActionTapCount, "Cancel tap count"); Eq(1, result.EscapeCount, "Escape count");
         Eq(1, h.Client.EscapeCalls, "client Escape count");
         Eq(0, h.Client.BackCalls, "resource expiry must not use Back");
+    }
+    private static void ResourceExpiryCancelOnlyFallback()
+    {
+        var h = new StorageDialogHarness(TemplateId.ResourceExpiryDialogAnchor);
+        h.Matcher.Rule = (frame,id,roi) => id == TemplateId.StorageLimitCancelButton
+            && frame == 1 ? Found(300,400,80,40) : ImageMatchResult.NotFound();
+        h.Detector.AsyncStates.Enqueue(GameState.TeamSelection);
+        h.Detector.AsyncStates.Enqueue(GameState.WorldMap);
+        StorageLimitDialogResult result = h.ExecuteResourceExpiry();
+        Eq(StorageLimitDialogOutcome.CancelledForResourceSwitch, result.Outcome, "outcome");
+        Is(result.DialogVerified && result.CancelButtonVerified, "cancel-only verification");
+        Eq(1, result.ActionTapCount, "Cancel tap count");
+        Eq(1, result.EscapeCount, "Escape count");
+        Is(result.ReturnedToWorldMap, "WorldMap recovery");
     }
     private static void PostBackConfirmationCancelled()
     {
@@ -382,11 +418,12 @@ internal static class Program
     private sealed class FakeStore:IDispatchMarchDiagnosticStore { public bool Throw; public Task<string> SaveAsync(string d,DispatchMarchOutcome o,byte[] p,CancellationToken t){if(Throw)throw new Exception("disk");return Task.FromResult("diag.png");} }
     private sealed class FakeStorage:IStorageLimitDialogService
     {
+        public int ResourceExpiryCalls;
         public StorageLimitDialogResult Result = new StorageLimitDialogResult { Outcome = StorageLimitDialogOutcome.Failed };
         public Task<StorageLimitDialogResult> HandleAsync(string d, StorageLimitPolicy p, CancellationToken t)
         { t.ThrowIfCancellationRequested(); return Task.FromResult(Result); }
         public Task<StorageLimitDialogResult> HandleResourceExpiryAsync(string d, CancellationToken t)
-        { t.ThrowIfCancellationRequested(); return Task.FromResult(Result); }
+        { t.ThrowIfCancellationRequested(); ResourceExpiryCalls++; return Task.FromResult(Result); }
     }
     private sealed class StorageDialogHarness
     {

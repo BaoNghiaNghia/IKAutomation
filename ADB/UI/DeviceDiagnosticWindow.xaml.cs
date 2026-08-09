@@ -406,12 +406,24 @@ namespace ADB_Tool_Automation_Post_FB.UI
             if (progress == null) return;
             var update = new PendingContinuousUpdate(runGeneration, runCancellation,
                 attemptVersions, progress);
+            OneShotFarmProgressStage? farmStage =
+                progress.FarmProgress?.DeviceProgress?.Stage;
+            bool teamAvailabilityResolved =
+                farmStage == OneShotFarmProgressStage.ReadyTeamFound
+                || farmStage == OneShotFarmProgressStage.WaitingForReadyTeam;
             bool critical = progress.Device != null
                 && (progress.Device.State == ContinuousFarmDeviceState.Recovering
                     || progress.Device.State == ContinuousFarmDeviceState.Quarantined
-                    || progress.Device.State == ContinuousFarmDeviceState.Stopped);
+                    || progress.Device.State == ContinuousFarmDeviceState.Stopped
+                    || teamAvailabilityResolved);
             if (critical)
             {
+                // The resolved roster carries the Ready/Busy badge state. Do not let
+                // a later Running snapshot coalesce it away before the UI receives it.
+                lock (continuousProgressSync)
+                {
+                    pendingContinuousUpdates.Remove(progress.Device.DeviceName);
+                }
                 Dispatcher.BeginInvoke(new Action(() => ApplyContinuousFarmProgress(
                     update.RunGeneration, update.RunCancellation,
                     update.AttemptVersions, update.Progress)));
