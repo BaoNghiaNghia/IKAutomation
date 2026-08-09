@@ -1766,7 +1766,12 @@ namespace ADB_Tool_Automation_Post_FB.UI
                     StringComparison.OrdinalIgnoreCase);
             if (isAvailabilityUpdate)
             {
-                bool scanCompleted = progress.Stage == OneShotFarmProgressStage.ReadyTeamFound;
+                // WaitingForReadyTeam is also emitted after a complete, confident
+                // roster scan.  Treating only ReadyTeamFound as complete left the
+                // last row at "Chưa rõ" when a four-team account had no ready team,
+                // even though the availability result classified all four as busy.
+                bool scanCompleted = progress.Stage == OneShotFarmProgressStage.ReadyTeamFound
+                    || progress.Stage == OneShotFarmProgressStage.WaitingForReadyTeam;
                 rosterScanCompleted = scanCompleted && !rosterUncertain && detected.Count > 0;
                 // Keep the last confirmed rows visible while a new scan is in
                 // progress. Clearing the collection here made a device such
