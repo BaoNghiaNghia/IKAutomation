@@ -117,6 +117,153 @@ namespace ADB_Tool_Automation_Post_FB.Infrastructure.Navigation
                 token => OpenMapAndTapPointCoreAsync(deviceName, x, y, token), cancellationToken);
         }
 
+        public Task<NavigationResult> OpenMapAndEnterCoordinatesAsync(
+            string deviceName, int mapX, int mapY,
+            CancellationToken cancellationToken)
+        {
+            return WithDeviceLockAsync(deviceName,
+                "OpenMapAndEnterResourceAreaCoordinates",
+                token => OpenMapAndEnterCoordinatesCoreAsync(
+                    deviceName, mapX, mapY, token), cancellationToken);
+        }
+
+        private async Task<NavigationResult> OpenMapAndEnterCoordinatesCoreAsync(
+            string deviceName, int mapX, int mapY,
+            CancellationToken cancellationToken)
+        {
+            var watch = Stopwatch.StartNew();
+            var transitions = new List<NavigationTransition>();
+            NavigationResult ensured = await EnsureWorldMapCoreAsync(
+                deviceName, null, cancellationToken);
+            if (!ensured.Success || ensured.FinalState != GameState.WorldMap)
+                return ensured;
+
+            GameDetectionResult initial = DetectionFrom(ensured);
+            GameDetectionResult current = initial;
+            GameDetectionEvidence mapButton = FindFreshEvidence(
+                current, TemplateId.WorldMapPinButton);
+            if (mapButton == null)
+            {
+                current = await RefreshFullFrameEvidenceAsync(
+                    deviceName, transitions, cancellationToken);
+                mapButton = current.IsSuccessful && current.State == GameState.WorldMap
+                    ? FindFreshEvidence(current, TemplateId.WorldMapPinButton)
+                    : null;
+            }
+            if (mapButton == null)
+                return Result(false, initial, current, ensured.Attempts, watch,
+                    "Không tìm thấy biểu tượng bản đồ trước khi nhập X/Y.", null,
+                    transitions, "WorldMapPinButtonUnavailableForCoordinateEntry");
+            if (mapX < options.MinimumWorldCoordinate
+                || mapX > options.MaximumWorldCoordinate
+                || mapY < options.MinimumWorldCoordinate
+                || mapY > options.MaximumWorldCoordinate)
+                return Result(false, initial, current, ensured.Attempts, watch,
+                    "Tọa độ X/Y khu tài nguyên nằm ngoài giới hạn bản đồ.", null,
+                    transitions, "ResourceAreaCoordinateOutsideWorldBounds",
+                    mapX, mapY, 0, false);
+            if (focusedInputValueReader == null)
+                return Result(false, initial, current, ensured.Attempts, watch,
+                    "Không có bộ đọc ô tọa độ; không nhập X/Y.", null,
+                    transitions, "FocusedCoordinateReaderUnavailable");
+
+            await TapEvidenceAsync(deviceName, mapButton,
+                "WorldMapPinButtonForResourceAreaLv2CoordinateEntry",
+                transitions, cancellationToken);
+            current = await PollAsync(deviceName, GameState.ContinentMap,
+                transitions, cancellationToken);
+            if (!current.IsSuccessful || current.State != GameState.ContinentMap)
+                return Result(false, initial, current, ensured.Attempts + 1, watch,
+                    "Đã mở bản đồ nhưng chưa xác minh được màn hình nhập X/Y.",
+                    current?.ErrorMessage, transitions,
+                    "ContinentMapNotVerifiedForCoordinateEntry");
+
+            CoordinateEditTransaction transaction;
+            try
+            {
+                transaction = await ReadCoordinateTransactionAsync(
+                    deviceName, transitions, cancellationToken);
+            }
+            catch (OperationCanceledException) { throw; }
+            catch (Exception exception)
+            {
+                return Result(false, initial, current, ensured.Attempts + 1, watch,
+                    "Không đọc được giá trị X/Y hiện tại; không thay đổi tọa độ.",
+                    exception.Message, transitions,
+                    "OriginalCoordinatesUnavailable");
+            }
+
+            var candidate = new CoordinateCandidate(1, mapX, mapY,
+                mapX - transaction.OriginalX, mapY - transaction.OriginalY);
+            try
+            {
+                AddTransition(transitions, "ResourceAreaCoordinateEntry",
+                    $"TargetX={mapX}; TargetY={mapY}; "
+                    + "Sequence=FocusX-ClearX-InputX-FocusY-ClearY-InputY-Pin.");
+                current = await ApplyCoordinateCandidateAsync(deviceName,
+                    transaction, candidate, transitions, cancellationToken);
+                GameDetectionEvidence coordinatePin = FindFreshEvidence(
+                    current, TemplateId.ContinentMapPinButton);
+                GameDetectionEvidence destinationPin = FindFreshEvidence(
+                    current, TemplateId.ContinentMapSearchTargetPin);
+                if (destinationPin == null)
+                {
+                    current = await RefreshFullFrameEvidenceAsync(
+                        deviceName, transitions, cancellationToken);
+                    coordinatePin = FindFreshEvidence(
+                        current, TemplateId.ContinentMapPinButton) ?? coordinatePin;
+                    destinationPin = FindFreshEvidence(
+                        current, TemplateId.ContinentMapSearchTargetPin);
+                }
+                if (destinationPin == null)
+                    return await FailCoordinateTransactionAsync(deviceName,
+                        initial, current, ensured.Attempts + 2, watch, transaction,
+                        coordinatePin,
+                        "Đã nhập X/Y và bấm pin tọa độ nhưng chưa tìm thấy điểm đích; đang khôi phục.",
+                        transitions);
+
+                await TapEvidenceAsync(deviceName, destinationPin,
+                    "ContinentMapSearchTargetPinAfterResourceAreaCoordinates",
+                    transitions, cancellationToken);
+                GameDetectionResult final = await PollAsync(deviceName,
+                    GameState.WorldMap, transitions, cancellationToken);
+                if (final.IsSuccessful && final.State == GameState.WorldMap)
+                {
+                    transaction.Commit();
+                    return Result(true, initial, final, ensured.Attempts + 3, watch,
+                        $"Đã nhập X={mapX}, Y={mapY} và xác minh WorldMap.", null,
+                        transitions, null, mapX, mapY, 2, true);
+                }
+
+                return await FailCoordinateTransactionAsync(deviceName, initial,
+                    final, ensured.Attempts + 3, watch, transaction, null,
+                    "Đã bấm pin nhưng chưa xác minh WorldMap; đang khôi phục X/Y.",
+                    transitions);
+            }
+            catch (OperationCanceledException)
+            {
+                await RollbackWithCleanupTokenAsync(deviceName, transaction,
+                    FindFreshEvidence(current, TemplateId.ContinentMapPinButton),
+                    transitions);
+                throw;
+            }
+            catch (Exception exception)
+            {
+                CoordinateRollbackResult rollback =
+                    await RollbackWithCleanupTokenAsync(deviceName, transaction,
+                        FindFreshEvidence(current, TemplateId.ContinentMapPinButton),
+                        transitions);
+                return rollback.Status == CoordinateRollbackStatus.RestoredAndVerified
+                    ? Result(false, initial, rollback.Latest ?? current,
+                        ensured.Attempts + 2, watch,
+                        "Lỗi khi nhập tọa độ Lv2; X/Y cũ đã được khôi phục.",
+                        exception.Message, transitions,
+                        "ResourceAreaCoordinateEntryFailed")
+                    : UnsafeRollbackResult(initial, rollback.Latest ?? current,
+                        ensured.Attempts + 2, watch, rollback, transitions);
+            }
+        }
+
         private async Task<NavigationResult> OpenMapAndTapPointCoreAsync(string deviceName,
             int x, int y, CancellationToken cancellationToken)
         {

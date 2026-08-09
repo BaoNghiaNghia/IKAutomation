@@ -25,5 +25,9 @@ namespace ADB_Tool_Automation_Post_FB.Core.Navigation
     {
         Task<NavigationResult> OpenMapAndTapPointAsync(
             string deviceName, int x, int y, CancellationToken cancellationToken);
+
+        Task<NavigationResult> OpenMapAndEnterCoordinatesAsync(
+            string deviceName, int mapX, int mapY,
+            CancellationToken cancellationToken);
     }
 }

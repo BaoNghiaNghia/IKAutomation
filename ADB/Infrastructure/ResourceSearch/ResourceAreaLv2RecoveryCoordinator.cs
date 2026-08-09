@@ -47,7 +47,7 @@ namespace ADB_Tool_Automation_Post_FB.Infrastructure.ResourceSearch
             var result = new ResourceAreaLv2RecoveryResult
             { MaxAttempts = ResourceAreaLv2PointSelector.MaxResourceAreaLv2PointAttempts };
 
-            logger.Info($"[Resource Area Lv2 Point Flow Started] RunId='{request.RunId ?? string.Empty}', DeviceName='{request.DeviceName}', Resource='{request.Resource}', EffectiveLevel={request.Level}, AreaEpoch={request.AreaEpoch}, ExpectedTeam='{request.ExpectedTeam?.ToString() ?? string.Empty}', Strategy='PredefinedContinentMapScreenPoint', CoordinateInputInvoked=false, TerritoryColorScanInvoked=false, SpecialAttemptNumber=1, RemainingUnusedPoints={ResourceAreaLv2PointSelector.Points1280x720.Count}, OperationTokenCancelled={cancellationToken.IsCancellationRequested}, NextAction='EnsureWorldMap'");
+            logger.Info($"[Resource Area Lv2 Point Flow Started] RunId='{request.RunId ?? string.Empty}', DeviceName='{request.DeviceName}', Resource='{request.Resource}', EffectiveLevel={request.Level}, AreaEpoch={request.AreaEpoch}, ExpectedTeam='{request.ExpectedTeam?.ToString() ?? string.Empty}', Strategy='PredefinedMapCoordinateEntry', CoordinateInputInvoked=true, TerritoryColorScanInvoked=false, SpecialAttemptNumber=1, RemainingUnusedPoints={ResourceAreaLv2PointSelector.Points1280x720.Count}, OperationTokenCancelled={cancellationToken.IsCancellationRequested}, NextAction='EnsureWorldMap'");
             NavigationResult ensured = await navigation.EnsureWorldMapAsync(
                 request.DeviceName, cancellationToken);
             result.EnsureWorldMapResult = ensured;
@@ -80,7 +80,7 @@ namespace ADB_Tool_Automation_Post_FB.Infrastructure.ResourceSearch
                 return result;
             }
 
-            logger.Info($"[Resource Area Lv2 Point Attempt] RunId='{request.RunId ?? string.Empty}', DeviceName='{request.DeviceName}', Resource='{request.Resource}', EffectiveLevel={request.Level}, AreaEpoch={request.AreaEpoch}, Attempt={point.Attempt}, MaxAttempts={point.MaxAttempts}, RemainingPointCount={point.RemainingPointCount}, BasePoint=({point.BasePoint.X},{point.BasePoint.Y}), ScaledPoint=({point.ScaledPoint.X},{point.ScaledPoint.Y}), PanelClosed={result.WorldMapVerifiedBeforeTap}, WorldMapVerifiedBeforeTap={result.WorldMapVerifiedBeforeTap}, PointTapSent=false, OperationTokenCancelled={cancellationToken.IsCancellationRequested}, NextAction='TapPredefinedPoint'");
+            logger.Info($"[Resource Area Lv2 Point Attempt] RunId='{request.RunId ?? string.Empty}', DeviceName='{request.DeviceName}', Resource='{request.Resource}', EffectiveLevel={request.Level}, AreaEpoch={request.AreaEpoch}, Attempt={point.Attempt}, MaxAttempts={point.MaxAttempts}, RemainingPointCount={point.RemainingPointCount}, MapCoordinate=({point.BasePoint.X},{point.BasePoint.Y}), CoordinateSequence='FocusX-ClearX-InputX-FocusY-ClearY-InputY-Pin', PanelClosed={result.WorldMapVerifiedBeforeTap}, WorldMapVerifiedBeforeTap={result.WorldMapVerifiedBeforeTap}, PointTapSent=false, OperationTokenCancelled={cancellationToken.IsCancellationRequested}, NextAction='EnterPredefinedCoordinates'");
             LogCancellationTrace(request, "BeforePointTap", cancellationToken,
                 "FarmOperationToken", "ResourceAreaLv2RecoveryCoordinator");
             var mapPointNavigation = navigation as IResourceAreaMapPointNavigationService;
@@ -90,8 +90,8 @@ namespace ADB_Tool_Automation_Post_FB.Infrastructure.ResourceSearch
                 Log(request, result, point, null, false, false, "Failed");
                 return result;
             }
-            NavigationResult tapped = await mapPointNavigation.OpenMapAndTapPointAsync(
-                request.DeviceName, point.ScaledPoint.X, point.ScaledPoint.Y,
+            NavigationResult tapped = await mapPointNavigation.OpenMapAndEnterCoordinatesAsync(
+                request.DeviceName, point.BasePoint.X, point.BasePoint.Y,
                 cancellationToken);
             result.PointTapResult = tapped;
             // A point can open a terrain/object popup while the WorldMap anchor
