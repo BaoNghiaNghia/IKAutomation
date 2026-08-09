@@ -1728,14 +1728,12 @@ namespace ADB_Tool_Automation_Post_FB.UI
                 // as May_3 lose every team badge during the map step. Cached
                 // rows are deliberately shown as unverified; they are never
                 // relabeled as busy until a fresh scan confirms readiness.
-                if (scanCompleted && !rosterUncertain && detected.Count > 0)
-                    SynchronizeTeams(detected);
-                else if (detected.Count > 0)
-                    SynchronizeTeams(detected);
-                else if (Teams.Count == 0 && progress.ConfirmedRosterCount > 0)
-                    SynchronizeTeams(Enumerable.Range(1,
-                        Math.Min(4, Math.Max(0, progress.ConfirmedRosterCount)))
-                        .Select(value => (TeamNumber)value).ToArray());
+                if (detected.Count > 0)
+                    SynchronizeTeams(ExpandToConfirmedRoster(detected,
+                        progress.ConfirmedRosterCount));
+                else if (progress.ConfirmedRosterCount > 0)
+                    SynchronizeTeams(ExpandToConfirmedRoster(
+                        new TeamNumber[0], progress.ConfirmedRosterCount));
                 foreach (TeamFarmProgressItem item in Teams)
                 {
                     bool isAllowed = allowed.Contains(item.Team);
@@ -1837,10 +1835,10 @@ namespace ADB_Tool_Automation_Post_FB.UI
             // status while the roster is being refreshed.
             if (!rosterScanCompleted)
             {
-                if (Teams.Count == 0 && snapshot.ConfirmedRosterCount > 0)
-                    SynchronizeTeams(Enumerable.Range(1,
-                        Math.Min(4, Math.Max(0, snapshot.ConfirmedRosterCount)))
-                        .Select(value => (TeamNumber)value).ToArray());
+                if (snapshot.ConfirmedRosterCount > 0)
+                    SynchronizeTeams(ExpandToConfirmedRoster(
+                        Teams.Select(item => item.Team).ToArray(),
+                        snapshot.ConfirmedRosterCount));
                 if (activeTeam.HasValue)
                 {
                     EnsureTeamVisible(activeTeam.Value);
@@ -1900,6 +1898,21 @@ namespace ADB_Tool_Automation_Post_FB.UI
                     if (currentIndex != index) Teams.Move(currentIndex, index);
                 }
             }
+        }
+
+        private static IReadOnlyList<TeamNumber> ExpandToConfirmedRoster(
+            IReadOnlyList<TeamNumber> detectedTeams, int confirmedRosterCount)
+        {
+            TeamNumber[] detected = (detectedTeams ?? new TeamNumber[0])
+                .Where(team => Enum.IsDefined(typeof(TeamNumber), team))
+                .Distinct().ToArray();
+            int highestDetected = detected.Select(team => (int)team)
+                .DefaultIfEmpty(0).Max();
+            int count = Math.Min(4, Math.Max(highestDetected,
+                Math.Max(0, confirmedRosterCount)));
+            if (count == 0) return detected;
+            return Enumerable.Range(1, count).Select(value => (TeamNumber)value)
+                .Union(detected).OrderBy(team => (int)team).ToArray();
         }
 
         private void EnsureTeamVisible(TeamNumber team)
