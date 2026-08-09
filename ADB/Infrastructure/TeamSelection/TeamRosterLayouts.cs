@@ -61,6 +61,57 @@ namespace ADB_Tool_Automation_Post_FB.Infrastructure.TeamSelection
             return new WorldMapTeamRosterLayout(rows.AsReadOnly(),
                 searchRows.AsReadOnly());
         }
+
+        public static WorldMapTeamRosterLayout AlignToNumberedBadges(
+            WorldMapTeamRosterLayout layout,
+            IReadOnlyDictionary<TeamNumber, ImageMatchResult> badgeMatches,
+            int frameHeight, WorldMapTeamAvailabilityOptions options)
+        {
+            if (layout == null || options == null || frameHeight <= 0
+                || badgeMatches == null || badgeMatches.Count == 0)
+                return layout;
+
+            double scaleY = frameHeight / (double)options.ExpectedHeight;
+            int badgeTopPadding = Math.Max(0,
+                (int)Math.Round(options.BadgeTopPadding * scaleY));
+            int[] offsets = badgeMatches
+                .Where(item => item.Value != null && item.Value.Found
+                    && (int)item.Key >= 1 && (int)item.Key <= layout.Rows.Count)
+                .Select(item => item.Value.Y
+                    - (layout.Rows[(int)item.Key - 1].Y + badgeTopPadding))
+                .OrderBy(value => value)
+                .ToArray();
+            if (offsets.Length == 0) return layout;
+
+            int shift = offsets[offsets.Length / 2];
+            if (Math.Abs(shift) <= badgeTopPadding) return layout;
+            int rowHeight = layout.Rows[0].Height;
+            int configuredTop = (int)Math.Round(options.TeamRosterRegion.Y * scaleY);
+            int configuredHeight = (int)Math.Round(
+                options.TeamRosterRegion.Height * scaleY);
+            int maximumTop = Math.Min(frameHeight - (layout.Rows.Count * rowHeight),
+                configuredTop + configuredHeight - (layout.Rows.Count * rowHeight));
+            int alignedTop = Math.Max(configuredTop,
+                Math.Min(maximumTop, layout.Rows[0].Y + shift));
+            if (alignedTop == layout.Rows[0].Y) return layout;
+
+            int verticalTolerance = Math.Max(0,
+                (int)Math.Round(options.RowVerticalTolerance * scaleY));
+            var rows = new List<ImageRegion>(layout.Rows.Count);
+            var searchRows = new List<ImageRegion>(layout.Rows.Count);
+            for (int index = 0; index < layout.Rows.Count; index++)
+            {
+                var row = new ImageRegion(layout.Rows[index].X,
+                    alignedTop + (index * rowHeight), layout.Rows[index].Width,
+                    rowHeight);
+                rows.Add(row);
+                int searchTop = Math.Max(configuredTop, row.Y - verticalTolerance);
+                searchRows.Add(new ImageRegion(row.X, searchTop, row.Width,
+                    row.Y + row.Height - searchTop));
+            }
+            return new WorldMapTeamRosterLayout(rows.AsReadOnly(),
+                searchRows.AsReadOnly());
+        }
     }
 
     public sealed class TeamSelectionRosterLayout

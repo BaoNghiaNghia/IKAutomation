@@ -121,7 +121,6 @@ namespace ADB_Tool_Automation_Post_FB.Infrastructure.TeamSelection
                 if (layout == null)
                     return Failed("Team roster region falls outside the captured frame.",
                         state: GameState.WorldMap);
-                lastLayout = layout;
                 lastState = Detect(screenshot, deviceName,
                     new GameStateDetectionContext(GameState.WorldMap, GameState.WorldMap));
                 if (lastState == null || !lastState.IsSuccessful
@@ -133,6 +132,7 @@ namespace ADB_Tool_Automation_Post_FB.Infrastructure.TeamSelection
                     registry.LoadBytes(BadgeTemplate(team)), layout.SearchRows[index])).ToArray();
                 IReadOnlyList<ImageMatchResult> badgeResults = await FindManyAsync(
                     screenshot, badgeRequests, cancellationToken);
+                var frameBadgeMatches = new Dictionary<TeamNumber, ImageMatchResult>();
                 for (int index = 0; index < teams.Length; index++)
                 {
                     TeamNumber team = teams[index];
@@ -140,9 +140,13 @@ namespace ADB_Tool_Automation_Post_FB.Infrastructure.TeamSelection
                     if (IsMatchInsideRow(badgeMatch, layout.Rows[index]))
                     {
                         badgeMatches[team] = badgeMatch;
+                        frameBadgeMatches[team] = badgeMatch;
                         rowEvidenceTeams.Add(team);
                     }
                 }
+                layout = WorldMapTeamRosterLayoutResolver.AlignToNumberedBadges(
+                    layout, frameBadgeMatches, screenshot.Height, options);
+                lastLayout = layout;
 
                 var statusRequests = new List<ImageMatchRequest>();
                 var statusSignals = new List<Tuple<TeamNumber, string>>();
@@ -248,7 +252,8 @@ namespace ADB_Tool_Automation_Post_FB.Infrastructure.TeamSelection
             var availableTeams = existing.Where(team => !effectiveLockedTeams.Contains(team))
                 .OrderBy(team => (int)team).ToList();
             var readyTeams = readyMatchesByTeam.Keys.Where(team => existing.Contains(team)
-                    && !effectiveLockedTeams.Contains(team))
+                    && !effectiveLockedTeams.Contains(team)
+                    && !busyTeamsFresh.Contains(team))
                 .OrderBy(team => (int)team).ToList();
             // An unlocked existing row that is not freshly Ready is busy for the
             // scheduler, even when the optional busy/timer anchor is obscured.

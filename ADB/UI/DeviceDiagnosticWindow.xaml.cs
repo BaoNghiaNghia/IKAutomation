@@ -1275,6 +1275,8 @@ namespace ADB_Tool_Automation_Post_FB.UI
                 PropertyChanged?.Invoke(this,
                     new PropertyChangedEventArgs(nameof(Status)));
                 PropertyChanged?.Invoke(this,
+                    new PropertyChangedEventArgs(nameof(StatusIcon)));
+                PropertyChanged?.Invoke(this,
                     new PropertyChangedEventArgs(nameof(StatusForeground)));
                 PropertyChanged?.Invoke(this,
                     new PropertyChangedEventArgs(nameof(StatusBackground)));
@@ -1286,6 +1288,37 @@ namespace ADB_Tool_Automation_Post_FB.UI
         public Brush StatusForeground => StatusColors().Item1;
         public Brush StatusBackground => StatusColors().Item2;
         public Brush StatusBorderBrush => StatusColors().Item3;
+        public string StatusIcon => GetStatusIcon(status);
+
+        private static string GetStatusIcon(string statusValue)
+        {
+            string value = statusValue ?? string.Empty;
+            if (value.StartsWith("Thất bại", StringComparison.Ordinal)
+                || value.StartsWith("Kiểm tra lỗi", StringComparison.Ordinal)
+                || value.StartsWith("Tạm cách ly", StringComparison.Ordinal))
+                return "!";
+            if (value.StartsWith("Đang khôi phục", StringComparison.Ordinal)
+                || value.StartsWith("Đang dừng", StringComparison.Ordinal))
+                return "↻";
+            if (value.StartsWith("Đang chờ", StringComparison.Ordinal)
+                || value.StartsWith("Đang xếp hàng", StringComparison.Ordinal))
+                return "◷";
+            if (value.StartsWith("Đang chạy", StringComparison.Ordinal))
+                return "▶";
+            if (value.StartsWith("Đang kiểm tra", StringComparison.Ordinal)
+                || value.StartsWith("Đang chuẩn bị", StringComparison.Ordinal))
+                return "◎";
+            if (value.StartsWith("Sẵn sàng", StringComparison.Ordinal)
+                || value.StartsWith("Hoàn tất", StringComparison.Ordinal)
+                || value.StartsWith("Đã tìm thấy đội", StringComparison.Ordinal))
+                return "✓";
+            if (value.StartsWith("Đang mở", StringComparison.Ordinal))
+                return "●";
+            if (value.StartsWith("Đã dừng", StringComparison.Ordinal)
+                || value.StartsWith("Đã tắt", StringComparison.Ordinal))
+                return "■";
+            return "•";
+        }
 
         private Tuple<Brush, Brush, Brush> StatusColors()
         {
