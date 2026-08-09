@@ -205,10 +205,25 @@ namespace ADB_Tool_Automation_Post_FB.Infrastructure.MarchDispatch
                     lastFrame = await client.CaptureScreenshotPngAsync(deviceName, cancellationToken);
                     GameDetectionResult state = detector.Detect(lastFrame);
                     result.FinalState = state.State;
+                    ImageMatchResult unclassifiedPostGatherCancel = state.State == GameState.Unknown
+                        && registry.Exists(TemplateId.StorageLimitCancelButton)
+                        ? Match(lastFrame, TemplateId.StorageLimitCancelButton, null)
+                        : ImageMatchResult.NotFound();
+                    bool cancelOnlyPostGatherDialog = state.State == GameState.Unknown
+                        && HasBounds(unclassifiedPostGatherCancel);
                     if (state.State == GameState.StorageLimitDialog
-                        || state.State == GameState.ResourceExpiryDialog)
+                        || state.State == GameState.ResourceExpiryDialog
+                        || cancelOnlyPostGatherDialog)
                     {
-                        bool resourceExpiry = state.State == GameState.ResourceExpiryDialog;
+                        // Some expiry messages contain dynamic resource amounts
+                        // (for example "0 Gỗ"), so the text anchor can miss while
+                        // the fresh Cancel action remains stable. This fallback is
+                        // deliberately scoped to the transition immediately after
+                        // the verified yellow Gather tap.
+                        bool resourceExpiry = state.State == GameState.ResourceExpiryDialog
+                            || cancelOnlyPostGatherDialog;
+                        if (cancelOnlyPostGatherDialog)
+                            logger.Info($"[March Dispatch PostGather Dialog] DeviceName='{deviceName}', State='Unknown', CancelBounds=({unclassifiedPostGatherCancel.X},{unclassifiedPostGatherCancel.Y},{unclassifiedPostGatherCancel.Width},{unclassifiedPostGatherCancel.Height}), Classification='ResourceExpiryDialog', NextAction='CancelAndSwitchResource'");
                         result.ResourceExpiryDialogDetected = resourceExpiry;
                         result.StorageLimitDialogDetected = !resourceExpiry;
                         if (storageLimitDialog == null)

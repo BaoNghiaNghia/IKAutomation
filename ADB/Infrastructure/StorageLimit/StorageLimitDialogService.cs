@@ -73,10 +73,14 @@ namespace ADB_Tool_Automation_Post_FB.Infrastructure.StorageLimit
                     GameDetectionEvidence dialog = Match(fresh, dialogTemplate);
                     GameDetectionEvidence cancel = Match(fresh, TemplateId.StorageLimitCancelButton);
                     result.Evidence = new[] { dialog, cancel };
-                    result.DialogVerified = dialog.Found;
                     result.CancelButtonVerified = HasBounds(cancel.MatchResult);
+                    bool cancelOnlyPostGatherExpiry = dialogState == GameState.ResourceExpiryDialog
+                        && !dialog.Found && result.CancelButtonVerified;
+                    result.DialogVerified = dialog.Found || cancelOnlyPostGatherExpiry;
                     result.InitialState = result.DialogVerified
                         ? dialogState : GameState.Unknown;
+                    if (cancelOnlyPostGatherExpiry)
+                        logger.Info($"[{logName}] DeviceName='{deviceName}', VerificationSource='FreshPostGatherCancelButton', DialogAnchorFound=false, CancelButtonVerified=true");
                     if (!result.DialogVerified)
                         return Complete(result, StorageLimitDialogOutcome.DialogNotVerified,
                             $"{dialogState} was not present in the fresh frame; no input was sent.", null, watch);
