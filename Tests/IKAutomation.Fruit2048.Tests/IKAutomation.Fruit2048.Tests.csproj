@@ -17,8 +17,10 @@
     <Compile Include="..\..\ADB\Infrastructure\Concurrency\DeviceAutomationOwnershipService.cs" Link="Production\DeviceAutomationOwnershipService.cs" />
     <Compile Include="..\..\ADB\Infrastructure\Fruit2048\Fruit2048AutomationService.cs" Link="Production\Fruit2048AutomationService.cs" />
     <Compile Include="..\..\ADB\Infrastructure\Fruit2048\Fruit2048CalibratedSeedStore.cs" Link="Production\Fruit2048CalibratedSeedStore.cs" />
+    <Compile Include="..\..\ADB\Infrastructure\Fruit2048\Fruit2048LearningDiagnosticStore.cs" Link="Production\Fruit2048LearningDiagnosticStore.cs" />
     <Compile Include="..\..\ADB\Infrastructure\Fruit2048\Fruit2048ScreenProfile.cs" Link="Production\Fruit2048ScreenProfile.cs" />
     <Compile Include="..\..\ADB\Infrastructure\Fruit2048\Fruit2048TemplateCatalog.cs" Link="Production\Fruit2048TemplateCatalog.cs" />
+    <Compile Include="..\..\ADB\Infrastructure\Fruit2048\Fruit2048TransitionValidator.cs" Link="Production\Fruit2048TransitionValidator.cs" />
     <Compile Include="..\..\ADB\Infrastructure\Fruit2048\FruitTileFingerprint.cs" Link="Production\FruitTileFingerprint.cs" />
     <Compile Include="..\..\ADB\Infrastructure\Fruit2048\FruitTileLearningCatalog.cs" Link="Production\FruitTileLearningCatalog.cs" />
   </ItemGroup>

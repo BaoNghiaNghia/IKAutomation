@@ -27,19 +27,24 @@ namespace ADB_Tool_Automation_Post_FB.Core.Fruit2048
             if (before == null) throw new ArgumentNullException(nameof(before));
             if (observations == null) throw new ArgumentNullException(nameof(observations));
             var results = new List<Fruit2048LearningResult>();
-            foreach (MergeDestination merge in FindMergeDestinations(before, move))
+            foreach (Fruit2048MergeOperation merge in GetMergeOperations(before, move))
             {
                 Fruit2048Cell[] cells = observations
                     .Select(observation => observation?.Cells?.FirstOrDefault(cell =>
-                        cell.Row == merge.Row && cell.Column == merge.Column))
+                        cell.Row == merge.DestinationRow && cell.Column == merge.DestinationColumn))
                     .Where(cell => cell != null).ToArray();
                 Fruit2048Cell known = cells.FirstOrDefault(cell => cell.Tier.HasValue);
                 if (known != null)
                 {
-                    if (known.Tier.Value == merge.ExpectedTier)
-                        catalog.ObserveTier(merge.ExpectedTier);
+                    if (known.Tier.Value == merge.ResultTier)
+                    {
+                        // A known deterministic result needs no catalog mutation.  The
+                        // coordinator is deliberately the only teacher-side writer.
+                        if (coordinator == null)
+                        catalog.ObserveTier(merge.ResultTier);
+                    }
                     else
-                        results.Add(catalog.RejectConflict(merge.ExpectedTier,
+                        results.Add(catalog.RejectConflict(merge.ResultTier,
                             known.Tier.Value, known.Confidence, move,
                             merge.SourceRow, merge.SourceColumn));
                     continue;
@@ -49,12 +54,12 @@ namespace ADB_Tool_Automation_Post_FB.Core.Fruit2048
                     .Select(cell => cell.Fingerprint).Where(value => value != null).ToArray();
                 if (fingerprints.Length < 2 || !AreStable(fingerprints)) continue;
                 Fruit2048LearningResult learningResult = coordinator == null
-                    ? catalog.ObserveMerge(merge.ExpectedTier, fingerprints[0], evidenceId + ":tier:" + merge.ExpectedTier,
-                        merge.ExpectedTier - 1, move, merge.SourceRow, merge.SourceColumn)
-                    : coordinator.ObserveMerge(deviceName, merge.ExpectedTier, fingerprints[0], evidenceId + ":tier:" + merge.ExpectedTier,
-                        merge.ExpectedTier - 1, move, merge.SourceRow, merge.SourceColumn);
-                learningResult.DestinationRow = merge.Row;
-                learningResult.DestinationColumn = merge.Column;
+                    ? catalog.ObserveMerge(merge.ResultTier, fingerprints[0], evidenceId + ":tier:" + merge.ResultTier,
+                        merge.SourceTier, move, merge.SourceRow, merge.SourceColumn)
+                    : coordinator.ObserveMerge(deviceName, merge.ResultTier, fingerprints[0], evidenceId + ":tier:" + merge.ResultTier,
+                        merge.SourceTier, move, merge.SourceRow, merge.SourceColumn);
+                learningResult.DestinationRow = merge.DestinationRow;
+                learningResult.DestinationColumn = merge.DestinationColumn;
                 results.Add(learningResult);
             }
             return results;
@@ -68,10 +73,10 @@ namespace ADB_Tool_Automation_Post_FB.Core.Fruit2048
             return true;
         }
 
-        private static IReadOnlyList<MergeDestination> FindMergeDestinations(
+        public static IReadOnlyList<Fruit2048MergeOperation> GetMergeOperations(
             Fruit2048Board board, Fruit2048Move move)
         {
-            var merges = new List<MergeDestination>();
+            var merges = new List<Fruit2048MergeOperation>();
             for (int line = 0; line < Fruit2048Board.Size; line++)
             {
                 var source = new List<SourceTile>();
@@ -90,11 +95,12 @@ namespace ADB_Tool_Automation_Post_FB.Core.Fruit2048
                     int destinationRow, destinationColumn;
                     ResolveCoordinate(line, outputOffset, move,
                         out destinationRow, out destinationColumn);
-                    merges.Add(new MergeDestination
+                    merges.Add(new Fruit2048MergeOperation
                     {
-                        Row = destinationRow,
-                        Column = destinationColumn,
-                        ExpectedTier = FruitTierCatalog.ToTier(source[index].Value) + 1,
+                        DestinationRow = destinationRow,
+                        DestinationColumn = destinationColumn,
+                        SourceTier = FruitTierCatalog.ToTier(source[index].Value),
+                        ResultTier = FruitTierCatalog.ToTier(source[index].Value) + 1,
                         SourceRow = source[index].Row,
                         SourceColumn = source[index].Column
                     });
@@ -126,14 +132,6 @@ namespace ADB_Tool_Automation_Post_FB.Core.Fruit2048
             public int Column { get; }
         }
 
-        private sealed class MergeDestination
-        {
-            public int Row { get; set; }
-            public int Column { get; set; }
-            public int ExpectedTier { get; set; }
-            public int SourceRow { get; set; }
-            public int SourceColumn { get; set; }
-        }
     }
 
     public static class FruitFingerprintDistance

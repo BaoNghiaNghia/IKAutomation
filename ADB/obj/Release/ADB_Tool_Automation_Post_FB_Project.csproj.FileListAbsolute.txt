@@ -418,3 +418,8 @@ D:\Bot_Tool_Auto_Game\IKAutomation\ADB\bin\Release\sv\ZedGraph.resources.dll
 D:\Bot_Tool_Auto_Game\IKAutomation\ADB\bin\Release\tr\ZedGraph.resources.dll
 D:\Bot_Tool_Auto_Game\IKAutomation\ADB\bin\Release\zh-cn\ZedGraph.resources.dll
 D:\Bot_Tool_Auto_Game\IKAutomation\ADB\bin\Release\zh-tw\ZedGraph.resources.dll
+D:\Bot_Tool_Auto_Game\IKAutomation\ADB\bin\Release\Data\InfinityKingdom\1280x720\vi\Fruit2048\Navigation\board_anchor.png
+D:\Bot_Tool_Auto_Game\IKAutomation\ADB\bin\Release\Data\InfinityKingdom\1280x720\vi\Fruit2048\Navigation\city_festival_entry.png
+D:\Bot_Tool_Auto_Game\IKAutomation\ADB\bin\Release\Data\InfinityKingdom\1280x720\vi\Fruit2048\Navigation\fruit_2048_tab.png
+D:\Bot_Tool_Auto_Game\IKAutomation\ADB\bin\Release\Data\InfinityKingdom\1280x720\vi\Fruit2048\tile_1.png
+D:\Bot_Tool_Auto_Game\IKAutomation\ADB\bin\Release\Data\InfinityKingdom\1280x720\vi\Fruit2048\tile_empty.png

@@ -118,6 +118,14 @@
                                 <ComboBoxItem Content="128"/><ComboBoxItem Content="256"/><ComboBoxItem Content="512"/><ComboBoxItem Content="1024"/><ComboBoxItem Content="2048"/>
                             </ComboBox>
                             <CheckBox x:Name="AutoRefreshCheck" Content="Tự làm mới khi hết nước đi" Margin="0,10,0,0" IsChecked="False"/>
+                            <TextBlock Text="Giới hạn lượt học" Margin="0,10,0,0"/>
+                            <ComboBox x:Name="TeacherMoveLimitCombo" SelectedIndex="2" Width="120" HorizontalAlignment="Left">
+                                <ComboBoxItem Content="Không giới hạn"/><ComboBoxItem Content="25"/><ComboBoxItem Content="50"/><ComboBoxItem Content="100"/><ComboBoxItem Content="250"/><ComboBoxItem Content="1000"/>
+                            </ComboBox>
+                            <TextBlock Text="Xác thực" Margin="0,10,0,0"/>
+                            <ComboBox x:Name="RunModeCombo" SelectedIndex="0" Width="120" HorizontalAlignment="Left">
+                                <ComboBoxItem Content="Bình thường"/><ComboBoxItem Content="Burn-in"/>
+                            </ComboBox>
                         </StackPanel>
                         <StackPanel Grid.Column="1" HorizontalAlignment="Center">
                             <Button x:Name="UpButton" Style="{StaticResource Action}" Content="↑" Width="52" Click="ManualUp_Click"/>
@@ -139,6 +147,7 @@
                         <Expander Header="Nâng cao / gỡ lỗi" Margin="0,6,0,0" HorizontalAlignment="Center">
                             <StackPanel Orientation="Horizontal">
                                 <Button Style="{StaticResource Action}" Background="#FF64748B" Click="ExportLearning_Click">Xuất dữ liệu học</Button>
+                                <Button x:Name="ExportLastFailureButton" Style="{StaticResource Action}" Background="#FF7C3AED" Click="ExportLastFailure_Click">Xuất lỗi gần nhất</Button>
                                 <Button Style="{StaticResource Action}" Background="#FF0F766E" Click="SetTeacher_Click">Đặt làm thiết bị học</Button>
                                 <Button Style="{StaticResource Action}" Background="#FFB45309" Click="ResetLearning_Click">Xóa dữ liệu học</Button>
                                 <Button Style="{StaticResource Action}" Background="#FFB91C1C" Click="DeleteCalibratedSeeds_Click">Xóa mẫu hiệu chỉnh</Button>

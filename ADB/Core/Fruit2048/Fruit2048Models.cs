@@ -7,8 +7,14 @@ using System.Threading.Tasks;
 namespace ADB_Tool_Automation_Post_FB.Core.Fruit2048
 {
     public enum Fruit2048ScreenStatus { Ready, NotOpen, CaptureUnavailable }
-    public enum Fruit2048RuntimeStatus { Idle, Starting, Scanning, Playing, Stopping, TargetReached, NoMoves, BoardUnknown, NeedsFreshBoard, MissingSeeds, Disconnected, Failed, Cancelled }
-    public enum Fruit2048Outcome { TargetReached, NoMoves, BoardReadFailed, NeedsFreshBoard, MissingSeedAssets, ScreenNotOpen, Disconnected, Cancelled, Failed }
+    public enum Fruit2048RuntimeStatus { Idle, Starting, AcquiringDevice, Navigating, Bootstrapping, Scanning, Playing, WaitingPostMove, ValidatingTransition, Recovering, Paused, Stopping, Completed, TargetReached, NoMoves, BoardUnknown, NeedsFreshBoard, MissingSeeds, Disconnected, Failed, Cancelled }
+    public enum Fruit2048RuntimeState { Idle, Starting, AcquiringDevice, Navigating, Bootstrapping, Scanning, Playing, WaitingPostMove, ValidatingTransition, Recovering, Paused, Stopping, Completed, Error }
+    public enum Fruit2048RuntimeFailure { None, Transient, RecoverableScreenLoss, UnsafeBoard, LearningConflict, TransitionInvalid, DeviceUnavailable, Cancelled, Fatal }
+    public enum Fruit2048RunMode { Normal, BurnIn }
+    public enum Fruit2048BurnInHealth { Excellent, Good, Warning, Failed }
+    public enum Fruit2048BurnInOutcome { Completed, Cancelled, TransitionInvalid, LearningConflict, BoardUnresolved, NavigationRecoveryFailed, DeviceDisconnected, CaptureFailed, RuntimeTimeout, LeaseViolation, CatalogFailure, UnexpectedError }
+    public enum Fruit2048BurnInRecommendation { Repeat50, Run250, Repeat250, Run1000, ReadyForProduction, InspectDiagnostics }
+    public enum Fruit2048Outcome { TargetReached, NoMoves, BoardReadFailed, NeedsFreshBoard, MissingSeedAssets, ScreenNotOpen, Disconnected, MoveLimitReached, Cancelled, Failed }
     public enum Fruit2048BootstrapState { MissingSeedAssets, ReadyToLearn, NeedsFreshBoard, Learning, Ready }
     public enum FruitTileLearningState { Unknown, Candidate, Learned }
     public enum Fruit2048RecognitionSource { Unknown, FastFingerprint, PrototypeMatch, StaticSeed }
@@ -17,6 +23,7 @@ namespace ADB_Tool_Automation_Post_FB.Core.Fruit2048
     public enum Fruit2048SeedSource { Missing, StaticPackaged, UserCalibrated }
     public enum Fruit2048NavigationState { BoardReady, FruitFestivalTabVisible, CityFestivalEntryVisible, Unknown, CaptureUnavailable }
     public enum Fruit2048TeacherStatus { None, Acquiring, Learning, Paused, Completed, Error }
+    public enum Fruit2048TransitionValidationStatus { Valid, ValidWithSpawn, Ambiguous, Invalid, CaptureUnreliable }
 
     public sealed class FruitTileVisualFingerprint
     {
@@ -103,6 +110,43 @@ namespace ADB_Tool_Automation_Post_FB.Core.Fruit2048
         public Fruit2048TeacherStatus Status { get; set; }
         public long CatalogVersion { get; set; }
     }
+    public sealed class Fruit2048TransitionValidationRequest
+    {
+        public string DeviceName { get; set; } public string TransitionId { get; set; }
+        public Fruit2048Board BoardBefore { get; set; } public Fruit2048Move Move { get; set; }
+        public Fruit2048Board ExpectedBoardAfterMove { get; set; } public Fruit2048BoardReadResult Observed { get; set; }
+        public IReadOnlyList<Fruit2048MergeOperation> MergeOperations { get; set; }
+    }
+    public sealed class Fruit2048TransitionValidationResult
+    {
+        public Fruit2048TransitionValidationStatus Status { get; set; }
+        public bool IsValidForLearning => Status == Fruit2048TransitionValidationStatus.Valid || Status == Fruit2048TransitionValidationStatus.ValidWithSpawn;
+        public int SpawnCandidates { get; set; }
+        public int UnknownCells { get; set; }
+        public IReadOnlyList<Fruit2048MergeOperation> MergeDestinations { get; set; }
+        public string Reason { get; set; }
+    }
+    public sealed class Fruit2048MergeOperation
+    {
+        public int SourceTier { get; set; }
+        public int ResultTier { get; set; }
+        public int DestinationRow { get; set; }
+        public int DestinationColumn { get; set; }
+        public int SourceRow { get; set; }
+        public int SourceColumn { get; set; }
+    }
+    public sealed class Fruit2048PendingTransition
+    {
+        public string TransitionId { get; set; }
+        public string DeviceName { get; set; }
+        public Fruit2048Board BoardBefore { get; set; }
+        public Fruit2048Move Move { get; set; }
+        public Fruit2048Board ExpectedBoardAfterMove { get; set; }
+        public IReadOnlyList<Fruit2048MergeOperation> MergeOperations { get; set; }
+        public DateTimeOffset StartedAtUtc { get; set; }
+        public int RetryCount { get; set; }
+        public Fruit2048TransitionValidationStatus? ValidationStatus { get; set; }
+    }
 
     public sealed class Fruit2048LearningResult
     {
@@ -179,12 +223,18 @@ namespace ADB_Tool_Automation_Post_FB.Core.Fruit2048
         public Fruit2048BootstrapState BootstrapState { get; set; }
         public int FastPathCells { get; set; }
         public int FallbackCells { get; set; }
+        // Set only for an unresolved/anomalous observation.  Successful reads do
+        // not encode or retain a PNG.
+        public byte[] OriginalScreenshotPng { get; set; }
     }
 
     public sealed class Fruit2048RunRequest
     {
         public int TargetTile { get; set; } = 2048;
         public bool AutoRefresh { get; set; }
+        // Applied only to the selected Teacher.  A value of zero is unlimited.
+        public int TeacherMoveLimit { get; set; } = 50;
+        public Fruit2048RunMode Mode { get; set; } = Fruit2048RunMode.Normal;
     }
 
     public sealed class Fruit2048Progress
@@ -205,6 +255,17 @@ namespace ADB_Tool_Automation_Post_FB.Core.Fruit2048
         public string LearningMessage { get; set; }
         public Fruit2048BootstrapState BootstrapState { get; set; }
         public int UnknownCellCount { get; set; }
+        public Fruit2048TransitionValidationStatus? TransitionStatus { get; set; }
+        public bool PendingTransition { get; set; }
+        public string TransitionId { get; set; }
+        public int SpawnCandidateCount { get; set; }
+        public int TransitionsTotal { get; set; }
+        public int TransitionsValid { get; set; }
+        public int TransitionsValidWithSpawn { get; set; }
+        public int TransitionsAmbiguous { get; set; }
+        public int TransitionsInvalid { get; set; }
+        public int TransitionRetries { get; set; }
+        public int LearningEvidenceAccepted { get; set; }
     }
 
     public sealed class Fruit2048RunResult
@@ -217,11 +278,67 @@ namespace ADB_Tool_Automation_Post_FB.Core.Fruit2048
         public bool WasCancelled { get; set; }
         public string Error { get; set; }
     }
+    public sealed class Fruit2048RuntimeSnapshot
+    {
+        public string DeviceName { get; set; }
+        public string FruitSessionId { get; set; }
+        public Fruit2048RuntimeState State { get; set; }
+        public Fruit2048RuntimeFailure Failure { get; set; }
+        public DateTimeOffset LastSuccessfulScreenshotUtc { get; set; }
+        public DateTimeOffset LastReliableBoardUtc { get; set; }
+        public DateTimeOffset LastMoveUtc { get; set; }
+        public DateTimeOffset LastValidatedTransitionUtc { get; set; }
+        public DateTimeOffset LastStateChangeUtc { get; set; }
+        public int NavigationRecoveryCount { get; set; }
+        public int MoveSequence { get; set; }
+        public string PauseReason { get; set; }
+    }
+    public sealed class Fruit2048BurnInMetrics
+    {
+        public int MovesIssued { get; set; }
+        public int BoardsRead { get; set; }
+        public int BoardsReliable { get; set; }
+        public int BoardReadRetries { get; set; }
+        public int UnknownCellEvents { get; set; }
+        public int FastPathCells { get; set; }
+        public int FallbackCells { get; set; }
+        public int TransitionsValid { get; set; }
+        public int TransitionsValidWithSpawn { get; set; }
+        public int TransitionsAmbiguous { get; set; }
+        public int TransitionsInvalid { get; set; }
+        public int LearningEvidenceAccepted { get; set; }
+        public int LearningConflicts { get; set; }
+        public int NavigationRecoveries { get; set; }
+        public int CaptureRecoveries { get; set; }
+        public long BoardRecognitionTotalMs { get; set; }
+        public long MaxBoardRecognitionMs { get; set; }
+        public long MoveCycleTotalMs { get; set; }
+        public long MaxMoveCycleMs { get; set; }
+        public double BoardReliabilityRate => BoardsRead == 0 ? 0d : (double)BoardsReliable / BoardsRead;
+        public double FastPathRate => (FastPathCells + FallbackCells) == 0 ? 0d : (double)FastPathCells / (FastPathCells + FallbackCells);
+        public double AverageBoardRecognitionMs => BoardsRead == 0 ? 0d : (double)BoardRecognitionTotalMs / BoardsRead;
+        public double AverageMoveCycleMs => MovesIssued == 0 ? 0d : (double)MoveCycleTotalMs / MovesIssued;
+    }
+    public sealed class Fruit2048BurnInReport
+    {
+        public string DeviceName { get; set; }
+        public string FruitSessionId { get; set; }
+        public DateTimeOffset StartedAtUtc { get; set; }
+        public DateTimeOffset EndedAtUtc { get; set; }
+        public int TargetMoves { get; set; }
+        public Fruit2048BurnInOutcome Outcome { get; set; }
+        public Fruit2048BurnInHealth Health { get; set; }
+        public Fruit2048BurnInRecommendation RecommendedNextAction { get; set; }
+        public string FailureReason { get; set; }
+        public Fruit2048BurnInMetrics Metrics { get; set; }
+    }
 
     public interface IFruit2048BoardReader
     {
         Fruit2048SeedAvailability SeedAvailability { get; }
         Task<Fruit2048BoardReadResult> ReadAsync(string deviceName, CancellationToken cancellationToken);
+        Task<Fruit2048BoardReadResult> ReadAsync(string deviceName, bool retainOriginalScreenshot,
+            CancellationToken cancellationToken);
         Task<bool> TryTapRefreshAsync(string deviceName, CancellationToken cancellationToken);
     }
 
@@ -248,6 +365,14 @@ namespace ADB_Tool_Automation_Post_FB.Core.Fruit2048
         bool CanLearn(string deviceName);
         Fruit2048LearningResult ObserveMerge(string deviceName, int tier, FruitTileVisualFingerprint fingerprint,
             string transitionId, int sourceTier, Fruit2048Move move, int sourceRow, int sourceColumn);
+    }
+    public interface IFruit2048TransitionValidator
+    {
+        Fruit2048TransitionValidationResult Validate(Fruit2048TransitionValidationRequest request);
+    }
+    public interface IFruit2048RuntimeSupervisor : IFruit2048AutomationService
+    {
+        Fruit2048RuntimeSnapshot GetSnapshot(string deviceName);
     }
 
     public interface IFruitTileLearningCatalog

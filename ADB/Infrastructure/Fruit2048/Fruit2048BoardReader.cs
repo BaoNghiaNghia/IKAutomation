@@ -40,6 +40,12 @@ namespace ADB_Tool_Automation_Post_FB.Infrastructure.Fruit2048
         public async Task<Fruit2048BoardReadResult> ReadAsync(string deviceName,
             CancellationToken cancellationToken)
         {
+            return await ReadAsync(deviceName, false, cancellationToken);
+        }
+
+        public async Task<Fruit2048BoardReadResult> ReadAsync(string deviceName,
+            bool retainOriginalScreenshot, CancellationToken cancellationToken)
+        {
             var stopwatch = Stopwatch.StartNew();
             IReadOnlyList<string> missing = catalog.MissingAssets;
             if (missing.Count > 0)
@@ -51,18 +57,10 @@ namespace ADB_Tool_Automation_Post_FB.Infrastructure.Fruit2048
                 using (CapturedFrame frame = await frameClient.CaptureFrameAsync(deviceName,
                     cancellationToken))
                 {
-                    ImageRegion titleRegion = profile.Scale(profile.TitleRegion, frame.Width, frame.Height);
                     ImageRegion boardRegion = profile.Scale(profile.BoardRegion, frame.Width, frame.Height);
-                    byte[] titleTemplate, boardTemplate;
-                    catalog.TryGet(Fruit2048TemplateCatalog.EventTitle, out titleTemplate);
-                    catalog.TryGet(Fruit2048TemplateCatalog.BoardAnchor, out boardTemplate);
-                    IReadOnlyList<ImageMatchResult> anchors = matcher.FindMany(frame,
-                        new[]
-                        {
-                            new ImageMatchRequest(titleTemplate, titleRegion),
-                            new ImageMatchRequest(boardTemplate, boardRegion)
-                        });
-                    if (!anchors.Any(match => match.Found))
+                    byte[] boardTemplate;
+                    if (!catalog.TryGet(Fruit2048TemplateCatalog.NavigationBoardAnchor, out boardTemplate)
+                        || !matcher.Find(frame, boardTemplate, boardRegion).Found)
                         return Failure(Fruit2048ScreenStatus.NotOpen, stopwatch,
                             "Không tìm thấy màn hình Lễ Hội Trái Cây.", missing);
 
@@ -93,6 +91,8 @@ namespace ADB_Tool_Automation_Post_FB.Infrastructure.Fruit2048
                     stopwatch.Stop();
                     Fruit2048BoardReadResult result = Fruit2048BoardAssembler.Assemble(
                         cells, stopwatch.ElapsedMilliseconds);
+                    if (retainOriginalScreenshot || !result.Success)
+                        result.OriginalScreenshotPng = frame.GetPngBytes();
                     result.MissingAssets = missing;
                     result.BoardRegion = boardRegion;
                     result.ScreenWidth = frame.Width;

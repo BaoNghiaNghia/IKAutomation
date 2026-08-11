@@ -19,6 +19,7 @@ namespace ADB_Tool_Automation_Post_FB.Infrastructure.Fruit2048
         public IFruitTileLearningCatalog LearningCatalog { get; set; }
         public IFruit2048SeedCalibrationService CalibrationService { get; set; }
         public IFruit2048LearningCoordinator LearningCoordinator { get; set; }
+        public Fruit2048LearningDiagnosticStore LearningDiagnosticStore { get; set; }
     }
 
     public static class Fruit2048FeatureFactory
@@ -45,20 +46,24 @@ namespace ADB_Tool_Automation_Post_FB.Infrastructure.Fruit2048
                 new Fruit2048ScreenProfile(), learningCatalog, logger);
             var navigation = new Fruit2048NavigationService(player, player, matcher, catalog,
                 new Fruit2048ScreenProfile(), logger);
+            var diagnosticStore = new Fruit2048LearningDiagnosticStore();
             var service = new Fruit2048AutomationService(player, reader,
                 new Fruit2048Solver(), new Fruit2048SwipeExecutor(player), ownership,
-                new Fruit2048TransitionLearner(learningCatalog, 5, learningCoordinator), learningCatalog, logger, navigation, learningCoordinator);
+                new Fruit2048TransitionLearner(learningCatalog, 5, learningCoordinator), learningCatalog, logger, navigation, learningCoordinator,
+                new Fruit2048TransitionValidator(), diagnosticStore);
+            var supervisor = new Fruit2048RuntimeSupervisor(service, logger);
             var calibration = new Fruit2048SeedCalibrationService(player, matcher, catalog,
                 new Fruit2048ScreenProfile(), learningCatalog, ownership, logger, navigation);
             return new Fruit2048Feature
             {
                 PlayerClient = player,
-                AutomationService = service,
+                AutomationService = supervisor,
                 OwnershipService = ownership,
                 TemplateCatalog = catalog,
                 LearningCatalog = learningCatalog,
                 CalibrationService = calibration,
-                LearningCoordinator = learningCoordinator
+                LearningCoordinator = learningCoordinator,
+                LearningDiagnosticStore = diagnosticStore
             };
         }
 

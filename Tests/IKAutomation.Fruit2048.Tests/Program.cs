@@ -90,6 +90,12 @@ internal static class Program
         Run("Calibration_SeedsPersistOutsideBuildOutput", CalibrationSeedsOutsideBuildOutput);
         Run("Calibration_UserSeedOverridesStaticSeed", CalibrationUserSeedWins);
         Run("Calibration_StaticSeedUsedWhenUserSeedAbsent", CalibrationStaticSeedFallback);
+        Run("Transition_ValidDeterministicMoveIsAccepted", TransitionValid);
+        Run("Transition_SpawnIsNotMergeEvidence", TransitionSpawnIsNotMergeEvidence);
+        Run("Transition_WrongKnownMergeResultIsInvalid", TransitionWrongMergeIsInvalid);
+        Run("Diagnostics_TerminalFailurePersistsOriginalScreenshot", DiagnosticsPersistsOriginalScreenshot);
+        Run("Diagnostics_ExportResolvesLatestDeviceFailure", DiagnosticsResolvesLatestDeviceFailure);
+        Run("Transition_UnknownMergeDestinationCanBeValidated", TransitionUnknownMergeDestination);
         Console.WriteLine($"Fruit2048 focused tests: {passed} passed, {failed} failed");
         return failed == 0 ? 0 : 1;
     }
@@ -102,6 +108,56 @@ internal static class Program
 
     private static void Assert(bool condition, string message = "Assertion failed")
     { if (!condition) throw new InvalidOperationException(message); }
+
+    private static Fruit2048TransitionValidationResult Validate(Fruit2048Board before,
+        Fruit2048BoardReadResult observed, Fruit2048Move move)
+    {
+        return new Fruit2048TransitionValidator().Validate(new Fruit2048TransitionValidationRequest
+        {
+            DeviceName = "Teacher", TransitionId = "transition-1", BoardBefore = before,
+            Move = move, ExpectedBoardAfterMove = before.Simulate(move),
+            MergeOperations = Fruit2048TransitionLearner.GetMergeOperations(before, move), Observed = observed
+        });
+    }
+
+    private static void TransitionValid()
+    {
+        Fruit2048Board before = Board(1, 1);
+        Fruit2048TransitionValidationResult result = Validate(before, KnownRead(before.Simulate(Fruit2048Move.Left)), Fruit2048Move.Left);
+        Assert(result.Status == Fruit2048TransitionValidationStatus.Valid && result.IsValidForLearning);
+    }
+
+    private static void TransitionSpawnIsNotMergeEvidence()
+    {
+        Fruit2048Board before = Board(1, 1);
+        Fruit2048Board after = before.Simulate(Fruit2048Move.Left);
+        int[] values = after.Values.ToArray(); values[3] = 1;
+        Fruit2048TransitionValidationResult result = Validate(before, KnownRead(new Fruit2048Board(values)), Fruit2048Move.Left);
+        Assert(result.Status == Fruit2048TransitionValidationStatus.ValidWithSpawn && result.SpawnCandidates == 1);
+    }
+
+    private static void TransitionWrongMergeIsInvalid()
+    {
+        Fruit2048Board before = Board(1, 1);
+        Fruit2048TransitionValidationResult result = Validate(before, KnownRead(Board(4)), Fruit2048Move.Left);
+        Assert(result.Status == Fruit2048TransitionValidationStatus.Invalid);
+    }
+
+    private static void TransitionUnknownMergeDestination()
+    {
+        Fruit2048Board before = Board(1, 1);
+        Fruit2048BoardReadResult observed = KnownRead(before.Simulate(Fruit2048Move.Left));
+        var cells = observed.Cells.Select(cell => new Fruit2048Cell
+        {
+            Row = cell.Row, Column = cell.Column, Bounds = cell.Bounds, Value = cell.Value,
+            Tier = cell.Tier, Confidence = cell.Confidence, Fingerprint = cell.Fingerprint
+        }).ToList();
+        cells[0].Value = null; cells[0].Tier = null;
+        observed = Fruit2048BoardAssembler.Assemble(cells, 1);
+        observed.ScreenStatus = Fruit2048ScreenStatus.Ready;
+        Fruit2048TransitionValidationResult result = Validate(before, observed, Fruit2048Move.Left);
+        Assert(result.Status == Fruit2048TransitionValidationStatus.Valid && result.UnknownCells == 1);
+    }
 
     private static DeviceAutomationOwnershipService NewOwnership() => new DeviceAutomationOwnershipService();
 
@@ -446,6 +502,29 @@ internal static class Program
         Assert(result.Outcome == Fruit2048Outcome.TargetReached && swipe.Count == 1);
     }
 
+    private static void DiagnosticsPersistsOriginalScreenshot()
+    {
+        string root = Path.Combine(Path.GetTempPath(), "IKAutomation", "Fruit2048DiagnosticTests", Guid.NewGuid().ToString("N"));
+        var store = new Fruit2048LearningDiagnosticStore(root);
+        byte[] original = TinyPng(Color.MediumPurple);
+        string path = store.Save("May_2", "session", "transition", "UnknownAfterRetries",
+            null, null, new[] { new Fruit2048BoardReadResult { OriginalScreenshotPng = original } });
+        string image = Path.Combine(path, "after_1.png");
+        Assert(File.Exists(Path.Combine(path, "metadata.json")) && File.Exists(image));
+        Assert(File.ReadAllBytes(image).SequenceEqual(original));
+    }
+
+    private static void DiagnosticsResolvesLatestDeviceFailure()
+    {
+        string root = Path.Combine(Path.GetTempPath(), "IKAutomation", "Fruit2048DiagnosticTests", Guid.NewGuid().ToString("N"));
+        var store = new Fruit2048LearningDiagnosticStore(root);
+        string first = store.Save("May_2", "s", "first", "failure", null, null, null);
+        Thread.Sleep(5);
+        string latest = store.Save("May_2", "s", "second", "failure", null, null, null);
+        Assert(!string.Equals(first, latest, StringComparison.Ordinal));
+        Assert(string.Equals(store.GetLatestForDevice("May_2"), latest, StringComparison.OrdinalIgnoreCase));
+    }
+
     private static Fruit2048BoardReadResult KnownRead(Fruit2048Board board) =>
         new Fruit2048BoardReadResult
         {
@@ -499,6 +578,7 @@ internal static class Program
             new Fruit2048SeedAvailability { EmptyAvailable = true, Tier1Available = true };
         public FakeReader(params Fruit2048Board[] boards) { this.boards = new Queue<Fruit2048Board>(boards); }
         public Task<Fruit2048BoardReadResult> ReadAsync(string d, CancellationToken c) { if (Throw) throw new InvalidOperationException("boom"); if (ForcedResults.Count > 0) return Task.FromResult(ForcedResults.Dequeue()); if (ForcedResult != null) return Task.FromResult(ForcedResult); var b = boards.Count > 1 ? boards.Dequeue() : boards.Peek(); return Task.FromResult(KnownRead(b)); }
+        public Task<Fruit2048BoardReadResult> ReadAsync(string d, bool retainOriginalScreenshot, CancellationToken c) => ReadAsync(d, c);
         public Task<bool> TryTapRefreshAsync(string d, CancellationToken c) => Task.FromResult(false);
     }
     private sealed class FakeSwipe : IFruit2048SwipeExecutor { public int Count; public Task ExecuteAsync(string d, Fruit2048Move m, ImageRegion r, int w, int h, CancellationToken c) { c.ThrowIfCancellationRequested(); Count++; return Task.CompletedTask; } }

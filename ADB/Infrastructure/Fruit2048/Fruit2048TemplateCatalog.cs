@@ -46,7 +46,9 @@ namespace ADB_Tool_Automation_Post_FB.Infrastructure.Fruit2048
             EmptySource = ResolveTilePath(0).Source,
             Tier1Source = ResolveTilePath(1).Source
         };
-        public IReadOnlyList<string> RequiredFileNames => new[] { EventTitle, BoardAnchor };
+        // The real board-frame anchor is the authoritative readiness signal.  Do not
+        // block runtime recognition on a separately cropped event-title asset.
+        public IReadOnlyList<string> RequiredFileNames => new[] { NavigationBoardAnchor };
         public IReadOnlyList<string> MissingAssets => RequiredFileNames
             .Where(name => !File.Exists(Path.Combine(root, name))).ToArray();
         public IReadOnlyList<int> AvailableSeedValues => TileValues

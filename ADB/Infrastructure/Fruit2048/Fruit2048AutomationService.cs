@@ -23,6 +23,8 @@ namespace ADB_Tool_Automation_Post_FB.Infrastructure.Fruit2048
         private readonly IDiagnosticLogger logger;
         private readonly IFruit2048NavigationService navigation;
         private readonly IFruit2048LearningCoordinator learningCoordinator;
+        private readonly IFruit2048TransitionValidator transitionValidator;
+        private readonly Fruit2048LearningDiagnosticStore diagnosticStore;
 
         public Fruit2048AutomationService(ILdPlayerClient playerClient,
             IFruit2048BoardReader reader, IFruit2048Solver solver,
@@ -30,7 +32,9 @@ namespace ADB_Tool_Automation_Post_FB.Infrastructure.Fruit2048
             IDeviceAutomationOwnershipService ownership,
             IFruit2048TransitionLearner transitionLearner,
             IFruitTileLearningCatalog learningCatalog, IDiagnosticLogger logger,
-            IFruit2048NavigationService navigation = null, IFruit2048LearningCoordinator learningCoordinator = null)
+            IFruit2048NavigationService navigation = null, IFruit2048LearningCoordinator learningCoordinator = null,
+            IFruit2048TransitionValidator transitionValidator = null,
+            Fruit2048LearningDiagnosticStore diagnosticStore = null)
         {
             this.playerClient = playerClient ?? throw new ArgumentNullException(nameof(playerClient));
             this.reader = reader ?? throw new ArgumentNullException(nameof(reader));
@@ -42,6 +46,8 @@ namespace ADB_Tool_Automation_Post_FB.Infrastructure.Fruit2048
             this.logger = logger;
             this.navigation = navigation;
             this.learningCoordinator = learningCoordinator;
+            this.transitionValidator = transitionValidator;
+            this.diagnosticStore = diagnosticStore;
         }
 
         public async Task<Fruit2048RunResult> RunAsync(string deviceName,
@@ -61,6 +67,8 @@ namespace ADB_Tool_Automation_Post_FB.Infrastructure.Fruit2048
             Fruit2048Board boardBeforeLastMove = null;
             Fruit2048Move? previousMove = null;
             string previousEvidenceId = null;
+            Fruit2048PendingTransition pendingTransition = null;
+            int teacherMoves = 0;
             Report(progress, deviceName, Fruit2048RuntimeStatus.Starting, null,
                 0, null, "Đang khởi động", null);
             LogDevice(deviceName, "Fruit2048", "Starting");
@@ -104,22 +112,54 @@ namespace ADB_Tool_Automation_Post_FB.Infrastructure.Fruit2048
 
                     Report(progress, deviceName, Fruit2048RuntimeStatus.Scanning, null,
                         moveCount, null, "Đang đọc bàn", null);
-                    Fruit2048BoardReadResult read = await reader.ReadAsync(deviceName, cancellationToken);
-                    if ((!read.Success || read.Board == null) && read.UnknownCells != null
-                        && read.UnknownCells.Count > 0)
+                    bool retainPostMoveFrame = boardBeforeLastMove != null && previousMove.HasValue;
+                    Fruit2048BoardReadResult read = await reader.ReadAsync(deviceName,
+                        retainPostMoveFrame, cancellationToken);
+                    if (boardBeforeLastMove != null && previousMove.HasValue && transitionValidator != null
+                        && learningCoordinator != null && learningCoordinator.CanLearn(deviceName))
                     {
                         var observations = new List<Fruit2048BoardReadResult> { read };
-                        for (int retry = 0; retry < 2 && observations.Last().UnknownCells.Count > 0; retry++)
+                        Fruit2048Board expected = boardBeforeLastMove.Simulate(previousMove.Value);
+                        IReadOnlyList<Fruit2048MergeOperation> merges = Fruit2048TransitionLearner.GetMergeOperations(
+                            boardBeforeLastMove, previousMove.Value);
+                        Fruit2048TransitionValidationResult validation = null;
+                        for (int retry = 0; retry < 3; retry++)
                         {
+                            Fruit2048BoardReadResult candidate = observations.Last();
+                            Report(progress, deviceName, Fruit2048RuntimeStatus.ValidatingTransition, candidate,
+                                moveCount, previousMove, "Đang xác minh nước đi", null);
+                            validation = transitionValidator.Validate(new Fruit2048TransitionValidationRequest
+                            {
+                                DeviceName = deviceName,
+                                TransitionId = previousEvidenceId,
+                                BoardBefore = boardBeforeLastMove,
+                                Move = previousMove.Value,
+                                ExpectedBoardAfterMove = expected,
+                                MergeOperations = merges,
+                                Observed = candidate
+                            });
+                            logger?.Info($"[Fruit2048 Transition] DeviceName='{deviceName}', TransitionId='{previousEvidenceId}', Retry={retry}, Status='{validation.Status}', SpawnCandidates={validation.SpawnCandidates}, UnknownCells={validation.UnknownCells}, Reason='{validation.Reason}'");
+                            if (validation.IsValidForLearning || validation.Status == Fruit2048TransitionValidationStatus.Invalid)
+                                break;
+                            if (retry == 2) break;
                             await Task.Delay(200, cancellationToken);
-                            observations.Add(await reader.ReadAsync(deviceName, cancellationToken));
+                            observations.Add(await reader.ReadAsync(deviceName, true, cancellationToken));
                         }
                         read = observations.Last();
-                        IReadOnlyList<Fruit2048LearningResult> learning = boardBeforeLastMove != null
-                            && previousMove.HasValue
-                            ? transitionLearner.Learn(deviceName, boardBeforeLastMove,
-                                previousMove.Value, observations, previousEvidenceId)
-                            : new Fruit2048LearningResult[0];
+                        if (!validation.IsValidForLearning)
+                        {
+                            string diagnosticPath = diagnosticStore?.Save(deviceName, teacherSession, previousEvidenceId,
+                                validation.Reason, boardBeforeLastMove, expected, observations);
+                            logger?.Info($"[Fruit2048 Learning Diagnostics] DeviceName='{deviceName}', TransitionId='{previousEvidenceId}', Path='{diagnosticPath}'");
+                            Report(progress, deviceName, Fruit2048RuntimeStatus.Failed, read, moveCount, previousMove,
+                                "Transition không khớp simulator — đã tạm dừng.", validation.Reason);
+                            return Result(deviceName, Fruit2048Outcome.BoardReadFailed, moveCount, highestTile,
+                                request.TargetTile, false, validation.Reason);
+                        }
+
+                        // This is the sole point at which a Teacher can submit merge evidence.
+                        IReadOnlyList<Fruit2048LearningResult> learning = transitionLearner.Learn(deviceName,
+                            boardBeforeLastMove, previousMove.Value, observations, previousEvidenceId);
                         foreach (Fruit2048LearningResult item in learning)
                             logger?.Info($"[Fruit2048 Learning] DeviceName='{deviceName}', "
                                 + $"Tier={item.Tier}, State='{item.State}', SampleCount={item.SampleCount}, "
@@ -135,7 +175,11 @@ namespace ADB_Tool_Automation_Post_FB.Infrastructure.Fruit2048
                         }
                         else
                         {
-                            read = ApplyDeterministicLearning(observations.Last(), learning);
+                            // A validated merge result may be used for this in-memory
+                            // board only.  This unblocks safe next-move simulation when
+                            // the visual sample was too weak to enter the catalog.
+                            read = ApplyValidatedMergeDestinations(observations.Last(), validation);
+                            read = ApplyDeterministicLearning(read, learning);
                             if (learning.Count > 0)
                             {
                                 Fruit2048LearningSnapshot snapshot = learningCatalog.Snapshot;
@@ -149,6 +193,21 @@ namespace ADB_Tool_Automation_Post_FB.Infrastructure.Fruit2048
                                     LearningMessage(learning.Last()), null);
                             }
                         }
+                        boardBeforeLastMove = null;
+                        previousMove = null;
+                        previousEvidenceId = null;
+                        pendingTransition = null;
+                    }
+                    else if ((!read.Success || read.Board == null) && read.UnknownCells != null
+                        && read.UnknownCells.Count > 0)
+                    {
+                        // Consumers are read-only.  They retain the existing bounded
+                        // capture retry, but never submit catalog evidence.
+                        for (int retry = 0; retry < 2 && read.UnknownCells.Count > 0; retry++)
+                        {
+                            await Task.Delay(200, cancellationToken);
+                            read = await reader.ReadAsync(deviceName, cancellationToken);
+                        }
                     }
                     highestTile = Math.Max(highestTile, read.HighestTile);
                     if (!read.Success || read.Board == null || !read.BoardRegion.HasValue)
@@ -160,6 +219,12 @@ namespace ADB_Tool_Automation_Post_FB.Infrastructure.Fruit2048
                         bool learningConflict = !string.IsNullOrWhiteSpace(read.Error)
                             && read.Error.StartsWith("LearningConflict", StringComparison.Ordinal);
                         string failureMessage = hasUnknownCells ? unknownMessage : read.Error;
+                        if (hasUnknownCells)
+                        {
+                            string diagnosticPath = diagnosticStore?.Save(deviceName, teacherSession, previousEvidenceId,
+                                failureMessage, boardBeforeLastMove, null, new[] { read });
+                            logger?.Info($"[Fruit2048 Learning Diagnostics] DeviceName='{deviceName}', TransitionId='{previousEvidenceId}', Path='{diagnosticPath}'");
+                        }
                         Report(progress, deviceName,
                             hasUnknownCells ? Fruit2048RuntimeStatus.NeedsFreshBoard
                                 : Fruit2048RuntimeStatus.BoardUnknown,
@@ -204,21 +269,52 @@ namespace ADB_Tool_Automation_Post_FB.Infrastructure.Fruit2048
                     }
 
                     refreshUsedForCurrentDeadBoard = false;
+                    if (teacherSession != null && request.TeacherMoveLimit > 0
+                        && teacherMoves >= request.TeacherMoveLimit)
+                    {
+                        const string moveLimitMessage = "Đã đạt giới hạn lượt học.";
+                        Report(progress, deviceName, Fruit2048RuntimeStatus.Idle, read,
+                            moveCount, null, moveLimitMessage, null);
+                        return Result(deviceName, Fruit2048Outcome.MoveLimitReached, moveCount,
+                            read.HighestTile, request.TargetTile, false, moveLimitMessage);
+                    }
+                    if (pendingTransition != null)
+                    {
+                        const string pendingMessage = "Transition trước chưa được xác minh.";
+                        Report(progress, deviceName, Fruit2048RuntimeStatus.Failed, read,
+                            moveCount, previousMove, pendingMessage, pendingMessage);
+                        return Result(deviceName, Fruit2048Outcome.BoardReadFailed, moveCount,
+                            read.HighestTile, request.TargetTile, false, pendingMessage);
+                    }
                     boardBeforeLastMove = read.Board;
                     previousMove = move;
                     previousEvidenceId = deviceName + ":" + DateTimeOffset.UtcNow.Ticks
                         + ":" + (moveCount + 1);
+                    if (teacherSession != null)
+                        pendingTransition = new Fruit2048PendingTransition
+                        {
+                            DeviceName = deviceName,
+                            TransitionId = previousEvidenceId,
+                            BoardBefore = boardBeforeLastMove,
+                            Move = move,
+                            ExpectedBoardAfterMove = boardBeforeLastMove.Simulate(move),
+                            MergeOperations = Fruit2048TransitionLearner.GetMergeOperations(boardBeforeLastMove, move),
+                            StartedAtUtc = DateTimeOffset.UtcNow
+                        };
                     var stopwatch = Stopwatch.StartNew();
                     await swipeExecutor.ExecuteAsync(deviceName, move, read.BoardRegion.Value,
                         read.ScreenWidth, read.ScreenHeight, cancellationToken);
                     stopwatch.Stop();
                     moveCount++;
+                    if (teacherSession != null) teacherMoves++;
                     logger?.Info($"[Fruit2048 Move] DeviceName='{deviceName}', "
                         + $"MoveNumber={moveCount}, Move='{move}', HighestTileBefore={read.HighestTile}, "
                         + $"EmptyCellsBefore={read.Board.EmptyCellCount}, SwipeSent=true, "
                         + $"DurationMs={stopwatch.ElapsedMilliseconds}");
                     Report(progress, deviceName, Fruit2048RuntimeStatus.Playing, read,
                         moveCount, move, "Đang chơi Fruit 2048", null);
+                    Report(progress, deviceName, Fruit2048RuntimeStatus.WaitingPostMove, read,
+                        moveCount, move, "Đang chờ xác minh nước đi", null);
                     await Task.Delay(200, cancellationToken);
                 }
             }
@@ -330,6 +426,37 @@ namespace ADB_Tool_Automation_Post_FB.Infrastructure.Fruit2048
                 ? (resolved.Learning.Mode == Fruit2048RecognitionMode.Fast
                     ? Fruit2048BootstrapState.Ready : Fruit2048BootstrapState.Learning)
                 : Fruit2048BootstrapState.NeedsFreshBoard;
+            return resolved;
+        }
+
+        private Fruit2048BoardReadResult ApplyValidatedMergeDestinations(
+            Fruit2048BoardReadResult observation, Fruit2048TransitionValidationResult validation)
+        {
+            if (observation?.Cells == null || validation?.MergeDestinations == null)
+                return observation;
+            var cells = observation.Cells.Select(cell => new Fruit2048Cell
+            {
+                Row = cell.Row, Column = cell.Column, Bounds = cell.Bounds,
+                Tier = cell.Tier, Value = cell.Value, Confidence = cell.Confidence,
+                RecognitionSource = cell.RecognitionSource, Fingerprint = cell.Fingerprint
+            }).ToList();
+            foreach (Fruit2048MergeOperation merge in validation.MergeDestinations)
+            {
+                Fruit2048Cell cell = cells.FirstOrDefault(value => value.Row == merge.DestinationRow
+                    && value.Column == merge.DestinationColumn);
+                if (cell == null || cell.Value.HasValue) continue;
+                cell.Tier = merge.ResultTier;
+                cell.Value = FruitTierCatalog.ToValue(merge.ResultTier);
+                cell.Confidence = 1.0;
+            }
+            Fruit2048BoardReadResult resolved = Fruit2048BoardAssembler.Assemble(cells, observation.DurationMs);
+            resolved.ScreenStatus = observation.ScreenStatus;
+            resolved.MissingAssets = observation.MissingAssets;
+            resolved.BoardRegion = observation.BoardRegion;
+            resolved.ScreenWidth = observation.ScreenWidth;
+            resolved.ScreenHeight = observation.ScreenHeight;
+            resolved.Learning = learningCatalog.Snapshot;
+            resolved.BootstrapState = Fruit2048BootstrapState.Learning;
             return resolved;
         }
 

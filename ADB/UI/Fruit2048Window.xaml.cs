@@ -15,6 +15,7 @@ using System.Windows.Controls;
 using System.Windows.Media;
 using System.Windows.Threading;
 using System.IO;
+using System.Diagnostics;
 
 namespace ADB_Tool_Automation_Post_FB.UI
 {
@@ -27,6 +28,7 @@ namespace ADB_Tool_Automation_Post_FB.UI
         private readonly Fruit2048TemplateCatalog templateCatalog;
         private readonly IFruit2048SeedCalibrationService calibration;
         private readonly IFruit2048LearningCoordinator learningCoordinator;
+        private readonly Fruit2048LearningDiagnosticStore learningDiagnosticStore;
         private readonly ObservableCollection<Fruit2048DeviceItem> devices =
             new ObservableCollection<Fruit2048DeviceItem>();
         private readonly DispatcherTimer refreshTimer;
@@ -46,6 +48,7 @@ namespace ADB_Tool_Automation_Post_FB.UI
             templateCatalog = feature.TemplateCatalog;
             calibration = feature.CalibrationService;
             learningCoordinator = feature.LearningCoordinator;
+            learningDiagnosticStore = feature.LearningDiagnosticStore;
             DeviceList.ItemsSource = devices;
             BoardItems.ItemsSource = Enumerable.Repeat("?", 16).ToArray();
             ownership.OwnershipChanged += Ownership_OwnershipChanged;
@@ -134,6 +137,13 @@ namespace ADB_Tool_Automation_Post_FB.UI
         private void StartDevice(Fruit2048DeviceItem item)
         {
             if (item == null || !item.CanSelect || item.IsRunning) return;
+            if (RunModeCombo.SelectedIndex == 1 && !string.Equals(learningCoordinator.Teacher?.DeviceName,
+                item.DeviceName, StringComparison.OrdinalIgnoreCase))
+            {
+                item.LearningMessage = "Burn-in chỉ chạy trên thiết bị học đã chọn.";
+                UpdateDetail(item);
+                return;
+            }
             if (!templateCatalog.SeedAvailability.IsReady)
             {
                 item.Status = Fruit2048RuntimeStatus.MissingSeeds;
@@ -153,7 +163,9 @@ namespace ADB_Tool_Automation_Post_FB.UI
             var request = new Fruit2048RunRequest
             {
                 TargetTile = target,
-                AutoRefresh = AutoRefreshCheck.IsChecked == true
+                AutoRefresh = AutoRefreshCheck.IsChecked == true,
+                TeacherMoveLimit = ParseTeacherMoveLimit(),
+                Mode = RunModeCombo.SelectedIndex == 1 ? Fruit2048RunMode.BurnIn : Fruit2048RunMode.Normal
             };
             var progress = new Progress<Fruit2048Progress>(value => ApplyProgress(item, value));
             item.RunningTask = RunDeviceAsync(item, request, progress, item.Cancellation.Token);
@@ -190,6 +202,13 @@ namespace ADB_Tool_Automation_Post_FB.UI
                     UpdateDetail(item);
                 });
             }
+        }
+
+        private int ParseTeacherMoveLimit()
+        {
+            ComboBoxItem selected = TeacherMoveLimitCombo.SelectedItem as ComboBoxItem;
+            int limit;
+            return selected != null && int.TryParse(selected.Content?.ToString(), out limit) ? limit : 0;
         }
 
         private void ApplyProgress(Fruit2048DeviceItem item, Fruit2048Progress progress)
@@ -341,6 +360,19 @@ namespace ADB_Tool_Automation_Post_FB.UI
                 "Fruit 2048", MessageBoxButton.OK, MessageBoxImage.Information);
         }
 
+        private void ExportLastFailure_Click(object sender, RoutedEventArgs e)
+        {
+            Fruit2048DeviceItem item = DeviceList.SelectedItem as Fruit2048DeviceItem;
+            string folder = item == null ? null : learningDiagnosticStore?.GetLatestForDevice(item.DeviceName);
+            if (string.IsNullOrWhiteSpace(folder) || !Directory.Exists(folder))
+            {
+                MessageBox.Show(this, "Chưa có lỗi Fruit2048 được lưu cho thiết bị này.", "Fruit 2048",
+                    MessageBoxButton.OK, MessageBoxImage.Information);
+                return;
+            }
+            Process.Start(new ProcessStartInfo { FileName = folder, UseShellExecute = true });
+        }
+
         private void SetTeacher_Click(object sender, RoutedEventArgs e)
         {
             Fruit2048DeviceItem item = DeviceList.SelectedItem as Fruit2048DeviceItem;
@@ -400,6 +432,8 @@ namespace ADB_Tool_Automation_Post_FB.UI
             StartButton.IsEnabled = item != null && item.CanSelect
                 && templateCatalog.SeedAvailability.IsReady;
             StopButton.IsEnabled = item != null && item.IsRunning;
+            ExportLastFailureButton.IsEnabled = item != null
+                && !string.IsNullOrWhiteSpace(learningDiagnosticStore?.GetLatestForDevice(item.DeviceName));
         }
 
         private Fruit2048DeviceItem Find(string deviceName) => devices.FirstOrDefault(item =>

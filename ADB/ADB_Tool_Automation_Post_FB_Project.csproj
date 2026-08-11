@@ -262,6 +262,9 @@
     <Compile Include="Infrastructure\Fruit2048\Fruit2048BoardReader.cs" />
     <Compile Include="Infrastructure\Fruit2048\Fruit2048FeatureFactory.cs" />
     <Compile Include="Infrastructure\Fruit2048\Fruit2048LearningCoordinator.cs" />
+    <Compile Include="Infrastructure\Fruit2048\Fruit2048TransitionValidator.cs" />
+    <Compile Include="Infrastructure\Fruit2048\Fruit2048RuntimeSupervisor.cs" />
+    <Compile Include="Infrastructure\Fruit2048\Fruit2048LearningDiagnosticStore.cs" />
     <Compile Include="Infrastructure\Fruit2048\Fruit2048CalibratedSeedStore.cs" />
     <Compile Include="Infrastructure\Fruit2048\Fruit2048NavigationService.cs" />
     <Compile Include="Infrastructure\Fruit2048\Fruit2048SeedCalibrationService.cs" />
