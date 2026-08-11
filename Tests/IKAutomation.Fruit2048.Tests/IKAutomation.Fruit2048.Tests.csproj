@@ -1,0 +1,25 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <OutputType>Exe</OutputType>
+    <TargetFramework>net481</TargetFramework>
+    <AssemblyName>IKAutomation.Fruit2048.Tests</AssemblyName>
+  </PropertyGroup>
+  <ItemGroup>
+    <Reference Include="System.Drawing" />
+    <Reference Include="System.Runtime.Serialization" />
+  </ItemGroup>
+  <ItemGroup>
+    <Compile Include="..\..\ADB\Core\Abstractions\ILdPlayerClient.cs" Link="Production\ILdPlayerClient.cs" />
+    <Compile Include="..\..\ADB\Core\Concurrency\IDeviceAutomationOwnershipService.cs" Link="Production\IDeviceAutomationOwnershipService.cs" />
+    <Compile Include="..\..\ADB\Core\Diagnostics\IDiagnosticLogger.cs" Link="Production\IDiagnosticLogger.cs" />
+    <Compile Include="..\..\ADB\Core\Fruit2048\*.cs" Link="Production\Fruit2048\%(Filename)%(Extension)" />
+    <Compile Include="..\..\ADB\Core\Vision\ImageRegion.cs" Link="Production\ImageRegion.cs" />
+    <Compile Include="..\..\ADB\Infrastructure\Concurrency\DeviceAutomationOwnershipService.cs" Link="Production\DeviceAutomationOwnershipService.cs" />
+    <Compile Include="..\..\ADB\Infrastructure\Fruit2048\Fruit2048AutomationService.cs" Link="Production\Fruit2048AutomationService.cs" />
+    <Compile Include="..\..\ADB\Infrastructure\Fruit2048\Fruit2048CalibratedSeedStore.cs" Link="Production\Fruit2048CalibratedSeedStore.cs" />
+    <Compile Include="..\..\ADB\Infrastructure\Fruit2048\Fruit2048ScreenProfile.cs" Link="Production\Fruit2048ScreenProfile.cs" />
+    <Compile Include="..\..\ADB\Infrastructure\Fruit2048\Fruit2048TemplateCatalog.cs" Link="Production\Fruit2048TemplateCatalog.cs" />
+    <Compile Include="..\..\ADB\Infrastructure\Fruit2048\FruitTileFingerprint.cs" Link="Production\FruitTileFingerprint.cs" />
+    <Compile Include="..\..\ADB\Infrastructure\Fruit2048\FruitTileLearningCatalog.cs" Link="Production\FruitTileLearningCatalog.cs" />
+  </ItemGroup>
+</Project>

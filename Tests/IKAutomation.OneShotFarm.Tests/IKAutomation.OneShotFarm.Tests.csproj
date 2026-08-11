@@ -5,6 +5,7 @@
     <Compile Include="..\..\ADB\Core\Abstractions\ILdPlayerClient.cs" Link="Production\ILdPlayerClient.cs" />
     <Compile Include="..\..\ADB\Core\Abstractions\IFrameCapturingLdPlayerClient.cs" Link="Production\IFrameCapturingLdPlayerClient.cs" />
     <Compile Include="..\..\ADB\Core\Concurrency\IDeviceOperationLock.cs" Link="Production\IDeviceOperationLock.cs" />
+    <Compile Include="..\..\ADB\Core\Concurrency\IDeviceAutomationOwnershipService.cs" Link="Production\IDeviceAutomationOwnershipService.cs" />
     <Compile Include="..\..\ADB\Core\Diagnostics\IDiagnosticLogger.cs" Link="Production\IDiagnosticLogger.cs" />
     <Compile Include="..\..\ADB\Core\RuntimePressureMetrics.cs" Link="Production\RuntimePressureMetrics.cs" />
     <Compile Include="..\..\ADB\Core\ScreenshotCaptureMetrics.cs" Link="Production\ScreenshotCaptureMetrics.cs" />
@@ -18,6 +19,7 @@
     <Compile Include="..\..\ADB\Core\Vision\*.cs" Link="Production\Vision\%(Filename)%(Extension)" />
     <Compile Include="..\..\ADB\Core\Workflows\*.cs" Link="Production\Workflows\%(Filename)%(Extension)" />
     <Compile Include="..\..\ADB\Infrastructure\Concurrency\DeviceOperationLock.cs" Link="Production\DeviceOperationLock.cs" />
+    <Compile Include="..\..\ADB\Infrastructure\Concurrency\DeviceAutomationOwnershipService.cs" Link="Production\DeviceAutomationOwnershipService.cs" />
     <Compile Include="..\..\ADB\Infrastructure\Workflows\OneShotFarmWorkflow.cs" Link="Production\OneShotFarmWorkflow.cs" />
     <Compile Include="..\..\ADB\Infrastructure\Workflows\OneShotFarmDiagnosticService.cs" Link="Production\OneShotFarmDiagnosticService.cs" />
     <Compile Include="..\..\ADB\Infrastructure\Diagnostics\ScreenshotPathPolicy.cs" Link="Production\ScreenshotPathPolicy.cs" />

@@ -87,7 +87,9 @@ namespace ADB_Tool_Automation_Post_FB.Infrastructure.Vision
                 { TemplateId.TeamSelected, Define(TemplateId.TeamSelected, "Teams/team_selected.png") },
                 { TemplateId.WorldMapTeamReadyAnchor, Define(TemplateId.WorldMapTeamReadyAnchor, "Teams/world_map_team_ready_anchor.png") },
                 { TemplateId.NetworkError, Define(TemplateId.NetworkError, "Errors/network_error.png") },
-                { TemplateId.ReconnectButton, Define(TemplateId.ReconnectButton, "Errors/reconnect_button.png") }
+                { TemplateId.ReconnectButton, Define(TemplateId.ReconnectButton, "Errors/reconnect_button.png") },
+                { TemplateId.Fruit2048TileEmpty, Define(TemplateId.Fruit2048TileEmpty, "Fruit2048/tile_empty.png") },
+                { TemplateId.Fruit2048TileTier1, Define(TemplateId.Fruit2048TileTier1, "Fruit2048/tile_1.png") }
             };
 
         private readonly string rootDirectory;

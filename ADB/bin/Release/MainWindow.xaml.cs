@@ -12,6 +12,8 @@ using ADB_Tool_Automation_Post_FB.Infrastructure.ResourceSearch;
 using ADB_Tool_Automation_Post_FB.Infrastructure.ResourcePopup;
 using ADB_Tool_Automation_Post_FB.Infrastructure.TeamSelection;
 using ADB_Tool_Automation_Post_FB.Infrastructure.Workflows;
+using ADB_Tool_Automation_Post_FB.Infrastructure.Fruit2048;
+using ADB_Tool_Automation_Post_FB.Infrastructure.Concurrency;
 using ADB_Tool_Automation_Post_FB.UI;
 using Auto_LDPlayer;
 using Auto_LDPlayer.Enums;
@@ -35,6 +37,7 @@ namespace ADB_Tool_Automation_Post_FB
     public partial class MainWindow : Window
     {
         private DeviceDiagnosticWindow farmControlWindow;
+        private Fruit2048Window fruit2048Window;
         private static readonly MediaBrush FarmControlClosedBrush =
             new SolidColorBrush(System.Windows.Media.Color.FromRgb(126, 87, 194));
         private static readonly MediaBrush FarmControlOpenBrush =
@@ -222,6 +225,7 @@ namespace ADB_Tool_Automation_Post_FB
                 return;
             }
 
+            DeviceAutomationOwnershipService.Shared.SetLogger(new ApplicationDiagnosticLogger());
             AdaptiveConcurrencyConfigurationResult adaptiveConfiguration =
                 AppConfigAdaptiveConcurrencyOptionsProvider.LoadConfiguration();
             foreach (string warning in adaptiveConfiguration.Warnings)
@@ -265,6 +269,24 @@ namespace ADB_Tool_Automation_Post_FB
         {
             farmControlWindow = null;
             SetFarmControlButtonOpen(false);
+        }
+
+        private void Button_Click_Fruit2048(object sender, RoutedEventArgs e)
+        {
+            if (fruit2048Window != null)
+            {
+                if (fruit2048Window.WindowState == WindowState.Minimized)
+                    fruit2048Window.WindowState = WindowState.Normal;
+                fruit2048Window.Show();
+                fruit2048Window.Activate();
+                return;
+            }
+            fruit2048Window = new Fruit2048Window(Fruit2048FeatureFactory.Create())
+            {
+                Owner = this
+            };
+            fruit2048Window.Closed += (closedSender, closedArgs) => fruit2048Window = null;
+            fruit2048Window.Show();
         }
 
         private void SetFarmControlButtonOpen(bool isOpen)

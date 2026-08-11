@@ -73,6 +73,14 @@
       <Generator>MSBuild:Compile</Generator>
       <SubType>Designer</SubType>
     </Page>
+    <Page Include="UI\Fruit2048Window.xaml">
+      <Generator>MSBuild:Compile</Generator>
+      <SubType>Designer</SubType>
+    </Page>
+    <Page Include="UI\Fruit2048CalibrationWindow.xaml">
+      <Generator>MSBuild:Compile</Generator>
+      <SubType>Designer</SubType>
+    </Page>
     <Compile Include="App.xaml.cs">
       <DependentUpon>App.xaml</DependentUpon>
       <SubType>Code</SubType>
@@ -81,6 +89,13 @@
     <Compile Include="Core\Abstractions\IFrameCapturingLdPlayerClient.cs" />
     <Compile Include="Core\Abstractions\IFocusedInputValueReader.cs" />
     <Compile Include="Core\Concurrency\IDeviceOperationLock.cs" />
+    <Compile Include="Core\Concurrency\IDeviceAutomationOwnershipService.cs" />
+    <Compile Include="Core\Fruit2048\Fruit2048Board.cs" />
+    <Compile Include="Core\Fruit2048\Fruit2048BoardAssembler.cs" />
+    <Compile Include="Core\Fruit2048\Fruit2048DeviceAvailability.cs" />
+    <Compile Include="Core\Fruit2048\Fruit2048Models.cs" />
+    <Compile Include="Core\Fruit2048\Fruit2048Solver.cs" />
+    <Compile Include="Core\Fruit2048\Fruit2048TransitionLearner.cs" />
     <Compile Include="Core\Diagnostics\DeviceDiagnosticOptions.cs" />
     <Compile Include="Core\Diagnostics\DeviceDiagnosticResult.cs" />
     <Compile Include="Core\Diagnostics\IDeviceDiagnosticService.cs" />
@@ -242,6 +257,19 @@
     <Compile Include="Infrastructure\Diagnostics\ScreenshotMetadataJson.cs" />
     <Compile Include="Infrastructure\Diagnostics\ScreenshotPathPolicy.cs" />
     <Compile Include="Infrastructure\Concurrency\DeviceOperationLock.cs" />
+    <Compile Include="Infrastructure\Concurrency\DeviceAutomationOwnershipService.cs" />
+    <Compile Include="Infrastructure\Fruit2048\Fruit2048AutomationService.cs" />
+    <Compile Include="Infrastructure\Fruit2048\Fruit2048BoardReader.cs" />
+    <Compile Include="Infrastructure\Fruit2048\Fruit2048FeatureFactory.cs" />
+    <Compile Include="Infrastructure\Fruit2048\Fruit2048LearningCoordinator.cs" />
+    <Compile Include="Infrastructure\Fruit2048\Fruit2048CalibratedSeedStore.cs" />
+    <Compile Include="Infrastructure\Fruit2048\Fruit2048NavigationService.cs" />
+    <Compile Include="Infrastructure\Fruit2048\Fruit2048SeedCalibrationService.cs" />
+    <Compile Include="Infrastructure\Fruit2048\Fruit2048ScreenProfile.cs" />
+    <Compile Include="Infrastructure\Fruit2048\Fruit2048SwipeExecutor.cs" />
+    <Compile Include="Infrastructure\Fruit2048\Fruit2048TemplateCatalog.cs" />
+    <Compile Include="Infrastructure\Fruit2048\FruitTileFingerprint.cs" />
+    <Compile Include="Infrastructure\Fruit2048\FruitTileLearningCatalog.cs" />
     <Compile Include="Infrastructure\GameDetection\AppConfigGameDetectionOptionsProvider.cs" />
     <Compile Include="Infrastructure\GameDetection\GameStateDetector.cs" />
     <Compile Include="Infrastructure\GameDetection\GameStateDetectorFactory.cs" />
@@ -323,6 +351,14 @@
       <DependentUpon>DeviceDiagnosticWindow.xaml</DependentUpon>
       <SubType>Code</SubType>
     </Compile>
+    <Compile Include="UI\Fruit2048Window.xaml.cs">
+      <DependentUpon>Fruit2048Window.xaml</DependentUpon>
+      <SubType>Code</SubType>
+    </Compile>
+    <Compile Include="UI\Fruit2048CalibrationWindow.xaml.cs">
+      <DependentUpon>Fruit2048CalibrationWindow.xaml</DependentUpon>
+      <SubType>Code</SubType>
+    </Compile>
   </ItemGroup>
   <ItemGroup>
     <Compile Include="Models\LegacyFacebookModels.cs" />
@@ -398,6 +434,7 @@
     <None Include="Data\InfinityKingdom\1280x720\vi\Resources\.gitkeep" />
     <None Include="Data\InfinityKingdom\1280x720\vi\Search\.gitkeep" />
     <None Include="Data\InfinityKingdom\1280x720\vi\Teams\.gitkeep" />
+    <None Include="Data\InfinityKingdom\1280x720\vi\Fruit2048\.gitkeep" />
   </ItemGroup>
   <ItemGroup />
   <Import Project="$(MSBuildToolsPath)\Microsoft.CSharp.targets" />

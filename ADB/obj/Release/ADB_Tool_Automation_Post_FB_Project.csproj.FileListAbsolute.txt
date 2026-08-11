@@ -383,7 +383,6 @@ D:\Bot_Tool_Auto_Game\IKAutomation\ADB\bin\Release\ADB_Tool_Automation_Post_FB.p
 D:\Bot_Tool_Auto_Game\IKAutomation\ADB\bin\Release\Auto_LDPlayer.dll
 D:\Bot_Tool_Auto_Game\IKAutomation\ADB\bin\Release\KAutoHelper.dll
 D:\Bot_Tool_Auto_Game\IKAutomation\ADB\bin\Release\Tesseract.dll
-D:\Bot_Tool_Auto_Game\IKAutomation\ADB\bin\Release\Emgu.CV.World.dll
 D:\Bot_Tool_Auto_Game\IKAutomation\ADB\obj\Release\ADB_Tool_Automation_Post_FB_Project.csproj.AssemblyReference.cache
 D:\Bot_Tool_Auto_Game\IKAutomation\ADB\obj\Release\MainWindow.baml
 D:\Bot_Tool_Auto_Game\IKAutomation\ADB\obj\Release\UI\DeviceDiagnosticWindow.baml
@@ -399,7 +398,12 @@ D:\Bot_Tool_Auto_Game\IKAutomation\ADB\obj\Release\ADB_Tool_Automation_Post_FB_P
 D:\Bot_Tool_Auto_Game\IKAutomation\ADB\obj\Release\ADB_Tool.B37E936E.Up2Date
 D:\Bot_Tool_Auto_Game\IKAutomation\ADB\obj\Release\ADB_Tool_Automation_Post_FB.exe
 D:\Bot_Tool_Auto_Game\IKAutomation\ADB\obj\Release\ADB_Tool_Automation_Post_FB.pdb
+D:\Bot_Tool_Auto_Game\IKAutomation\ADB\obj\Release\UI\Fruit2048Window.baml
+D:\Bot_Tool_Auto_Game\IKAutomation\ADB\obj\Release\UI\Fruit2048Window.g.cs
+D:\Bot_Tool_Auto_Game\IKAutomation\ADB\obj\Release\UI\Fruit2048CalibrationWindow.baml
+D:\Bot_Tool_Auto_Game\IKAutomation\ADB\obj\Release\UI\Fruit2048CalibrationWindow.g.cs
 D:\Bot_Tool_Auto_Game\IKAutomation\ADB\bin\Release\Emgu.CV.UI.dll
+D:\Bot_Tool_Auto_Game\IKAutomation\ADB\bin\Release\Emgu.CV.World.dll
 D:\Bot_Tool_Auto_Game\IKAutomation\ADB\bin\Release\ZedGraph.dll
 D:\Bot_Tool_Auto_Game\IKAutomation\ADB\bin\Release\de\ZedGraph.resources.dll
 D:\Bot_Tool_Auto_Game\IKAutomation\ADB\bin\Release\es\ZedGraph.resources.dll

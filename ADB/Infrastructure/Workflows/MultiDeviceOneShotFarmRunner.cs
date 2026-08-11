@@ -1,6 +1,8 @@
 using ADB_Tool_Automation_Post_FB.Core.Workflows;
 using ADB_Tool_Automation_Post_FB.Core.TeamSelection;
 using ADB_Tool_Automation_Post_FB.Core.Diagnostics;
+using ADB_Tool_Automation_Post_FB.Core.Concurrency;
+using ADB_Tool_Automation_Post_FB.Infrastructure.Concurrency;
 using System;
 using System.Collections.Generic;
 using System.Diagnostics;
@@ -22,6 +24,7 @@ namespace ADB_Tool_Automation_Post_FB.Infrastructure.Workflows
         private readonly Action<string> infoLogger;
         private readonly MultiDeviceOneShotFarmRunnerOptions options;
         private readonly Func<int, CancellationToken, Task> requeueDelayAsync;
+        private readonly IDeviceAutomationOwnershipService ownershipService;
 
         public MultiDeviceOneShotFarmRunner(Func<IOneShotFarmWorkflow> workflowFactory,
             int maximumConcurrency = MaximumSupportedConcurrency)
@@ -41,7 +44,8 @@ namespace ADB_Tool_Automation_Post_FB.Infrastructure.Workflows
             int maximumConcurrency, IAdaptiveConcurrencyGate adaptiveConcurrencyGate,
             Action<string> infoLogger = null,
             MultiDeviceOneShotFarmRunnerOptions options = null,
-            Func<int, CancellationToken, Task> requeueDelayAsync = null)
+            Func<int, CancellationToken, Task> requeueDelayAsync = null,
+            IDeviceAutomationOwnershipService ownershipService = null)
         {
             this.workflowFactory = workflowFactory
                 ?? throw new ArgumentNullException(nameof(workflowFactory));
@@ -54,6 +58,8 @@ namespace ADB_Tool_Automation_Post_FB.Infrastructure.Workflows
             this.options = options ?? new MultiDeviceOneShotFarmRunnerOptions();
             this.requeueDelayAsync = requeueDelayAsync
                 ?? ((delayMs, token) => Task.Delay(delayMs, token));
+            this.ownershipService = ownershipService
+                ?? DeviceAutomationOwnershipService.Shared;
             executionGate = new SemaphoreSlim(maximumConcurrency, maximumConcurrency);
         }
 
@@ -224,6 +230,7 @@ namespace ADB_Tool_Automation_Post_FB.Infrastructure.Workflows
             CancellationToken cancellationToken)
         {
             IAdaptiveConcurrencyLease adaptiveLease = null;
+            IDeviceAutomationLease automationLease = null;
             bool entered = false;
             int resolvedDeviceIndex = ResolveDeviceIndex(deviceName, deviceIndex);
             var leaseWait = Stopwatch.StartNew();
@@ -288,6 +295,30 @@ namespace ADB_Tool_Automation_Post_FB.Infrastructure.Workflows
                     + $"DeviceIndex={resolvedDeviceIndex}, ExecutionPhase='Gameplay', LeaseReused=true");
                 Report(progress, deviceName, MultiDeviceOneShotFarmStage.ReadyForGameplay,
                     null, "Thiết bị đã sẵn sàng để điều đội.");
+                if (!ownershipService.TryAcquire(deviceName, DeviceAutomationOwner.Farm,
+                    out automationLease))
+                {
+                    DeviceAutomationOwner currentOwner = ownershipService.GetOwner(deviceName);
+                    string ownershipMessage = currentOwner == DeviceAutomationOwner.Fruit2048
+                        ? "Thiết bị đang được sử dụng bởi Fruit 2048."
+                        : "Thiết bị đang được sử dụng bởi một tác vụ khác.";
+                    Report(progress, deviceName, MultiDeviceOneShotFarmStage.Failed,
+                        null, ownershipMessage);
+                    return new MultiDeviceOneShotFarmItemResult
+                    {
+                        DeviceName = deviceName,
+                        Stage = MultiDeviceOneShotFarmStage.Failed,
+                        ErrorMessage = ownershipMessage,
+                        Result = new OneShotFarmResult
+                        {
+                            DeviceName = deviceName,
+                            Outcome = OneShotFarmOutcome.PreconditionFailed,
+                            Success = false,
+                            Message = ownershipMessage,
+                            ErrorMessage = ownershipMessage
+                        }
+                    };
+                }
                 MultiDeviceOneShotFarmItemResult item;
                 using (ScreenshotCaptureContext.Push("Gameplay"))
                     item = await RunDeviceAsync(preflight.DeviceName,
@@ -307,6 +338,7 @@ namespace ADB_Tool_Automation_Post_FB.Infrastructure.Workflows
             {
                 leaseWait.Stop();
                 leaseHeld?.Stop();
+                automationLease?.Dispose();
                 adaptiveLease?.Dispose();
                 if (entered) executionGate.Release();
                 infoLogger($"[Farm Scheduling] DeviceName='{deviceName}', "

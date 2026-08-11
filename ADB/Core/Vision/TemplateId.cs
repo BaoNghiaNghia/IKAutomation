@@ -71,6 +71,8 @@ namespace ADB_Tool_Automation_Post_FB.Core.Vision
         WorldMapTeamReadyAnchor,
         NetworkError,
         ReconnectButton,
-        CityToWorldMapButton
+        CityToWorldMapButton,
+        Fruit2048TileEmpty,
+        Fruit2048TileTier1
     }
 }
