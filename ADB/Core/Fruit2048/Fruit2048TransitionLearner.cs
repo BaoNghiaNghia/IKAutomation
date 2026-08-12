@@ -22,13 +22,16 @@ namespace ADB_Tool_Automation_Post_FB.Core.Fruit2048
 
         public IReadOnlyList<Fruit2048LearningResult> Learn(string deviceName,
             Fruit2048Board before, Fruit2048Move move,
-            IReadOnlyList<Fruit2048BoardReadResult> observations, string evidenceId)
+            IReadOnlyList<Fruit2048BoardReadResult> observations, string evidenceId,
+            int? resultTierFilter = null)
         {
             if (before == null) throw new ArgumentNullException(nameof(before));
             if (observations == null) throw new ArgumentNullException(nameof(observations));
             var results = new List<Fruit2048LearningResult>();
             foreach (Fruit2048MergeOperation merge in GetMergeOperations(before, move))
             {
+                if (resultTierFilter.HasValue && merge.ResultTier != resultTierFilter.Value)
+                    continue;
                 Fruit2048Cell[] cells = observations
                     .Select(observation => observation?.Cells?.FirstOrDefault(cell =>
                         cell.Row == merge.DestinationRow && cell.Column == merge.DestinationColumn))
@@ -52,11 +55,16 @@ namespace ADB_Tool_Automation_Post_FB.Core.Fruit2048
 
                 FruitTileVisualFingerprint[] fingerprints = cells
                     .Select(cell => cell.Fingerprint).Where(value => value != null).ToArray();
-                if (fingerprints.Length < 2 || !AreStable(fingerprints)) continue;
+                // The first post-swipe observation may still contain merge animation.
+                // Learning uses the newest stable pair from this one transition rather than
+                // rejecting an otherwise clean later pair because of that transient frame.
+                FruitTileVisualFingerprint[] stablePair = fingerprints
+                    .Skip(Math.Max(0, fingerprints.Length - 2)).ToArray();
+                if (stablePair.Length < 2 || !AreStable(stablePair)) continue;
                 Fruit2048LearningResult learningResult = coordinator == null
-                    ? catalog.ObserveMerge(merge.ResultTier, fingerprints[0], evidenceId + ":tier:" + merge.ResultTier,
+                    ? catalog.ObserveMerge(merge.ResultTier, stablePair[stablePair.Length - 1], evidenceId + ":tier:" + merge.ResultTier,
                         merge.SourceTier, move, merge.SourceRow, merge.SourceColumn)
-                    : coordinator.ObserveMerge(deviceName, merge.ResultTier, fingerprints[0], evidenceId + ":tier:" + merge.ResultTier,
+                    : coordinator.ObserveMerge(deviceName, merge.ResultTier, stablePair[stablePair.Length - 1], evidenceId + ":tier:" + merge.ResultTier,
                         merge.SourceTier, move, merge.SourceRow, merge.SourceColumn);
                 learningResult.DestinationRow = merge.DestinationRow;
                 learningResult.DestinationColumn = merge.DestinationColumn;

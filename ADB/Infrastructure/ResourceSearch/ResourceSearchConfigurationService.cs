@@ -1060,10 +1060,26 @@ namespace ADB_Tool_Automation_Post_FB.Infrastructure.ResourceSearch
 
         private ConfigurationTemplateEvidence Match(byte[] screenshot, TemplateId templateId)
         {
-            ImageMatchResult match = imageMatcher.Find(screenshot, templateRegistry.LoadBytes(templateId), null);
+            // The blue level-plus glyph is also common in the upper HUD.  Within
+            // the farm resource panel it only belongs below the screen midpoint,
+            // so never search the full frame for this one template.
+            ImageRegion? region = templateId == TemplateId.LevelPlusButton
+                ? CreateLowerHalfRegion(screenshot)
+                : (ImageRegion?)null;
+            ImageMatchResult match = imageMatcher.Find(screenshot, templateRegistry.LoadBytes(templateId), region);
             return Evidence(templateId, match, match != null && match.Found
-                ? $"Template '{templateId}' matched."
-                : $"Template '{templateId}' did not match.");
+                ? $"Template '{templateId}' matched{(region.HasValue ? " inside the lower-half ROI" : string.Empty)}."
+                : $"Template '{templateId}' did not match{(region.HasValue ? " inside the lower-half ROI" : string.Empty)}.");
+        }
+
+        private static ImageRegion CreateLowerHalfRegion(byte[] screenshot)
+        {
+            using (var stream = new MemoryStream(screenshot, writable: false))
+            using (var image = Image.FromStream(stream))
+            {
+                int top = image.Height / 2;
+                return new ImageRegion(0, top, image.Width, Math.Max(1, image.Height - top));
+            }
         }
 
         private async Task TapAsync(string deviceName, ConfigurationTemplateEvidence evidence,

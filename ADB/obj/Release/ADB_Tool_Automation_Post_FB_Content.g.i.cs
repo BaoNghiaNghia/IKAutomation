@@ -14,6 +14,7 @@
 [assembly: System.Windows.Resources.AssemblyAssociatedContentFileAttribute("data/infinitykingdom/1280x720/vi/dialogs/storage_limit_dialog_anchor.png")]
 [assembly: System.Windows.Resources.AssemblyAssociatedContentFileAttribute("data/infinitykingdom/1280x720/vi/fixtures/resource_search_screen.png")]
 [assembly: System.Windows.Resources.AssemblyAssociatedContentFileAttribute("data/infinitykingdom/1280x720/vi/fruit2048/navigation/board_anchor.png")]
+[assembly: System.Windows.Resources.AssemblyAssociatedContentFileAttribute("data/infinitykingdom/1280x720/vi/fruit2048/navigation/board_frame_secondary.png")]
 [assembly: System.Windows.Resources.AssemblyAssociatedContentFileAttribute("data/infinitykingdom/1280x720/vi/fruit2048/navigation/city_festival_entry.png")]
 [assembly: System.Windows.Resources.AssemblyAssociatedContentFileAttribute("data/infinitykingdom/1280x720/vi/fruit2048/navigation/fruit_2048_tab.png")]
 [assembly: System.Windows.Resources.AssemblyAssociatedContentFileAttribute("data/infinitykingdom/1280x720/vi/fruit2048/tile_1.png")]

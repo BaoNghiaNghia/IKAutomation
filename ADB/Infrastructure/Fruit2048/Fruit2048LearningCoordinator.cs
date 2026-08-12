@@ -27,6 +27,17 @@ namespace ADB_Tool_Automation_Post_FB.Infrastructure.Fruit2048
         {
             lock (sync)
             {
+                // A normal Fruit session may start before the UI has explicitly selected
+                // a Teacher.  The first device to acquire the idle coordinator becomes
+                // that Teacher; subsequent devices remain read-only until it is released.
+                if (teacher.Status == Fruit2048TeacherStatus.None)
+                    teacher = new Fruit2048TeacherSnapshot
+                    {
+                        DeviceName = deviceName,
+                        Status = Fruit2048TeacherStatus.Paused,
+                        CatalogVersion = version
+                    };
+
                 if (!string.Equals(teacher.DeviceName, deviceName, StringComparison.OrdinalIgnoreCase))
                 { sessionId = null; reason = "Thiết bị học hiện tại đang chạy. Hãy dừng trước khi đổi."; return false; }
                 teacher = new Fruit2048TeacherSnapshot { DeviceName = deviceName, SessionId = Guid.NewGuid().ToString("N"), Status = Fruit2048TeacherStatus.Learning, CatalogVersion = version };
@@ -47,6 +58,21 @@ namespace ADB_Tool_Automation_Post_FB.Infrastructure.Fruit2048
                 Fruit2048LearningResult result = catalog.ObserveMerge(tier, fingerprint, transitionId, sourceTier, move, sourceRow, sourceColumn);
                 if (result.Action != Fruit2048LearningAction.DuplicateIgnored) version++;
                 logger?.Info($"[Fruit2048 Catalog Update] CatalogVersionBefore={version - 1}, CatalogVersionAfter={version}, Tier={tier}, Action='{result.Action}', State='{result.State}', PrototypeCount=0");
+                return result;
+            }
+        }
+        public Fruit2048LearningResult ObserveBadgeBootstrap(string deviceName, int tier,
+            FruitTileVisualFingerprint fruitFingerprint, FruitTileVisualFingerprint badgeFingerprint,
+            string evidenceId, int row, int column)
+        {
+            lock (sync)
+            {
+                if (!CanLearnUnsafe(deviceName)) return new Fruit2048LearningResult
+                { Tier = tier, Action = Fruit2048LearningAction.DuplicateIgnored, Error = "ConsumerReadOnly" };
+                Fruit2048LearningResult result = catalog.ObserveBadgeBootstrap(tier, fruitFingerprint,
+                    badgeFingerprint, evidenceId, row, column);
+                if (result.Action != Fruit2048LearningAction.DuplicateIgnored) version++;
+                logger?.Info($"[Fruit2048 Catalog Update] CatalogVersion={version}, Tier={tier}, Action='{result.Action}', Evidence='TierBadgeBootstrap'");
                 return result;
             }
         }

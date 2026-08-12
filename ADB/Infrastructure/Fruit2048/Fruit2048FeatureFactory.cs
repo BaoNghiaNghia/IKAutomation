@@ -44,13 +44,17 @@ namespace ADB_Tool_Automation_Post_FB.Infrastructure.Fruit2048
             ownership.SetLogger(logger);
             var reader = new Fruit2048BoardReader(player, player, matcher, catalog,
                 new Fruit2048ScreenProfile(), learningCatalog, logger);
-            var navigation = new Fruit2048NavigationService(player, player, matcher, catalog,
-                new Fruit2048ScreenProfile(), logger);
             var diagnosticStore = new Fruit2048LearningDiagnosticStore();
+            var navigation = new Fruit2048NavigationService(player, player, matcher, catalog,
+                new Fruit2048ScreenProfile(), logger, diagnosticStore);
+            var proofStore = new Fruit2048LearningProofStore();
             var service = new Fruit2048AutomationService(player, reader,
                 new Fruit2048Solver(), new Fruit2048SwipeExecutor(player), ownership,
-                new Fruit2048TransitionLearner(learningCatalog, 5, learningCoordinator), learningCatalog, logger, navigation, learningCoordinator,
-                new Fruit2048TransitionValidator(), diagnosticStore);
+                // The transition has already verified that this is the merge
+                // destination. Allow the learner the same small settling drift
+                // accepted by the runtime gate so Tier 5+ candidates are saved.
+                new Fruit2048TransitionLearner(learningCatalog, 18, learningCoordinator), learningCatalog, logger, navigation, learningCoordinator,
+                new Fruit2048TransitionValidator(), diagnosticStore, proofStore);
             var supervisor = new Fruit2048RuntimeSupervisor(service, logger);
             var calibration = new Fruit2048SeedCalibrationService(player, matcher, catalog,
                 new Fruit2048ScreenProfile(), learningCatalog, ownership, logger, navigation);
@@ -76,9 +80,19 @@ namespace ADB_Tool_Automation_Post_FB.Infrastructure.Fruit2048
                 if (!templates.TryGetTile(value, out png)) continue;
                 using (var stream = new MemoryStream(png, false))
                 using (var bitmap = new Bitmap(stream))
-                    learning.AddSeed(FruitTierCatalog.ToTier(value),
-                        FruitTileFingerprint.Create(bitmap,
-                            new ImageRegion(0, 0, bitmap.Width, bitmap.Height)));
+                {
+                    int tier = FruitTierCatalog.ToTier(value);
+                    FruitTileVisualFingerprint fingerprint = Fruit2048CellVisualNormalizer.CreateFingerprint(bitmap,
+                        new ImageRegion(0, 0, bitmap.Width, bitmap.Height));
+                    if (value == 0 || value == 1)
+                    {
+                        // Empty/Tier1 are bootstrap seeds. Replace stale static
+                        // fingerprints from earlier board captures on startup.
+                        learning.ReplaceBootstrapSeed(tier, fingerprint,
+                            value == 0 ? templates.EmptySeedPath : templates.Tier1SeedPath);
+                    }
+                    else learning.AddSeed(tier, fingerprint);
+                }
             }
         }
     }

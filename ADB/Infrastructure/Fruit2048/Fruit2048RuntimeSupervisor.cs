@@ -41,6 +41,9 @@ namespace ADB_Tool_Automation_Post_FB.Infrastructure.Fruit2048
                 LastStateChangeUtc = DateTimeOffset.UtcNow
             };
             snapshots[deviceName] = session;
+            // Preserve one operation identity through navigation, learning proof
+            // logs and the persisted proof report.
+            request.FruitSessionId = session.FruitSessionId;
             DateTimeOffset startedAt = DateTimeOffset.UtcNow;
             var counters = new int[4]; // boards, valid, invalid, ambiguous
             var burnIn = request.Mode == Fruit2048RunMode.BurnIn ? new Fruit2048BurnInMetrics() : null;
@@ -176,8 +179,14 @@ namespace ADB_Tool_Automation_Post_FB.Infrastructure.Fruit2048
         {
             if (result == null) { SetState(session, Fruit2048RuntimeState.Error, Fruit2048RuntimeFailure.Fatal, "No result"); return; }
             if (result.Outcome == Fruit2048Outcome.Cancelled) SetState(session, Fruit2048RuntimeState.Completed, Fruit2048RuntimeFailure.Cancelled, "Đã dừng");
-            else if (result.Outcome == Fruit2048Outcome.TargetReached || result.Outcome == Fruit2048Outcome.NoMoves || result.Outcome == Fruit2048Outcome.MoveLimitReached) SetState(session, Fruit2048RuntimeState.Completed, Fruit2048RuntimeFailure.None, result.Error);
-            else if (result.Outcome == Fruit2048Outcome.ScreenNotOpen || result.Outcome == Fruit2048Outcome.NeedsFreshBoard || result.Outcome == Fruit2048Outcome.BoardReadFailed) SetState(session, Fruit2048RuntimeState.Paused, Fruit2048RuntimeFailure.UnsafeBoard, result.Error);
+            else if (result.Outcome == Fruit2048Outcome.TargetReached || result.Outcome == Fruit2048Outcome.NoMoves || result.Outcome == Fruit2048Outcome.MoveLimitReached || result.Outcome == Fruit2048Outcome.LearningProofCompleted) SetState(session, Fruit2048RuntimeState.Completed, Fruit2048RuntimeFailure.None, result.Error);
+            else if (result.Outcome == Fruit2048Outcome.DeviceUnavailable)
+                SetState(session, Fruit2048RuntimeState.Paused, Fruit2048RuntimeFailure.DeviceUnavailable,
+                    "Mất kết nối ADB — đã dừng.");
+            else if (result.Outcome == Fruit2048Outcome.SwipeNoEffect)
+                SetState(session, Fruit2048RuntimeState.Paused, Fruit2048RuntimeFailure.UnsafeBoard,
+                    result.Error ?? "Vuốt không làm thay đổi board — đã tạm dừng.");
+            else if (result.Outcome == Fruit2048Outcome.ScreenNotOpen || result.Outcome == Fruit2048Outcome.NeedsFreshBoard || result.Outcome == Fruit2048Outcome.BoardReadFailed || result.Outcome == Fruit2048Outcome.LearningProofFailed) SetState(session, Fruit2048RuntimeState.Paused, Fruit2048RuntimeFailure.UnsafeBoard, result.Error);
             else SetState(session, Fruit2048RuntimeState.Error, Fruit2048RuntimeFailure.Fatal, result.Error);
         }
 

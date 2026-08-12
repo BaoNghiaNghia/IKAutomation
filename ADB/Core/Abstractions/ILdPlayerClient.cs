@@ -66,4 +66,17 @@ namespace ADB_Tool_Automation_Post_FB.Core.Abstractions
 
         Task PressKeyAsync(string deviceName, AndroidKeyCode keyCode, CancellationToken cancellationToken);
     }
+
+    /// <summary>Optional Android-coordinate swipe path for gameplay that has verified screen bounds.</summary>
+    public interface IAbsoluteSwipeLdPlayerClient
+    {
+        Task SwipeAsync(string deviceName, int startX, int startY, int endX, int endY,
+            int durationMilliseconds, CancellationToken cancellationToken);
+    }
+
+    /// <summary>One bounded recovery attempt for a lost LDPlayer ADB endpoint.</summary>
+    public interface IAdbEndpointRefreshable
+    {
+        Task<bool> RefreshAdbEndpointAsync(string deviceName, CancellationToken cancellationToken);
+    }
 }

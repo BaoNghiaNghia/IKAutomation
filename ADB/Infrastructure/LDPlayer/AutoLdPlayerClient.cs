@@ -24,10 +24,15 @@ namespace ADB_Tool_Automation_Post_FB.Infrastructure.LDPlayer
     /// New automation code must depend on ILdPlayerClient instead of calling
     /// Auto_LDPlayer.LDPlayer directly.
     /// </summary>
-    public sealed class AutoLdPlayerClient : ILdPlayerClient, IFocusedInputValueReader,
+    public sealed class AutoLdPlayerClient : ILdPlayerClient, IAbsoluteSwipeLdPlayerClient, IAdbEndpointRefreshable, IFocusedInputValueReader,
         IFrameCapturingLdPlayerClient
     {
         private const int InputCommandTimeoutMilliseconds = 3000;
+        // Fruit2048 uses a bounded, visually verified swipe path.  Waiting three
+        // seconds for a short Android input command throttles every move; keep a
+        // small command-acceptance window and let post-swipe board validation
+        // determine whether the game actually changed.
+        private const int FruitSwipeCommandTimeoutMilliseconds = 500;
         private const int FocusedInputReadAttempts = 3;
         private const int FocusedInputRetryDelayMilliseconds = 150;
 
@@ -160,6 +165,15 @@ namespace ADB_Tool_Automation_Post_FB.Infrastructure.LDPlayer
 
             bool isRunning = Auto_LDPlayer.LDPlayer.IsDeviceRunning(LDType.Name, deviceName);
             return Task.FromResult(isRunning);
+        }
+
+        public async Task<bool> RefreshAdbEndpointAsync(string deviceName, CancellationToken cancellationToken)
+        {
+            cancellationToken.ThrowIfCancellationRequested();
+            ValidateDeviceName(deviceName);
+            HealthyDevices.TryRemove(deviceName.Trim(), out DateTimeOffset ignored);
+            IReadOnlyList<string> devices = await GetDeviceNamesAsync(cancellationToken);
+            return devices.Any(name => string.Equals(name, deviceName.Trim(), StringComparison.OrdinalIgnoreCase));
         }
 
         public Task OpenAsync(string deviceName, CancellationToken cancellationToken)
@@ -502,6 +516,26 @@ namespace ADB_Tool_Automation_Post_FB.Infrastructure.LDPlayer
                 endYPercent,
                 durationMilliseconds);
 
+            return Task.CompletedTask;
+        }
+
+        public Task SwipeAsync(string deviceName, int startX, int startY, int endX, int endY,
+            int durationMilliseconds, CancellationToken cancellationToken)
+        {
+            cancellationToken.ThrowIfCancellationRequested();
+            ValidateDeviceName(deviceName);
+            if (durationMilliseconds <= 0) throw new ArgumentOutOfRangeException(nameof(durationMilliseconds));
+            string output = Auto_LDPlayer.LDPlayer.Adb(LDType.Name, deviceName,
+                $"shell input swipe {startX} {startY} {endX} {endY} {durationMilliseconds}",
+                FruitSwipeCommandTimeoutMilliseconds, 0);
+            if (output == null)
+                throw new InvalidOperationException($"Failed to send swipe to LDPlayer device '{deviceName}'.");
+            string normalized = output.Trim();
+            if (normalized.IndexOf("not found", StringComparison.OrdinalIgnoreCase) >= 0
+                || normalized.IndexOf("offline", StringComparison.OrdinalIgnoreCase) >= 0
+                || normalized.IndexOf("no devices", StringComparison.OrdinalIgnoreCase) >= 0
+                || normalized.IndexOf("error:", StringComparison.OrdinalIgnoreCase) >= 0)
+                throw new InvalidOperationException($"ADB rejected swipe for LDPlayer device '{deviceName}': {normalized}");
             return Task.CompletedTask;
         }
 

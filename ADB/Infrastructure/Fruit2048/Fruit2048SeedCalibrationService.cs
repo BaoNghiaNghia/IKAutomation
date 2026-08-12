@@ -50,13 +50,11 @@ namespace ADB_Tool_Automation_Post_FB.Infrastructure.Fruit2048
                 using (CapturedFrame frame = await frames.CaptureFrameAsync(deviceName, cancellationToken))
                 {
                 ImageRegion board = profile.Scale(profile.BoardRegion, frame.Width, frame.Height);
-                byte[] title, boardAnchor;
-                if (!templates.TryGet(Fruit2048TemplateCatalog.EventTitle, out title)
-                    || !templates.TryGet(Fruit2048TemplateCatalog.BoardAnchor, out boardAnchor))
+                ImageRegion boardAnchorRegion = profile.Scale(profile.BoardAnchorRegion, frame.Width, frame.Height);
+                byte[] boardAnchor;
+                if (!templates.TryGet(Fruit2048TemplateCatalog.NavigationBoardAnchor, out boardAnchor))
                     return Failure("Không tìm thấy template mở màn Fruit2048.");
-                ImageRegion titleRegion = profile.Scale(profile.TitleRegion, frame.Width, frame.Height);
-                if (!matcher.FindMany(frame, new[] { new ImageMatchRequest(title, titleRegion),
-                    new ImageMatchRequest(boardAnchor, board) }).Any(item => item.Found))
+                if (!matcher.Find(frame, boardAnchor, boardAnchorRegion).Found)
                     return Failure("Không tìm thấy bàn chơi Lễ Hội Trái Cây.");
                 var result = new Fruit2048CalibrationCapture
                 {
@@ -132,6 +130,46 @@ namespace ADB_Tool_Automation_Post_FB.Infrastructure.Fruit2048
             learning.ResetLearningData();
         }
 
+        public Task<Fruit2048LearningResult> SaveTierBadgeAsync(Fruit2048CalibrationCapture capture,
+            int row, int column, int tier, CancellationToken cancellationToken)
+        {
+            cancellationToken.ThrowIfCancellationRequested();
+            if (capture == null || !capture.Success || !ValidCell(row, column) || tier < 1)
+                return Task.FromResult(new Fruit2048LearningResult
+                { Action = Fruit2048LearningAction.ConflictRejected, Error = "Lựa chọn tier không hợp lệ." });
+            try
+            {
+                FruitTileVisualFingerprint fruit; FruitTileVisualFingerprint badge;
+                using (var stream = new MemoryStream(capture.ScreenshotPng, false))
+                using (var screenshot = new Bitmap(stream))
+                {
+                    ImageRegion fruitRegion = Fruit2048ScreenProfile.GetRecognitionCellRegion(
+                        capture.BoardBounds, row, column);
+                    ImageRegion badgeRegion = Fruit2048ScreenProfile.GetTierBadgeRegion(fruitRegion);
+                    fruit = FruitTileFingerprint.Create(screenshot, fruitRegion);
+                    badge = FruitTileFingerprint.Create(screenshot, badgeRegion);
+                }
+                if (fruit == null || badge == null || string.IsNullOrEmpty(badge.AverageHash))
+                    return Task.FromResult(new Fruit2048LearningResult
+                    { Action = Fruit2048LearningAction.ConflictRejected, Error = "Không thể đọc badge tier của ô đã chọn." });
+                string evidenceId = "manual-badge:" + capture.DeviceName + ":" + tier + ":"
+                    + row + ":" + column + ":" + badge.AverageHash;
+                Fruit2048LearningResult result = learning.ObserveBadgeBootstrap(tier, fruit, badge,
+                    evidenceId, row, column);
+                Log(capture.DeviceName, capture.ScreenWidth, capture.ScreenHeight, "BadgePersist", row,
+                    column, "Tier" + tier, result.Action != Fruit2048LearningAction.ConflictRejected,
+                    Fingerprint(badge), result.Evidence);
+                return Task.FromResult(result);
+            }
+            catch (Exception exception) when (!(exception is OperationCanceledException))
+            {
+                Log(capture.DeviceName, capture.ScreenWidth, capture.ScreenHeight, "BadgePersist", row,
+                    column, "Tier" + tier, false, string.Empty, exception.Message);
+                return Task.FromResult(new Fruit2048LearningResult
+                { Action = Fruit2048LearningAction.ConflictRejected, Error = exception.Message });
+            }
+        }
+
         private bool VerifyFreshSelections(Fruit2048CalibrationCapture fresh, int emptyRow, int emptyColumn, int tier1Row, int tier1Column)
         {
             using (var stream = new MemoryStream(fresh.ScreenshotPng, false))
@@ -150,7 +188,7 @@ namespace ADB_Tool_Automation_Post_FB.Infrastructure.Fruit2048
 
         private static byte[] CropCell(Bitmap screenshot, ImageRegion board, int row, int column)
         {
-            ImageRegion region = Fruit2048ScreenProfile.GetCellRegion(board, row, column);
+            ImageRegion region = Fruit2048ScreenProfile.GetRecognitionCellRegion(board, row, column);
             using (var crop = new Bitmap(region.Width, region.Height))
             using (Graphics graphics = Graphics.FromImage(crop))
             using (var stream = new MemoryStream())
@@ -166,7 +204,7 @@ namespace ADB_Tool_Automation_Post_FB.Infrastructure.Fruit2048
         {
             using (var stream = new MemoryStream(png, false))
             using (var bitmap = new Bitmap(stream))
-                return FruitTileFingerprint.Create(bitmap, new ImageRegion(0, 0, bitmap.Width, bitmap.Height));
+                return Fruit2048CellVisualNormalizer.CreateFingerprint(bitmap, new ImageRegion(0, 0, bitmap.Width, bitmap.Height));
         }
 
         private static bool IsUsable(byte[] png, FruitTileVisualFingerprint fingerprint)

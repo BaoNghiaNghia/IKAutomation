@@ -52,7 +52,10 @@ namespace ADB_Tool_Automation_Post_FB.UI
             DeviceList.ItemsSource = devices;
             BoardItems.ItemsSource = Enumerable.Repeat("?", 16).ToArray();
             ownership.OwnershipChanged += Ownership_OwnershipChanged;
-            refreshTimer = new DispatcherTimer { Interval = TimeSpan.FromMilliseconds(750) };
+            // Device enumeration calls into the LDPlayer bridge synchronously.
+            // A short polling period makes this window compete with screenshot
+            // capture and needlessly re-render every device row.
+            refreshTimer = new DispatcherTimer { Interval = TimeSpan.FromSeconds(2) };
             refreshTimer.Tick += RefreshTimer_Tick;
             Loaded += async (sender, args) => { await RefreshDevicesAsync(); refreshTimer.Start(); };
         }
@@ -71,7 +74,6 @@ namespace ADB_Tool_Automation_Post_FB.UI
                     !discovered.Contains(item.DeviceName)))
                 {
                     existing.IsConnected = false;
-                    existing.RefreshPresentation();
                 }
                 foreach (string name in names.OrderBy(value => value, StringComparer.OrdinalIgnoreCase))
                 {
@@ -82,9 +84,13 @@ namespace ADB_Tool_Automation_Post_FB.UI
                         item = new Fruit2048DeviceItem { DeviceName = name };
                         devices.Add(item);
                     }
-                    item.IsConnected = await playerClient.IsRunningAsync(name, windowLifetime.Token);
+                    // The automation owns an active device while a Fruit session is running.
+                    // Polling the LDPlayer bridge from this UI timer competes with screenshot
+                    // capture, so retain the last connection state until the run itself reports
+                    // a capture/device failure.
+                    if (!item.IsRunning)
+                        item.IsConnected = await playerClient.IsRunningAsync(name, windowLifetime.Token);
                     item.Owner = ownership.GetOwner(name);
-                    item.RefreshPresentation();
                 }
             }
             catch { }
@@ -104,23 +110,33 @@ namespace ADB_Tool_Automation_Post_FB.UI
             }));
         }
 
-        private void SelectAvailable_Click(object sender, RoutedEventArgs e)
+        private async void BulkAction_Click(object sender, RoutedEventArgs e)
         {
-            foreach (Fruit2048DeviceItem item in devices)
-                item.IsSelected = item.CanSelect;
+            Fruit2048DeviceItem[] selected = devices.Where(item => item.IsSelected).ToArray();
+            Fruit2048DeviceItem[] running = selected.Where(item => item.IsRunning).ToArray();
+            if (running.Length > 0)
+            {
+                foreach (Fruit2048DeviceItem item in running) item.Cancellation?.Cancel();
+                UpdateDetailButtons();
+                return;
+            }
+
+            Fruit2048DeviceItem[] availableSelected = selected.Where(item => item.CanSelect).ToArray();
+            if (availableSelected.Length > 0)
+            {
+                foreach (Fruit2048DeviceItem item in availableSelected) StartDevice(item);
+                await RefreshDevicesAsync();
+                return;
+            }
+
+            foreach (Fruit2048DeviceItem item in devices.Where(item => item.CanSelect))
+                item.IsSelected = true;
+            UpdateDetailButtons();
         }
 
-        private async void StartSelected_Click(object sender, RoutedEventArgs e)
+        private void DeviceSelectionChanged(object sender, RoutedEventArgs e)
         {
-            foreach (Fruit2048DeviceItem item in devices.Where(value => value.IsSelected && value.CanSelect).ToArray())
-                StartDevice(item);
-            await RefreshDevicesAsync();
-        }
-
-        private void StopSelected_Click(object sender, RoutedEventArgs e)
-        {
-            foreach (Fruit2048DeviceItem item in devices.Where(value => value.IsSelected && value.IsRunning))
-                item.Cancellation?.Cancel();
+            Dispatcher.BeginInvoke(new Action(UpdateDetailButtons));
         }
 
         private void StartOne_Click(object sender, RoutedEventArgs e)
@@ -137,19 +153,14 @@ namespace ADB_Tool_Automation_Post_FB.UI
         private void StartDevice(Fruit2048DeviceItem item)
         {
             if (item == null || !item.CanSelect || item.IsRunning) return;
-            if (RunModeCombo.SelectedIndex == 1 && !string.Equals(learningCoordinator.Teacher?.DeviceName,
+            Fruit2048RunMode mode = SelectedRunMode();
+            if ((mode == Fruit2048RunMode.BurnIn || mode == Fruit2048RunMode.FirstLearningProof)
+                && !string.Equals(learningCoordinator.Teacher?.DeviceName,
                 item.DeviceName, StringComparison.OrdinalIgnoreCase))
             {
-                item.LearningMessage = "Burn-in chỉ chạy trên thiết bị học đã chọn.";
-                UpdateDetail(item);
-                return;
-            }
-            if (!templateCatalog.SeedAvailability.IsReady)
-            {
-                item.Status = Fruit2048RuntimeStatus.MissingSeeds;
-                item.LastError = "Thiếu mẫu nhận diện Empty/Tier 1.";
-                item.BootstrapState = Fruit2048BootstrapState.MissingSeedAssets;
-                item.LearningMessage = item.LastError;
+                item.LearningMessage = mode == Fruit2048RunMode.FirstLearningProof
+                    ? "FirstLearningProof chỉ chạy trên thiết bị học đã chọn."
+                    : "Burn-in chỉ chạy trên thiết bị học đã chọn.";
                 UpdateDetail(item);
                 return;
             }
@@ -158,6 +169,7 @@ namespace ADB_Tool_Automation_Post_FB.UI
             item.Status = Fruit2048RuntimeStatus.Starting;
             item.LearningMessage = string.Empty;
             item.UnknownCellCount = 0;
+            item.FirstLearningProof = null;
             item.RefreshPresentation();
             int target = int.Parse(((ComboBoxItem)TargetCombo.SelectedItem).Content.ToString());
             var request = new Fruit2048RunRequest
@@ -165,7 +177,7 @@ namespace ADB_Tool_Automation_Post_FB.UI
                 TargetTile = target,
                 AutoRefresh = AutoRefreshCheck.IsChecked == true,
                 TeacherMoveLimit = ParseTeacherMoveLimit(),
-                Mode = RunModeCombo.SelectedIndex == 1 ? Fruit2048RunMode.BurnIn : Fruit2048RunMode.Normal
+                Mode = mode
             };
             var progress = new Progress<Fruit2048Progress>(value => ApplyProgress(item, value));
             item.RunningTask = RunDeviceAsync(item, request, progress, item.Cancellation.Token);
@@ -179,13 +191,27 @@ namespace ADB_Tool_Automation_Post_FB.UI
                 Fruit2048RunResult result = await automation.RunAsync(item.DeviceName, request, progress, token);
                 await Dispatcher.InvokeAsync(() =>
                 {
-                    item.LastError = result.Error;
+                    item.LastError = result.Outcome == Fruit2048Outcome.MoveLimitReached ? null : result.Error;
                     if (result.Outcome == Fruit2048Outcome.TargetReached) item.Status = Fruit2048RuntimeStatus.TargetReached;
+                    else if (result.Outcome == Fruit2048Outcome.LearningProofCompleted
+                        || result.Outcome == Fruit2048Outcome.MoveLimitReached)
+                    {
+                        item.Status = Fruit2048RuntimeStatus.Completed;
+                        if (result.Outcome == Fruit2048Outcome.MoveLimitReached)
+                            item.LearningMessage = result.Error;
+                    }
                     else if (result.Outcome == Fruit2048Outcome.NoMoves) item.Status = Fruit2048RuntimeStatus.NoMoves;
                     else if (result.Outcome == Fruit2048Outcome.Cancelled) item.Status = Fruit2048RuntimeStatus.Cancelled;
-                    else if (result.Outcome == Fruit2048Outcome.Disconnected) item.Status = Fruit2048RuntimeStatus.Disconnected;
+                    else if (result.Outcome == Fruit2048Outcome.Disconnected
+                        || result.Outcome == Fruit2048Outcome.DeviceUnavailable)
+                    {
+                        item.Status = Fruit2048RuntimeStatus.Disconnected;
+                        item.IsConnected = false;
+                    }
                     else if (result.Outcome == Fruit2048Outcome.MissingSeedAssets) item.Status = Fruit2048RuntimeStatus.MissingSeeds;
                     else if (result.Outcome == Fruit2048Outcome.NeedsFreshBoard) item.Status = Fruit2048RuntimeStatus.NeedsFreshBoard;
+                    else if (result.Outcome == Fruit2048Outcome.BoardReadFailed && item.UnknownCellCount > 0)
+                        item.Status = Fruit2048RuntimeStatus.BoardUnknown;
                     else item.Status = Fruit2048RuntimeStatus.Failed;
                 });
             }
@@ -211,12 +237,41 @@ namespace ADB_Tool_Automation_Post_FB.UI
             return selected != null && int.TryParse(selected.Content?.ToString(), out limit) ? limit : 0;
         }
 
+        private void AdvancedToolsExpander_Expanded(object sender, RoutedEventArgs e)
+        {
+            AdvancedSettingsPanel.Visibility = Visibility.Visible;
+        }
+
+        private void AdvancedToolsExpander_Collapsed(object sender, RoutedEventArgs e)
+        {
+            AdvancedSettingsPanel.Visibility = Visibility.Collapsed;
+        }
+
         private void ApplyProgress(Fruit2048DeviceItem item, Fruit2048Progress progress)
         {
             if (!Dispatcher.CheckAccess())
             { Dispatcher.BeginInvoke(new Action(() => ApplyProgress(item, progress))); return; }
             item.Status = progress.Status;
-            item.Board = progress.Board;
+            bool validatedTransition = progress.TransitionStatus == Fruit2048TransitionValidationStatus.Valid
+                || progress.TransitionStatus == Fruit2048TransitionValidationStatus.ValidWithSpawn;
+            bool terminalStatus = progress.Status == Fruit2048RuntimeStatus.Failed
+                || progress.Status == Fruit2048RuntimeStatus.Completed
+                || progress.Status == Fruit2048RuntimeStatus.Cancelled
+                || progress.Status == Fruit2048RuntimeStatus.Disconnected
+                || progress.Status == Fruit2048RuntimeStatus.Paused;
+            // Status-only progress (for example, "Đang đọc bàn") has no board.
+            // Keep the last verified 4x4 board visible instead of replacing it
+            // with sixteen question marks while the next screenshot is captured.
+            // Auto deliberately redraws the 4x4 only after a validated move (or
+            // after the session ends). Intermediate animation/retry reads do not
+            // need a WPF board render and otherwise create needless UI work.
+            if (progress.Board != null && (!item.IsRunning || validatedTransition || terminalStatus))
+                item.Board = progress.Board;
+            if (progress.Cells != null && (!item.IsRunning || validatedTransition || terminalStatus))
+            {
+                item.HasBoardRead = true;
+                item.ObservedCellCount = progress.Cells.Count;
+            }
             item.HighestTile = progress.HighestTile;
             item.MoveCount = progress.MoveCount;
             item.LastMove = progress.LastMove;
@@ -227,10 +282,21 @@ namespace ADB_Tool_Automation_Post_FB.UI
             item.LearningProfiles = progress.LearningProfiles;
             item.BootstrapState = progress.BootstrapState;
             item.UnknownCellCount = progress.UnknownCellCount;
+            if (progress.FirstLearningProof != null)
+                item.FirstLearningProof = progress.FirstLearningProof;
+            item.BadgeBootstrapCells = progress.Cells == null ? 0 : progress.Cells.Count(cell =>
+                cell.RecognitionSource == Fruit2048RecognitionSource.TierBadgeBootstrap);
+            item.FastPathCells = progress.Cells == null ? 0 : progress.Cells.Count(cell =>
+                cell.RecognitionSource == Fruit2048RecognitionSource.FastFingerprint);
             if (!string.IsNullOrWhiteSpace(progress.LearningMessage))
                 item.LearningMessage = progress.LearningMessage;
             item.RefreshPresentation();
-            if (DeviceList.SelectedItem == item) UpdateDetail(item);
+            // During Auto, the visible summary changes only when a transition is
+            // settled, a terminal state is reached, or the selected move changes.
+            // This keeps capture/recognition off the UI dispatcher hot path.
+            if (DeviceList.SelectedItem == item && (!item.IsRunning || validatedTransition
+                || terminalStatus || progress.Status == Fruit2048RuntimeStatus.WaitingPostMove))
+                UpdateDetail(item);
         }
 
         private async void Scan_Click(object sender, RoutedEventArgs e)
@@ -256,6 +322,21 @@ namespace ADB_Tool_Automation_Post_FB.UI
             await RefreshDevicesAsync();
         }
 
+        private async void ExportBoardInspection_Click(object sender, RoutedEventArgs e)
+        {
+            Fruit2048DeviceItem item = DeviceList.SelectedItem as Fruit2048DeviceItem;
+            if (item == null || !item.IsConnected || item.IsRunning || item.Owner != DeviceAutomationOwner.None) return;
+            Fruit2048CalibrationCapture capture = await calibration.CaptureAsync(item.DeviceName, windowLifetime.Token);
+            if (!capture.Success)
+            {
+                MessageBox.Show(this, capture.Error ?? "Không thể chụp board để kiểm tra.", "Fruit 2048", MessageBoxButton.OK, MessageBoxImage.Warning);
+                return;
+            }
+            string directory = learningDiagnosticStore.ExportBoardInspection(item.DeviceName, capture.ScreenshotPng,
+                capture.BoardBounds);
+            MessageBox.Show(this, "Đã xuất kiểm tra Board:\n" + directory, "Fruit 2048", MessageBoxButton.OK, MessageBoxImage.Information);
+        }
+
         private async Task ManualMoveAsync(Fruit2048Move move)
         {
             Fruit2048DeviceItem item = DeviceList.SelectedItem as Fruit2048DeviceItem;
@@ -268,7 +349,13 @@ namespace ADB_Tool_Automation_Post_FB.UI
 
         private void ApplyRead(Fruit2048DeviceItem item, Fruit2048BoardReadResult read)
         {
+            if (read == null) return;
             item.Board = read.Board;
+            if (read.Cells != null)
+            {
+                item.HasBoardRead = true;
+                item.ObservedCellCount = read.Cells.Count;
+            }
             item.HighestTile = read.HighestTile;
             item.LastError = read.Error;
             if (read.Learning != null)
@@ -280,6 +367,10 @@ namespace ADB_Tool_Automation_Post_FB.UI
             }
             item.BootstrapState = read.BootstrapState;
             item.UnknownCellCount = read.UnknownCells?.Count ?? 0;
+            item.BadgeBootstrapCells = read.BadgeBootstrapCells;
+            item.FastPathCells = read.FastPathCells;
+            item.EmptyCellCount = read.EmptyCells;
+            item.Tier1CellCount = read.Tier1Cells;
             item.Status = read.Success ? Fruit2048RuntimeStatus.Idle : Fruit2048RuntimeStatus.BoardUnknown;
             item.RefreshPresentation();
             UpdateDetail(item);
@@ -298,19 +389,52 @@ namespace ADB_Tool_Automation_Post_FB.UI
         private void UpdateDetail(Fruit2048DeviceItem item)
         {
             SelectedDeviceText.Text = item?.DeviceName ?? "Chưa chọn thiết bị";
-            int[] values = item?.Board?.Values.ToArray();
-            BoardItems.ItemsSource = values == null
-                ? Enumerable.Repeat("?", 16).ToArray()
-                : values.Select(value => value.ToString()).ToArray();
-            HighestTileText.Text = (item?.HighestTile ?? 0).ToString();
-            MoveSummaryText.Text = (item?.MoveCount ?? 0) + " · " + (item?.LastMoveText ?? "—");
+            BoardPanel.Visibility = item == null ? Visibility.Collapsed : Visibility.Visible;
+            bool automaticRun = item != null && item.IsRunning;
+            BoardTitleText.Visibility = automaticRun ? Visibility.Collapsed : Visibility.Visible;
+            BoardItems.Visibility = automaticRun ? Visibility.Collapsed : Visibility.Visible;
+            BoardStatsPanel.Visibility = automaticRun ? Visibility.Collapsed : Visibility.Visible;
+            BoardAutoSummaryPanel.Visibility = automaticRun ? Visibility.Visible : Visibility.Collapsed;
+            if (automaticRun)
+            {
+                // Rendering sixteen changing cell controls for every progress callback
+                // adds UI work but provides no control input while Auto owns the device.
+                AutoBoardSummaryText.Text = "Đang xác minh nước đi " + item.MoveCount
+                    + " · Hướng vừa chọn: " + item.LastMoveText + ".";
+            }
+            else
+            {
+                int[] values = item?.Board?.Values.ToArray();
+                BoardItems.ItemsSource = values == null
+                    ? Enumerable.Repeat("?", 16).ToArray()
+                    : values.Select(value => value.ToString()).ToArray();
+                HighestTileText.Text = (item?.HighestTile ?? 0).ToString();
+                MoveSummaryText.Text = (item?.MoveCount ?? 0) + " · " + (item?.LastMoveText ?? "—");
+            }
             LearningSummaryText.Text = "Nhận diện: " + (item?.RecognitionMode.ToString() ?? "Learning")
                 + " · Đã học " + (item?.KnownTierCount ?? 0) + "/" + (item?.HighestObservedTier ?? 0);
             BootstrapText.Text = "Bootstrap: " + BootstrapLabel(item?.BootstrapState
                 ?? Fruit2048BootstrapState.MissingSeedAssets);
-            HighestObservedText.Text = "Tier cao nhất: " + (item?.HighestObservedTier ?? 0)
+            HighestObservedText.Text = "Tier cao nhất đã biết: " + (item?.HighestObservedTier ?? 0)
                 + " · Unknown: " + (item?.UnknownCellCount ?? 0);
-            LearningMessageText.Text = item?.LearningMessage ?? string.Empty;
+            if (item == null || !item.HasBoardRead)
+            {
+                BoardDiagnosticsText.Text = "Board: Chưa quét · Empty: - · Tier1: - · Unknown: - · Geometry: Chưa kiểm tra";
+                HighestTileText.Text = "-";
+            }
+            else
+            {
+                int unknownCells = item.UnknownCellCount;
+                int knownCells = Math.Max(0, item.ObservedCellCount - unknownCells);
+                string geometry = item.ObservedCellCount == 16 ? "OK" : "Không đầy đủ";
+                BoardDiagnosticsText.Text = "Board: " + knownCells + "/" + item.ObservedCellCount
+                    + " · Empty: " + item.EmptyCellCount
+                    + " · Tier1: " + item.Tier1CellCount
+                    + " · Unknown: " + unknownCells + " · Geometry: " + geometry;
+            }
+            LearningMessageText.Text = !string.IsNullOrWhiteSpace(item?.LearningMessage)
+                ? item.LearningMessage : NavigationFailureText(item?.LastError);
+            ProofStatusText.Text = FormatFirstLearningProof(item?.FirstLearningProof);
             LearningTierItems.ItemsSource = FormatLearningProfiles(item?.LearningProfiles);
             UpdateDetailButtons();
         }
@@ -325,6 +449,39 @@ namespace ADB_Tool_Automation_Post_FB.UI
                 case Fruit2048BootstrapState.Learning: return "Learning";
                 default: return "Missing seeds";
             }
+        }
+
+        private static string NavigationFailureText(string reason)
+        {
+            if (string.Equals(reason, "NavigationAnchorsNotDetected", StringComparison.OrdinalIgnoreCase))
+                return "Không nhận diện được anchor điều hướng.";
+            if (!string.IsNullOrWhiteSpace(reason) && reason.StartsWith("NavigationTemplateInvalid", StringComparison.OrdinalIgnoreCase))
+                return "Mẫu điều hướng Fruit2048 không hợp lệ.";
+            if (string.Equals(reason, "FruitTabTappedButBoardNotDetected", StringComparison.OrdinalIgnoreCase)
+                || string.Equals(reason, "CityEntryTappedButFruitTabNotDetected", StringComparison.OrdinalIgnoreCase))
+                return "Không nhận diện được màn hình game sau khi điều hướng.";
+            return string.Empty;
+        }
+
+        private Fruit2048RunMode SelectedRunMode()
+        {
+            switch (RunModeCombo.SelectedIndex)
+            {
+                case 1: return Fruit2048RunMode.BurnIn;
+                case 2: return Fruit2048RunMode.FirstLearningProof;
+                default: return Fruit2048RunMode.Normal;
+            }
+        }
+
+        private static string FormatFirstLearningProof(Fruit2048FirstLearningProofProgress proof)
+        {
+            if (proof == null) return string.Empty;
+            return "TỰ HỌC BAN ĐẦU · Board " + proof.InitialKnownCells + "/16 · Tier 2: "
+                + (proof.Tier2Learned ? "Learned" : "Candidate") + " "
+                + proof.Tier2SampleCount + "/" + proof.RequiredSamples + " · Nước: "
+                + proof.MovesUsed + "/" + proof.MaxMoves + " · Catalog v" + proof.CatalogVersion
+                + " · Nhận diện Tier 2: " + (proof.Tier2RecognitionConfirmed ? "Đã xác nhận" : "Chưa xác nhận")
+                + (proof.Failure == Fruit2048LearningProofFailure.None ? string.Empty : " · Lỗi: " + proof.Failure);
         }
 
         private async void ResetLearning_Click(object sender, RoutedEventArgs e)
@@ -424,16 +581,57 @@ namespace ADB_Tool_Automation_Post_FB.UI
         private void UpdateDetailButtons()
         {
             Fruit2048DeviceItem item = DeviceList.SelectedItem as Fruit2048DeviceItem;
+            bool running = item != null && item.IsRunning;
             bool manual = item != null && item.IsConnected && !item.IsRunning
                 && item.Owner == DeviceAutomationOwner.None;
+            // During Auto the board and recognition summary are the only useful
+            // live controls.  Hide setup/manual tools until the run completes.
+            ConfigurationPanel.Visibility = running ? Visibility.Collapsed : Visibility.Visible;
+            ManualControlsPanel.Visibility = running ? Visibility.Collapsed : Visibility.Visible;
+            ScanButton.Visibility = running ? Visibility.Collapsed : Visibility.Visible;
+            StartButton.Visibility = running ? Visibility.Collapsed : Visibility.Visible;
+            CalibrationButton.Visibility = running ? Visibility.Collapsed : Visibility.Visible;
+            AdvancedToolsExpander.Visibility = running ? Visibility.Collapsed : Visibility.Visible;
+            StopButton.Visibility = running ? Visibility.Visible : Visibility.Collapsed;
+            Grid.SetColumn(StopButton, running ? 0 : 2);
+            Grid.SetColumnSpan(StopButton, running ? 3 : 1);
             ScanButton.IsEnabled = manual;
             CalibrationButton.IsEnabled = manual && calibration != null;
             UpButton.IsEnabled = DownButton.IsEnabled = LeftButton.IsEnabled = RightButton.IsEnabled = manual;
-            StartButton.IsEnabled = item != null && item.CanSelect
-                && templateCatalog.SeedAvailability.IsReady;
+            // Start is deliberately available even while bootstrap seeds are missing.
+            // RunAsync navigates to the Fruit event first, then reports MissingSeeds
+            // safely so the operator can calibrate from the live board.
+            StartButton.IsEnabled = item != null && item.CanSelect;
             StopButton.IsEnabled = item != null && item.IsRunning;
             ExportLastFailureButton.IsEnabled = item != null
                 && !string.IsNullOrWhiteSpace(learningDiagnosticStore?.GetLatestForDevice(item.DeviceName));
+            UpdateBulkActionButton();
+        }
+
+        private void UpdateBulkActionButton()
+        {
+            if (BulkActionButton == null) return;
+            Fruit2048DeviceItem[] selected = devices.Where(item => item.IsSelected).ToArray();
+            if (selected.Any(item => item.IsRunning))
+            {
+                BulkActionButton.Content = "■ Dừng đã chọn";
+                BulkActionButton.Background = new SolidColorBrush(Color.FromRgb(220, 38, 38));
+                BulkActionButton.IsEnabled = true;
+                return;
+            }
+
+            if (selected.Any(item => item.CanSelect))
+            {
+                BulkActionButton.Content = "▶ Chạy đã chọn";
+                BulkActionButton.Background = new SolidColorBrush(Color.FromRgb(15, 118, 110));
+                BulkActionButton.IsEnabled = true;
+                return;
+            }
+
+            bool hasAvailable = devices.Any(item => item.CanSelect);
+            BulkActionButton.Content = hasAvailable ? "✓ Chọn tất cả khả dụng" : "Không có thiết bị khả dụng";
+            BulkActionButton.Background = new SolidColorBrush(Color.FromRgb(71, 85, 105));
+            BulkActionButton.IsEnabled = hasAvailable;
         }
 
         private Fruit2048DeviceItem Find(string deviceName) => devices.FirstOrDefault(item =>
@@ -484,13 +682,17 @@ namespace ADB_Tool_Automation_Post_FB.UI
         private string learningMessage;
         private Fruit2048BootstrapState bootstrapState;
         private int unknownCellCount;
+        private int badgeBootstrapCells, fastPathCells, emptyCellCount, tier1CellCount;
+        private bool hasBoardRead;
+        private int observedCellCount;
+        private Fruit2048FirstLearningProofProgress firstLearningProof;
 
         public string DeviceName { get; set; }
         public bool IsSelected { get => isSelected; set { isSelected = value; OnChanged(); } }
-        public bool IsConnected { get => isConnected; set { isConnected = value; OnChanged(); OnChanged(nameof(CanSelect)); } }
-        public bool IsRunning { get => isRunning; set { isRunning = value; OnChanged(); OnChanged(nameof(CanSelect)); } }
-        public DeviceAutomationOwner Owner { get => owner; set { owner = value; OnChanged(); OnChanged(nameof(CanSelect)); } }
-        public Fruit2048RuntimeStatus Status { get => status; set { status = value; OnChanged(); } }
+        public bool IsConnected { get => isConnected; set { if (isConnected == value) return; isConnected = value; OnChanged(); OnChanged(nameof(CanSelect)); RaisePresentationProperties(); } }
+        public bool IsRunning { get => isRunning; set { if (isRunning == value) return; isRunning = value; OnChanged(); OnChanged(nameof(CanSelect)); RaisePresentationProperties(); } }
+        public DeviceAutomationOwner Owner { get => owner; set { if (owner == value) return; owner = value; OnChanged(); OnChanged(nameof(CanSelect)); RaisePresentationProperties(); } }
+        public Fruit2048RuntimeStatus Status { get => status; set { if (status == value) return; status = value; OnChanged(); RaisePresentationProperties(); } }
         public Fruit2048Board Board { get; set; }
         public int HighestTile { get => highestTile; set { highestTile = value; OnChanged(); } }
         public int MoveCount { get => moveCount; set { moveCount = value; OnChanged(); } }
@@ -503,11 +705,18 @@ namespace ADB_Tool_Automation_Post_FB.UI
         public string LearningMessage { get => learningMessage; set { learningMessage = value; OnChanged(); } }
         public Fruit2048BootstrapState BootstrapState { get => bootstrapState; set { bootstrapState = value; OnChanged(); } }
         public int UnknownCellCount { get => unknownCellCount; set { unknownCellCount = value; OnChanged(); } }
+        public int BadgeBootstrapCells { get => badgeBootstrapCells; set { badgeBootstrapCells = value; OnChanged(); } }
+        public int FastPathCells { get => fastPathCells; set { fastPathCells = value; OnChanged(); } }
+        public int EmptyCellCount { get => emptyCellCount; set { emptyCellCount = value; OnChanged(); } }
+        public int Tier1CellCount { get => tier1CellCount; set { tier1CellCount = value; OnChanged(); } }
+        public bool HasBoardRead { get => hasBoardRead; set { hasBoardRead = value; OnChanged(); } }
+        public int ObservedCellCount { get => observedCellCount; set { observedCellCount = value; OnChanged(); } }
+        public Fruit2048FirstLearningProofProgress FirstLearningProof { get => firstLearningProof; set { firstLearningProof = value; OnChanged(); } }
         public CancellationTokenSource Cancellation { get; set; }
         public Task RunningTask { get; set; }
         public bool CanSelect => IsConnected && Owner == DeviceAutomationOwner.None && !IsRunning;
-        public string ConnectionText => IsConnected ? "Đã kết nối" : "Mất kết nối";
         public string LastMoveText => LastMove.HasValue ? MoveSymbol(LastMove.Value) : "—";
+        public string StatusBadgeText => "● " + DisplayStatus;
         public string DisplayStatus
         {
             get
@@ -519,7 +728,7 @@ namespace ADB_Tool_Automation_Post_FB.UI
                 {
                     case Fruit2048RuntimeStatus.TargetReached: return "Đã đạt mục tiêu";
                     case Fruit2048RuntimeStatus.NoMoves: return "Không còn nước đi";
-                    case Fruit2048RuntimeStatus.BoardUnknown: return "Không đọc được bàn";
+                    case Fruit2048RuntimeStatus.BoardUnknown: return "Cần nhận diện thêm";
                     case Fruit2048RuntimeStatus.NeedsFreshBoard: return "Cần board mới";
                     case Fruit2048RuntimeStatus.MissingSeeds: return "Thiếu seed";
                     case Fruit2048RuntimeStatus.Failed: return "Lỗi";
@@ -527,14 +736,54 @@ namespace ADB_Tool_Automation_Post_FB.UI
                 }
             }
         }
-        public Brush StatusBrush => Owner == DeviceAutomationOwner.Farm
-            ? Brushes.DarkOrange : (IsConnected ? Brushes.SeaGreen : Brushes.Gray);
+        public Brush StatusBrush
+        {
+            get
+            {
+                if (!IsConnected) return Brushes.Gray;
+                if (Owner == DeviceAutomationOwner.Farm) return Brushes.DarkOrange;
+                if (Owner == DeviceAutomationOwner.Fruit2048 || IsRunning) return Brushes.RoyalBlue;
+                if (Status == Fruit2048RuntimeStatus.Failed || Status == Fruit2048RuntimeStatus.MissingSeeds)
+                    return Brushes.Crimson;
+                if (Status == Fruit2048RuntimeStatus.BoardUnknown || Status == Fruit2048RuntimeStatus.NeedsFreshBoard)
+                    return Brushes.DarkOrange;
+                return Brushes.SeaGreen;
+            }
+        }
+        public Brush StatusBadgeForeground => StatusBrush;
+        public Brush StatusBadgeBorder => IsErrorStatus
+            ? new SolidColorBrush(Color.FromRgb(253, 164, 175))
+            : IsWarningStatus ? new SolidColorBrush(Color.FromRgb(253, 186, 116))
+            : (!IsConnected ? new SolidColorBrush(Color.FromRgb(203, 213, 225))
+            : IsRunning ? new SolidColorBrush(Color.FromRgb(147, 197, 253))
+            : new SolidColorBrush(Color.FromRgb(167, 243, 208)));
+        public Brush StatusBadgeBackground => IsErrorStatus
+            ? new SolidColorBrush(Color.FromRgb(255, 241, 242))
+            : IsWarningStatus ? new SolidColorBrush(Color.FromRgb(255, 247, 237))
+            : (!IsConnected ? new SolidColorBrush(Color.FromRgb(248, 250, 252))
+            : IsRunning ? new SolidColorBrush(Color.FromRgb(239, 246, 255))
+            : new SolidColorBrush(Color.FromRgb(236, 253, 245)));
+        private bool IsErrorStatus => IsConnected && (Status == Fruit2048RuntimeStatus.Failed
+            || Status == Fruit2048RuntimeStatus.MissingSeeds);
+        private bool IsWarningStatus => Owner == DeviceAutomationOwner.Farm
+            || (IsConnected && (Status == Fruit2048RuntimeStatus.BoardUnknown
+                || Status == Fruit2048RuntimeStatus.NeedsFreshBoard));
 
         public void RefreshPresentation()
         {
             if (!CanSelect) IsSelected = IsRunning && IsSelected;
-            OnChanged(nameof(CanSelect)); OnChanged(nameof(ConnectionText));
-            OnChanged(nameof(DisplayStatus)); OnChanged(nameof(StatusBrush));
+            OnChanged(nameof(CanSelect));
+            RaisePresentationProperties();
+        }
+
+        private void RaisePresentationProperties()
+        {
+            OnChanged(nameof(DisplayStatus));
+            OnChanged(nameof(StatusBadgeText));
+            OnChanged(nameof(StatusBrush));
+            OnChanged(nameof(StatusBadgeForeground));
+            OnChanged(nameof(StatusBadgeBorder));
+            OnChanged(nameof(StatusBadgeBackground));
         }
 
         private static string MoveSymbol(Fruit2048Move move)

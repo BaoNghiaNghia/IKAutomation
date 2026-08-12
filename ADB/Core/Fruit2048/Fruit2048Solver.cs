@@ -19,7 +19,12 @@ namespace ADB_Tool_Automation_Post_FB.Core.Fruit2048
             {
                 if (!board.CanMove(candidate)) continue;
                 Fruit2048Board next = board.Simulate(candidate);
-                double score = Score(next);
+                // The teacher needs verified merge transitions to learn the next
+                // visual tier.  Score the merge that happens now, rather than
+                // only rewarding pairs which might merge on a later move.
+                IReadOnlyList<Fruit2048MergeOperation> merges =
+                    Fruit2048TransitionLearner.GetMergeOperations(board, candidate);
+                double score = Score(next, merges);
                 if (!found || score > bestScore)
                 {
                     found = true;
@@ -30,15 +35,25 @@ namespace ADB_Tool_Automation_Post_FB.Core.Fruit2048
             return found;
         }
 
-        private static double Score(Fruit2048Board board)
+        private static double Score(Fruit2048Board board,
+            IReadOnlyList<Fruit2048MergeOperation> immediateMerges)
         {
-            double score = board.EmptyCellCount * 1000.0;
+            int mergeCount = immediateMerges?.Count ?? 0;
+            int highestMergedTier = immediateMerges == null || immediateMerges.Count == 0
+                ? 0
+                : immediateMerges.Max(merge => merge.ResultTier);
+
+            // A direct merge is the only safe source of new tier evidence.  Give
+            // it precedence over shape heuristics, and prefer a higher-result
+            // merge when there are several legal directions.
+            double score = (highestMergedTier * 100000.0) + (mergeCount * 10000.0);
+            score += board.EmptyCellCount * 1000.0;
             int max = board.HighestTile;
             bool maxInCorner = board[0, 0] == max || board[0, 3] == max
                 || board[3, 0] == max || board[3, 3] == max;
             if (maxInCorner) score += max * 12.0;
 
-            int merges = 0;
+            int futureMerges = 0;
             double roughness = 0;
             for (int row = 0; row < 4; row++)
             for (int column = 0; column < 4; column++)
@@ -47,17 +62,17 @@ namespace ADB_Tool_Automation_Post_FB.Core.Fruit2048
                 if (column < 3)
                 {
                     int right = board[row, column + 1];
-                    if (value != 0 && value == right) merges++;
+                    if (value != 0 && value == right) futureMerges++;
                     roughness += Difference(value, right);
                 }
                 if (row < 3)
                 {
                     int down = board[row + 1, column];
-                    if (value != 0 && value == down) merges++;
+                    if (value != 0 && value == down) futureMerges++;
                     roughness += Difference(value, down);
                 }
             }
-            score += merges * 150.0;
+            score += futureMerges * 150.0;
             score -= roughness * 4.0;
             score += Monotonicity(board) * 20.0;
             return score;

@@ -18,6 +18,7 @@ namespace ADB_Tool_Automation_Post_FB.Infrastructure.Fruit2048
         public const string CityFestivalEntry = @"Navigation\city_festival_entry.png";
         public const string Fruit2048Tab = @"Navigation\fruit_2048_tab.png";
         public const string NavigationBoardAnchor = @"Navigation\board_anchor.png";
+        public const string NavigationBoardSecondaryAnchor = @"Navigation\board_frame_secondary.png";
         private static readonly int[] TileValues =
         { 0, 1, 2, 4, 8, 16, 32, 64, 128, 256, 512, 1024, 2048 };
         private readonly string root;
@@ -34,6 +35,7 @@ namespace ADB_Tool_Automation_Post_FB.Infrastructure.Fruit2048
         }
 
         public string RootPath => root;
+        public string GetTemplatePath(string fileName) => Path.Combine(root, fileName ?? string.Empty);
         public Fruit2048CalibratedSeedStore CalibratedSeeds => calibratedSeeds;
         public string EmptySeedPath => ResolveTilePath(0).Path;
         public string Tier1SeedPath => ResolveTilePath(1).Path;
@@ -46,8 +48,9 @@ namespace ADB_Tool_Automation_Post_FB.Infrastructure.Fruit2048
             EmptySource = ResolveTilePath(0).Source,
             Tier1Source = ResolveTilePath(1).Source
         };
-        // The real board-frame anchor is the authoritative readiness signal.  Do not
-        // block runtime recognition on a separately cropped event-title asset.
+        // The real board-frame primary anchor is the only required readiness asset.
+        // The secondary frame strip is an optional navigation fallback and must not
+        // make tile recognition unavailable when it has not yet been deployed.
         public IReadOnlyList<string> RequiredFileNames => new[] { NavigationBoardAnchor };
         public IReadOnlyList<string> MissingAssets => RequiredFileNames
             .Where(name => !File.Exists(Path.Combine(root, name))).ToArray();

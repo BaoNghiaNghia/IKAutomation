@@ -94,6 +94,7 @@
     <Compile Include="Core\Fruit2048\Fruit2048BoardAssembler.cs" />
     <Compile Include="Core\Fruit2048\Fruit2048DeviceAvailability.cs" />
     <Compile Include="Core\Fruit2048\Fruit2048Models.cs" />
+    <Compile Include="Core\Fruit2048\Fruit2048FirstLearningProofPolicy.cs" />
     <Compile Include="Core\Fruit2048\Fruit2048Solver.cs" />
     <Compile Include="Core\Fruit2048\Fruit2048TransitionLearner.cs" />
     <Compile Include="Core\Diagnostics\DeviceDiagnosticOptions.cs" />
@@ -265,10 +266,13 @@
     <Compile Include="Infrastructure\Fruit2048\Fruit2048TransitionValidator.cs" />
     <Compile Include="Infrastructure\Fruit2048\Fruit2048RuntimeSupervisor.cs" />
     <Compile Include="Infrastructure\Fruit2048\Fruit2048LearningDiagnosticStore.cs" />
+    <Compile Include="Infrastructure\Fruit2048\Fruit2048LearningProofStore.cs" />
     <Compile Include="Infrastructure\Fruit2048\Fruit2048CalibratedSeedStore.cs" />
     <Compile Include="Infrastructure\Fruit2048\Fruit2048NavigationService.cs" />
+    <Compile Include="Infrastructure\Fruit2048\Fruit2048BoardReadyDetector.cs" />
     <Compile Include="Infrastructure\Fruit2048\Fruit2048SeedCalibrationService.cs" />
     <Compile Include="Infrastructure\Fruit2048\Fruit2048ScreenProfile.cs" />
+    <Compile Include="Infrastructure\Fruit2048\Fruit2048CellVisualNormalizer.cs" />
     <Compile Include="Infrastructure\Fruit2048\Fruit2048SwipeExecutor.cs" />
     <Compile Include="Infrastructure\Fruit2048\Fruit2048TemplateCatalog.cs" />
     <Compile Include="Infrastructure\Fruit2048\FruitTileFingerprint.cs" />
