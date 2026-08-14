@@ -44,6 +44,9 @@ namespace ADB_Tool_Automation_Post_FB.Core.Diagnostics
         public long ScreenshotFailureCount { get; set; }
         public int ScreenshotQueueDepth { get; set; }
         public int ActiveScreenshotOperations { get; set; }
+        public int ScreenshotGateLimit { get; set; }
+        public int PeakActiveScreenshotOperations { get; set; }
+        public long MaxScreenshotGateWaitMs { get; set; }
         public string LastDeviceName { get; set; }
         public int LastDeviceIndex { get; set; }
         public string LastWorkflowStage { get; set; }

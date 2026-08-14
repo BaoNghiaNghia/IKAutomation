@@ -480,7 +480,14 @@ namespace ADB_Tool_Automation_Post_FB.UI
             HealthStatesTextBlock.Text = FormatHealthStates(health);
             HealthPressureTextBlock.Text = FormatHealthPressure(health);
             HealthLoadTextBlock.Text = health.ConcurrencyLimit > 0
-                ? $"{health.ActiveExecutions}/{health.ConcurrencyLimit} tác vụ"
+                ? $"Xác minh {health.PreflightActive}/{health.PreflightLimit} "
+                    + $"(chờ {health.PreflightQueued}) · "
+                    + $"Farm {health.ActiveExecutions}/{health.ConcurrencyLimit} "
+                    + $"(tối đa {health.FarmMaximumConcurrency}, chờ {health.FarmQueued}) · "
+                    + $"Ảnh {health.ScreenshotActive}/{health.ScreenshotLimit} "
+                    + $"(chờ {health.ScreenshotQueued}) · "
+                    + $"Vision {health.VisionActive}/{health.VisionLimit} "
+                    + $"(chờ {health.VisionQueued})"
                 : "Chưa có dữ liệu";
             HealthHeartbeatTextBlock.Text = FormatHeartbeat(health);
             TimeSpan uptime = health.GeneratedAt - health.StartedAt;

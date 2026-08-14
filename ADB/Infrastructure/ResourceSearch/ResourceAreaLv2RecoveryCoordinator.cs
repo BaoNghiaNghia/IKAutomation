@@ -47,7 +47,11 @@ namespace ADB_Tool_Automation_Post_FB.Infrastructure.ResourceSearch
             var result = new ResourceAreaLv2RecoveryResult
             { MaxAttempts = ResourceAreaLv2PointSelector.MaxResourceAreaLv2PointAttempts };
 
-            logger.Info($"[Resource Area Lv2 Point Flow Started] RunId='{request.RunId ?? string.Empty}', DeviceName='{request.DeviceName}', Resource='{request.Resource}', EffectiveLevel={request.Level}, AreaEpoch={request.AreaEpoch}, ExpectedTeam='{request.ExpectedTeam?.ToString() ?? string.Empty}', Strategy='PredefinedMapCoordinateEntry', CoordinateInputInvoked=true, TerritoryColorScanInvoked=false, SpecialAttemptNumber=1, RemainingUnusedPoints={ResourceAreaLv2PointSelector.Points1280x720.Count}, OperationTokenCancelled={cancellationToken.IsCancellationRequested}, NextAction='EnsureWorldMap'");
+            var eligibleCityLevels = ResourceAreaLv2PointSelector
+                .GetCityLevelsForResourceLevel(request.Level);
+            var eligibleMapPoints = ResourceAreaLv2PointSelector
+                .GetPointsForResourceLevel(request.Level);
+            logger.Info($"[Resource Area Lv2 Point Flow Started] RunId='{request.RunId ?? string.Empty}', DeviceName='{request.DeviceName}', Resource='{request.Resource}', EffectiveLevel={request.Level}, EligibleCityLevels='{string.Join(",", eligibleCityLevels)}', AreaEpoch={request.AreaEpoch}, ExpectedTeam='{request.ExpectedTeam?.ToString() ?? string.Empty}', Strategy='ResourceLevelMappedCityAreaCoordinates', CoordinateInputInvoked=true, TerritoryColorScanInvoked=false, SpecialAttemptNumber=1, RemainingUnusedPoints={eligibleMapPoints.Count}, OperationTokenCancelled={cancellationToken.IsCancellationRequested}, NextAction='EnsureWorldMap'");
             NavigationResult ensured = await navigation.EnsureWorldMapAsync(
                 request.DeviceName, cancellationToken);
             result.EnsureWorldMapResult = ensured;
@@ -80,7 +84,7 @@ namespace ADB_Tool_Automation_Post_FB.Infrastructure.ResourceSearch
                 return result;
             }
 
-            logger.Info($"[Resource Area Lv2 Point Attempt] RunId='{request.RunId ?? string.Empty}', DeviceName='{request.DeviceName}', Resource='{request.Resource}', EffectiveLevel={request.Level}, AreaEpoch={request.AreaEpoch}, Attempt={point.Attempt}, MaxAttempts={point.MaxAttempts}, RemainingPointCount={point.RemainingPointCount}, MapCoordinate=({point.BasePoint.X},{point.BasePoint.Y}), CoordinateSequence='FocusX-ClearX-InputX-FocusY-ClearY-InputY-Pin', PanelClosed={result.WorldMapVerifiedBeforeTap}, WorldMapVerifiedBeforeTap={result.WorldMapVerifiedBeforeTap}, PointTapSent=false, OperationTokenCancelled={cancellationToken.IsCancellationRequested}, NextAction='EnterPredefinedCoordinates'");
+            logger.Info($"[Resource Area Lv2 Point Attempt] RunId='{request.RunId ?? string.Empty}', DeviceName='{request.DeviceName}', Resource='{request.Resource}', EffectiveLevel={request.Level}, EligibleCityLevels='{string.Join(",", eligibleCityLevels)}', AreaEpoch={request.AreaEpoch}, Attempt={point.Attempt}, MaxAttempts={point.MaxAttempts}, RemainingPointCount={point.RemainingPointCount}, MapCoordinate=({point.BasePoint.X},{point.BasePoint.Y}), CoordinateSequence='FocusX-ClearX-InputX-FocusY-ClearY-InputY-Pin', PanelClosed={result.WorldMapVerifiedBeforeTap}, WorldMapVerifiedBeforeTap={result.WorldMapVerifiedBeforeTap}, PointTapSent=false, OperationTokenCancelled={cancellationToken.IsCancellationRequested}, NextAction='EnterPredefinedCoordinates'");
             LogCancellationTrace(request, "BeforePointTap", cancellationToken,
                 "FarmOperationToken", "ResourceAreaLv2RecoveryCoordinator");
             var mapPointNavigation = navigation as IResourceAreaMapPointNavigationService;
@@ -142,7 +146,7 @@ namespace ADB_Tool_Automation_Post_FB.Infrastructure.ResourceSearch
                 + $"Resource='{request.Resource}', Level={request.Level}, AreaEpoch={request.AreaEpoch}, "
                 + $"Attempt={result.Attempt}, MaxAttempts={result.MaxAttempts}, "
                 + $"BasePoint=({result.BasePoint.X},{result.BasePoint.Y}), "
-                + $"ScaledPoint=({result.ScaledPoint.X},{result.ScaledPoint.Y}), "
+                + $"EnteredMapCoordinate=({result.ScaledPoint.X},{result.ScaledPoint.Y}), "
                 + $"ActualResolution='{(point == null ? string.Empty : point.ActualResolution.ToString())}', "
                 + $"RemainingPointCount={result.RemainingPointCount}, "
                 + $"PanelClosed={result.WorldMapVerifiedBeforeTap}, "

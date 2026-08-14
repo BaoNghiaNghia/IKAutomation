@@ -43,9 +43,10 @@ namespace ADB_Tool_Automation_Post_FB.Infrastructure.LDPlayer
             new ConcurrentDictionary<string, SemaphoreSlim>(StringComparer.OrdinalIgnoreCase);
         private static readonly ConcurrentDictionary<string, DateTimeOffset> HealthyDevices =
             new ConcurrentDictionary<string, DateTimeOffset>(StringComparer.OrdinalIgnoreCase);
+        private static readonly int ScreenshotConcurrencyLimit =
+            ReadPositiveSetting("Operations.MaxConcurrentScreenshots", 5);
         private static readonly SemaphoreSlim ScreenshotGate = new SemaphoreSlim(
-            ReadPositiveSetting("Operations.MaxConcurrentScreenshots", 4),
-            ReadPositiveSetting("Operations.MaxConcurrentScreenshots", 4));
+            ScreenshotConcurrencyLimit, ScreenshotConcurrencyLimit);
         private static readonly int AdbHealthTtlMilliseconds =
             ReadPositiveSetting("Operations.AdbHealthTtlMs", 3000);
         private static long framesCaptured;
@@ -62,6 +63,8 @@ namespace ADB_Tool_Automation_Post_FB.Infrastructure.LDPlayer
         private static long screenshotTotalDurationMs;
         private static int screenshotQueueDepth;
         private static int activeScreenshotOperations;
+        private static int peakActiveScreenshotOperations;
+        private static long maxScreenshotGateWaitMs;
         private static string lastScreenshotDeviceName;
         private static string lastScreenshotWorkflowStage;
         private static int lastScreenshotDeviceIndex = -1;
@@ -89,6 +92,9 @@ namespace ADB_Tool_Automation_Post_FB.Infrastructure.LDPlayer
                 ScreenshotFailureCount = Interlocked.Read(ref screenshotFailures),
                 ScreenshotQueueDepth = Volatile.Read(ref screenshotQueueDepth),
                 ActiveScreenshotOperations = Volatile.Read(ref activeScreenshotOperations),
+                ScreenshotGateLimit = ScreenshotConcurrencyLimit,
+                PeakActiveScreenshotOperations = Volatile.Read(ref peakActiveScreenshotOperations),
+                MaxScreenshotGateWaitMs = Interlocked.Read(ref maxScreenshotGateWaitMs),
                 LastDeviceName = Volatile.Read(ref lastScreenshotDeviceName),
                 LastDeviceIndex = Volatile.Read(ref lastScreenshotDeviceIndex),
                 LastWorkflowStage = Volatile.Read(ref lastScreenshotWorkflowStage)
@@ -102,6 +108,20 @@ namespace ADB_Tool_Automation_Post_FB.Infrastructure.LDPlayer
             int value;
             return int.TryParse(ConfigurationManager.AppSettings[key], out value) && value > 0
                 ? value : fallback;
+        }
+
+        private static void UpdateMaximum(ref int target, int value)
+        {
+            int observed;
+            while ((observed = Volatile.Read(ref target)) < value
+                && Interlocked.CompareExchange(ref target, value, observed) != observed) { }
+        }
+
+        private static void UpdateMaximum(ref long target, long value)
+        {
+            long observed;
+            while ((observed = Interlocked.Read(ref target)) < value
+                && Interlocked.CompareExchange(ref target, value, observed) != observed) { }
         }
 
         public static string ConfigureLdConsolePath(string configuredPath)
@@ -303,6 +323,9 @@ namespace ADB_Tool_Automation_Post_FB.Infrastructure.LDPlayer
                     gateWait.Stop();
                     Interlocked.Increment(ref activeScreenshotOperations);
                     Interlocked.Add(ref screenshotGateWaitMs, gateWait.ElapsedMilliseconds);
+                    UpdateMaximum(ref peakActiveScreenshotOperations,
+                        Volatile.Read(ref activeScreenshotOperations));
+                    UpdateMaximum(ref maxScreenshotGateWaitMs, gateWait.ElapsedMilliseconds);
                     try
                     {
                         var screenShootWatch = Stopwatch.StartNew();
@@ -324,7 +347,8 @@ namespace ADB_Tool_Automation_Post_FB.Infrastructure.LDPlayer
                         ScreenshotGate.Release();
                         RuntimePressureMetrics.ReportScreenshot(gateWait.ElapsedMilliseconds,
                             screenshot == null, Volatile.Read(ref screenshotQueueDepth),
-                            Volatile.Read(ref activeScreenshotOperations));
+                            Volatile.Read(ref activeScreenshotOperations),
+                            ScreenshotConcurrencyLimit);
                     }
                     if (screenshot != null)
                     {

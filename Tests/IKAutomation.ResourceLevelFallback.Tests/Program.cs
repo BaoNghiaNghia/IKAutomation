@@ -46,7 +46,9 @@ internal static class Program
         Run("Target-level-too-low search continues lower levels", TargetLevelTooLowSearchSkipsRemainingLevels);
         Run("Search-other-region toast skips remaining levels", SearchOtherRegionSearchSkipsRemainingLevels);
         Run("ResourceAreaLv2 redirect preserves dedicated outcome", ResourceAreaLv2RedirectPreservesOutcome);
-        Run("ResourceAreaLv2 point pool contains all 47 configured points", ResourceAreaLv2PointPoolContainsConfiguredPoints);
+        Run("ResourceAreaLv2 city pools contain the configured map coordinates", ResourceAreaLv2CityPoolsContainConfiguredPoints);
+        Run("ResourceAreaLv2 resource levels select the intended city pools", ResourceAreaLv2ResourceLevelsSelectCityPools);
+        Run("ResourceAreaLv2 map coordinates are not screen scaled", ResourceAreaLv2MapCoordinatesAreNotScreenScaled);
         Run("Ignored Search tap yields to next resource", SearchTapNotAppliedYieldsResource);
         Run("Single toast anchor during configuration does not switch resource", ConfigurationSingleToastAnchorDoesNotSwitch);
         Run("Distant toast anchors during configuration do not switch resource", ConfigurationDistantToastAnchorsDoNotSwitch);
@@ -97,7 +99,39 @@ internal static class Program
     static void TargetLevelTooLowSearchSkipsRemainingLevels(){var h=new H();h.Search.Default=ResourceSearchOutcome.ResourceNotFound;h.Search.NotFoundVariant="TargetLevelTooLow";var r=Go(h);Eq(ResourceLevelFallbackOutcome.ResourceLevelsExhausted,r.Outcome,"outcome");Eq(3,h.Search.Calls,"search count");Is(new[]{7,6,5}.SequenceEqual(h.Config.Levels),"configured levels");Eq("TargetLevelTooLow",r.Attempts.First().MatchedNotFoundVariant,"variant");}
     static void SearchOtherRegionSearchSkipsRemainingLevels(){var h=new H();h.Search.Default=ResourceSearchOutcome.ResourceNotFound;h.Search.NotFoundVariant="SearchOtherRegion";var r=Go(h);Eq(ResourceLevelFallbackOutcome.ResourceLevelsExhausted,r.Outcome,"outcome");Eq(1,h.Search.Calls,"search count");Is(new[]{7}.SequenceEqual(h.Config.Levels),"configured levels");Eq("SearchOtherRegion",r.Attempts.Single().MatchedNotFoundVariant,"variant");}
     static void ResourceAreaLv2RedirectPreservesOutcome(){var h=new H();h.Search.Default=ResourceSearchOutcome.ResourceAreaLv2Redirect;h.Search.NotFoundVariant="ResourceAreaLv2Redirect";var r=Go(h);Eq(ResourceLevelFallbackOutcome.ResourceAreaLv2Redirect,r.Outcome,"outcome");Eq(1,h.Search.Calls,"single search");Eq(1,h.Config.Calls,"no lower level");Eq(7,r.LastAttemptedLevel,"last level");Eq("ResourceAreaLv2Redirect",r.MatchedNotFoundVariant,"variant");Eq(ResourceSearchFailureReason.ResourceAreaLv2Redirect,r.FailureReason,"reason");}
-    static void ResourceAreaLv2PointPoolContainsConfiguredPoints(){var added=new[]{new System.Drawing.Point(319,702),new System.Drawing.Point(330,681),new System.Drawing.Point(340,664),new System.Drawing.Point(357,654),new System.Drawing.Point(370,636),new System.Drawing.Point(395,623),new System.Drawing.Point(403,634),new System.Drawing.Point(407,641),new System.Drawing.Point(421,654),new System.Drawing.Point(423,669),new System.Drawing.Point(408,673),new System.Drawing.Point(395,680),new System.Drawing.Point(398,693),new System.Drawing.Point(380,714),new System.Drawing.Point(360,693),new System.Drawing.Point(342,699),new System.Drawing.Point(324,707),new System.Drawing.Point(325,720),new System.Drawing.Point(330,734),new System.Drawing.Point(348,747),new System.Drawing.Point(370,740),new System.Drawing.Point(363,714)};Eq(47,ResourceAreaLv2PointSelector.Points1280x720.Count,"point count");Is(added.All(ResourceAreaLv2PointSelector.Points1280x720.Contains),"added point missing");Eq(47,ResourceAreaLv2PointSelector.Points1280x720.Distinct().Count(),"duplicate point");}
+    static void ResourceAreaLv2CityPoolsContainConfiguredPoints()
+    {
+        Eq(16, ResourceAreaLv2PointSelector.GetPointsForCityLevel(7).Count, "city level 7 count");
+        Eq(55, ResourceAreaLv2PointSelector.GetPointsForCityLevel(8).Count, "city level 8 count");
+        Eq(16, ResourceAreaLv2PointSelector.GetPointsForCityLevel(9).Count, "city level 9 count");
+        Eq(36, ResourceAreaLv2PointSelector.GetPointsForCityLevel(10).Count, "city level 10 count");
+        Is(ResourceAreaLv2PointSelector.GetPointsForCityLevel(7).Contains(new System.Drawing.Point(650,954)), "level 7 point");
+        Is(ResourceAreaLv2PointSelector.GetPointsForCityLevel(8).Contains(new System.Drawing.Point(783,816)), "level 8 point");
+        Is(ResourceAreaLv2PointSelector.GetPointsForCityLevel(9).Contains(new System.Drawing.Point(520,809)), "level 9 point");
+        Is(ResourceAreaLv2PointSelector.GetPointsForCityLevel(10).Contains(new System.Drawing.Point(612,774)), "level 10 corrected pair");
+        Eq(123, ResourceAreaLv2PointSelector.AllMapPoints.Distinct().Count(), "all configured points unique");
+    }
+
+    static void ResourceAreaLv2ResourceLevelsSelectCityPools()
+    {
+        Is(new[] { 7, 8 }.SequenceEqual(ResourceAreaLv2PointSelector.GetCityLevelsForResourceLevel(6)), "level 6 cities");
+        Is(new[] { 7, 8, 9, 10 }.SequenceEqual(ResourceAreaLv2PointSelector.GetCityLevelsForResourceLevel(7)), "level 7 cities");
+        Is(new[] { 8, 9, 10 }.SequenceEqual(ResourceAreaLv2PointSelector.GetCityLevelsForResourceLevel(8)), "level 8 cities");
+        Eq(71, ResourceAreaLv2PointSelector.GetPointsForResourceLevel(6).Count, "level 6 pool");
+        Eq(123, ResourceAreaLv2PointSelector.GetPointsForResourceLevel(7).Count, "level 7 pool");
+        Eq(107, ResourceAreaLv2PointSelector.GetPointsForResourceLevel(8).Count, "level 8 pool");
+        Eq(0, ResourceAreaLv2PointSelector.GetPointsForResourceLevel(5).Count, "unsupported level pool");
+    }
+
+    static void ResourceAreaLv2MapCoordinatesAreNotScreenScaled()
+    {
+        var selector = new ResourceAreaLv2PointSelector(new Random(7));
+        ResourceAreaLv2PointSelection selected = selector.Next("run", "device", ResourceType.Iron, 6, 0, 640, 360);
+        Eq(selected.BasePoint, selected.ScaledPoint, "map coordinate must remain unchanged");
+        Is(ResourceAreaLv2PointSelector.GetPointsForResourceLevel(6).Contains(selected.BasePoint), "selected point belongs to level 6 pool");
+        ResourceAreaLv2PointSelection unsupported = selector.Next("run", "device", ResourceType.Iron, 5, 0, 1280, 720);
+        Is(unsupported.Exhausted, "unsupported resource level must not guess a city area");
+    }
     static void SearchTapNotAppliedYieldsResource(){var h=new H();h.Search.Default=ResourceSearchOutcome.SearchTapNotApplied;var r=Go(h);Eq(ResourceLevelFallbackOutcome.ResourceLevelsExhausted,r.Outcome,"outcome");Eq(1,h.Search.Calls,"bounded search handoff");Eq(1,h.Config.Calls,"no lower-level loop");Is(r.ErrorMessage==null,"technical failure");}
     static void ConfigurationSingleToastAnchorDoesNotSwitch(){var h=new H();h.Search.Outcomes.Enqueue(ResourceSearchOutcome.ResourceNotFound);h.Config.FailLevel=6;h.Matcher.ToastFrames.Add(3);h.Matcher.MatchedToastTemplates.Clear();h.Matcher.MatchedToastTemplates.Add(TemplateId.ResourceNotFoundToastShortAnchor);Eq(ResourceLevelFallbackOutcome.ConfigurationFailed,Go(h).Outcome,"outcome");}
     static void ConfigurationDistantToastAnchorsDoNotSwitch(){var h=new H();h.Search.Outcomes.Enqueue(ResourceSearchOutcome.ResourceNotFound);h.Config.FailLevel=6;h.Matcher.ToastFrames.Add(3);h.Matcher.MatchedToastTemplates.Clear();h.Matcher.MatchedToastTemplates.Add(TemplateId.ResourceNotFoundToastShortAnchor);h.Matcher.MatchedToastTemplates.Add(TemplateId.ResourceNotFoundToastOtherRegionAnchor);h.Matcher.OtherRegionY=500;Eq(ResourceLevelFallbackOutcome.ConfigurationFailed,Go(h).Outcome,"outcome");}

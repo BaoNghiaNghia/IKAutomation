@@ -212,6 +212,7 @@
     <Compile Include="Core\Workflows\IContinuousFarmSupervisor.cs" />
     <Compile Include="Core\Workflows\IContinuousFarmHeartbeatNotifier.cs" />
     <Compile Include="Core\Workflows\IAdaptiveConcurrencyGate.cs" />
+    <Compile Include="Core\Workflows\IPreflightConcurrencyGate.cs" />
     <Compile Include="Core\Workflows\IContinuousFarmCheckpointStore.cs" />
     <Compile Include="Core\Workflows\IDeviceRecoveryService.cs" />
     <Compile Include="Core\Workflows\IOperationalMaintenanceService.cs" />
@@ -332,6 +333,8 @@
     <Compile Include="Infrastructure\Workflows\ContinuousFarmSupervisor.cs" />
     <Compile Include="Infrastructure\Workflows\AppConfigContinuousFarmSupervisorOptionsProvider.cs" />
     <Compile Include="Infrastructure\Workflows\AdaptiveConcurrencyGate.cs" />
+    <Compile Include="Infrastructure\Workflows\PreflightConcurrencyGate.cs" />
+    <Compile Include="Infrastructure\Workflows\AppConfigPreflightConcurrencyOptionsProvider.cs" />
     <Compile Include="Infrastructure\Workflows\AppConfigAdaptiveConcurrencyOptionsProvider.cs" />
     <Compile Include="Infrastructure\Workflows\LocalAppDataContinuousFarmCheckpointStore.cs" />
     <Compile Include="Infrastructure\Workflows\AppConfigOperationalMaintenanceOptionsProvider.cs" />
@@ -396,9 +399,6 @@
     <None Include="App.config" />
   </ItemGroup>
   <ItemGroup>
-    <Analyzer Include="..\..\ADBHowkteamLibrary\ADBHowkteamLibrary\KAutoHelper V2\KAutoHelper.dll" />
-  </ItemGroup>
-  <ItemGroup>
     <PackageReference Include="Auto_LDPlayer">
       <Version>1.1.0</Version>
     </PackageReference>
@@ -411,22 +411,6 @@
     <PackageReference Include="Tesseract">
       <Version>4.1.1</Version>
     </PackageReference>
-  </ItemGroup>
-  <ItemGroup>
-    <!-- Keep stable compile-time references for both Visual Studio and dotnet MSBuild.
-         PackageReference remains responsible for restore and native/build assets. -->
-    <Reference Include="Auto_LDPlayer">
-      <HintPath>$(NuGetPackageRoot)auto_ldplayer\1.1.0\lib\net471\Auto_LDPlayer.dll</HintPath>
-      <Private>True</Private>
-    </Reference>
-    <Reference Include="KAutoHelper">
-      <HintPath>$(NuGetPackageRoot)kautohelper_kteam\1.0.1.2\lib\net471\KAutoHelper.dll</HintPath>
-      <Private>True</Private>
-    </Reference>
-    <Reference Include="Tesseract">
-      <HintPath>$(NuGetPackageRoot)tesseract\4.1.1\lib\net45\Tesseract.dll</HintPath>
-      <Private>True</Private>
-    </Reference>
   </ItemGroup>
   <ItemGroup>
     <Resource Include="logo_1.ico" />

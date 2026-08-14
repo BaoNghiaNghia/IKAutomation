@@ -14,8 +14,18 @@ namespace ADB_Tool_Automation_Post_FB.Core.Diagnostics
         public double AverageGameplayLeaseWaitMs { get; set; }
         public int ScreenshotQueueDepth { get; set; }
         public int ActiveScreenshotOperations { get; set; }
+        public int ScreenshotConcurrencyLimit { get; set; }
+        public int PeakActiveScreenshotOperations { get; set; }
+        public long MaxScreenshotQueueWaitMs { get; set; }
+        public long ScreenshotOperationCount { get; set; }
+        public long ScreenshotTotalQueueWaitMs { get; set; }
         public int VisionQueueDepth { get; set; }
         public int ActiveVisionOperations { get; set; }
+        public int VisionConcurrencyLimit { get; set; }
+        public int PeakActiveVisionOperations { get; set; }
+        public long MaxVisionQueueWaitMs { get; set; }
+        public long VisionOperationCount { get; set; }
+        public long VisionTotalQueueWaitMs { get; set; }
     }
 
     public static class RuntimePressureMetrics
@@ -27,11 +37,15 @@ namespace ADB_Tool_Automation_Post_FB.Core.Diagnostics
         private static readonly Queue<long> VisionWaits = new Queue<long>();
         private static readonly Queue<bool> VisionFailures = new Queue<bool>();
         private static readonly Queue<long> GameplayWaits = new Queue<long>();
-        private static int screenshotQueueDepth, activeScreenshots;
-        private static int visionQueueDepth, activeVision;
+        private static int screenshotQueueDepth, activeScreenshots, screenshotLimit,
+            peakActiveScreenshots, visionQueueDepth, activeVision, visionLimit,
+            peakActiveVision;
+        private static long maxScreenshotWaitMs, maxVisionWaitMs, screenshotOperationCount,
+            visionOperationCount, screenshotTotalQueueWaitMs, visionTotalQueueWaitMs;
         private static long sampleVersion;
 
-        public static void ReportScreenshot(long waitMs, bool failed, int queued, int active)
+        public static void ReportScreenshot(long waitMs, bool failed, int queued, int active,
+            int concurrencyLimit = 0)
         {
             lock (Sync)
             {
@@ -39,11 +53,17 @@ namespace ADB_Tool_Automation_Post_FB.Core.Diagnostics
                 Enqueue(ScreenshotFailures, failed);
                 screenshotQueueDepth = Math.Max(0, queued);
                 activeScreenshots = Math.Max(0, active);
+                if (concurrencyLimit > 0) screenshotLimit = concurrencyLimit;
+                peakActiveScreenshots = Math.Max(peakActiveScreenshots, activeScreenshots);
+                maxScreenshotWaitMs = Math.Max(maxScreenshotWaitMs, Math.Max(0, waitMs));
+                screenshotOperationCount++;
+                screenshotTotalQueueWaitMs += Math.Max(0, waitMs);
                 sampleVersion++;
             }
         }
 
-        public static void ReportVision(long waitMs, bool failed, int queued, int active)
+        public static void ReportVision(long waitMs, bool failed, int queued, int active,
+            int concurrencyLimit = 0)
         {
             lock (Sync)
             {
@@ -51,6 +71,11 @@ namespace ADB_Tool_Automation_Post_FB.Core.Diagnostics
                 Enqueue(VisionFailures, failed);
                 visionQueueDepth = Math.Max(0, queued);
                 activeVision = Math.Max(0, active);
+                if (concurrencyLimit > 0) visionLimit = concurrencyLimit;
+                peakActiveVision = Math.Max(peakActiveVision, activeVision);
+                maxVisionWaitMs = Math.Max(maxVisionWaitMs, Math.Max(0, waitMs));
+                visionOperationCount++;
+                visionTotalQueueWaitMs += Math.Max(0, waitMs);
                 sampleVersion++;
             }
         }
@@ -78,8 +103,18 @@ namespace ADB_Tool_Automation_Post_FB.Core.Diagnostics
                     AverageGameplayLeaseWaitMs = GameplayWaits.Count == 0 ? 0 : GameplayWaits.Average(),
                     ScreenshotQueueDepth = screenshotQueueDepth,
                     ActiveScreenshotOperations = activeScreenshots,
+                    ScreenshotConcurrencyLimit = screenshotLimit,
+                    PeakActiveScreenshotOperations = peakActiveScreenshots,
+                    MaxScreenshotQueueWaitMs = maxScreenshotWaitMs,
+                    ScreenshotOperationCount = screenshotOperationCount,
+                    ScreenshotTotalQueueWaitMs = screenshotTotalQueueWaitMs,
                     VisionQueueDepth = visionQueueDepth,
-                    ActiveVisionOperations = activeVision
+                    ActiveVisionOperations = activeVision,
+                    VisionConcurrencyLimit = visionLimit,
+                    PeakActiveVisionOperations = peakActiveVision,
+                    MaxVisionQueueWaitMs = maxVisionWaitMs,
+                    VisionOperationCount = visionOperationCount,
+                    VisionTotalQueueWaitMs = visionTotalQueueWaitMs
                 };
             }
         }
@@ -91,6 +126,9 @@ namespace ADB_Tool_Automation_Post_FB.Core.Diagnostics
                 ScreenshotWaits.Clear(); ScreenshotFailures.Clear();
                 VisionWaits.Clear(); VisionFailures.Clear(); GameplayWaits.Clear();
                 screenshotQueueDepth = activeScreenshots = visionQueueDepth = activeVision = 0;
+                screenshotLimit = visionLimit = peakActiveScreenshots = peakActiveVision = 0;
+                maxScreenshotWaitMs = maxVisionWaitMs = screenshotOperationCount
+                    = visionOperationCount = screenshotTotalQueueWaitMs = visionTotalQueueWaitMs = 0;
                 sampleVersion = 0;
             }
         }

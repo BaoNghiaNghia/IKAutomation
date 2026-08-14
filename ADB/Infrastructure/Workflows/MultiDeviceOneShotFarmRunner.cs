@@ -21,6 +21,7 @@ namespace ADB_Tool_Automation_Post_FB.Infrastructure.Workflows
         private readonly int maximumConcurrency;
         private readonly SemaphoreSlim executionGate;
         private readonly IAdaptiveConcurrencyGate adaptiveConcurrencyGate;
+        private readonly IPreflightConcurrencyGate preflightConcurrencyGate;
         private readonly Action<string> infoLogger;
         private readonly MultiDeviceOneShotFarmRunnerOptions options;
         private readonly Func<int, CancellationToken, Task> requeueDelayAsync;
@@ -45,7 +46,8 @@ namespace ADB_Tool_Automation_Post_FB.Infrastructure.Workflows
             Action<string> infoLogger = null,
             MultiDeviceOneShotFarmRunnerOptions options = null,
             Func<int, CancellationToken, Task> requeueDelayAsync = null,
-            IDeviceAutomationOwnershipService ownershipService = null)
+            IDeviceAutomationOwnershipService ownershipService = null,
+            IPreflightConcurrencyGate preflightConcurrencyGate = null)
         {
             this.workflowFactory = workflowFactory
                 ?? throw new ArgumentNullException(nameof(workflowFactory));
@@ -54,6 +56,8 @@ namespace ADB_Tool_Automation_Post_FB.Infrastructure.Workflows
             this.maximumConcurrency = maximumConcurrency;
             this.availabilityFactory = availabilityFactory;
             this.adaptiveConcurrencyGate = adaptiveConcurrencyGate;
+            this.preflightConcurrencyGate = preflightConcurrencyGate
+                ?? new PreflightConcurrencyGate(new PreflightConcurrencyOptions());
             this.infoLogger = infoLogger ?? (message => Trace.TraceInformation(message));
             this.options = options ?? new MultiDeviceOneShotFarmRunnerOptions();
             this.requeueDelayAsync = requeueDelayAsync
@@ -84,22 +88,30 @@ namespace ADB_Tool_Automation_Post_FB.Infrastructure.Workflows
             if (string.IsNullOrWhiteSpace(request.FarmRunId))
                 request.FarmRunId = request.RunId;
 
+            var performance = new FarmRunPerformance();
+            var wallClock = Stopwatch.StartNew();
+            RuntimePressureSnapshot runtimeStart = RuntimePressureMetrics.GetSnapshot();
+
             // Each device is admitted as soon as its own preflight finishes. This avoids
             // a slow/offline device holding the entire selected set behind Task.WhenAll.
             Task<MultiDeviceOneShotFarmItemResult>[] tasks = devices.Select((device, index) =>
-                Task.Run(() => RunDevicePipelineAsync(device, index, request, progress,
-                    cancellationToken))).ToArray();
+                RunDevicePipelineAsync(device, index, request, progress,
+                    performance, cancellationToken)).ToArray();
             MultiDeviceOneShotFarmItemResult[] results = await Task.WhenAll(tasks);
+            wallClock.Stop();
             results = results
                 .OrderBy(item => Array.FindIndex(devices, device =>
                     string.Equals(device, item.DeviceName, StringComparison.OrdinalIgnoreCase)))
                 .ToArray();
+            AdaptiveConcurrencySnapshot finalConcurrency = GetConcurrencySnapshot();
+            LogPerformance(devices.Length, results, performance, finalConcurrency,
+                runtimeStart, wallClock.ElapsedMilliseconds);
             return new MultiDeviceOneShotFarmResult
             {
                 Devices = results,
                 MaximumConcurrency = maximumConcurrency,
                 AdaptiveConcurrencyEnabled = adaptiveConcurrencyGate != null,
-                FinalConcurrencyLimit = GetConcurrencySnapshot().CurrentLimit,
+                FinalConcurrencyLimit = finalConcurrency.CurrentLimit,
                 TotalSelected = devices.Length,
                 Active = 0,
                 Queued = 0,
@@ -115,6 +127,7 @@ namespace ADB_Tool_Automation_Post_FB.Infrastructure.Workflows
         private async Task<MultiDeviceOneShotFarmItemResult> RunDevicePipelineAsync(
             string deviceName, int deviceIndex, OneShotFarmRequest sourceRequest,
             IProgress<MultiDeviceOneShotFarmProgress> progress,
+            FarmRunPerformance performance,
             CancellationToken cancellationToken)
         {
             var state = new DeviceExecutionState(deviceName, deviceIndex);
@@ -131,7 +144,8 @@ namespace ADB_Tool_Automation_Post_FB.Infrastructure.Workflows
                     quantumRequest.CycleDispatchedResources = state.DispatchedResources.ToArray();
 
                     MultiDeviceOneShotFarmItemResult item = await RunAfterPreflightAsync(
-                        deviceName, deviceIndex, quantumRequest, progress, cancellationToken);
+                        deviceName, deviceIndex, quantumRequest, progress, performance,
+                        cancellationToken);
                     state.LastResult = item;
                     state.LastKnownGameState = item.Result?.FinalState
                         ?? ADB_Tool_Automation_Post_FB.Core.GameDetection.GameState.Unknown;
@@ -227,18 +241,44 @@ namespace ADB_Tool_Automation_Post_FB.Infrastructure.Workflows
         private async Task<MultiDeviceOneShotFarmItemResult> RunAfterPreflightAsync(
             string deviceName, int deviceIndex, OneShotFarmRequest request,
             IProgress<MultiDeviceOneShotFarmProgress> progress,
+            FarmRunPerformance performance,
             CancellationToken cancellationToken)
         {
             IAdaptiveConcurrencyLease adaptiveLease = null;
             IDeviceAutomationLease automationLease = null;
             bool entered = false;
             int resolvedDeviceIndex = ResolveDeviceIndex(deviceName, deviceIndex);
-            var leaseWait = Stopwatch.StartNew();
+            Stopwatch leaseWait = null;
             Stopwatch leaseHeld = null;
             try
             {
+                PreflightResult preflight;
+                using (ScreenshotCaptureContext.Push("Preflight"))
+                    preflight = availabilityFactory == null
+                        ? new PreflightResult { DeviceName = deviceName, Success = true }
+                        : await RunPreflightAsync(deviceName, request, progress, performance,
+                            cancellationToken);
+                if (!preflight.Success)
+                {
+                    preflight.ItemResult.PreflightDurationMs = preflight.DurationMs;
+                    preflight.ItemResult.PreflightTimeoutCount = preflight.TimedOut ? 1 : 0;
+                    preflight.ItemResult.PreflightFailureCount = preflight.TimedOut ? 0 : 1;
+                    return preflight.ItemResult;
+                }
+
+                if (availabilityFactory != null
+                    && request.ReadyTeamWaitMode == ReadyTeamWaitMode.YieldToSupervisor
+                    && !HasEligibleReadyTeam(preflight.Availability, request))
+                {
+                    MultiDeviceOneShotFarmItemResult waiting = WaitingForReadyTeam(
+                        preflight.DeviceName, preflight.Availability, request);
+                    waiting.PreflightDurationMs = preflight.DurationMs;
+                    return waiting;
+                }
+
                 Report(progress, deviceName, MultiDeviceOneShotFarmStage.Queued, null,
                     VietnameseUserMessageLocalizer.Default.Get(UiMessageKey.WaitingForExecutionSlot));
+                leaseWait = Stopwatch.StartNew();
                 if (adaptiveConcurrencyGate == null)
                 {
                     await executionGate.WaitAsync(cancellationToken);
@@ -252,7 +292,7 @@ namespace ADB_Tool_Automation_Post_FB.Infrastructure.Workflows
                             ApplyStartupStagger = true,
                             StaggerKey = request.RunId,
                             DeviceIndex = resolvedDeviceIndex,
-                            ExecutionPhase = AdaptiveExecutionPhase.Preflight
+                            ExecutionPhase = AdaptiveExecutionPhase.Gameplay
                         }, cancellationToken);
                 }
                 else
@@ -262,34 +302,8 @@ namespace ADB_Tool_Automation_Post_FB.Infrastructure.Workflows
                 }
                 leaseWait.Stop();
                 RuntimePressureMetrics.ReportGameplayLeaseWait(leaseWait.ElapsedMilliseconds);
+                performance.RecordFarm(GetConcurrencySnapshot(), leaseWait.ElapsedMilliseconds);
                 leaseHeld = Stopwatch.StartNew();
-
-                PreflightResult preflight;
-                using (ScreenshotCaptureContext.Push("Preflight"))
-                    preflight = availabilityFactory == null
-                        ? new PreflightResult { DeviceName = deviceName, Success = true }
-                        : await RunPreflightAsync(deviceName, request, progress, cancellationToken);
-                if (!preflight.Success)
-                {
-                    preflight.ItemResult.GameplayLeaseWaitMs = leaseWait.ElapsedMilliseconds;
-                    preflight.ItemResult.GameplayLeaseHeldMs = leaseHeld.ElapsedMilliseconds;
-                    preflight.ItemResult.PreflightDurationMs = preflight.DurationMs;
-                    preflight.ItemResult.PreflightTimeoutCount = preflight.TimedOut ? 1 : 0;
-                    preflight.ItemResult.PreflightFailureCount = preflight.TimedOut ? 0 : 1;
-                    return preflight.ItemResult;
-                }
-
-                if (availabilityFactory != null
-                    && request.ReadyTeamWaitMode == ReadyTeamWaitMode.YieldToSupervisor
-                    && !HasEligibleReadyTeam(preflight.Availability, request))
-                {
-                    MultiDeviceOneShotFarmItemResult waiting = WaitingForReadyTeam(
-                        preflight.DeviceName, preflight.Availability, request);
-                    waiting.GameplayLeaseWaitMs = leaseWait.ElapsedMilliseconds;
-                    waiting.GameplayLeaseHeldMs = leaseHeld.ElapsedMilliseconds;
-                    waiting.PreflightDurationMs = preflight.DurationMs;
-                    return waiting;
-                }
 
                 infoLogger($"[Adaptive Admission] DeviceName='{deviceName}', "
                     + $"DeviceIndex={resolvedDeviceIndex}, ExecutionPhase='Gameplay', LeaseReused=true");
@@ -336,29 +350,46 @@ namespace ADB_Tool_Automation_Post_FB.Infrastructure.Workflows
             }
             finally
             {
-                leaseWait.Stop();
+                leaseWait?.Stop();
                 leaseHeld?.Stop();
                 automationLease?.Dispose();
                 adaptiveLease?.Dispose();
                 if (entered) executionGate.Release();
                 infoLogger($"[Farm Scheduling] DeviceName='{deviceName}', "
-                    + $"GameplayLeaseWaitMs={leaseWait.ElapsedMilliseconds}, "
+                    + $"GameplayLeaseWaitMs={leaseWait?.ElapsedMilliseconds ?? 0}, "
                     + $"GameplayLeaseHeldMs={leaseHeld?.ElapsedMilliseconds ?? 0}");
             }
         }
 
         private async Task<PreflightResult> RunPreflightAsync(string deviceName,
             OneShotFarmRequest request, IProgress<MultiDeviceOneShotFarmProgress> progress,
+            FarmRunPerformance performance,
             CancellationToken cancellationToken)
         {
-            Report(progress, deviceName, MultiDeviceOneShotFarmStage.Preflight,
-                null, VietnameseUserMessageLocalizer.Default.Get(UiMessageKey.CheckingPreflight));
             bool succeeded = false;
             bool technicalFailure = false;
-            var stopwatch = Stopwatch.StartNew();
+            var queueWait = Stopwatch.StartNew();
+            Stopwatch execution = null;
             CancellationTokenSource timeoutSource = null;
+            IPreflightConcurrencyLease preflightLease = null;
             try
             {
+                Report(progress, deviceName, MultiDeviceOneShotFarmStage.PreflightQueued,
+                    null, "Đang chờ lượt kiểm tra thiết bị.");
+                preflightLease = await preflightConcurrencyGate.AcquireAsync(deviceName,
+                    cancellationToken);
+                queueWait.Stop();
+                PreflightConcurrencySnapshot enteredSnapshot = preflightConcurrencyGate
+                    .GetSnapshot();
+                performance.RecordPreflight(enteredSnapshot, queueWait.ElapsedMilliseconds);
+                infoLogger($"[Preflight Concurrency] DeviceName='{deviceName}', "
+                    + $"Action='Entered', Active={enteredSnapshot.Active}, "
+                    + $"Queued={enteredSnapshot.Queued}, Limit={enteredSnapshot.Limit}, "
+                    + $"QueueWaitMs={queueWait.ElapsedMilliseconds}");
+                Report(progress, deviceName, MultiDeviceOneShotFarmStage.Preflight,
+                    null, VietnameseUserMessageLocalizer.Default.Get(UiMessageKey.CheckingPreflight),
+                    null, queueWait.ElapsedMilliseconds, 0);
+                execution = Stopwatch.StartNew();
                 timeoutSource = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
                 timeoutSource.CancelAfter(options.PreflightTimeoutMs);
                 IWorldMapTeamAvailabilityService service = availabilityFactory();
@@ -377,7 +408,7 @@ namespace ADB_Tool_Automation_Post_FB.Infrastructure.Workflows
                         null, message);
                     PreflightResult failed = FailedPreflight(deviceName, message,
                         availability?.ErrorMessage);
-                    failed.DurationMs = stopwatch.ElapsedMilliseconds;
+                    failed.DurationMs = execution.ElapsedMilliseconds;
                     return failed;
                 }
 
@@ -391,14 +422,15 @@ namespace ADB_Tool_Automation_Post_FB.Infrastructure.Workflows
                     ? VietnameseUserMessageLocalizer.Default.Format(
                         UiMessageKey.PreflightEligibleTeams, string.Join(", ", eligible))
                     : VietnameseUserMessageLocalizer.Default.Get(UiMessageKey.PreflightNoReadyTeam);
-                Report(progress, deviceName, stage, null, status);
+                Report(progress, deviceName, stage, null, status, null,
+                    queueWait.ElapsedMilliseconds, execution.ElapsedMilliseconds);
                 succeeded = true;
                 return new PreflightResult
                 {
                     DeviceName = deviceName,
                     Success = true,
                     Availability = availability,
-                    DurationMs = stopwatch.ElapsedMilliseconds
+                    DurationMs = execution.ElapsedMilliseconds
                 };
             }
             catch (OperationCanceledException exception)
@@ -408,13 +440,13 @@ namespace ADB_Tool_Automation_Post_FB.Infrastructure.Workflows
                 technicalFailure = true;
                 const string message = "Kiểm tra thiết bị quá thời gian cho phép; thiết bị này đã nhường lượt.";
                 infoLogger($"[Farm Preflight] DeviceName='{deviceName}', TimedOut=true, "
-                    + $"DurationMs={stopwatch.ElapsedMilliseconds}, Error='{exception.Message}'");
+                    + $"DurationMs={execution?.ElapsedMilliseconds ?? 0}, Error='{exception.Message}'");
                 Report(progress, deviceName, MultiDeviceOneShotFarmStage.PreflightFailed,
                     null, message);
                 PreflightResult failed = FailedPreflight(deviceName, message,
                     exception.ToString());
                 failed.TimedOut = true;
-                failed.DurationMs = stopwatch.ElapsedMilliseconds;
+                failed.DurationMs = execution?.ElapsedMilliseconds ?? 0;
                 return failed;
             }
             catch (OperationCanceledException)
@@ -425,7 +457,7 @@ namespace ADB_Tool_Automation_Post_FB.Infrastructure.Workflows
                 {
                     DeviceName = deviceName,
                     Success = false,
-                    DurationMs = stopwatch.ElapsedMilliseconds,
+                    DurationMs = execution?.ElapsedMilliseconds ?? 0,
                     ItemResult = new MultiDeviceOneShotFarmItemResult
                     {
                         DeviceName = deviceName,
@@ -441,20 +473,32 @@ namespace ADB_Tool_Automation_Post_FB.Infrastructure.Workflows
                     null, error.UserMessage);
                 PreflightResult failed = FailedPreflight(deviceName, error.UserMessage,
                     error.TechnicalDetails);
-                failed.DurationMs = stopwatch.ElapsedMilliseconds;
+                failed.DurationMs = execution?.ElapsedMilliseconds ?? 0;
                 return failed;
             }
             finally
             {
                 timeoutSource?.Dispose();
-                stopwatch.Stop();
+                queueWait.Stop();
+                execution?.Stop();
+                if (preflightLease != null)
+                {
+                    long executionMs = execution?.ElapsedMilliseconds ?? 0;
+                    preflightLease.Dispose();
+                    PreflightConcurrencySnapshot releasedSnapshot = preflightConcurrencyGate
+                        .GetSnapshot();
+                    infoLogger($"[Preflight Concurrency] DeviceName='{deviceName}', "
+                        + $"Action='Released', Active={releasedSnapshot.Active}, "
+                        + $"Queued={releasedSnapshot.Queued}, Limit={releasedSnapshot.Limit}, "
+                        + $"ExecutionMs={executionMs}");
+                }
                 adaptiveConcurrencyGate?.Report(new AdaptiveConcurrencyObservation
                 {
                     DeviceName = deviceName,
                     Success = succeeded,
                     TechnicalFailure = technicalFailure,
-                    DurationMs = stopwatch.ElapsedMilliseconds,
-                    UseDurationAsPressure = true
+                    DurationMs = execution?.ElapsedMilliseconds ?? 0,
+                    UseDurationAsPressure = false
                 });
             }
         }
@@ -659,6 +703,86 @@ namespace ADB_Tool_Automation_Post_FB.Infrastructure.Workflows
                     ? parsed : fallbackIndex;
         }
 
+        private void LogPerformance(int selectedDevices,
+            IReadOnlyList<MultiDeviceOneShotFarmItemResult> results,
+            FarmRunPerformance performance, AdaptiveConcurrencySnapshot finalConcurrency,
+            RuntimePressureSnapshot runtimeStart,
+            long totalWallClockMs)
+        {
+            RuntimePressureSnapshot runtimeEnd = RuntimePressureMetrics.GetSnapshot();
+            long screenshotCaptures = Math.Max(0, runtimeEnd.ScreenshotOperationCount
+                - runtimeStart.ScreenshotOperationCount);
+            long screenshotWait = Math.Max(0, runtimeEnd.ScreenshotTotalQueueWaitMs
+                - runtimeStart.ScreenshotTotalQueueWaitMs);
+            long visionOperations = Math.Max(0, runtimeEnd.VisionOperationCount
+                - runtimeStart.VisionOperationCount);
+            long visionWait = Math.Max(0, runtimeEnd.VisionTotalQueueWaitMs
+                - runtimeStart.VisionTotalQueueWaitMs);
+            int completed = results.Count(item => item.Stage
+                == MultiDeviceOneShotFarmStage.Completed);
+            int failed = results.Count(item => item.Stage
+                == MultiDeviceOneShotFarmStage.Failed);
+            int cancelled = results.Count(item => item.Stage
+                == MultiDeviceOneShotFarmStage.Cancelled);
+            infoLogger("[MultiDevice Farm Performance] "
+                + $"SelectedDevices={selectedDevices}, "
+                + $"PeakConcurrentPreflight={performance.PeakPreflightActive}, "
+                + $"PeakConcurrentFarm={performance.PeakFarmActive}, "
+                + $"FarmAdaptiveMinimum={finalConcurrency.MinimumLimit}, "
+                + $"FarmAdaptiveInitial={finalConcurrency.InitialLimit}, "
+                + $"FarmAdaptiveMaximum={finalConcurrency.MaximumLimit}, "
+                + $"FarmAdaptiveFinal={finalConcurrency.CurrentLimit}, "
+                + $"PeakConcurrentScreenshots={runtimeEnd.PeakActiveScreenshotOperations}, "
+                + $"ScreenshotLimit={runtimeEnd.ScreenshotConcurrencyLimit}, "
+                + $"AverageScreenshotQueueWaitMs={Average(screenshotWait, screenshotCaptures)}, "
+                + $"MaxScreenshotQueueWaitMs={runtimeEnd.MaxScreenshotQueueWaitMs}, "
+                + $"PeakConcurrentVision={runtimeEnd.PeakActiveVisionOperations}, "
+                + $"VisionLimit={runtimeEnd.VisionConcurrencyLimit}, "
+                + $"AverageVisionQueueWaitMs={Average(visionWait, visionOperations)}, "
+                + $"MaxVisionQueueWaitMs={runtimeEnd.MaxVisionQueueWaitMs}, "
+                + $"AverageFarmAdmissionWaitMs={performance.AverageFarmWaitMs}, "
+                + $"MaxFarmAdmissionWaitMs={performance.MaxFarmWaitMs}, "
+                + $"ADBFailures='IncludedInScreenshotFailureRate', "
+                + $"ScreenshotFailures={runtimeEnd.ScreenshotFailureRate:F3}, "
+                + $"VisionFailures={runtimeEnd.VisionFailureRate:F3}, "
+                + $"Completed={completed}, Failed={failed}, Cancelled={cancelled}, "
+                + $"TotalWallClockMs={totalWallClockMs}");
+        }
+
+        private static long Average(long total, long count) => count <= 0 ? 0 : total / count;
+
+        private sealed class FarmRunPerformance
+        {
+            private readonly object sync = new object();
+            private long totalFarmWaitMs;
+            private int farmAdmissions;
+
+            public int PeakPreflightActive { get; private set; }
+            public int PeakFarmActive { get; private set; }
+            public long MaxFarmWaitMs { get; private set; }
+            public long AverageFarmWaitMs
+            {
+                get { lock (sync) return farmAdmissions == 0 ? 0 : totalFarmWaitMs / farmAdmissions; }
+            }
+
+            public void RecordPreflight(PreflightConcurrencySnapshot snapshot, long queueWaitMs)
+            {
+                lock (sync) PeakPreflightActive = Math.Max(PeakPreflightActive,
+                    snapshot?.Active ?? 0);
+            }
+
+            public void RecordFarm(AdaptiveConcurrencySnapshot snapshot, long queueWaitMs)
+            {
+                lock (sync)
+                {
+                    PeakFarmActive = Math.Max(PeakFarmActive, snapshot?.ActiveExecutions ?? 0);
+                    totalFarmWaitMs += Math.Max(0, queueWaitMs);
+                    farmAdmissions++;
+                    MaxFarmWaitMs = Math.Max(MaxFarmWaitMs, Math.Max(0, queueWaitMs));
+                }
+            }
+        }
+
         private sealed class PreflightResult
         {
             public string DeviceName { get; set; }
@@ -705,6 +829,9 @@ namespace ADB_Tool_Automation_Post_FB.Infrastructure.Workflows
             adaptiveConcurrencyGate?.GetSnapshot() ?? new AdaptiveConcurrencySnapshot
             {
                 Enabled = false,
+                MinimumLimit = maximumConcurrency,
+                InitialLimit = maximumConcurrency,
+                MaximumLimit = maximumConcurrency,
                 CurrentLimit = maximumConcurrency,
                 ActiveExecutions = 0
             };
@@ -734,9 +861,11 @@ namespace ADB_Tool_Automation_Post_FB.Infrastructure.Workflows
         private void Report(IProgress<MultiDeviceOneShotFarmProgress> progress,
             string deviceName, MultiDeviceOneShotFarmStage stage,
             OneShotFarmProgress deviceProgress, string message,
-            DeviceExecutionState state = null)
+            DeviceExecutionState state = null, long preflightQueueWaitMs = 0,
+            long preflightExecutionMs = 0)
         {
             AdaptiveConcurrencySnapshot concurrency = GetConcurrencySnapshot();
+            PreflightConcurrencySnapshot preflight = preflightConcurrencyGate.GetSnapshot();
             progress?.Report(new MultiDeviceOneShotFarmProgress
             {
                 DeviceName = deviceName,
@@ -744,7 +873,14 @@ namespace ADB_Tool_Automation_Post_FB.Infrastructure.Workflows
                 DeviceProgress = deviceProgress,
                 Message = message,
                 ConcurrencyLimit = concurrency.CurrentLimit,
+                ConcurrencyMaximum = concurrency.MaximumLimit,
+                QueuedExecutions = concurrency.QueuedExecutions,
                 ActiveExecutions = concurrency.ActiveExecutions,
+                PreflightActive = preflight.Active,
+                PreflightQueued = preflight.Queued,
+                PreflightLimit = preflight.Limit,
+                PreflightQueueWaitMs = preflightQueueWaitMs,
+                PreflightExecutionMs = preflightExecutionMs,
                 PreflightDurationMs = state?.PreflightDurationMs ?? 0,
                 GameplayLeaseWaitMs = state?.GameplayLeaseWaitMs ?? 0,
                 GameplayLeaseHeldMs = state?.GameplayLeaseHeldMs ?? 0,

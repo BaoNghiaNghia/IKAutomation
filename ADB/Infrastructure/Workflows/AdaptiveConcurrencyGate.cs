@@ -11,9 +11,9 @@ namespace ADB_Tool_Automation_Post_FB.Infrastructure.Workflows
 {
     public sealed class AdaptiveConcurrencyOptions
     {
-        public const int DefaultMinimumConcurrency = 4;
-        public const int DefaultInitialConcurrency = 6;
-        public const int DefaultMaximumConcurrency = 10;
+        public const int DefaultMinimumConcurrency = 6;
+        public const int DefaultInitialConcurrency = 8;
+        public const int DefaultMaximumConcurrency = 12;
 
         public AdaptiveConcurrencyOptions(int minimumConcurrency = DefaultMinimumConcurrency,
             int initialConcurrency = DefaultInitialConcurrency,
@@ -22,7 +22,7 @@ namespace ADB_Tool_Automation_Post_FB.Infrastructure.Workflows
             double highCpuPercent = 88d, long lowAvailableMemoryBytes = 2147483648L,
             double highTechnicalFailureRate = 0.25d, int observationWindowSize = 20,
             int highProbeLatencyMs = 30000,
-            int automationStaggerMinMs = 2000, int automationStaggerMaxMs = 10000,
+            int automationStaggerMinMs = 400, int automationStaggerMaxMs = 1200,
             int recoveryStaggerMinMs = 30000, int recoveryStaggerMaxMs = 60000,
             int highScreenshotGateWaitMs = 1500, int highVisionGateWaitMs = 1000,
             double highIoFailureRate = 0.15d, int queuePressureWindows = 3,
@@ -217,6 +217,9 @@ namespace ADB_Tool_Automation_Post_FB.Infrastructure.Workflows
                 return new AdaptiveConcurrencySnapshot
                 {
                     Enabled = true,
+                    MinimumLimit = options.MinimumConcurrency,
+                    InitialLimit = options.InitialConcurrency,
+                    MaximumLimit = options.MaximumConcurrency,
                     CurrentLimit = currentLimit,
                     ActiveExecutions = activeExecutions,
                     QueuedExecutions = CountPendingLocked(),

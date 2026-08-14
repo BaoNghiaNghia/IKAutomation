@@ -37,6 +37,17 @@ namespace ADB_Tool_Automation_Post_FB.Core.Workflows
         public int LowDiskDevices { get; set; }
         public int ActiveExecutions { get; set; }
         public int ConcurrencyLimit { get; set; }
+        public int FarmMaximumConcurrency { get; set; }
+        public int FarmQueued { get; set; }
+        public int PreflightActive { get; set; }
+        public int PreflightQueued { get; set; }
+        public int PreflightLimit { get; set; }
+        public int ScreenshotActive { get; set; }
+        public int ScreenshotQueued { get; set; }
+        public int ScreenshotLimit { get; set; }
+        public int VisionActive { get; set; }
+        public int VisionQueued { get; set; }
+        public int VisionLimit { get; set; }
         public DateTimeOffset? LastHeartbeatAttemptAt { get; set; }
         public bool? LastHeartbeatSucceeded { get; set; }
         public string HeartbeatMessage { get; set; }

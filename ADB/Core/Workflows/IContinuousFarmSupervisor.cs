@@ -61,7 +61,12 @@ namespace ADB_Tool_Automation_Post_FB.Core.Workflows
         public bool DiagnosticWritesSuspended { get; set; }
         public DateTimeOffset? LastMaintenanceAt { get; set; }
         public int ConcurrencyLimit { get; set; }
+        public int ConcurrencyMaximum { get; set; }
+        public int QueuedExecutions { get; set; }
         public int ActiveExecutions { get; set; }
+        public int PreflightActive { get; set; }
+        public int PreflightQueued { get; set; }
+        public int PreflightLimit { get; set; }
         public string Message { get; set; }
         public string LastError { get; set; }
     }

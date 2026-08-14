@@ -17,6 +17,7 @@ namespace ADB_Tool_Automation_Post_FB.Core.Workflows
     public enum MultiDeviceOneShotFarmStage
     {
         Queued,
+        PreflightQueued,
         Preflight,
         PreflightFailed,
         ReadyForGameplay,
@@ -36,7 +37,14 @@ namespace ADB_Tool_Automation_Post_FB.Core.Workflows
         public OneShotFarmProgress DeviceProgress { get; set; }
         public string Message { get; set; }
         public int ConcurrencyLimit { get; set; }
+        public int ConcurrencyMaximum { get; set; }
+        public int QueuedExecutions { get; set; }
         public int ActiveExecutions { get; set; }
+        public int PreflightActive { get; set; }
+        public int PreflightQueued { get; set; }
+        public int PreflightLimit { get; set; }
+        public long PreflightQueueWaitMs { get; set; }
+        public long PreflightExecutionMs { get; set; }
         public long PreflightDurationMs { get; set; }
         public long GameplayLeaseWaitMs { get; set; }
         public long GameplayLeaseHeldMs { get; set; }

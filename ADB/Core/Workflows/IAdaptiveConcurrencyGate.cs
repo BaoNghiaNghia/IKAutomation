@@ -58,6 +58,9 @@ namespace ADB_Tool_Automation_Post_FB.Core.Workflows
     public sealed class AdaptiveConcurrencySnapshot
     {
         public bool Enabled { get; set; }
+        public int MinimumLimit { get; set; }
+        public int InitialLimit { get; set; }
+        public int MaximumLimit { get; set; }
         public int CurrentLimit { get; set; }
         public int ActiveExecutions { get; set; }
         public int QueuedExecutions { get; set; }

@@ -231,12 +231,15 @@ namespace ADB_Tool_Automation_Post_FB
             Logger.LogInfo(adaptiveConfiguration.BuildSummary());
             var adaptiveConcurrencyGate = new AdaptiveConcurrencyGate(
                 adaptiveConfiguration.Options, null, Logger.LogInfo);
+            var preflightConcurrencyGate = new PreflightConcurrencyGate(
+                AppConfigPreflightConcurrencyOptionsProvider.Load());
             var multiDeviceRunner = new MultiDeviceOneShotFarmRunner(
                 () => OneShotFarmWorkflowFactory.CreateFromAppConfig(),
                 () => OneShotFarmWorkflowFactory.CreateTeamAvailabilityFromAppConfig(),
                 MultiDeviceOneShotFarmRunner.MaximumSupportedConcurrency,
                 adaptiveConcurrencyGate, Logger.LogInfo,
-                AppConfigMultiDeviceOneShotFarmRunnerOptionsProvider.Load());
+                AppConfigMultiDeviceOneShotFarmRunnerOptionsProvider.Load(), null,
+                null, preflightConcurrencyGate);
             farmControlWindow = new DeviceDiagnosticWindow(
                 DeviceDiagnosticServiceFactory.CreateFromAppConfig(),
                 multiDeviceRunner,

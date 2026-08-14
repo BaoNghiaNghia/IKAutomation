@@ -57,8 +57,8 @@ namespace ADB_Tool_Automation_Post_FB.Infrastructure.Workflows
                     ReadDouble(values, warnings, "Operations.AdaptiveHighTechnicalFailureRate", 0.25d),
                     ReadInt(values, warnings, "Operations.AdaptiveObservationWindowSize", 20),
                     ReadInt(values, warnings, "Operations.AdaptiveHighPreflightLatencyMs", 30000),
-                    ReadInt(values, warnings, "Operations.AutomationStaggerMinMs", 2000),
-                    ReadInt(values, warnings, "Operations.AutomationStaggerMaxMs", 10000),
+                    ReadInt(values, warnings, "Operations.AutomationStaggerMinMs", 400),
+                    ReadInt(values, warnings, "Operations.AutomationStaggerMaxMs", 1200),
                     ReadInt(values, warnings, "Operations.RecoveryStaggerMinMs", 30000),
                     ReadInt(values, warnings, "Operations.RecoveryStaggerMaxMs", 60000),
                     ReadInt(values, warnings, "Operations.AdaptiveHighScreenshotGateWaitMs", 1500),
@@ -76,9 +76,9 @@ namespace ADB_Tool_Automation_Post_FB.Infrastructure.Workflows
                 resolved = new AdaptiveConcurrencyOptions();
             }
             int screenshotConcurrency = ReadInt(values, warnings,
-                "Operations.MaxConcurrentScreenshots", 4);
+                "Operations.MaxConcurrentScreenshots", 5);
             int visionConcurrency = ReadInt(values, warnings,
-                "Operations.MaxConcurrentVisionOperations", 6);
+                "Operations.MaxConcurrentVisionOperations", 8);
             if (warnings.Count > 0 && source == "App.config") source = "App.config+Fallbacks";
             return new AdaptiveConcurrencyConfigurationResult
             {

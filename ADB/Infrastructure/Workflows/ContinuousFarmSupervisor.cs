@@ -1,6 +1,7 @@
 using ADB_Tool_Automation_Post_FB.Core.MarchDispatch;
 using ADB_Tool_Automation_Post_FB.Core.TeamSelection;
 using ADB_Tool_Automation_Post_FB.Core.Workflows;
+using ADB_Tool_Automation_Post_FB.Core.Diagnostics;
 using System;
 using System.Collections.Concurrent;
 using System.Collections.Generic;
@@ -599,7 +600,12 @@ namespace ADB_Tool_Automation_Post_FB.Infrastructure.Workflows
         {
             if (progress == null) return;
             snapshot.ConcurrencyLimit = progress.ConcurrencyLimit;
+            snapshot.ConcurrencyMaximum = progress.ConcurrencyMaximum;
+            snapshot.QueuedExecutions = progress.QueuedExecutions;
             snapshot.ActiveExecutions = progress.ActiveExecutions;
+            snapshot.PreflightActive = progress.PreflightActive;
+            snapshot.PreflightQueued = progress.PreflightQueued;
+            snapshot.PreflightLimit = progress.PreflightLimit;
             if (progress.DeviceProgress?.CurrentResource != null)
                 snapshot.CurrentResource = progress.DeviceProgress.CurrentResource.Value.ToString();
             if (progress.DeviceProgress?.CurrentLevel != null)
@@ -625,6 +631,7 @@ namespace ADB_Tool_Automation_Post_FB.Infrastructure.Workflows
             ContinuousFarmDeviceState state;
             switch (progress.Stage)
             {
+                case MultiDeviceOneShotFarmStage.PreflightQueued:
                 case MultiDeviceOneShotFarmStage.Preflight: state = ContinuousFarmDeviceState.Preflight; break;
                 case MultiDeviceOneShotFarmStage.PreflightFailed: state = ContinuousFarmDeviceState.Recovering; break;
                 case MultiDeviceOneShotFarmStage.Queued: state = ContinuousFarmDeviceState.Ready; break;
@@ -770,6 +777,7 @@ namespace ADB_Tool_Automation_Post_FB.Infrastructure.Workflows
                     || value.State == ContinuousFarmDeviceState.Waiting)
                 && value.ConsecutiveFailures == 0
                 && !value.DiagnosticWritesSuspended;
+            RuntimePressureSnapshot runtime = RuntimePressureMetrics.GetSnapshot();
             return new ContinuousFarmHealthSnapshot
             {
                 StartedAt = startedAt,
@@ -797,6 +805,22 @@ namespace ADB_Tool_Automation_Post_FB.Infrastructure.Workflows
                     : devices.Max(value => value.ActiveExecutions),
                 ConcurrencyLimit = devices.Length == 0 ? 0
                     : devices.Max(value => value.ConcurrencyLimit),
+                FarmMaximumConcurrency = devices.Length == 0 ? 0
+                    : devices.Max(value => value.ConcurrencyMaximum),
+                FarmQueued = devices.Length == 0 ? 0
+                    : devices.Max(value => value.QueuedExecutions),
+                PreflightActive = devices.Length == 0 ? 0
+                    : devices.Max(value => value.PreflightActive),
+                PreflightQueued = devices.Length == 0 ? 0
+                    : devices.Max(value => value.PreflightQueued),
+                PreflightLimit = devices.Length == 0 ? 0
+                    : devices.Max(value => value.PreflightLimit),
+                ScreenshotActive = runtime.ActiveScreenshotOperations,
+                ScreenshotQueued = runtime.ScreenshotQueueDepth,
+                ScreenshotLimit = runtime.ScreenshotConcurrencyLimit,
+                VisionActive = runtime.ActiveVisionOperations,
+                VisionQueued = runtime.VisionQueueDepth,
+                VisionLimit = runtime.VisionConcurrencyLimit,
                 LastHeartbeatAttemptAt = heartbeatState.LastAttemptAt,
                 LastHeartbeatSucceeded = heartbeatState.LastSucceeded,
                 HeartbeatMessage = heartbeatState.Message,
@@ -895,7 +919,12 @@ namespace ADB_Tool_Automation_Post_FB.Infrastructure.Workflows
                 DiagnosticWritesSuspended = source.DiagnosticWritesSuspended,
                 LastMaintenanceAt = source.LastMaintenanceAt,
                 ConcurrencyLimit = source.ConcurrencyLimit,
+                ConcurrencyMaximum = source.ConcurrencyMaximum,
+                QueuedExecutions = source.QueuedExecutions,
                 ActiveExecutions = source.ActiveExecutions,
+                PreflightActive = source.PreflightActive,
+                PreflightQueued = source.PreflightQueued,
+                PreflightLimit = source.PreflightLimit,
                 LastError = source.LastError };
 
         private async Task<DeviceRecoveryResult> RecoverAsync(string deviceName,

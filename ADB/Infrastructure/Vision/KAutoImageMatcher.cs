@@ -16,14 +16,19 @@ namespace ADB_Tool_Automation_Post_FB.Infrastructure.Vision
     public sealed class KAutoImageMatcher : IImageMatcher, IBatchImageMatcher,
         IFrameImageMatcher, IAsyncFrameImageMatcher
     {
+        private static readonly int VisionConcurrencyLimit = ReadPositiveSetting(
+            "Operations.MaxConcurrentVisionOperations", 8);
         private static readonly System.Threading.SemaphoreSlim VisionGate =
-            new System.Threading.SemaphoreSlim(ReadPositiveSetting(
-                "Operations.MaxConcurrentVisionOperations", 6));
+            new System.Threading.SemaphoreSlim(VisionConcurrencyLimit,
+                VisionConcurrencyLimit);
         private readonly SemaphoreSlim visionGate;
         private readonly Func<CancellationToken, Task> beforeProcessingAsync;
         private static long visionGateWaitMs, visionProcessingDurationMs,
-            visionTotalDurationMs, templateCount, matchFound, visionFailures;
+            visionTotalDurationMs, templateCount, matchFound, visionFailures,
+            visionOperationCount;
         private static int visionQueueDepth, activeVisionOperations;
+        private static int peakActiveVisionOperations;
+        private static long maxVisionGateWaitMs;
 
         // TemplateRegistry returns stable byte-array instances.  Keeping the decoded
         // bitmap alongside that instance removes a decode from every match while the
@@ -55,6 +60,10 @@ namespace ADB_Tool_Automation_Post_FB.Infrastructure.Vision
             VisionTotalDurationMs = Interlocked.Read(ref visionTotalDurationMs),
             VisionQueueDepth = Volatile.Read(ref visionQueueDepth),
             ActiveVisionOperations = Volatile.Read(ref activeVisionOperations),
+            VisionGateLimit = VisionConcurrencyLimit,
+            VisionOperationCount = Interlocked.Read(ref visionOperationCount),
+            PeakActiveVisionOperations = Volatile.Read(ref peakActiveVisionOperations),
+            MaxVisionGateWaitMs = Interlocked.Read(ref maxVisionGateWaitMs),
             TemplateCount = Interlocked.Read(ref templateCount),
             MatchFound = Interlocked.Read(ref matchFound),
             FailureCount = Interlocked.Read(ref visionFailures)
@@ -76,6 +85,20 @@ namespace ADB_Tool_Automation_Post_FB.Infrastructure.Vision
                 return int.TryParse(configured, out value) && value > 0 ? value : fallback;
             }
             catch { return fallback; }
+        }
+
+        private static void UpdateMaximum(ref int target, int value)
+        {
+            int observed;
+            while ((observed = Volatile.Read(ref target)) < value
+                && Interlocked.CompareExchange(ref target, value, observed) != observed) { }
+        }
+
+        private static void UpdateMaximum(ref long target, long value)
+        {
+            long observed;
+            while ((observed = Interlocked.Read(ref target)) < value
+                && Interlocked.CompareExchange(ref target, value, observed) != observed) { }
         }
 
         public IReadOnlyList<ImageMatchResult> FindMany(
@@ -155,6 +178,7 @@ namespace ADB_Tool_Automation_Post_FB.Infrastructure.Vision
             CancellationToken cancellationToken)
         {
             cancellationToken.ThrowIfCancellationRequested();
+            Interlocked.Increment(ref visionOperationCount);
             var total = Stopwatch.StartNew();
             var wait = Stopwatch.StartNew();
             Interlocked.Increment(ref visionQueueDepth);
@@ -168,6 +192,9 @@ namespace ADB_Tool_Automation_Post_FB.Infrastructure.Vision
                 Interlocked.Decrement(ref visionQueueDepth);
                 Interlocked.Increment(ref activeVisionOperations);
                 Interlocked.Add(ref visionGateWaitMs, wait.ElapsedMilliseconds);
+                UpdateMaximum(ref peakActiveVisionOperations,
+                    Volatile.Read(ref activeVisionOperations));
+                UpdateMaximum(ref maxVisionGateWaitMs, wait.ElapsedMilliseconds);
                 if (beforeProcessingAsync != null)
                     await beforeProcessingAsync(cancellationToken);
                 cancellationToken.ThrowIfCancellationRequested();
@@ -204,7 +231,7 @@ namespace ADB_Tool_Automation_Post_FB.Infrastructure.Vision
                 Interlocked.Add(ref visionTotalDurationMs, total.ElapsedMilliseconds);
                 RuntimePressureMetrics.ReportVision(wait.ElapsedMilliseconds, failed,
                     Volatile.Read(ref visionQueueDepth),
-                    Volatile.Read(ref activeVisionOperations));
+                    Volatile.Read(ref activeVisionOperations), VisionConcurrencyLimit);
             }
         }
 

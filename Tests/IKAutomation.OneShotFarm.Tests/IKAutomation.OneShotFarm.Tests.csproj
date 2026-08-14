@@ -30,6 +30,7 @@
     <Compile Include="..\..\ADB\Infrastructure\Workflows\MultiDeviceOneShotFarmRunnerOptions.cs" Link="Production\MultiDeviceOneShotFarmRunnerOptions.cs" />
     <Compile Include="..\..\ADB\Infrastructure\Workflows\AdaptiveConcurrencyGate.cs" Link="Production\AdaptiveConcurrencyGate.cs" />
     <Compile Include="..\..\ADB\Infrastructure\Workflows\AppConfigAdaptiveConcurrencyOptionsProvider.cs" Link="Production\AppConfigAdaptiveConcurrencyOptionsProvider.cs" />
+    <Compile Include="..\..\ADB\Infrastructure\Workflows\PreflightConcurrencyGate.cs" Link="Production\PreflightConcurrencyGate.cs" />
     <Compile Include="..\..\ADB\Infrastructure\Workflows\ContinuousFarmSupervisor.cs" Link="Production\ContinuousFarmSupervisor.cs" />
     <Compile Include="..\..\ADB\Infrastructure\Workflows\LocalAppDataContinuousFarmCheckpointStore.cs" Link="Production\LocalAppDataContinuousFarmCheckpointStore.cs" />
     <Compile Include="..\..\ADB\Infrastructure\Workflows\FileSystemOperationalMaintenanceService.cs" Link="Production\FileSystemOperationalMaintenanceService.cs" />

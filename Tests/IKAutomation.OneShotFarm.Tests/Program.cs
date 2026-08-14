@@ -191,6 +191,8 @@ internal static class Program
         Run("Adaptive gate increases after stable healthy windows", AdaptiveStableHealthIncreases);
         Run("Screenshot metrics separate admission, capture, and total time", ScreenshotMetricsAreSeparated);
         Run("Adaptive defaults are conservative", AdaptiveDefaultsAreConservative);
+        Run("Farm V2 source keeps device pipelines task-based", FarmV2AvoidsTaskRunWrappers);
+        Run("Farm V2 source exposes compact concurrency metrics", FarmV2ExposesConcurrencyMetrics);
         Run("Adaptive stagger honors cancellation", AdaptiveStaggerHonorsCancellation);
         Run("Adaptive admission without explicit stagger starts immediately", AdmissionWithoutStaggerStartsImmediately);
         Run("Adaptive startup stagger is applied once per run", StartupStaggerIsAppliedOncePerRun);
@@ -204,6 +206,11 @@ internal static class Program
         Run("Multi-device runner isolates requests per device", MultiDeviceRequestsAreIsolated);
         Run("One device failure does not stop other devices", MultiDeviceFailureIsIsolated);
         Run("Fair scheduling slow preflight does not block fast device", MultiDevicePreflightBarrier);
+        Run("Preflight gate enforces its independent shared limit", PreflightGateEnforcesIndependentLimit);
+        Run("Preflight gate admits next device without a batch barrier", PreflightGateStreamsReleasedSlots);
+        Run("Preflight source does not borrow automation admission", PreflightDoesNotBorrowAutomationAdmission);
+        Run("Gameplay source retains automation admission", GameplayRetainsAutomationAdmission);
+        Run("Preflight source does not submit duration as Farm pressure", PreflightDurationDoesNotPressureFarm);
         Run("Preflight failure does not stop healthy devices", MultiDevicePreflightFailureIsIsolated);
         Run("Ready gate consumes preflight result without duplicate check", MultiDevicePreflightIsReused);
         Run("Waiting devices yield execution and adaptive capacity", WaitingDevicesYieldExecutionSlots);
@@ -1126,21 +1133,52 @@ internal static class Program
     static void AdaptiveDefaultsAreConservative()
     {
         var options = new AdaptiveConcurrencyOptions();
-        Eq(4, options.MinimumConcurrency, "default minimum concurrency");
-        Eq(6, options.InitialConcurrency, "default initial concurrency");
-        Eq(10, options.MaximumConcurrency, "default maximum concurrency");
+        Eq(6, options.MinimumConcurrency, "default minimum concurrency");
+        Eq(8, options.InitialConcurrency, "default initial concurrency");
+        Eq(12, options.MaximumConcurrency, "default maximum concurrency");
         string config = File.ReadAllText(Path.Combine(Environment.CurrentDirectory,
             "ADB", "App.config"));
-        Is(config.Contains("Operations.AdaptiveMinimumConcurrency\" value=\"4\""),
+        Is(config.Contains("Operations.AdaptiveMinimumConcurrency\" value=\"6\""),
             "configured minimum concurrency");
-        Is(config.Contains("Operations.AdaptiveInitialConcurrency\" value=\"6\""),
+        Is(config.Contains("Operations.AdaptiveInitialConcurrency\" value=\"8\""),
             "configured initial concurrency");
-        Is(config.Contains("Operations.AdaptiveMaximumConcurrency\" value=\"10\""),
+        Is(config.Contains("Operations.AdaptiveMaximumConcurrency\" value=\"12\""),
             "configured maximum concurrency");
-        Is(config.Contains("Operations.MaxConcurrentScreenshots\" value=\"4\""),
+        Is(config.Contains("Operations.MaxConcurrentScreenshots\" value=\"5\""),
             "screenshot gate changed");
-        Is(config.Contains("Operations.MaxConcurrentVisionOperations\" value=\"6\""),
+        Is(config.Contains("Operations.MaxConcurrentVisionOperations\" value=\"8\""),
             "vision gate changed");
+    }
+
+    static void FarmV2AvoidsTaskRunWrappers()
+    {
+        string runner = File.ReadAllText(Path.Combine(Environment.CurrentDirectory,
+            "ADB", "Infrastructure", "Workflows", "MultiDeviceOneShotFarmRunner.cs"));
+        Is(!runner.Contains("Task.Run(() => RunDevicePipelineAsync"),
+            "each device pipeline is wrapped in Task.Run");
+        Is(runner.Contains("RunDevicePipelineAsync(device, index, request, progress,"),
+            "runner no longer starts independent device tasks");
+        Is(runner.Contains("[MultiDevice Farm Performance]"),
+            "end-of-run performance summary is missing");
+    }
+
+    static void FarmV2ExposesConcurrencyMetrics()
+    {
+        string screenshot = File.ReadAllText(Path.Combine(Environment.CurrentDirectory,
+            "ADB", "Core", "ScreenshotCaptureMetrics.cs"));
+        string vision = File.ReadAllText(Path.Combine(Environment.CurrentDirectory,
+            "ADB", "Core", "Vision", "VisionOperationMetrics.cs"));
+        string health = File.ReadAllText(Path.Combine(Environment.CurrentDirectory,
+            "ADB", "Core", "Workflows", "IContinuousFarmHeartbeatNotifier.cs"));
+        foreach (string field in new[] { "ScreenshotGateLimit",
+            "PeakActiveScreenshotOperations", "MaxScreenshotGateWaitMs" })
+            Is(screenshot.Contains(field), "missing screenshot V2 metric " + field);
+        foreach (string field in new[] { "VisionGateLimit", "PeakActiveVisionOperations",
+            "MaxVisionGateWaitMs" })
+            Is(vision.Contains(field), "missing vision V2 metric " + field);
+        foreach (string field in new[] { "FarmMaximumConcurrency", "FarmQueued",
+            "PreflightActive", "ScreenshotActive", "VisionActive" })
+            Is(health.Contains(field), "missing health V2 metric " + field);
     }
 
     static void AdaptiveGateReducesOnPressure()
@@ -1395,9 +1433,9 @@ internal static class Program
         settings["Operations.AdaptiveMaximumConcurrency"] = "not-a-number";
         AdaptiveConcurrencyConfigurationResult result =
             AppConfigAdaptiveConcurrencyOptionsProvider.LoadConfiguration(settings);
-        Eq(10, result.Options.MaximumConcurrency, "invalid maximum fallback");
+        Eq(12, result.Options.MaximumConcurrency, "invalid maximum fallback");
         Is(result.Warnings.Any(value => value.Contains("Operations.AdaptiveMaximumConcurrency")
-            && value.Contains("Fallback=10")), "invalid key warning omitted fallback");
+            && value.Contains("Fallback=12")), "invalid key warning omitted fallback");
         Eq("App.config+Fallbacks", result.Source, "fallback source");
     }
 
@@ -1406,9 +1444,9 @@ internal static class Program
         AdaptiveConcurrencyConfigurationResult result =
             AppConfigAdaptiveConcurrencyOptionsProvider.LoadConfiguration(ValidAdaptiveSettings());
         string summary = result.BuildSummary();
-        foreach (string expected in new[] { "Source='App.config'", "Min=4", "Initial=6",
-            "Max=10", "ScreenshotGate=4", "VisionGate=6",
-            "AutomationStaggerMinMs=2000", "AutomationStaggerMaxMs=10000" })
+        foreach (string expected in new[] { "Source='App.config'", "Min=6", "Initial=8",
+            "Max=12", "ScreenshotGate=5", "VisionGate=8",
+            "AutomationStaggerMinMs=400", "AutomationStaggerMaxMs=1200" })
             Is(summary.Contains(expected), "configuration summary missing " + expected);
         Eq(0, result.Warnings.Count, "valid configuration emitted warnings");
         string startup = File.ReadAllText(Path.Combine(Environment.CurrentDirectory,
@@ -1421,9 +1459,9 @@ internal static class Program
 
     static NameValueCollection ValidAdaptiveSettings() => new NameValueCollection
     {
-        ["Operations.AdaptiveMinimumConcurrency"] = "4",
-        ["Operations.AdaptiveInitialConcurrency"] = "6",
-        ["Operations.AdaptiveMaximumConcurrency"] = "10",
+        ["Operations.AdaptiveMinimumConcurrency"] = "6",
+        ["Operations.AdaptiveInitialConcurrency"] = "8",
+        ["Operations.AdaptiveMaximumConcurrency"] = "12",
         ["Operations.AdaptiveSampleIntervalMs"] = "5000",
         ["Operations.AdaptiveHealthySamplesToIncrease"] = "3",
         ["Operations.AdaptiveHighCpuPercent"] = "88",
@@ -1431,8 +1469,8 @@ internal static class Program
         ["Operations.AdaptiveHighTechnicalFailureRate"] = "0.25",
         ["Operations.AdaptiveObservationWindowSize"] = "20",
         ["Operations.AdaptiveHighPreflightLatencyMs"] = "30000",
-        ["Operations.AutomationStaggerMinMs"] = "2000",
-        ["Operations.AutomationStaggerMaxMs"] = "10000",
+        ["Operations.AutomationStaggerMinMs"] = "400",
+        ["Operations.AutomationStaggerMaxMs"] = "1200",
         ["Operations.RecoveryStaggerMinMs"] = "30000",
         ["Operations.RecoveryStaggerMaxMs"] = "60000",
         ["Operations.AdaptiveHighScreenshotGateWaitMs"] = "1500",
@@ -1441,8 +1479,8 @@ internal static class Program
         ["Operations.AdaptiveQueuePressureWindows"] = "3",
         ["Operations.AdaptiveAdjustmentCooldownMs"] = "10000",
         ["Operations.AdaptiveHighGameplayLeaseWaitMs"] = "3000",
-        ["Operations.MaxConcurrentScreenshots"] = "4",
-        ["Operations.MaxConcurrentVisionOperations"] = "6"
+        ["Operations.MaxConcurrentScreenshots"] = "5",
+        ["Operations.MaxConcurrentVisionOperations"] = "8"
     };
 
     static void AdaptiveGateIncreasesWithinMaximum()
@@ -1518,6 +1556,84 @@ internal static class Program
         MultiDeviceOneShotFarmResult result = pending.GetAwaiter().GetResult();
         Is(result.Devices.All(item => item.Stage == MultiDeviceOneShotFarmStage.Completed),
             "healthy devices did not run");
+    }
+
+    static void PreflightGateEnforcesIndependentLimit()
+    {
+        var gate = new PreflightConcurrencyGate(new PreflightConcurrencyOptions(2, 0, 0));
+        IPreflightConcurrencyLease first = gate.AcquireAsync("May 1",
+            default(CancellationToken)).GetAwaiter().GetResult();
+        IPreflightConcurrencyLease second = gate.AcquireAsync("May 2",
+            default(CancellationToken)).GetAwaiter().GetResult();
+        Task<IPreflightConcurrencyLease> third = gate.AcquireAsync("May 3",
+            default(CancellationToken));
+        Is(!third.Wait(30), "third preflight bypassed independent limit");
+        Eq(2, gate.GetSnapshot().Active, "preflight active count");
+        first.Dispose();
+        IPreflightConcurrencyLease admitted = third.GetAwaiter().GetResult();
+        Eq(2, gate.GetSnapshot().Active, "released preflight slot was not reused");
+        admitted.Dispose();
+        second.Dispose();
+        Eq(0, gate.GetSnapshot().Active, "preflight lease leaked");
+    }
+
+    static void PreflightGateStreamsReleasedSlots()
+    {
+        var gate = new PreflightConcurrencyGate(new PreflightConcurrencyOptions(1, 0, 0));
+        IPreflightConcurrencyLease first = gate.AcquireAsync("May 1",
+            default(CancellationToken)).GetAwaiter().GetResult();
+        Task<IPreflightConcurrencyLease> second = gate.AcquireAsync("May 2",
+            default(CancellationToken));
+        Task<IPreflightConcurrencyLease> third = gate.AcquireAsync("May 3",
+            default(CancellationToken));
+        Is(!second.Wait(30) && !third.Wait(30), "queued preflight entered early");
+        first.Dispose();
+        IPreflightConcurrencyLease next = second.GetAwaiter().GetResult();
+        Is(!third.Wait(30), "preflight gate waited for a batch instead of one release");
+        next.Dispose();
+        IPreflightConcurrencyLease final = third.GetAwaiter().GetResult();
+        final.Dispose();
+    }
+
+    static void PreflightDoesNotBorrowAutomationAdmission()
+    {
+        string source = File.ReadAllText(Path.Combine(Environment.CurrentDirectory,
+            "ADB", "Infrastructure", "Workflows", "MultiDeviceOneShotFarmRunner.cs"));
+        int start = source.IndexOf("private async Task<PreflightResult> RunPreflightAsync", StringComparison.Ordinal);
+        int end = source.IndexOf("private static PreflightResult FailedPreflight", start,
+            StringComparison.Ordinal);
+        string preflight = source.Substring(start, end - start);
+        Is(preflight.Contains("preflightConcurrencyGate.AcquireAsync"),
+            "dedicated preflight admission is missing");
+        Is(!preflight.Contains("AdaptiveOperationKind.Automation"),
+            "preflight still borrows Farm automation admission");
+    }
+
+    static void PreflightDurationDoesNotPressureFarm()
+    {
+        string source = File.ReadAllText(Path.Combine(Environment.CurrentDirectory,
+            "ADB", "Infrastructure", "Workflows", "MultiDeviceOneShotFarmRunner.cs"));
+        int start = source.IndexOf("private async Task<PreflightResult> RunPreflightAsync", StringComparison.Ordinal);
+        int end = source.IndexOf("private static PreflightResult FailedPreflight", start,
+            StringComparison.Ordinal);
+        string preflight = source.Substring(start, end - start);
+        Is(preflight.Contains("UseDurationAsPressure = false"),
+            "preflight duration still reduces Farm concurrency");
+    }
+
+    static void GameplayRetainsAutomationAdmission()
+    {
+        string source = File.ReadAllText(Path.Combine(Environment.CurrentDirectory,
+            "ADB", "Infrastructure", "Workflows", "MultiDeviceOneShotFarmRunner.cs"));
+        int start = source.IndexOf("private async Task<MultiDeviceOneShotFarmItemResult> RunAfterPreflightAsync",
+            StringComparison.Ordinal);
+        int end = source.IndexOf("private async Task<PreflightResult> RunPreflightAsync", start,
+            StringComparison.Ordinal);
+        string pipeline = source.Substring(start, end - start);
+        Is(pipeline.Contains("AdaptiveOperationKind.Automation"),
+            "Farm automation admission was removed with preflight");
+        Is(pipeline.Contains("ExecutionPhase = AdaptiveExecutionPhase.Gameplay"),
+            "Farm admission is not marked as gameplay");
     }
 
     static void PreflightTimeoutReleasesLease()
