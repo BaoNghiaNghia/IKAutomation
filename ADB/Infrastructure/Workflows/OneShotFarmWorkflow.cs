@@ -19,6 +19,12 @@ namespace ADB_Tool_Automation_Post_FB.Infrastructure.Workflows
 {
     public sealed class OneShotFarmWorkflow : IOneShotFarmWorkflow
     {
+        // The multi-device preflight has just verified WorldMap and captured a
+        // focused roster. Reusing that very short-lived proof avoids immediately
+        // repeating the expensive global 22-template detector for the same device.
+        // A stale or incomplete roster always falls back to the normal checks.
+        private const int FreshWorldMapHandoffMaximumAgeMs = 2000;
+
         private readonly IWorldMapNavigationService navigation;
         private readonly IResourceLevelFallbackService fallback;
         private readonly IResourcePopupVerificationService popup;
@@ -163,7 +169,16 @@ namespace ADB_Tool_Automation_Post_FB.Infrastructure.Workflows
                 Report(progress, OneShotFarmProgressStage.RunningFarmStep,
                     OneShotFarmStep.Preflight, request, null, "Checking the initial game state.");
                 DateTimeOffset started = Start(runId, deviceName, OneShotFarmStep.Preflight);
-                GameDetectionResult initial = await detector.DetectAsync(deviceName, token);
+                bool reuseFreshWorldMapHandoff = CanReuseFreshWorldMapHandoff(
+                    request.InitialTeamAvailability, DateTimeOffset.UtcNow);
+                GameDetectionResult initial = reuseFreshWorldMapHandoff
+                    ? FreshWorldMapResult()
+                    : await detector.DetectAsync(deviceName, token);
+                if (reuseFreshWorldMapHandoff)
+                {
+                    logger.Info($"[OneShotFarm] RunId='{runId}', DeviceName='{deviceName}', "
+                        + "PreflightWorldMapHandoff=true, GlobalStateDetectionSkipped=true.");
+                }
                 result.InitialState = initial.State; result.FinalState = initial.State;
                 if (initial.State == GameState.Unknown || initial.State == GameState.ResourcePopup
                     || initial.State == GameState.TeamSelection)
@@ -180,30 +195,43 @@ namespace ADB_Tool_Automation_Post_FB.Infrastructure.Workflows
 
                 if (!searchPanelAlreadyReady)
                 {
-                Report(progress, OneShotFarmProgressStage.RunningFarmStep,
-                    OneShotFarmStep.EnsureWorldMap, request, null, "Ensuring World Map.");
-                token.ThrowIfCancellationRequested(); started = Start(runId, deviceName, OneShotFarmStep.EnsureWorldMap);
-                NavigationResult ensure = await navigation.EnsureWorldMapAsync(deviceName, token);
-                result.NavigationResult = ensure; result.FinalState = ensure.FinalState;
-                if (!ensure.Success)
-                {
-                    Add(steps, OneShotFarmStep.EnsureWorldMap, false, started, ensure.Message, ensure.ErrorMessage, ensure);
-                    return await StopAsync(result, OneShotFarmOutcome.WorldMapUnavailable, ensure.Message,
-                        ensure.ErrorMessage, OneShotFarmStep.EnsureWorldMap, watch, runId, token);
-                }
-                result.FinalState = ensure.FinalState;
-                if (ensure.FinalState != GameState.WorldMap)
-                {
-                    Add(steps, OneShotFarmStep.EnsureWorldMap, false, started, "WorldMap was not confirmed after navigation.", ensure.ErrorMessage, ensure);
-                    return await StopAsync(result, OneShotFarmOutcome.WorldMapUnavailable,
-                        "WorldMap was not confirmed after navigation.", ensure.ErrorMessage,
-                        OneShotFarmStep.EnsureWorldMap, watch, runId, token);
-                }
-                AddSuccess(result, steps, OneShotFarmStep.EnsureWorldMap, started, ensure.Message, ensure);
+                    if (reuseFreshWorldMapHandoff)
+                    {
+                        started = Start(runId, deviceName, OneShotFarmStep.EnsureWorldMap);
+                        NavigationResult handoff = FreshWorldMapNavigationResult();
+                        result.NavigationResult = handoff; result.FinalState = handoff.FinalState;
+                        AddSuccess(result, steps, OneShotFarmStep.EnsureWorldMap, started, handoff.Message, handoff);
+                        if (resourceFarmFallback != null)
+                            return await RunResourcePlanAsync(deviceName, request, token, result,
+                                steps, watch, runId, handoff.FinalState, progress);
+                    }
+                    else
+                    {
+                        Report(progress, OneShotFarmProgressStage.RunningFarmStep,
+                            OneShotFarmStep.EnsureWorldMap, request, null, "Ensuring World Map.");
+                        token.ThrowIfCancellationRequested(); started = Start(runId, deviceName, OneShotFarmStep.EnsureWorldMap);
+                        NavigationResult ensure = await navigation.EnsureWorldMapAsync(deviceName, token);
+                        result.NavigationResult = ensure; result.FinalState = ensure.FinalState;
+                        if (!ensure.Success)
+                        {
+                            Add(steps, OneShotFarmStep.EnsureWorldMap, false, started, ensure.Message, ensure.ErrorMessage, ensure);
+                            return await StopAsync(result, OneShotFarmOutcome.WorldMapUnavailable, ensure.Message,
+                                ensure.ErrorMessage, OneShotFarmStep.EnsureWorldMap, watch, runId, token);
+                        }
+                        result.FinalState = ensure.FinalState;
+                        if (ensure.FinalState != GameState.WorldMap)
+                        {
+                            Add(steps, OneShotFarmStep.EnsureWorldMap, false, started, "WorldMap was not confirmed after navigation.", ensure.ErrorMessage, ensure);
+                            return await StopAsync(result, OneShotFarmOutcome.WorldMapUnavailable,
+                                "WorldMap was not confirmed after navigation.", ensure.ErrorMessage,
+                                OneShotFarmStep.EnsureWorldMap, watch, runId, token);
+                        }
+                        AddSuccess(result, steps, OneShotFarmStep.EnsureWorldMap, started, ensure.Message, ensure);
 
-                if (resourceFarmFallback != null)
-                    return await RunResourcePlanAsync(deviceName, request, token, result,
-                        steps, watch, runId, ensure.FinalState, progress);
+                        if (resourceFarmFallback != null)
+                            return await RunResourcePlanAsync(deviceName, request, token, result,
+                                steps, watch, runId, ensure.FinalState, progress);
+                    }
 
                 Report(progress, OneShotFarmProgressStage.RunningFarmStep,
                     OneShotFarmStep.OpenSearchPanel, request, null, "Opening resource search panel.");
@@ -572,6 +600,41 @@ namespace ADB_Tool_Automation_Post_FB.Infrastructure.Workflows
                     return "The immutable farm team operation is not allowed.";
             }
             return null;
+        }
+
+        private static bool CanReuseFreshWorldMapHandoff(
+            WorldMapTeamAvailabilityResult availability, DateTimeOffset now)
+        {
+            if (availability == null || !availability.Success || !availability.IsFresh
+                || availability.FinalState != GameState.WorldMap
+                || !availability.RosterCapturedAt.HasValue)
+                return false;
+
+            return (now - availability.RosterCapturedAt.Value).Duration()
+                <= TimeSpan.FromMilliseconds(FreshWorldMapHandoffMaximumAgeMs);
+        }
+
+        private static GameDetectionResult FreshWorldMapResult()
+        {
+            return new GameDetectionResult
+            {
+                State = GameState.WorldMap,
+                IsSuccessful = true,
+                Evidence = new GameDetectionEvidence[0],
+                DetectedAt = DateTimeOffset.UtcNow
+            };
+        }
+
+        private static NavigationResult FreshWorldMapNavigationResult()
+        {
+            return new NavigationResult
+            {
+                Success = true,
+                InitialState = GameState.WorldMap,
+                FinalState = GameState.WorldMap,
+                VerificationSucceeded = true,
+                Message = "Fresh WorldMap preflight evidence reused."
+            };
         }
 
         private static bool HasResourceSearchPanelEvidence(
