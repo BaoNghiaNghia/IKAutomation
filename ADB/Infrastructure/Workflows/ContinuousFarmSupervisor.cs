@@ -956,8 +956,10 @@ namespace ADB_Tool_Automation_Post_FB.Infrastructure.Workflows
                 ? await admissionGate.AcquireAsync(deviceName, AdaptiveOperationKind.Recovery,
                     new AdaptiveAdmissionRequest
                     {
-                        ApplyStartupStagger = true,
-                        StaggerKey = Guid.NewGuid().ToString(),
+                        // Recovery is bounded by this adaptive lease. Do not add the old
+                        // 30-60 second cross-device stagger on top of that bound.
+                        ApplyStartupStagger = false,
+                        StaggerKey = deviceName,
                         DeviceIndex = -1,
                         ExecutionPhase = AdaptiveExecutionPhase.Recovery
                     }, cancellationToken)

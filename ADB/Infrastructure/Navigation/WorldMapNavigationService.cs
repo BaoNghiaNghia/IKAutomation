@@ -462,7 +462,8 @@ namespace ADB_Tool_Automation_Post_FB.Infrastructure.Navigation
         {
             var watch = Stopwatch.StartNew();
             var transitions = new List<NavigationTransition>();
-            GameDetectionResult initial = knownInitial ?? await DetectAsync(deviceName, transitions, cancellationToken);
+            GameDetectionResult initial = knownInitial ?? await DetectAsync(deviceName,
+                transitions, GameState.WorldMap, cancellationToken);
             if (!initial.IsSuccessful) return Result(false, initial, initial, 0, watch, "State detection failed.", initial.ErrorMessage, transitions);
             if (initial.State == GameState.WorldMap) return Result(true, initial, initial, 0, watch, "Device is already on WorldMap.", null, transitions);
             if (initial.State == GameState.Unknown)
@@ -2736,7 +2737,8 @@ namespace ADB_Tool_Automation_Post_FB.Infrastructure.Navigation
             {
                 await Task.Delay(options.StatePollIntervalMs, cancellationToken);
                 AddTransition(transitions, "Wait", $"Waited {options.StatePollIntervalMs} ms before verification.");
-                last = await DetectAsync(deviceName, transitions, cancellationToken);
+                last = await DetectAsync(deviceName, transitions, target,
+                    cancellationToken);
                 // Unknown can be a transient render frame after navigation. Waiting is safe
                 // because polling sends no additional input; only a verified target succeeds.
                 if (target == GameState.ContinentMap
@@ -2754,7 +2756,8 @@ namespace ADB_Tool_Automation_Post_FB.Infrastructure.Navigation
                             TemplateId.StorageLimitCancelButton) != null))
                     return last;
             }
-            return last ?? await DetectAsync(deviceName, transitions, cancellationToken);
+            return last ?? await DetectAsync(deviceName, transitions, target,
+                cancellationToken);
         }
 
         private static bool IsVerifiedTarget(GameDetectionResult result, GameState target)
@@ -2952,7 +2955,8 @@ namespace ADB_Tool_Automation_Post_FB.Infrastructure.Navigation
             {
                 observedFrames = frameIndex;
                 await Task.Delay(options.StatePollIntervalMs, cancellationToken);
-                last = await DetectAsync(deviceName, transitions, cancellationToken);
+                last = await DetectAsync(deviceName, transitions,
+                    GameState.ResourceSearchPanel, cancellationToken);
                 lastState = ClassifyResourceSearchPanelEvidence(last);
                 if (lastState == ResourceSearchPanelEvidenceState.Partial)
                 {
@@ -3120,7 +3124,47 @@ namespace ADB_Tool_Automation_Post_FB.Infrastructure.Navigation
 
         private async Task<GameDetectionResult> DetectAsync(string deviceName, IList<NavigationTransition> transitions, CancellationToken token)
         {
-            GameDetectionResult result = await detector.DetectAsync(deviceName, token);
+            return await DetectAsync(deviceName, transitions, null, token);
+        }
+
+        private async Task<GameDetectionResult> DetectAsync(string deviceName,
+            IList<NavigationTransition> transitions, GameState? expectedState,
+            CancellationToken token)
+        {
+            // Use a focused profile only when the caller knows the state it is verifying.
+            // A failed focused profile falls through to complete classification on the same
+            // frame, so alternate states and blocking-dialog recovery remain unchanged.
+            GameDetectionResult result;
+            IFrameCapturingLdPlayerClient frameClient =
+                ldPlayerClient as IFrameCapturingLdPlayerClient;
+            IFrameGameStateDetector frameDetector = detector as IFrameGameStateDetector;
+            if (expectedState.HasValue && frameClient != null && frameDetector != null)
+            {
+                try
+                {
+                    using (CapturedFrame frame = await frameClient.CaptureFrameAsync(
+                        deviceName, token))
+                    {
+                        result = frameDetector.Detect(frame, deviceName,
+                            new GameStateDetectionContext(
+                                expectedState, expectedState));
+                    }
+                }
+                catch (OperationCanceledException)
+                {
+                    throw;
+                }
+                catch
+                {
+                    // Preserve the original detector's capture/error handling and its
+                    // one-endpoint-refresh behavior when the focused capture is unavailable.
+                    result = await detector.DetectAsync(deviceName, token);
+                }
+            }
+            else
+            {
+                result = await detector.DetectAsync(deviceName, token);
+            }
             AddTransition(transitions, "Detect", $"Detected {result.State}; success={result.IsSuccessful}.");
             return result;
         }

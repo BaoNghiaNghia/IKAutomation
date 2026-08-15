@@ -57,10 +57,10 @@ namespace ADB_Tool_Automation_Post_FB.Infrastructure.Workflows
                     ReadDouble(values, warnings, "Operations.AdaptiveHighTechnicalFailureRate", 0.25d),
                     ReadInt(values, warnings, "Operations.AdaptiveObservationWindowSize", 20),
                     ReadInt(values, warnings, "Operations.AdaptiveHighPreflightLatencyMs", 30000),
-                    ReadInt(values, warnings, "Operations.AutomationStaggerMinMs", 400),
-                    ReadInt(values, warnings, "Operations.AutomationStaggerMaxMs", 1200),
-                    ReadInt(values, warnings, "Operations.RecoveryStaggerMinMs", 30000),
-                    ReadInt(values, warnings, "Operations.RecoveryStaggerMaxMs", 60000),
+                    ReadInt(values, warnings, "Operations.AutomationStaggerMinMs", 0),
+                    ReadInt(values, warnings, "Operations.AutomationStaggerMaxMs", 0),
+                    ReadInt(values, warnings, "Operations.RecoveryStaggerMinMs", 0),
+                    ReadInt(values, warnings, "Operations.RecoveryStaggerMaxMs", 0),
                     ReadInt(values, warnings, "Operations.AdaptiveHighScreenshotGateWaitMs", 1500),
                     ReadInt(values, warnings, "Operations.AdaptiveHighVisionGateWaitMs", 1000),
                     ReadDouble(values, warnings, "Operations.AdaptiveHighIoFailureRate", 0.15d),
@@ -76,9 +76,9 @@ namespace ADB_Tool_Automation_Post_FB.Infrastructure.Workflows
                 resolved = new AdaptiveConcurrencyOptions();
             }
             int screenshotConcurrency = ReadInt(values, warnings,
-                "Operations.MaxConcurrentScreenshots", 5);
+                "Operations.MaxConcurrentScreenshots", 10);
             int visionConcurrency = ReadInt(values, warnings,
-                "Operations.MaxConcurrentVisionOperations", 8);
+                "Operations.MaxConcurrentVisionOperations", 12);
             if (warnings.Count > 0 && source == "App.config") source = "App.config+Fallbacks";
             return new AdaptiveConcurrencyConfigurationResult
             {

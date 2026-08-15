@@ -11,9 +11,9 @@ namespace ADB_Tool_Automation_Post_FB.Infrastructure.Workflows
 {
     public sealed class AdaptiveConcurrencyOptions
     {
-        public const int DefaultMinimumConcurrency = 6;
-        public const int DefaultInitialConcurrency = 8;
-        public const int DefaultMaximumConcurrency = 12;
+        public const int DefaultMinimumConcurrency = 8;
+        public const int DefaultInitialConcurrency = 16;
+        public const int DefaultMaximumConcurrency = 20;
 
         public AdaptiveConcurrencyOptions(int minimumConcurrency = DefaultMinimumConcurrency,
             int initialConcurrency = DefaultInitialConcurrency,
@@ -22,8 +22,8 @@ namespace ADB_Tool_Automation_Post_FB.Infrastructure.Workflows
             double highCpuPercent = 88d, long lowAvailableMemoryBytes = 2147483648L,
             double highTechnicalFailureRate = 0.25d, int observationWindowSize = 20,
             int highProbeLatencyMs = 30000,
-            int automationStaggerMinMs = 400, int automationStaggerMaxMs = 1200,
-            int recoveryStaggerMinMs = 30000, int recoveryStaggerMaxMs = 60000,
+            int automationStaggerMinMs = 0, int automationStaggerMaxMs = 0,
+            int recoveryStaggerMinMs = 0, int recoveryStaggerMaxMs = 0,
             int highScreenshotGateWaitMs = 1500, int highVisionGateWaitMs = 1000,
             double highIoFailureRate = 0.15d, int queuePressureWindows = 3,
             int adjustmentCooldownMs = 10000, int highGameplayLeaseWaitMs = 3000)

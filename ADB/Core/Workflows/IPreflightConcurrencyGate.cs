@@ -29,8 +29,8 @@ namespace ADB_Tool_Automation_Post_FB.Core.Workflows
 
     public sealed class PreflightConcurrencyOptions
     {
-        public PreflightConcurrencyOptions(int maximumConcurrency = 8,
-            int staggerMinMs = 50, int staggerMaxMs = 200)
+        public PreflightConcurrencyOptions(int maximumConcurrency = 12,
+            int staggerMinMs = 0, int staggerMaxMs = 0)
         {
             if (maximumConcurrency < 1 || maximumConcurrency > 25)
                 throw new ArgumentOutOfRangeException(nameof(maximumConcurrency));

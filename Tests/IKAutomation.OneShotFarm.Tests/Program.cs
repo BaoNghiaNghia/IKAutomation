@@ -210,6 +210,7 @@ internal static class Program
         Run("Adaptive startup stagger is applied once per run", StartupStaggerIsAppliedOncePerRun);
         Run("Adaptive ready path uses one admission", ReadyPathUsesOneAdaptiveAdmission);
         Run("Adaptive gameplay admission does not hold a whole workflow", AdaptiveGameplayAdmissionIsShortLived);
+        Run("Continuous recovery has no cross-device startup stagger", ContinuousRecoveryHasNoStartupStagger);
         Run("Adaptive recovery can request stagger again", RecoveryCanRequestStaggerAgain);
         Run("Adaptive runner releases lease after exception", AdaptiveLeaseReleasesAfterException);
         Run("Adaptive runner releases lease after cancellation", AdaptiveLeaseReleasesAfterCancellation);
@@ -1146,20 +1147,20 @@ internal static class Program
     static void AdaptiveDefaultsAreConservative()
     {
         var options = new AdaptiveConcurrencyOptions();
-        Eq(6, options.MinimumConcurrency, "default minimum concurrency");
-        Eq(8, options.InitialConcurrency, "default initial concurrency");
-        Eq(12, options.MaximumConcurrency, "default maximum concurrency");
+        Eq(8, options.MinimumConcurrency, "default minimum concurrency");
+        Eq(16, options.InitialConcurrency, "default initial concurrency");
+        Eq(20, options.MaximumConcurrency, "default maximum concurrency");
         string config = File.ReadAllText(Path.Combine(Environment.CurrentDirectory,
             "ADB", "App.config"));
-        Is(config.Contains("Operations.AdaptiveMinimumConcurrency\" value=\"6\""),
+        Is(config.Contains("Operations.AdaptiveMinimumConcurrency\" value=\"8\""),
             "configured minimum concurrency");
-        Is(config.Contains("Operations.AdaptiveInitialConcurrency\" value=\"8\""),
+        Is(config.Contains("Operations.AdaptiveInitialConcurrency\" value=\"16\""),
             "configured initial concurrency");
-        Is(config.Contains("Operations.AdaptiveMaximumConcurrency\" value=\"12\""),
+        Is(config.Contains("Operations.AdaptiveMaximumConcurrency\" value=\"20\""),
             "configured maximum concurrency");
-        Is(config.Contains("Operations.MaxConcurrentScreenshots\" value=\"5\""),
+        Is(config.Contains("Operations.MaxConcurrentScreenshots\" value=\"10\""),
             "screenshot gate changed");
-        Is(config.Contains("Operations.MaxConcurrentVisionOperations\" value=\"8\""),
+        Is(config.Contains("Operations.MaxConcurrentVisionOperations\" value=\"12\""),
             "vision gate changed");
     }
 
@@ -1167,12 +1168,20 @@ internal static class Program
     {
         string runner = File.ReadAllText(Path.Combine(Environment.CurrentDirectory,
             "ADB", "Infrastructure", "Workflows", "MultiDeviceOneShotFarmRunner.cs"));
+        string navigation = File.ReadAllText(Path.Combine(Environment.CurrentDirectory,
+            "ADB", "Infrastructure", "Navigation", "WorldMapNavigationService.cs"));
         Is(!runner.Contains("Task.Run(() => RunDevicePipelineAsync"),
             "each device pipeline is wrapped in Task.Run");
         Is(runner.Contains("RunDevicePipelineAsync(device, index, request, progress,"),
             "runner no longer starts independent device tasks");
+        Is(runner.Contains("await Task.Yield();")
+            && runner.Contains("preflight adapters have a sizeable synchronous prefix"),
+            "device pipeline creation can still be serialized by synchronous preflight work");
         Is(runner.Contains("[MultiDevice Farm Performance]"),
             "end-of-run performance summary is missing");
+        Is(navigation.Contains("transitions, GameState.WorldMap, cancellationToken")
+            && navigation.Contains("expectedState, expectedState"),
+            "common WorldMap navigation still starts with a complete global scan");
     }
 
     static void FarmV2ExposesConcurrencyMetrics()
@@ -1342,7 +1351,8 @@ internal static class Program
         Eq(0, adaptive.Active, "adaptive lease leaked");
         Eq(AdaptiveExecutionPhase.Preflight, adaptive.LastRequest.ExecutionPhase,
             "admission phase");
-        Is(adaptive.LastRequest.ApplyStartupStagger, "initial startup stagger not requested");
+        Is(!adaptive.LastRequest.ApplyStartupStagger,
+            "farm admission still serializes devices with startup stagger");
     }
 
     static void AdaptiveGameplayAdmissionIsShortLived()
@@ -1356,6 +1366,17 @@ internal static class Program
         Is(code.Contains("screenshot and vision operations already have their own bounded")
             && code.Contains("adaptiveLease = null;"),
             "short-lived adaptive admission is not explicit or safely cleared");
+    }
+
+    static void ContinuousRecoveryHasNoStartupStagger()
+    {
+        string code = File.ReadAllText(Path.Combine(Environment.CurrentDirectory,
+            "ADB", "Infrastructure", "Workflows", "ContinuousFarmSupervisor.cs"));
+        int recovery = code.IndexOf("AdaptiveOperationKind.Recovery", StringComparison.Ordinal);
+        int noStagger = code.IndexOf("ApplyStartupStagger = false", recovery,
+            StringComparison.Ordinal);
+        Is(recovery >= 0 && noStagger > recovery,
+            "continuous recovery still applies a cross-device startup stagger");
     }
 
     static void AdmissionWithoutStaggerStartsImmediately()
@@ -1459,9 +1480,9 @@ internal static class Program
         settings["Operations.AdaptiveMaximumConcurrency"] = "not-a-number";
         AdaptiveConcurrencyConfigurationResult result =
             AppConfigAdaptiveConcurrencyOptionsProvider.LoadConfiguration(settings);
-        Eq(12, result.Options.MaximumConcurrency, "invalid maximum fallback");
+        Eq(20, result.Options.MaximumConcurrency, "invalid maximum fallback");
         Is(result.Warnings.Any(value => value.Contains("Operations.AdaptiveMaximumConcurrency")
-            && value.Contains("Fallback=12")), "invalid key warning omitted fallback");
+            && value.Contains("Fallback=20")), "invalid key warning omitted fallback");
         Eq("App.config+Fallbacks", result.Source, "fallback source");
     }
 

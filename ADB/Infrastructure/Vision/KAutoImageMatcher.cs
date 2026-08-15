@@ -17,7 +17,7 @@ namespace ADB_Tool_Automation_Post_FB.Infrastructure.Vision
         IFrameImageMatcher, IAsyncFrameImageMatcher
     {
         private static readonly int VisionConcurrencyLimit = ReadPositiveSetting(
-            "Operations.MaxConcurrentVisionOperations", 8);
+            "Operations.MaxConcurrentVisionOperations", 12);
         private static readonly System.Threading.SemaphoreSlim VisionGate =
             new System.Threading.SemaphoreSlim(VisionConcurrencyLimit,
                 VisionConcurrencyLimit);

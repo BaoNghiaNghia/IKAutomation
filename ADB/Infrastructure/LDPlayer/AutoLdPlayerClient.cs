@@ -44,7 +44,7 @@ namespace ADB_Tool_Automation_Post_FB.Infrastructure.LDPlayer
         private static readonly ConcurrentDictionary<string, DateTimeOffset> HealthyDevices =
             new ConcurrentDictionary<string, DateTimeOffset>(StringComparer.OrdinalIgnoreCase);
         private static readonly int ScreenshotConcurrencyLimit =
-            ReadPositiveSetting("Operations.MaxConcurrentScreenshots", 5);
+            ReadPositiveSetting("Operations.MaxConcurrentScreenshots", 10);
         private static readonly SemaphoreSlim ScreenshotGate = new SemaphoreSlim(
             ScreenshotConcurrencyLimit, ScreenshotConcurrencyLimit);
         private static readonly int AdbHealthTtlMilliseconds =

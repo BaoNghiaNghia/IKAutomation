@@ -130,6 +130,13 @@ namespace ADB_Tool_Automation_Post_FB.Infrastructure.Workflows
             FarmRunPerformance performance,
             CancellationToken cancellationToken)
         {
+            // RunAsync creates every selected device pipeline on its calling thread. Several
+            // preflight adapters have a sizeable synchronous prefix before their first
+            // incomplete await (template loading/native vision). Without an immediate yield,
+            // that prefix delays creation of the remaining pipelines and makes devices appear
+            // to advance in waves even though the concurrency gates have free capacity.
+            await Task.Yield();
+            cancellationToken.ThrowIfCancellationRequested();
             var state = new DeviceExecutionState(deviceName, deviceIndex);
             try
             {
@@ -289,7 +296,10 @@ namespace ADB_Tool_Automation_Post_FB.Infrastructure.Workflows
                     adaptiveLease = await admissionGate.AcquireAsync(deviceName,
                         AdaptiveOperationKind.Automation, new AdaptiveAdmissionRequest
                         {
-                            ApplyStartupStagger = true,
+                            // Device pipelines are already isolated per device and shared
+                            // screenshot/vision work has its own bounded gates. A global
+                            // startup stagger made a 20-device run advance device-by-device.
+                            ApplyStartupStagger = false,
                             StaggerKey = request.RunId,
                             DeviceIndex = resolvedDeviceIndex,
                             ExecutionPhase = AdaptiveExecutionPhase.Gameplay
@@ -319,7 +329,7 @@ namespace ADB_Tool_Automation_Post_FB.Infrastructure.Workflows
 
                 infoLogger($"[Adaptive Admission] DeviceName='{deviceName}', "
                     + $"DeviceIndex={resolvedDeviceIndex}, ExecutionPhase='Gameplay', "
-                    + "LeaseScope='AdmissionOnly'");
+                    + "LeaseScope='AdmissionOnly', StartupStagger=false");
                 Report(progress, deviceName, MultiDeviceOneShotFarmStage.ReadyForGameplay,
                     null, "Thiết bị đã sẵn sàng để điều đội.");
                 if (!ownershipService.TryAcquire(deviceName, DeviceAutomationOwner.Farm,
