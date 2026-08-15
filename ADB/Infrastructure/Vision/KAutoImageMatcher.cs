@@ -126,7 +126,7 @@ namespace ADB_Tool_Automation_Post_FB.Infrastructure.Vision
             visionGate.Wait();
             try
             {
-                return FindManyOnBitmap(frame.Bitmap, requests);
+                return frame.UseBitmap(bitmap => FindManyOnBitmap(bitmap, requests));
             }
             finally { visionGate.Release(); }
         }
@@ -152,7 +152,8 @@ namespace ADB_Tool_Automation_Post_FB.Infrastructure.Vision
             ValidateImageBytes(templatePng, nameof(templatePng));
 
             visionGate.Wait();
-            try { return FindOnBitmap(frame.Bitmap, templatePng, searchRegion); }
+            try { return frame.UseBitmap(bitmap =>
+                FindOnBitmap(bitmap, templatePng, searchRegion)); }
             finally { visionGate.Release(); }
         }
 
@@ -161,7 +162,8 @@ namespace ADB_Tool_Automation_Post_FB.Infrastructure.Vision
         {
             if (frame == null) throw new ArgumentNullException(nameof(frame));
             ValidateImageBytes(templatePng, nameof(templatePng));
-            return ExecuteAsync(() => FindOnBitmap(frame.Bitmap, templatePng, searchRegion),
+            return ExecuteAsync(() => frame.UseBitmap(bitmap =>
+                FindOnBitmap(bitmap, templatePng, searchRegion)),
                 1, cancellationToken);
         }
 
@@ -170,7 +172,8 @@ namespace ADB_Tool_Automation_Post_FB.Infrastructure.Vision
         {
             if (frame == null) throw new ArgumentNullException(nameof(frame));
             if (requests == null) throw new ArgumentNullException(nameof(requests));
-            return ExecuteAsync(() => FindManyOnBitmap(frame.Bitmap, requests),
+            return ExecuteAsync(() => frame.UseBitmap(bitmap =>
+                FindManyOnBitmap(bitmap, requests)),
                 requests.Count, cancellationToken);
         }
 
@@ -246,32 +249,29 @@ namespace ADB_Tool_Automation_Post_FB.Infrastructure.Vision
             Bitmap screenshot, byte[] templatePng, ImageRegion? searchRegion)
         {
             ValidateImageBytes(templatePng, nameof(templatePng));
-            Bitmap template = GetDecodedTemplate(templatePng);
+            int offsetX = 0;
+            int offsetY = 0;
+            Bitmap searchImage = null;
+
+            try
             {
-                int offsetX = 0;
-                int offsetY = 0;
-                Bitmap searchImage = null;
-
-                try
+                if (searchRegion.HasValue)
                 {
-                    if (searchRegion.HasValue)
-                    {
-                        ImageRegion region = searchRegion.Value;
-                        ValidateRegionBounds(region, screenshot.Width, screenshot.Height);
+                    ImageRegion region = searchRegion.Value;
+                    ValidateRegionBounds(region, screenshot.Width, screenshot.Height);
 
-                        offsetX = region.X;
-                        offsetY = region.Y;
-                        searchImage = screenshot.Clone(
-                            new Rectangle(region.X, region.Y, region.Width, region.Height),
-                            screenshot.PixelFormat);
-                    }
-                    else searchImage = screenshot;
-                    return FindOnSearchBitmap(searchImage, templatePng, offsetX, offsetY);
+                    offsetX = region.X;
+                    offsetY = region.Y;
+                    searchImage = screenshot.Clone(
+                        new Rectangle(region.X, region.Y, region.Width, region.Height),
+                        screenshot.PixelFormat);
                 }
-                finally
-                {
-                    if (!ReferenceEquals(searchImage, screenshot)) searchImage?.Dispose();
-                }
+                else searchImage = screenshot;
+                return FindOnSearchBitmap(searchImage, templatePng, offsetX, offsetY);
+            }
+            finally
+            {
+                if (!ReferenceEquals(searchImage, screenshot)) searchImage?.Dispose();
             }
         }
 
@@ -312,7 +312,7 @@ namespace ADB_Tool_Automation_Post_FB.Infrastructure.Vision
         {
             // The cached image is an immutable master. Native matching receives a
             // per-call clone so concurrent workers never share a mutable Bitmap.
-            using (Bitmap template = (Bitmap)GetDecodedTemplate(templatePng).Clone())
+            using (Bitmap template = CloneDecodedTemplate(templatePng))
             {
                 if (template.Width > searchImage.Width || template.Height > searchImage.Height)
                     throw new ArgumentException($"Template size {template.Width}x{template.Height} exceeds search image size "
@@ -329,6 +329,15 @@ namespace ADB_Tool_Automation_Post_FB.Infrastructure.Vision
             ValidateImageBytes(templatePng, nameof(templatePng));
             return DecodedTemplates.GetValue(templatePng,
                 bytes => DecodeBitmap(bytes, nameof(templatePng)));
+        }
+
+        private static Bitmap CloneDecodedTemplate(byte[] templatePng)
+        {
+            Bitmap cached = GetDecodedTemplate(templatePng);
+            lock (cached)
+            {
+                return (Bitmap)cached.Clone();
+            }
         }
 
         private static Bitmap DecodeBitmap(byte[] imageBytes, string parameterName)

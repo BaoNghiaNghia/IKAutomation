@@ -11,6 +11,7 @@ namespace ADB_Tool_Automation_Post_FB.Core.Vision
         private Bitmap bitmap;
         private byte[] pngBytes;
         private readonly Action pngEncoded;
+        private readonly object bitmapSync = new object();
 
         public CapturedFrame(Bitmap bitmap, DateTimeOffset capturedAt,
             Action pngEncoded = null)
@@ -36,23 +37,44 @@ namespace ADB_Tool_Automation_Post_FB.Core.Vision
             }
         }
 
+        /// <summary>
+        /// Runs one operation while this frame's owned bitmap is protected from
+        /// concurrent GDI+ access and disposal.
+        /// </summary>
+        public T UseBitmap<T>(Func<Bitmap, T> operation)
+        {
+            if (operation == null) throw new ArgumentNullException(nameof(operation));
+            lock (bitmapSync)
+            {
+                if (bitmap == null) throw new ObjectDisposedException(nameof(CapturedFrame));
+                return operation(bitmap);
+            }
+        }
+
         public byte[] GetPngBytes()
         {
-            if (pngBytes != null) return pngBytes;
-            using (var stream = new MemoryStream())
+            lock (bitmapSync)
             {
-                Bitmap.Save(stream, ImageFormat.Png);
-                pngBytes = stream.ToArray();
-                pngEncoded?.Invoke();
-                return pngBytes;
+                if (pngBytes != null) return pngBytes;
+                if (bitmap == null) throw new ObjectDisposedException(nameof(CapturedFrame));
+                using (var stream = new MemoryStream())
+                {
+                    bitmap.Save(stream, ImageFormat.Png);
+                    pngBytes = stream.ToArray();
+                    pngEncoded?.Invoke();
+                    return pngBytes;
+                }
             }
         }
 
         public void Dispose()
         {
-            Bitmap owned = bitmap;
-            bitmap = null;
-            owned?.Dispose();
+            lock (bitmapSync)
+            {
+                Bitmap owned = bitmap;
+                bitmap = null;
+                owned?.Dispose();
+            }
         }
     }
 }

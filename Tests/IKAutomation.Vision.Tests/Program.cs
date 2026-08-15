@@ -29,6 +29,7 @@ namespace IKAutomation.Vision.Tests
                 Test("Matching and registry do not lock files", MatchingDoesNotLockFiles)
                 ,Test("Vision admission waits asynchronously and cancels", AsyncVisionAdmissionCancels)
                 ,Test("Vision exception does not leak admission", VisionExceptionDoesNotLeak)
+                ,Test("Concurrent matches safely share one frame and template", ConcurrentMatchesShareFrameAndTemplate)
             };
 
             int failed = 0;
@@ -298,6 +299,35 @@ namespace IKAutomation.Vision.Tests
                     CancellationToken.None).GetAwaiter().GetResult().Found,
                     "vision permit leaked after exception");
             }
+        }
+
+        private static void ConcurrentMatchesShareFrameAndTemplate()
+        {
+            GeneratedImages images = CreateGeneratedImages(47, 31);
+            var matcher = new KAutoImageMatcher(8);
+            using (CapturedFrame frame = DecodeFrame(images.ScreenshotPng))
+            {
+                var tasks = new Task<ImageMatchResult>[32];
+                for (int index = 0; index < tasks.Length; index++)
+                    tasks[index] = matcher.FindAsync(frame, images.TemplatePng,
+                        new ImageRegion(30, 20, 100, 80), CancellationToken.None);
+
+                Task.WaitAll(tasks);
+                foreach (Task<ImageMatchResult> task in tasks)
+                {
+                    AssertTrue(task.Result.Found, "Concurrent match was not found.");
+                    AssertNear(47, task.Result.X, 1, "Concurrent match X.");
+                    AssertNear(31, task.Result.Y, 1, "Concurrent match Y.");
+                }
+            }
+
+            Parallel.For(0, 32, index =>
+            {
+                ImageMatchResult result = matcher.Find(images.ScreenshotPng,
+                    images.TemplatePng, new ImageRegion(30, 20, 100, 80));
+                AssertTrue(result.Found,
+                    "Concurrent cached-template match was not found.");
+            });
         }
 
         private static CapturedFrame DecodeFrame(byte[] png)
