@@ -21,6 +21,11 @@ namespace ADB_Tool_Automation_Post_FB.Infrastructure.Vision
         private static readonly System.Threading.SemaphoreSlim VisionGate =
             new System.Threading.SemaphoreSlim(VisionConcurrencyLimit,
                 VisionConcurrencyLimit);
+        // KAutoHelper's native matcher uses shared GDI/OpenCV state internally. Different
+        // screenshot/template instances can still collide when several devices invoke it
+        // concurrently, so protect the native boundary rather than only individual Bitmap
+        // instances. ROI cloning and decoding remain concurrent outside this short section.
+        private static readonly object NativeMatcherSync = new object();
         private readonly SemaphoreSlim visionGate;
         private readonly Func<CancellationToken, Task> beforeProcessingAsync;
         private static long visionGateWaitMs, visionProcessingDurationMs,
@@ -317,7 +322,11 @@ namespace ADB_Tool_Automation_Post_FB.Infrastructure.Vision
                 if (template.Width > searchImage.Width || template.Height > searchImage.Height)
                     throw new ArgumentException($"Template size {template.Width}x{template.Height} exceeds search image size "
                         + $"{searchImage.Width}x{searchImage.Height}.", nameof(templatePng));
-                Point? topLeftPoint = KAutoHelper.ImageScanOpenCV.FindOutPoint(searchImage, template);
+                Point? topLeftPoint;
+                lock (NativeMatcherSync)
+                {
+                    topLeftPoint = KAutoHelper.ImageScanOpenCV.FindOutPoint(searchImage, template);
+                }
                 return !topLeftPoint.HasValue ? ImageMatchResult.NotFound()
                     : ImageMatchResult.FoundAt(topLeftPoint.Value.X + offsetX,
                         topLeftPoint.Value.Y + offsetY, template.Width, template.Height, null);

@@ -18,6 +18,8 @@ namespace ADB_Tool_Automation_Post_FB.Infrastructure.TeamSelection
 {
     public sealed class OpenTeamSelectionService : IResourceAwareOpenTeamSelectionService
     {
+        private const int MinimumPostGatherFrames = 2;
+        private const int MaximumPostGatherFrames = 3;
         private static readonly TemplateId[] RequiredTemplates =
         {
             TemplateId.ResourcePopupInfoAnchor, TemplateId.GatherButtonEnabled,
@@ -159,22 +161,56 @@ namespace ADB_Tool_Automation_Post_FB.Infrastructure.TeamSelection
                 await TapGatherAsync(deviceName, freshPopup.Gather.MatchResult, result, cancellationToken);
                 DateTimeOffset transitionDeadline = DateTimeOffset.UtcNow.AddSeconds(
                     options.TransitionTimeoutSeconds);
+                int framesSinceLastGatherTap = 0;
                 bool confirmedObserved = false;
-                while (DateTimeOffset.UtcNow < transitionDeadline)
+                // Under multi-device load the first useful capture/match can finish after the
+                // wall-clock deadline. That first frame is commonly the panel animation (only
+                // Adjust is visible). Always inspect a bounded second frame, while retaining a
+                // hard frame cap so queue pressure cannot make this an unbounded operation.
+                while (framesSinceLastGatherTap < MaximumPostGatherFrames
+                    && (DateTimeOffset.UtcNow < transitionDeadline
+                        || framesSinceLastGatherTap < MinimumPostGatherFrames))
                 {
                     await Task.Delay(options.PollIntervalMs, cancellationToken);
                     lastFrame = await client.CaptureScreenshotPngAsync(deviceName, cancellationToken);
+                    TeamMatch team = MatchTeam(lastFrame);
+                    framesSinceLastGatherTap++;
+                    result.ObservedFrameCount++;
+                    result.FinalEvidence = team.Evidence;
+                    ApplyTeamMatch(result, team);
+                    if (team.Confirmed)
+                    {
+                        result.FinalState = GameState.TeamSelection;
+                        confirmedObserved = true;
+                        result.TransientUnknownFrameCount = 0;
+                        observations.Add(new TeamSelectionObservation
+                        {
+                            Timestamp = DateTimeOffset.Now,
+                            State = GameState.TeamSelection,
+                            PanelAnchorFound = team.Panel.Found,
+                            AdjustFormationButtonFound = team.Adjust.Found,
+                            TeamActionButtonFound = team.Action.Found,
+                            TeamSelectionConfirmed = true,
+                            TeamSelectionReady = team.Ready,
+                            Message = team.Ready ? "All Team Selection signals matched."
+                                : "Team Selection confirmed but not ready."
+                        });
+                        LogObservation(deviceName, result, team, GameState.TeamSelection);
+                        if (team.Ready || !options.RequireReadyForSuccess)
+                            return Complete(result, OpenTeamSelectionOutcome.TeamSelectionOpened,
+                                team.Ready ? "Team Selection opened and is ready."
+                                    : "Team Selection opened with the required confirmation signals.", null, watch);
+                        continue;
+                    }
+
+                    // The focused Team Selection evidence is authoritative when present. Run
+                    // the much heavier global detector only when it did not confirm the panel.
                     GameDetectionResult state = detector.Detect(lastFrame);
                     if (!state.IsSuccessful)
                         return await CompleteAsync(deviceName, result, OpenTeamSelectionOutcome.Failed,
                             "State detection failed during Team Selection transition.", state.ErrorMessage,
                             lastFrame, watch, cancellationToken);
-
-                    TeamMatch team = MatchTeam(lastFrame);
-                    result.ObservedFrameCount++;
-                    result.FinalState = team.Confirmed ? GameState.TeamSelection : state.State;
-                    result.FinalEvidence = team.Evidence;
-                    ApplyTeamMatch(result, team);
+                    result.FinalState = state.State;
                     observations.Add(new TeamSelectionObservation
                     {
                         Timestamp = DateTimeOffset.Now, State = result.FinalState,
@@ -188,17 +224,6 @@ namespace ADB_Tool_Automation_Post_FB.Infrastructure.TeamSelection
                             : "Team Selection not confirmed."
                     });
                     LogObservation(deviceName, result, team, state.State);
-
-                    if (team.Confirmed)
-                    {
-                        confirmedObserved = true;
-                        result.TransientUnknownFrameCount = 0;
-                        if (team.Ready || !options.RequireReadyForSuccess)
-                            return Complete(result, OpenTeamSelectionOutcome.TeamSelectionOpened,
-                                team.Ready ? "Team Selection opened and is ready."
-                                    : "Team Selection opened with the required confirmation signals.", null, watch);
-                        continue;
-                    }
 
                     if (state.State == GameState.Unknown)
                     {
@@ -231,6 +256,7 @@ namespace ADB_Tool_Automation_Post_FB.Infrastructure.TeamSelection
                         // visual-confirmation window. MaxGatherTapAttempts still caps input.
                         transitionDeadline = DateTimeOffset.UtcNow.AddSeconds(
                             options.TransitionTimeoutSeconds);
+                        framesSinceLastGatherTap = 0;
                     }
                     else if (visiblePopup.Gather.Found)
                     {

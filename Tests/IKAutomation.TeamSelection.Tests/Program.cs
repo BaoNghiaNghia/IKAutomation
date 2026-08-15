@@ -39,6 +39,7 @@ namespace IKAutomation.TeamSelection.Tests
             Run("All Team signals are ready", AllSignalsReady);
             Run("Pre-tap work does not consume transition timeout", PreTapWorkDoesNotConsumeTransitionTimeout);
             Run("Slow popup retry receives a fresh bounded transition window", SlowRetryGetsFreshTransitionWindow);
+            Run("Slow transition still inspects the second useful frame", SlowTransitionInspectsSecondFrame);
             Run("Panel alone is not confirmed", PanelAlone);
             Run("Controls without panel are not confirmed", ControlsWithoutPanel);
             Run("Ready required returns OpenedButNotReady", ReadyRequired);
@@ -175,6 +176,24 @@ namespace IKAutomation.TeamSelection.Tests
 
             Equal(OpenTeamSelectionOutcome.TeamSelectionOpened, result.Outcome);
             Equal(2, result.GatherTapCount);
+        }
+
+        private static void SlowTransitionInspectsSecondFrame()
+        {
+            Fixture f = Setup();
+            PrepareFreshPopup(f, true);
+            PrepareTeamFrame(f, 3, TemplateId.TeamAdjustFormationButton);
+            f.Detector.Offline[3] = GameState.Unknown;
+            PrepareTeamFrame(f, 2, TemplateId.TeamSelectionPanelAnchor,
+                TemplateId.TeamAdjustFormationButton, TemplateId.TeamActionButtonEnabled);
+            f.Client.DelayOnCaptureNumber = 2;
+            f.Client.CaptureDelayMs = 1100;
+
+            OpenTeamSelectionResult result = Execute(f);
+
+            Equal(OpenTeamSelectionOutcome.TeamSelectionOpened, result.Outcome);
+            Equal(2, result.ObservedFrameCount);
+            Equal(1, result.GatherTapCount);
         }
 
         private static void PanelAlone()
