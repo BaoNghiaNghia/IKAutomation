@@ -301,66 +301,58 @@
                     <RowDefinition Height="*"/>
                 </Grid.RowDefinitions>
 
-                <Border Style="{StaticResource CardStyle}">
-                    <Expander IsExpanded="True">
-                        <Expander.Header>
-                            <Grid>
-                                <Grid.ColumnDefinitions>
-                                    <ColumnDefinition Width="*"/>
-                                    <ColumnDefinition Width="Auto"/>
-                                </Grid.ColumnDefinitions>
-                                <TextBlock Text="Sức khỏe hệ thống" Style="{StaticResource CardTitleStyle}"/>
-                                <Border Grid.Column="1" Background="#FFEFF6FF" CornerRadius="10"
-                                        Padding="9,4" Margin="16,0,0,0">
-                                    <TextBlock x:Name="HealthOverviewTextBlock" Text="Chưa chạy"
-                                               Foreground="#FF1D4ED8" FontWeight="SemiBold"/>
-                                </Border>
-                            </Grid>
-                        </Expander.Header>
-                        <Grid Margin="0,10,0,0">
-                            <Grid.RowDefinitions>
-                                <RowDefinition Height="Auto"/>
-                                <RowDefinition Height="8"/>
-                                <RowDefinition Height="Auto"/>
-                            </Grid.RowDefinitions>
-                            <Grid>
-                                <Grid.ColumnDefinitions>
-                                    <ColumnDefinition Width="2*"/>
-                                    <ColumnDefinition Width="*"/>
-                                    <ColumnDefinition Width="*"/>
-                                </Grid.ColumnDefinitions>
-                                <StackPanel>
-                                    <TextBlock Text="Thiết bị" Style="{StaticResource CaptionStyle}"/>
-                                    <TextBlock x:Name="HealthStatesTextBlock" Text="Chưa bắt đầu"
-                                               Style="{StaticResource ValueStyle}" Margin="0,2,0,0" TextWrapping="Wrap"/>
-                                </StackPanel>
-                                <StackPanel Grid.Column="1">
-                                    <TextBlock Text="Tác vụ" Style="{StaticResource CaptionStyle}"/>
-                                    <TextBlock x:Name="HealthLoadTextBlock" Text="-"
-                                               Style="{StaticResource ValueStyle}" Margin="0,2,0,0"/>
-                                </StackPanel>
-                                <StackPanel Grid.Column="2">
-                                    <TextBlock Text="Cảnh báo · thời gian" Style="{StaticResource CaptionStyle}"/>
-                                    <TextBlock Style="{StaticResource ValueStyle}" Margin="0,2,0,0">
-                                        <Run x:Name="HealthPressureTextBlock" Text="Không có"/>
-                                        <Run Text=" · "/>
-                                        <Run x:Name="HealthUptimeTextBlock" Text="00:00:00"/>
-                                    </TextBlock>
-                                </StackPanel>
-                            </Grid>
-                            <Border Grid.Row="2" Background="#FFEFF6FF" CornerRadius="6" Padding="9,6">
-                                <Grid>
-                                    <Grid.ColumnDefinitions>
-                                        <ColumnDefinition Width="Auto"/>
-                                        <ColumnDefinition Width="*"/>
-                                    </Grid.ColumnDefinitions>
-                                    <TextBlock Text="Telegram" Style="{StaticResource CaptionStyle}" Margin="0,0,10,0"/>
-                                    <TextBlock x:Name="HealthHeartbeatTextBlock" Grid.Column="1" Text="Chưa gửi"
-                                               Style="{StaticResource ValueStyle}" TextTrimming="CharacterEllipsis"/>
-                                </Grid>
+                <Border Style="{StaticResource CardStyle}" Padding="14,12">
+                    <Grid>
+                        <Grid.RowDefinitions>
+                            <RowDefinition Height="Auto"/>
+                            <RowDefinition Height="7"/>
+                            <RowDefinition Height="Auto"/>
+                        </Grid.RowDefinitions>
+                        <Grid>
+                            <Grid.ColumnDefinitions>
+                                <ColumnDefinition Width="*"/>
+                                <ColumnDefinition Width="Auto"/>
+                            </Grid.ColumnDefinitions>
+                            <TextBlock Text="Sức khỏe hệ thống" Style="{StaticResource CardTitleStyle}"/>
+                            <Border x:Name="HealthOverviewBadge" Grid.Column="1"
+                                    Background="#FFEFF6FF" CornerRadius="10"
+                                    Padding="9,3" Margin="16,0,0,0">
+                                <TextBlock x:Name="HealthOverviewTextBlock" Text="Chưa chạy"
+                                           Foreground="#FF1D4ED8" FontWeight="SemiBold"/>
                             </Border>
                         </Grid>
-                    </Expander>
+                        <Grid Grid.Row="2">
+                            <Grid.ColumnDefinitions>
+                                <ColumnDefinition Width="1.25*"/>
+                                <ColumnDefinition Width="1.55*"/>
+                                <ColumnDefinition Width="1.1*"/>
+                            </Grid.ColumnDefinitions>
+                            <StackPanel>
+                                <TextBlock Text="Thiết bị" Style="{StaticResource CaptionStyle}"/>
+                                <TextBlock x:Name="HealthStatesTextBlock" Text="Chưa bắt đầu"
+                                           Style="{StaticResource ValueStyle}" Margin="0,1,12,0"
+                                           TextWrapping="Wrap"/>
+                            </StackPanel>
+                            <StackPanel Grid.Column="1">
+                                <TextBlock Text="Tải xử lý" Style="{StaticResource CaptionStyle}"/>
+                                <TextBlock x:Name="HealthLoadTextBlock" Text="-"
+                                           Style="{StaticResource ValueStyle}" Margin="0,1,12,0"
+                                           TextWrapping="Wrap"/>
+                            </StackPanel>
+                            <StackPanel Grid.Column="2">
+                                <TextBlock Text="Cảnh báo · thời gian" Style="{StaticResource CaptionStyle}"/>
+                                <TextBlock Style="{StaticResource ValueStyle}" Margin="0,1,0,0">
+                                    <Run x:Name="HealthPressureTextBlock" Text="Không có"/>
+                                    <Run Text=" · "/>
+                                    <Run x:Name="HealthUptimeTextBlock" Text="00:00:00"/>
+                                </TextBlock>
+                                <TextBlock x:Name="HealthHeartbeatTextBlock" Text=""
+                                           Foreground="#FFC2410C" FontSize="11"
+                                           Margin="0,2,0,0" Visibility="Collapsed"
+                                           TextTrimming="CharacterEllipsis"/>
+                            </StackPanel>
+                        </Grid>
+                    </Grid>
                 </Border>
 
                 <Border Grid.Row="2" Style="{StaticResource CardStyle}">

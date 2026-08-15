@@ -183,6 +183,7 @@ internal static class Program
         Run("Off-screen farm cards update less frequently", OffscreenFarmCardsAreThrottled);
         Run("Farm card resources are reused", FarmCardResourcesAreReused);
         Run("Continuous supervisor never inherits the WPF dispatcher", ContinuousSupervisorRunsOffDispatcher);
+        Run("Farm health card distinguishes preparation from failures", FarmHealthCardIsCompactAndAccurate);
         Run("Team selection clears stale territory color UI", TeamSelectionClearsStaleTerritoryColor);
         Run("Vietnamese message catalog validates placeholders", VietnameseMessageCatalogIsComplete);
         Run("Vietnamese display names format farm values", VietnameseDisplayNamesAreComplete);
@@ -2158,6 +2159,26 @@ internal static class Program
         Is(method.Contains("DirectProgress<ContinuousFarmSupervisorProgress>")
             && method.Contains("QueueContinuousFarmProgress"),
             "background supervisor bypasses the bounded UI progress queue");
+    }
+    static void FarmHealthCardIsCompactAndAccurate()
+    {
+        string root = Path.Combine(Environment.CurrentDirectory, "ADB", "UI");
+        string xaml = File.ReadAllText(Path.Combine(root,
+            "DeviceDiagnosticWindow.xaml"));
+        string code = File.ReadAllText(Path.Combine(root,
+            "DeviceDiagnosticWindow.xaml.cs"));
+        Is(code.Contains("Đang chuẩn bị {preparingDevices}/{health.TotalDevices}")
+            && !code.Contains("health.HealthyDevices < health.TotalDevices")
+            && code.Contains("operationalDevices}/{health.TotalDevices} hoạt động"),
+            "preflight devices are still incorrectly presented as unhealthy");
+        Is(xaml.Contains("x:Name=\"HealthOverviewBadge\"")
+            && xaml.Contains("Text=\"Tải xử lý\"")
+            && xaml.Contains("HealthHeartbeatTextBlock")
+            && xaml.Contains("Visibility=\"Collapsed\""),
+            "health card is not using the compact conditional layout");
+        Is(code.Contains("bool heartbeatFailed")
+            && code.Contains("FormatQueue(health.FarmQueued)"),
+            "optional alerts or queue pressure are not represented accurately");
     }
     static void DiagnosticScreenshotCooldown()
     {

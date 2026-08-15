@@ -711,27 +711,39 @@ namespace ADB_Tool_Automation_Post_FB.UI
             bool needsAttention = health.DevicesWithFailures > 0
                 || health.LowDiskDevices > 0
                 || health.QuarantinedDevices > 0
-                || health.HealthyDevices < health.TotalDevices;
+                || health.RecoveringDevices > 0;
+            int preparingDevices = health.PreflightDevices + health.ReadyDevices;
+            int operationalDevices = health.RunningDevices + health.WaitingDevices;
             HealthOverviewTextBlock.Text = health.TotalDevices <= 0
                 ? "Chưa chạy"
                 : needsAttention
-                    ? $"{health.HealthyDevices}/{health.TotalDevices} ổn định · cần chú ý"
-                    : $"{health.HealthyDevices}/{health.TotalDevices} ổn định";
+                    ? "Cần chú ý"
+                    : preparingDevices > 0
+                        ? $"Đang chuẩn bị {preparingDevices}/{health.TotalDevices}"
+                        : $"{operationalDevices}/{health.TotalDevices} hoạt động";
             HealthOverviewTextBlock.Foreground = needsAttention
-                ? Brushes.DarkOrange : Brushes.SeaGreen;
+                ? Brushes.DarkOrange
+                : preparingDevices > 0 ? Brushes.RoyalBlue : Brushes.SeaGreen;
+            HealthOverviewBadge.Background = needsAttention
+                ? Brushes.OldLace
+                : preparingDevices > 0
+                    ? Brushes.AliceBlue
+                    : Brushes.Honeydew;
             HealthStatesTextBlock.Text = FormatHealthStates(health);
             HealthPressureTextBlock.Text = FormatHealthPressure(health);
             HealthLoadTextBlock.Text = health.ConcurrencyLimit > 0
-                ? $"Xác minh {health.PreflightActive}/{health.PreflightLimit} "
-                    + $"(chờ {health.PreflightQueued}) · "
-                    + $"Farm {health.ActiveExecutions}/{health.ConcurrencyLimit} "
-                    + $"(tối đa {health.FarmMaximumConcurrency}, chờ {health.FarmQueued}) · "
-                    + $"Ảnh {health.ScreenshotActive}/{health.ScreenshotLimit} "
-                    + $"(chờ {health.ScreenshotQueued}) · "
-                    + $"Vision {health.VisionActive}/{health.VisionLimit} "
-                    + $"(chờ {health.VisionQueued})"
+                ? $"Farm {health.ActiveExecutions}/{health.ConcurrencyLimit}"
+                    + FormatQueue(health.FarmQueued)
+                    + $" · Ảnh {health.ScreenshotActive}/{health.ScreenshotLimit}"
+                    + FormatQueue(health.ScreenshotQueued)
+                    + $" · Nhận diện {health.VisionActive}/{health.VisionLimit}"
+                    + FormatQueue(health.VisionQueued)
                 : "Chưa có dữ liệu";
-            HealthHeartbeatTextBlock.Text = FormatHeartbeat(health);
+            bool heartbeatFailed = health.LastHeartbeatSucceeded == false;
+            HealthHeartbeatTextBlock.Text = heartbeatFailed
+                ? "Telegram: " + FormatHeartbeat(health) : string.Empty;
+            HealthHeartbeatTextBlock.Visibility = heartbeatFailed
+                ? Visibility.Visible : Visibility.Collapsed;
             TimeSpan uptime = health.GeneratedAt - health.StartedAt;
             if (uptime < TimeSpan.Zero) uptime = TimeSpan.Zero;
             HealthUptimeTextBlock.Text = uptime.TotalDays >= 1
@@ -739,15 +751,18 @@ namespace ADB_Tool_Automation_Post_FB.UI
                 : $"{uptime.Hours:00}:{uptime.Minutes:00}:{uptime.Seconds:00}";
         }
 
+        private static string FormatQueue(int queued) => queued > 0
+            ? $" (+{queued} chờ)" : string.Empty;
+
         private static string FormatHealthStates(ContinuousFarmHealthSnapshot health)
         {
             var states = new List<string>();
             AddHealthState(states, "Đang chạy", health.RunningDevices);
             AddHealthState(states, "Đang chờ", health.WaitingDevices);
-            AddHealthState(states, "Đang khôi phục", health.RecoveringDevices);
-            AddHealthState(states, "Cách ly", health.QuarantinedDevices);
             AddHealthState(states, "Chuẩn bị",
                 health.PreflightDevices + health.ReadyDevices);
+            AddHealthState(states, "Đang khôi phục", health.RecoveringDevices);
+            AddHealthState(states, "Cách ly", health.QuarantinedDevices);
             AddHealthState(states, "Đã dừng", health.StoppedDevices);
             return states.Count > 0
                 ? string.Join(" · ", states)
