@@ -572,10 +572,10 @@ namespace ADB_Tool_Automation_Post_FB.Infrastructure.Workflows
             OneShotFarmRequest source, WorldMapTeamAvailabilityResult availability)
         {
             OneShotFarmRequest request = CloneRequest(source);
-            // Preflight intentionally does not become the operation's roster
-            // source. ReadyTeamOneShotFarmWorkflow performs a new scan immediately
-            // before selecting an immutable ExpectedTeam.
-            request.InitialTeamAvailability = null;
+            // Pass the concrete observation forward as a short-lived candidate.
+            // ReadyTeamOneShotFarmWorkflow validates its age and confidence before
+            // using it, so a device that waited for the execution gate is rescanned.
+            request.InitialTeamAvailability = availability;
             return request;
         }
 

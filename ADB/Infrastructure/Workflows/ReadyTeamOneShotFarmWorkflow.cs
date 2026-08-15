@@ -14,6 +14,8 @@ namespace ADB_Tool_Automation_Post_FB.Infrastructure.Workflows
 {
     public sealed class ReadyTeamOneShotFarmWorkflow : IOneShotFarmWorkflow
     {
+        private static readonly TimeSpan InitialAvailabilityMaxAge =
+            TimeSpan.FromSeconds(5);
         private readonly IOneShotFarmWorkflow inner;
         private readonly IWorldMapTeamAvailabilityService availability;
         private readonly ReadyTeamGateOptions options;
@@ -56,6 +58,7 @@ namespace ADB_Tool_Automation_Post_FB.Infrastructure.Workflows
                 request.CycleDispatchedTeams ?? new TeamNumber[0]);
             OneShotFarmResult lastSuccessfulResult = null;
             int consecutiveNoReadyChecks = 0;
+            bool initialAvailabilityConsidered = false;
             try
             {
                 while (true)
@@ -84,10 +87,23 @@ namespace ADB_Tool_Automation_Post_FB.Infrastructure.Workflows
                         Message = VietnameseUserMessageLocalizer.Default.Format(
                             UiMessageKey.CheckingAllowedTeams, checks + 1)
                     });
-                    // Preflight is only an admission signal.  The operation itself
-                    // must always be bound to a new WorldMap observation made here.
-                    WorldMapTeamAvailabilityResult check = await availability.CheckAsync(
-                        deviceName, cancellationToken);
+                    WorldMapTeamAvailabilityResult check = null;
+                    bool reusedFreshPreflight = false;
+                    if (!initialAvailabilityConsidered)
+                    {
+                        initialAvailabilityConsidered = true;
+                        if (CanReuseInitialAvailability(request.InitialTeamAvailability,
+                            DateTimeOffset.UtcNow))
+                        {
+                            check = request.InitialTeamAvailability;
+                            reusedFreshPreflight = true;
+                        }
+                    }
+                    if (check == null)
+                    {
+                        check = await availability.CheckAsync(
+                            deviceName, cancellationToken);
+                    }
                     checks++;
                     if (!check.Success)
                     {
@@ -99,7 +115,8 @@ namespace ADB_Tool_Automation_Post_FB.Infrastructure.Workflows
                     }
                     detectedTeams = check.AvailableTeams ?? new TeamNumber[0];
                     bool freshConfidentRoster = IsFreshConfidentRoster(check);
-                    LogFreshRosterScan(deviceName, check, freshConfidentRoster);
+                    LogFreshRosterScan(deviceName, check, freshConfidentRoster,
+                        reusedFreshPreflight ? "PreflightFreshReuse" : "FreshWorldMapScan");
                     // Availability is evidence, not a rewrite of the configured
                     // policy.  A weak WorldMap frame must not permanently narrow
                     // the rows the TeamSelection screen is allowed to reconcile.
@@ -122,7 +139,8 @@ namespace ADB_Tool_Automation_Post_FB.Infrastructure.Workflows
                         logger.Info($"[Farm Team Operation Selected] DeviceName='{deviceName}', "
                             + $"RunId='{request.RunId ?? string.Empty}', RosterScanId='{check.RosterScanId}', "
                             + $"ReadyTeams='{string.Join(",", eligibleReadyTeams)}', ExpectedTeam='{expectedTeam}', "
-                            + "SelectionOrder='Team1,Team2,Team3,Team4', TargetSource='FreshWorldMapReadyScan'");
+                            + "SelectionOrder='Team1,Team2,Team3,Team4', "
+                            + $"TargetSource='{(reusedFreshPreflight ? "FreshPreflightReadyScan" : "FreshWorldMapReadyScan")}'");
                         Report(progress, new OneShotFarmProgress
                         {
                             Stage = OneShotFarmProgressStage.ReadyTeamFound,
@@ -386,10 +404,25 @@ namespace ADB_Tool_Automation_Post_FB.Infrastructure.Workflows
             return !check.RosterCapturedAt.HasValue || check.IsFresh;
         }
 
+        private static bool CanReuseInitialAvailability(
+            WorldMapTeamAvailabilityResult check, DateTimeOffset now)
+        {
+            if (!IsFreshConfidentRoster(check)
+                || check.FinalState != GameState.WorldMap
+                || check.RosterScanId == Guid.Empty
+                || !check.RosterCapturedAt.HasValue)
+                return false;
+
+            TimeSpan age = now - check.RosterCapturedAt.Value;
+            return age >= TimeSpan.Zero && age <= InitialAvailabilityMaxAge;
+        }
+
         private void LogFreshRosterScan(string deviceName,
-            WorldMapTeamAvailabilityResult check, bool freshConfidentRoster)
+            WorldMapTeamAvailabilityResult check, bool freshConfidentRoster,
+            string scanSource)
         {
             logger.Info($"[Farm Ready Team Scan] DeviceName='{deviceName}', "
+                + $"ScanSource='{scanSource ?? string.Empty}', "
                 + $"RosterScanId='{check?.RosterScanId}', CapturedAt='{(check != null && check.RosterCapturedAt.HasValue ? check.RosterCapturedAt.Value.ToString("O") : string.Empty)}', "
                 + $"ReadyTeams='{string.Join(",", check?.ReadyTeams ?? new TeamNumber[0])}', "
                 + $"AvailableTeams='{string.Join(",", check?.AvailableTeams ?? new TeamNumber[0])}', "

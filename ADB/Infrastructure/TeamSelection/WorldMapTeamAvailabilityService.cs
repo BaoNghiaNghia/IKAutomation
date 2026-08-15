@@ -109,6 +109,7 @@ namespace ADB_Tool_Automation_Post_FB.Infrastructure.TeamSelection
             int verifiedFrameCount = 0;
             int focusedWorldMapFrameCount = 0;
             int fullDetectionFallbackCount = 0;
+            bool earlyCompleted = false;
             GameDetectionResult lastState = null;
             WorldMapTeamRosterLayout lastLayout = null;
             for (int frame = 0; frame < options.ObservationFrameCount; frame++)
@@ -215,6 +216,20 @@ namespace ADB_Tool_Automation_Post_FB.Infrastructure.TeamSelection
                 busyTeamsFresh.UnionWith(frameBusyTeams);
                 lockedTeamsFresh.UnionWith(frameLockedTeams);
                 rowEvidenceTeams.UnionWith(frameRowEvidenceTeams);
+
+                // One frame is authoritative when every roster row has an explicit
+                // ready, busy/timer, or locked status. Keep the multi-frame fallback
+                // for partially obscured rows instead of holding every device for
+                // all configured frames unconditionally.
+                bool completeFrameEvidence = teams.All(team =>
+                    frameReadyMatchesByTeam.ContainsKey(team)
+                    || frameBusyTeams.Contains(team)
+                    || frameLockedTeams.Contains(team));
+                if (completeFrameEvidence)
+                {
+                    earlyCompleted = true;
+                    break;
+                }
                 }
             }
 
@@ -345,6 +360,7 @@ namespace ADB_Tool_Automation_Post_FB.Infrastructure.TeamSelection
                 + $"ObservationFrames={verifiedFrameCount}/{options.ObservationFrameCount}, "
                 + $"FocusedWorldMapFrames={focusedWorldMapFrameCount}, "
                 + $"FullDetectionFallbacks={fullDetectionFallbackCount}, "
+                + $"EarlyCompletion={earlyCompleted}, "
                 + $"Ready={ready}, ReadyTeams='{string.Join(",", readyTeams)}', "
                 + $"AvailableTeams='{string.Join(",", availableTeams)}', "
                 + $"BusyTeams='{string.Join(",", busyTeams)}', LockedTeams='{string.Join(",", lockedTeams)}', "
