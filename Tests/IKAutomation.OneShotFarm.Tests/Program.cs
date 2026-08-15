@@ -209,6 +209,7 @@ internal static class Program
         Run("Adaptive admission without explicit stagger starts immediately", AdmissionWithoutStaggerStartsImmediately);
         Run("Adaptive startup stagger is applied once per run", StartupStaggerIsAppliedOncePerRun);
         Run("Adaptive ready path uses one admission", ReadyPathUsesOneAdaptiveAdmission);
+        Run("Adaptive gameplay admission does not hold a whole workflow", AdaptiveGameplayAdmissionIsShortLived);
         Run("Adaptive recovery can request stagger again", RecoveryCanRequestStaggerAgain);
         Run("Adaptive runner releases lease after exception", AdaptiveLeaseReleasesAfterException);
         Run("Adaptive runner releases lease after cancellation", AdaptiveLeaseReleasesAfterCancellation);
@@ -1342,6 +1343,19 @@ internal static class Program
         Eq(AdaptiveExecutionPhase.Preflight, adaptive.LastRequest.ExecutionPhase,
             "admission phase");
         Is(adaptive.LastRequest.ApplyStartupStagger, "initial startup stagger not requested");
+    }
+
+    static void AdaptiveGameplayAdmissionIsShortLived()
+    {
+        string code = File.ReadAllText(Path.Combine(Environment.CurrentDirectory,
+            "ADB", "Infrastructure", "Workflows", "MultiDeviceOneShotFarmRunner.cs"));
+        int release = code.IndexOf("adaptiveLease.Dispose();", StringComparison.Ordinal);
+        int workflow = code.IndexOf("item = await RunDeviceAsync(", StringComparison.Ordinal);
+        Is(release >= 0 && workflow > release,
+            "adaptive gameplay lease still spans the complete device workflow");
+        Is(code.Contains("screenshot and vision operations already have their own bounded")
+            && code.Contains("adaptiveLease = null;"),
+            "short-lived adaptive admission is not explicit or safely cleared");
     }
 
     static void AdmissionWithoutStaggerStartsImmediately()

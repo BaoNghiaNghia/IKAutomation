@@ -20,6 +20,7 @@ namespace ADB_Tool_Automation_Post_FB.Infrastructure.ResourceSearch
     public sealed class ResourceSearchExecutionService : IResourceSearchExecutionService
     {
         private const string LegacyMoveAreaVariant = "LegacyMoveArea";
+        private const string GenericNotFoundStartVariant = "GenericNotFoundStart";
         private const string SearchOtherRegionVariant = "SearchOtherRegion";
         private const string TargetLevelTooLowVariant = "TargetLevelTooLow";
         private static readonly int[] ToastScreenshotDelaysMs = { 650, 1100, 1600 };
@@ -340,6 +341,30 @@ namespace ADB_Tool_Automation_Post_FB.Infrastructure.ResourceSearch
                     }
 
                     ImageRegion toastRoi = ScaleRegion(new ImageRegion(190, 105, 900, 180), frame.Width, frame.Height);
+                    int effectiveLevel = request.EffectiveLevel
+                        ?? request.Configuration?.TargetLevel
+                        ?? 0;
+                    ImageMatchResult genericStartMatch = Match(frame,
+                        TemplateId.ResourceNotFoundToastAnchor, toastRoi);
+                    bool genericStartFound = HasBounds(genericStartMatch)
+                        && IsInside(genericStartMatch, toastRoi);
+                    double genericStartScore = genericStartMatch?.Confidence
+                        ?? (genericStartFound ? 1.0 : 0.0);
+                    bool genericMappedRedirect = genericStartFound
+                        && ResourceAreaLv2PointSelector
+                            .GetPointsForResourceLevel(effectiveLevel).Count > 0;
+                    if (genericMappedRedirect)
+                    {
+                        logger.Info($"[Simple Screenshot Toast Check] RunId='{request.RunId ?? string.Empty}', DeviceName='{deviceName}', Resource='{request.Configuration?.ResourceType}', EffectiveLevel={effectiveLevel}, SearchTapCount={searchTapCount}, ScreenshotNumber={screenshotNumber + 1}, ScheduledAfterTapMs={ToastScreenshotDelaysMs[screenshotNumber]}, ActualAfterTapMs={(frame.CapturedAt - searchTapCompletedAt).TotalMilliseconds:F0}, SearchButtonFound=true, GenericNotFoundStartScore={genericStartScore:F3}, GenericNotFoundStartFound=true, MatchedVariant='{GenericNotFoundStartVariant}', Outcome='ResourceAreaLv2Redirect'");
+                        result.NotFoundObserved = true;
+                        result.NotFoundToastVerified = true;
+                        result.FailureReason = ResourceSearchFailureReason.ResourceAreaLv2Redirect;
+                        result.MatchedNotFoundVariant = GenericNotFoundStartVariant;
+                        return ImmediateToastProbeResult.Decided(
+                            ResourceSearchOutcome.ResourceAreaLv2Redirect,
+                            "Đã phát hiện thông báo không tìm thấy tài nguyên; chuyển sang điểm khu vực thành phù hợp.", null);
+                    }
+
                     ResourceAreaLv2TemplateStatus phraseStatus = ValidateResourceAreaLv2Template(
                         TemplateId.ResourceAreaPhraseAnchor, toastRoi);
                     if (!phraseStatus.Ready)
@@ -354,14 +379,16 @@ namespace ADB_Tool_Automation_Post_FB.Infrastructure.ResourceSearch
                     double phraseScore = phraseMatch.Confidence ?? (HasBounds(phraseMatch) ? 1.0 : 0.0);
                     if (phraseScore > bestScore) bestScore = phraseScore;
                     bool phraseFound = HasBounds(phraseMatch) && IsInside(phraseMatch, toastRoi);
-                    logger.Info($"[Simple Screenshot Toast Check] RunId='{request.RunId ?? string.Empty}', DeviceName='{deviceName}', Resource='{request.Configuration?.ResourceType}', EffectiveLevel={request.EffectiveLevel ?? 0}, SearchTapCount={searchTapCount}, ScreenshotNumber={screenshotNumber + 1}, ScheduledAfterTapMs={ToastScreenshotDelaysMs[screenshotNumber]}, ActualAfterTapMs={(frame.CapturedAt - searchTapCompletedAt).TotalMilliseconds:F0}, SearchButtonFound=true, PhraseScore={phraseScore:F3}, PhraseThreshold={phraseStatus.Threshold:F3}, PhraseFound={phraseFound}, Outcome='{(phraseFound ? "ResourceAreaLv2Redirect" : "ContinueFixedScreenshotCheck")}'");
+                    logger.Info($"[Simple Screenshot Toast Check] RunId='{request.RunId ?? string.Empty}', DeviceName='{deviceName}', Resource='{request.Configuration?.ResourceType}', EffectiveLevel={effectiveLevel}, SearchTapCount={searchTapCount}, ScreenshotNumber={screenshotNumber + 1}, ScheduledAfterTapMs={ToastScreenshotDelaysMs[screenshotNumber]}, ActualAfterTapMs={(frame.CapturedAt - searchTapCompletedAt).TotalMilliseconds:F0}, SearchButtonFound=true, PhraseScore={phraseScore:F3}, PhraseThreshold={phraseStatus.Threshold:F3}, PhraseFound={phraseFound}, GenericNotFoundStartScore={genericStartScore:F3}, GenericNotFoundStartFound={genericStartFound}, MatchedVariant='{(phraseFound ? "ResourceAreaLv2Redirect" : string.Empty)}', Outcome='{(phraseFound ? "ResourceAreaLv2Redirect" : "ContinueFixedScreenshotCheck")}'");
                     if (phraseFound)
                     {
+                        result.NotFoundObserved = true;
+                        result.NotFoundToastVerified = true;
                         result.FailureReason = ResourceSearchFailureReason.ResourceAreaLv2Redirect;
                         result.MatchedNotFoundVariant = "ResourceAreaLv2Redirect";
                         return ImmediateToastProbeResult.Decided(
                             ResourceSearchOutcome.ResourceAreaLv2Redirect,
-                            "Đã phát hiện thông báo chuyển sang khu tài nguyên Lv2.", null);
+                            "Đã phát hiện thông báo không tìm thấy tài nguyên; chuyển sang điểm khu vực thành phù hợp.", null);
                     }
                 }
                 catch (OperationCanceledException) { throw; }
@@ -612,7 +639,12 @@ namespace ADB_Tool_Automation_Post_FB.Infrastructure.ResourceSearch
                 ? "SeasonMapRestriction"
                 : targetLevelPairClose ? TargetLevelTooLowVariant
                 : alternateConfirmed ? SearchOtherRegionVariant
-                : legacyPairClose ? LegacyMoveAreaVariant : null;
+                : legacyPairClose ? LegacyMoveAreaVariant
+                // This is the stable beginning of the Vietnamese banner
+                // ("Không tìm thấy..."). The remainder changes with the
+                // resource, level and line wrapping, so the start anchor is
+                // authoritative while the Search panel is still confirmed.
+                : HasBounds(toastAnchor) ? GenericNotFoundStartVariant : null;
             bool toastVerified = matchedVariant != null && panelConfirmedNowOrAdjacent;
 
             if (result.CameraMovementObserved && !panelConfirmed
@@ -622,12 +654,11 @@ namespace ADB_Tool_Automation_Post_FB.Infrastructure.ResourceSearch
                 context.StableFrameCount = 0;
             result.CameraStabilityVerified = context.StableFrameCount >= options.RequiredStableFrames;
 
-            bool legacyPairTooFar = HasBounds(toastAnchor) && HasBounds(actionAnchor) && !legacyPairClose;
             bool alternatePairTooFar = HasBounds(shortAnchor)
                 && HasBounds(otherRegionAnchor) && !alternatePairClose;
             bool targetLevelPairTooFar = HasBounds(targetLevelTooLowAnchor)
                 && HasBounds(seasonMapAnchor) && !targetLevelPairClose;
-            string observationMessage = legacyPairTooFar || alternatePairTooFar
+            string observationMessage = alternatePairTooFar
                 || targetLevelPairTooFar
                 ? "A not-found toast pair was ambiguous because its vertical distance exceeded the configured maximum."
                 : toastVerified ? $"Not-found toast variant '{matchedVariant}' matched and was latched."

@@ -64,9 +64,9 @@ namespace IKAutomation.ResourceSearchExecution.Tests
             Run("One-frame toast is latched", OneFrameToast);
             Run("Toast does not require consecutive frames", NoConsecutiveToastRequirement);
             Run("Toast anchors within Y distance match", ToastYWithin);
-            Run("Toast anchors too far apart are ambiguous", ToastYFar);
+            Run("Generic not-found start remains authoritative when suffix wraps", ToastYFar);
             Run("Toast outside ROI is ignored", ToastOutsideRoi);
-            Run("Primary toast anchor alone is insufficient", PrimaryOnly);
+            Run("Generic not-found start anchor is authoritative in an open panel", PrimaryOnly);
             Run("Action toast anchor alone is insufficient", ActionOnly);
             Run("Toast matching is resource-name independent", ResourceNameIndependent);
             Run("NotFound has priority over Located", NotFoundPriority);
@@ -250,9 +250,9 @@ namespace IKAutomation.ResourceSearchExecution.Tests
         private static void OneFrameToast() { Fixture f=ToastFixture(); f.Matcher.ToastFrames.Add(2); var r=Execute(f); Is(r.NotFoundObserved,"latch"); Eq(1,r.ObservedFrameCount,"frames"); }
         private static void NoConsecutiveToastRequirement() { var r=Execute(ToastFixture()); Eq(1,r.ObservedFrameCount,"frames"); }
         private static void ToastYWithin() { Fixture f=ToastFixture(); f.Matcher.ActionY=250; var r=Execute(f); Is(r.NotFoundToastVerified,"toast"); }
-        private static void ToastYFar() { Fixture f=ToastFixture(maxAttempts:1); f.Matcher.ActionY=400; var r=Execute(f); Is(!r.NotFoundObserved,"latch"); }
+        private static void ToastYFar() { Fixture f=ToastFixture(maxAttempts:1); f.Matcher.ActionY=400; var r=Execute(f); Is(r.NotFoundToastVerified,"latch"); Eq("GenericNotFoundStart",r.MatchedNotFoundVariant,"variant"); }
         private static void ToastOutsideRoi() { Fixture f=ToastFixture(maxAttempts:1); f.Matcher.ToastOutsideRegion=true; var r=Execute(f); Is(!r.NotFoundObserved,"outside toast"); }
-        private static void PrimaryOnly() { Fixture f=ToastFixture(maxAttempts:1); f.Matcher.Action=false; Is(!Execute(f).NotFoundObserved,"latch"); }
+        private static void PrimaryOnly() { Fixture f=ToastFixture(maxAttempts:3); f.Matcher.Action=false; var r=Execute(f); Is(r.NotFoundObserved&&r.NotFoundToastVerified,"latch"); Eq(ResourceSearchOutcome.ResourceAreaLv2Redirect,r.Outcome,"outcome"); Eq("GenericNotFoundStart",r.MatchedNotFoundVariant,"variant"); Eq(1,f.Client.TapCalls,"must not send Search attempt 2"); }
         private static void ActionOnly() { Fixture f=ToastFixture(maxAttempts:1); f.Matcher.Primary=false; Is(!Execute(f).NotFoundObserved,"latch"); }
         private static void ResourceNameIndependent() { var r=Execute(ToastFixture()); Is(r.NotFoundObserved,"generic anchors"); }
         private static void NotFoundPriority() { Fixture f=LocatedFixture(); f.Matcher.Primary=true; f.Matcher.Action=true; f.Matcher.ToastFrames.Add(2); var r=Execute(f); Is(r.Outcome==ResourceSearchOutcome.ResourceNotFound,"priority"); }

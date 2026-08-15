@@ -226,6 +226,25 @@ namespace ADB_Tool_Automation_Post_FB.Infrastructure.ResourceSearch
                                     + "was verified while configuring the next level.";
                                 attempt.ErrorMessage = null;
                                 LogAttempt(deviceName, runId, attempt);
+                                int effectiveNotFoundLevel = configured.EffectiveLevel
+                                    ?? configured.ObservedLevel
+                                    ?? level;
+                                if (IsMappedNotFoundVariant(notFound.Variant,
+                                    effectiveNotFoundLevel))
+                                {
+                                    result.MatchedNotFoundVariant = notFound.Variant;
+                                    result.FailureReason = ResourceSearchFailureReason.ResourceAreaLv2Redirect;
+                                    logger.Info($"[Resource Level Fallback] RunId='{runId}', DeviceName='{deviceName}', "
+                                        + "Outcome='ResourceAreaLv2Redirect', "
+                                        + $"MatchedNotFoundVariant='{notFound.Variant ?? string.Empty}', "
+                                        + $"EffectiveLevel={effectiveNotFoundLevel}, "
+                                        + "RedirectSource='ConfigurationToast', CountsTowardAreaFailure=false, "
+                                        + "NextAction='MoveToMappedCityAreaPoint'");
+                                    return await CompleteAsync(deviceName, runId, result,
+                                        ResourceLevelFallbackOutcome.ResourceAreaLv2Redirect,
+                                        attempt.Message, null, watch,
+                                        $"level-{level}_configurationtoastredirect", token, true);
+                                }
                                 if (notFound.FailureReason
                                     == ResourceSearchFailureReason.SearchOtherRegion)
                                     return await CompleteAsync(deviceName, runId, result,
@@ -301,9 +320,8 @@ namespace ADB_Tool_Automation_Post_FB.Infrastructure.ResourceSearch
                         bool mappedNotFoundRedirect = searched.Outcome
                                 == ResourceSearchOutcome.ResourceNotFound
                             && searched.NotFoundToastVerified
-                            && IsRecognizedNotFoundVariant(searched.MatchedNotFoundVariant)
-                            && ResourceAreaLv2PointSelector
-                                .GetPointsForResourceLevel(effectiveSearchLevel).Count > 0;
+                            && IsMappedNotFoundVariant(searched.MatchedNotFoundVariant,
+                                effectiveSearchLevel);
                         if (searched.Outcome == ResourceSearchOutcome.ResourceAreaLv2Redirect
                             || mappedNotFoundRedirect)
                         {
@@ -371,9 +389,18 @@ namespace ADB_Tool_Automation_Post_FB.Infrastructure.ResourceSearch
         private static bool IsRecognizedNotFoundVariant(string variant)
         {
             return string.Equals(variant, "LegacyMoveArea", StringComparison.Ordinal)
+                || string.Equals(variant, "GenericNotFoundStart", StringComparison.Ordinal)
                 || string.Equals(variant, "SearchOtherRegion", StringComparison.Ordinal)
                 || string.Equals(variant, "TargetLevelTooLow", StringComparison.Ordinal)
+                || string.Equals(variant, "SeasonMapRestriction", StringComparison.Ordinal)
                 || string.Equals(variant, "ResourceAreaLv2Redirect", StringComparison.Ordinal);
+        }
+
+        private static bool IsMappedNotFoundVariant(string variant, int effectiveLevel)
+        {
+            return IsRecognizedNotFoundVariant(variant)
+                && ResourceAreaLv2PointSelector
+                    .GetPointsForResourceLevel(effectiveLevel).Count > 0;
         }
 
         private async Task<NotFoundToastObservation> ObserveNotFoundToastAsync(
@@ -404,9 +431,14 @@ namespace ADB_Tool_Automation_Post_FB.Infrastructure.ResourceSearch
                 TemplateId.ResourceTargetLevelTooLowToastAnchor, options.ToastRegion);
             ImageMatchResult seasonMap = MatchOptionalResult(screenshot,
                 TemplateId.ResourceTargetLevelSeasonMapToastAnchor, options.ToastRegion);
-            return IsToastPair(targetLevelTooLow, seasonMap)
-                ? new NotFoundToastObservation(true, TargetLevelTooLowVariant,
-                    ResourceSearchFailureReason.TargetLevelTooLow)
+            if (IsToastPair(targetLevelTooLow, seasonMap))
+                return new NotFoundToastObservation(true, TargetLevelTooLowVariant,
+                    ResourceSearchFailureReason.TargetLevelTooLow);
+
+            return legacyStart != null && legacyStart.Found
+                && legacyStart.Width > 0 && legacyStart.Height > 0
+                ? new NotFoundToastObservation(true, "GenericNotFoundStart",
+                    ResourceSearchFailureReason.ResourceUnavailable)
                 : NotFoundToastObservation.NotVerified;
         }
 

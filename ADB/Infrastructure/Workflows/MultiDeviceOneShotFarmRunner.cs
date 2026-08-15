@@ -305,8 +305,21 @@ namespace ADB_Tool_Automation_Post_FB.Infrastructure.Workflows
                 performance.RecordFarm(GetConcurrencySnapshot(), leaseWait.ElapsedMilliseconds);
                 leaseHeld = Stopwatch.StartNew();
 
+                // The adaptive gate shapes admission only. Holding this lease for the whole
+                // farm workflow made device 9+ wait minutes for an earlier device to finish,
+                // even though screenshot and vision operations already have their own bounded
+                // gates. Release immediately after admission so every selected device can
+                // advance through its state machine independently.
+                if (adaptiveLease != null)
+                {
+                    adaptiveLease.Dispose();
+                    adaptiveLease = null;
+                    leaseHeld.Stop();
+                }
+
                 infoLogger($"[Adaptive Admission] DeviceName='{deviceName}', "
-                    + $"DeviceIndex={resolvedDeviceIndex}, ExecutionPhase='Gameplay', LeaseReused=true");
+                    + $"DeviceIndex={resolvedDeviceIndex}, ExecutionPhase='Gameplay', "
+                    + "LeaseScope='AdmissionOnly'");
                 Report(progress, deviceName, MultiDeviceOneShotFarmStage.ReadyForGameplay,
                     null, "Thiết bị đã sẵn sàng để điều đội.");
                 if (!ownershipService.TryAcquire(deviceName, DeviceAutomationOwner.Farm,
