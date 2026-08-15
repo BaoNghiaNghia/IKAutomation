@@ -750,7 +750,7 @@ namespace ADB_Tool_Automation_Post_FB.Infrastructure.Workflows
                 });
                 logger.Info($"[Device Toast Status] DeviceName='{deviceName}', FarmRunId='{farmRunId ?? string.Empty}', "
                     + $"Resource='{resource}', EffectiveLevel={effectiveLevel}, Variant='{variant}', "
-                    + $"DetectedAt='{detectedAt:O}', DisplayText='ResourceAreaLv2Redirect', State='Detected'");
+                    + $"DetectedAt='{detectedAt:O}', DisplayText='NormalizedNotFoundToast', State='Detected'");
             }
             catch
             {

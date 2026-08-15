@@ -24,8 +24,10 @@ namespace IKAutomation.ResourcePopup.Tests
         {
             Run("All signals produce Ready", AllSignalsReady);
             Run("Anchor and title produce NotReady", AnchorTitleNotReady);
-            Run("Anchor and Gather without Iron is not Ready", AnchorGatherNotReady);
-            Run("Gather alone is NotDetected", GatherAloneNotDetected);
+            Run("Anchor and fresh Gather verify searched resource", AnchorGatherReady);
+            Run("Fresh Gather in action ROI verifies searched resource", GatherOnlyReady);
+            Run("Legacy verifier does not infer resource from Gather alone", GenericGatherOnlyNotDetected);
+            Run("Different title still rejects Gather-only inference", GatherWithDifferentTitleRejected);
             Run("Header and action templates use separate regions", MatcherUsesRoi);
             Run("Bounds use screenshot coordinates", BoundsPreserved);
             Run("Missing template fails before capture", MissingTemplateFails);
@@ -46,7 +48,7 @@ namespace IKAutomation.ResourcePopup.Tests
             Run("Different resource title returns controlled mismatch", PopupMismatch);
             Run("Stable title-only crop verifies popup when level icon changes", StableTitleFallback);
             Run("Iron levels 5 6 and 7 use the same title template", IronLevelsUseSameTitle);
-            Run("Missing Iron title message names template and region", MissingIronTitleMessage);
+            Run("Missing Gather message names template and region", MissingGatherMessage);
             Run("Service contains no default cancellation token", NoCancellationNone);
             Console.WriteLine($"Resource popup tests: {passed} passed, {failed} failed.");
             return failed == 0 ? 0 : 1;
@@ -59,10 +61,44 @@ namespace IKAutomation.ResourcePopup.Tests
         { Fixture f = Setup(TemplateId.ResourcePopupInfoAnchor, TemplateId.ResourcePopupIronTitle, TemplateId.GatherButtonEnabled); var r = Run(f); Equal(ResourcePopupOutcome.ResourcePopupReady, r.Outcome); Assert(r.Success && r.PopupAnchorVerified && r.IronResourceVerified && r.GatherButtonVerified, r.Message); }
         private static void AnchorTitleNotReady()
         { Fixture f = Setup(TemplateId.ResourcePopupInfoAnchor, TemplateId.ResourcePopupIronTitle); var r = Run(f); Equal(ResourcePopupOutcome.ResourcePopupDetectedButNotReady, r.Outcome); Assert(!r.Success && !r.GatherButtonVerified, r.Message); }
-        private static void AnchorGatherNotReady()
-        { Fixture f = Setup(TemplateId.ResourcePopupInfoAnchor, TemplateId.GatherButtonEnabled); var r = Run(f); Equal(ResourcePopupOutcome.ResourcePopupDetectedButNotReady, r.Outcome); Assert(!r.IronResourceVerified, r.Message); }
-        private static void GatherAloneNotDetected()
-        { Fixture f = Setup(TemplateId.GatherButtonEnabled); var r = Run(f); Equal(ResourcePopupOutcome.ResourcePopupNotDetected, r.Outcome); }
+        private static void AnchorGatherReady()
+        {
+            Fixture f = Setup(TemplateId.ResourcePopupInfoAnchor,
+                TemplateId.GatherButtonEnabled);
+            var r = ((IResourceAwarePopupVerificationService)f.Service)
+                .VerifyAsync("LDPlayer", ResourceType.Iron, Token)
+                .GetAwaiter().GetResult();
+            Equal(ResourcePopupOutcome.ResourcePopupReady, r.Outcome);
+            Assert(r.ExpectedResourceInferredFromSearch && r.IronResourceVerified,
+                r.Message);
+        }
+        private static void GatherOnlyReady()
+        {
+            Fixture f = Setup(TemplateId.GatherButtonEnabled);
+            var r = ((IResourceAwarePopupVerificationService)f.Service)
+                .VerifyAsync("LDPlayer", ResourceType.Iron, Token)
+                .GetAwaiter().GetResult();
+            Equal(ResourcePopupOutcome.ResourcePopupReady, r.Outcome);
+            Assert(r.Success && r.PopupAnchorVerified && r.ExpectedResourceVerified
+                && r.ExpectedResourceInferredFromSearch && r.GatherButtonVerified
+                && r.VerificationSource == "FreshGatherButtonInActionRoi", r.Message);
+        }
+        private static void GatherWithDifferentTitleRejected()
+        {
+            Fixture f = Setup(TemplateId.ResourcePopupFoodTitle,
+                TemplateId.GatherButtonEnabled);
+            var r = Run(f);
+            Equal(ResourcePopupOutcome.ResourcePopupMismatch, r.Outcome);
+            Assert(!r.Success && r.MismatchedResource == ResourceType.Food
+                && !r.ExpectedResourceInferredFromSearch, r.Message);
+        }
+        private static void GenericGatherOnlyNotDetected()
+        {
+            Fixture f = Setup(TemplateId.GatherButtonEnabled);
+            var r = Run(f);
+            Equal(ResourcePopupOutcome.ResourcePopupNotDetected, r.Outcome);
+            Assert(!r.ExpectedResourceInferredFromSearch && !r.Success, r.Message);
+        }
         private static void MatcherUsesRoi()
         { Fixture f = Setup(TemplateId.ResourcePopupInfoAnchor, TemplateId.ResourcePopupIronTitle, TemplateId.GatherButtonEnabled); Run(f); Equal(new ImageRegion(450,230,680,310),f.Matcher.Regions[TemplateId.ResourcePopupInfoAnchor].Value);Equal(new ImageRegion(450,230,680,310),f.Matcher.Regions[TemplateId.ResourcePopupIronTitle].Value);Equal(new ImageRegion(560,430,500,260),f.Matcher.Regions[TemplateId.GatherButtonEnabled].Value); }
         private static void BoundsPreserved()
@@ -163,8 +199,16 @@ namespace IKAutomation.ResourcePopup.Tests
                 Equal(ResourcePopupOutcome.ResourcePopupReady, result.Outcome);
             }
         }
-        private static void MissingIronTitleMessage()
-        { Fixture f=Setup(TemplateId.ResourcePopupInfoAnchor,TemplateId.GatherButtonEnabled);f.Detector.State=GameState.ResourcePopup;var r=Run(f);Equal(ResourcePopupOutcome.ResourcePopupDetectedButNotReady,r.Outcome);Assert(r.Message.Contains("ResourcePopupIronTitle")&&r.Message.Contains("HeaderRegion"),r.Message); }
+        private static void MissingGatherMessage()
+        {
+            Fixture f = Setup(TemplateId.ResourcePopupInfoAnchor,
+                TemplateId.ResourcePopupIronTitle);
+            f.Detector.State = GameState.ResourcePopup;
+            var r = Run(f);
+            Equal(ResourcePopupOutcome.ResourcePopupDetectedButNotReady, r.Outcome);
+            Assert(r.Message.Contains("GatherButtonEnabled")
+                && r.Message.Contains("ActionRegion"), r.Message);
+        }
         private static void NoCancellationNone()
         { string s=File.ReadAllText(Path.Combine(Environment.CurrentDirectory,"ADB","Infrastructure","ResourcePopup","ResourcePopupVerificationService.cs"));Assert(!s.Contains("CancellationToken"+".None"),"default token bypass"); }
 

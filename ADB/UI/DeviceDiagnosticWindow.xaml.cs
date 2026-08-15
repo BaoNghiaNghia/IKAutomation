@@ -2131,14 +2131,23 @@ namespace ADB_Tool_Automation_Post_FB.UI
 
         private static string BuildResourceToastText(OneShotFarmProgress progress)
         {
-            if (progress == null || !string.Equals(progress.ResourceToastVariant,
-                "ResourceAreaLv2Redirect", StringComparison.Ordinal))
+            if (progress == null
+                || string.IsNullOrWhiteSpace(progress.ResourceToastVariant))
                 return string.Empty;
             string resource = FarmProgressVietnamese.Resource(
                 progress.CurrentResource?.ToString());
+            bool isLv2Redirect = string.Equals(progress.ResourceToastVariant,
+                "ResourceAreaLv2Redirect", StringComparison.Ordinal);
             if (progress.CurrentLevel.HasValue && progress.CurrentLevel.Value > 0)
-                return $"Không tìm thấy {resource} Lv{progress.CurrentLevel.Value} chưa ai khai thác, hãy đến khu tài nguyên Lv2 để tìm.";
-            return "Không tìm thấy tài nguyên chưa ai khai thác, hãy đến khu tài nguyên Lv2 để tìm.";
+            {
+                string notFound = $"Không tìm thấy {resource} Lv{progress.CurrentLevel.Value} chưa ai khai thác";
+                return isLv2Redirect
+                    ? notFound + ", hãy đến khu tài nguyên Lv2 để tìm."
+                    : notFound + ".";
+            }
+            return isLv2Redirect
+                ? "Không tìm thấy tài nguyên chưa ai khai thác, hãy đến khu tài nguyên Lv2 để tìm."
+                : "Không tìm thấy tài nguyên chưa ai khai thác.";
         }
 
         private void ApplyResourceToast(OneShotFarmProgress progress)

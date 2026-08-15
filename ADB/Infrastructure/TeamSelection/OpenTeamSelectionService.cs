@@ -143,7 +143,11 @@ namespace ADB_Tool_Automation_Post_FB.Infrastructure.TeamSelection
                 PopupMatch freshPopup = MatchPopup(lastFrame, expectedResource);
                 GameDetectionResult freshState = detector.Detect(lastFrame);
                 result.FinalEvidence = freshPopup.Evidence;
-                if (!freshState.IsSuccessful || !freshPopup.Resource.Found)
+                // The production tap target is Gather itself.  Rematching that popup-only
+                // control on the fresh frame is the authoritative pre-tap check; requiring the
+                // older title crop here would reintroduce the false negative already resolved
+                // by ResourcePopupVerificationService.
+                if (!freshState.IsSuccessful || !freshPopup.Gather.Found)
                     return await CompleteAsync(deviceName, result, OpenTeamSelectionOutcome.ResourcePopupNotReady,
                         "Resource Popup disappeared before Gather could be tapped.", freshState.ErrorMessage,
                         lastFrame, watch, cancellationToken);
@@ -207,7 +211,8 @@ namespace ADB_Tool_Automation_Post_FB.Infrastructure.TeamSelection
                     }
                     result.TransientUnknownFrameCount = 0;
 
-                    if (state.State == GameState.ResourcePopup
+                    PopupMatch visiblePopup = MatchPopup(lastFrame, expectedResource);
+                    if (visiblePopup.Gather.Found
                         && result.GatherTapCount < options.MaxGatherTapAttempts)
                     {
                         lastFrame = await client.CaptureScreenshotPngAsync(deviceName, cancellationToken);
@@ -220,6 +225,13 @@ namespace ADB_Tool_Automation_Post_FB.Infrastructure.TeamSelection
                                 retryState.ErrorMessage, lastFrame, watch, cancellationToken);
                         await Task.Delay(options.GatherTapRetryDelayMs, cancellationToken);
                         await TapGatherAsync(deviceName, retryPopup.Gather.MatchResult, result, cancellationToken);
+                    }
+                    else if (visiblePopup.Gather.Found)
+                    {
+                        // The fresh popup remains visible but the bounded Gather retry count is
+                        // exhausted. Keep observing until the transition deadline; do not mistake
+                        // the underlying WorldMap classification for a vanished popup.
+                        continue;
                     }
                     else if (state.State != GameState.ResourcePopup)
                     {
@@ -295,7 +307,7 @@ namespace ADB_Tool_Automation_Post_FB.Infrastructure.TeamSelection
             GameDetectionEvidence resource = MatchPopupTitle(frame,
                 ResourceTemplateMap.PopupTitle(expectedResource));
             GameDetectionEvidence gather = Match(frame, TemplateId.GatherButtonEnabled, options.ResourcePopupRegion);
-            return new PopupMatch(anchor, resource, gather, resource.Found && gather.Found);
+            return new PopupMatch(anchor, resource, gather, gather.Found);
         }
 
         private GameDetectionEvidence Match(byte[] frame, TemplateId id, ImageRegion region)

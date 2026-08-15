@@ -56,11 +56,20 @@ namespace ADB_Tool_Automation_Post_FB.Infrastructure.ResourcePopup
         public async Task<ResourcePopupVerificationResult> VerifyAsync(
             string deviceName, CancellationToken cancellationToken)
         {
-            return await VerifyAsync(deviceName, ResourceType.Iron, cancellationToken);
+            return await VerifyCoreAsync(deviceName, ResourceType.Iron,
+                false, cancellationToken);
         }
 
         public async Task<ResourcePopupVerificationResult> VerifyAsync(
             string deviceName, ResourceType resourceType, CancellationToken cancellationToken)
+        {
+            return await VerifyCoreAsync(deviceName, resourceType,
+                true, cancellationToken);
+        }
+
+        private async Task<ResourcePopupVerificationResult> VerifyCoreAsync(
+            string deviceName, ResourceType resourceType,
+            bool allowExpectedResourceInference, CancellationToken cancellationToken)
         {
             var watch = Stopwatch.StartNew();
             var result = NewResult(resourceType);
@@ -102,14 +111,25 @@ namespace ADB_Tool_Automation_Post_FB.Infrastructure.ResourcePopup
                     GameDetectionEvidence gather = Match(lastFrame,
                         TemplateId.GatherButtonEnabled, options.ActionRegion, "ActionRegion");
                     result.Evidence = new[] { anchor, expectedTitle, gather };
-                    // Every resource-title template contains the stable info icon. A matched
-                    // resource header therefore verifies the popup anchor even when the older,
-                    // standalone anchor crop is too brittle for that resource variant.
-                    bool popupAnchorVerified = anchor.Found || expectedTitle.Found;
+                    // GatherButtonEnabled is a popup-only control and is searched only in the
+                    // configured action ROI.  The resource search operation already owns the
+                    // expected resource, so a fresh Gather match is authoritative when none of
+                    // the other resource titles contradict it.  This keeps old header crops
+                    // from rejecting a real, ready popup after the game changes title rendering.
+                    bool gatherOnlyVerified = allowExpectedResourceInference
+                        && gather.Found && !mismatch.HasValue && !expectedTitle.Found;
+                    bool popupAnchorVerified = anchor.Found || expectedTitle.Found
+                        || gatherOnlyVerified;
+                    bool expectedResourceVerified = expectedTitle.Found || gatherOnlyVerified;
                     result.PopupAnchorVerified = popupAnchorVerified;
-                    result.IronResourceVerified = resourceType == ResourceType.Iron && expectedTitle.Found;
-                    result.ResourceVerified = expectedTitle.Found;
-                    result.ExpectedResourceVerified = expectedTitle.Found;
+                    result.IronResourceVerified = resourceType == ResourceType.Iron
+                        && expectedResourceVerified;
+                    result.ResourceVerified = expectedResourceVerified;
+                    result.ExpectedResourceVerified = expectedResourceVerified;
+                    result.ExpectedResourceInferredFromSearch = gatherOnlyVerified;
+                    result.VerificationSource = expectedTitle.Found
+                        ? "ExpectedResourceTitleAndGather"
+                        : gatherOnlyVerified ? "FreshGatherButtonInActionRoi" : "None";
                     result.PopupAnchorFound = anchor.Found;
                     result.ExpectedResourceTitleFound = expectedTitle.Found;
                     result.GatherButtonFound = gather.Found;
@@ -117,18 +137,21 @@ namespace ADB_Tool_Automation_Post_FB.Infrastructure.ResourcePopup
                     result.GatherButtonVerified = gather.Found;
                     result.GatherButtonMatch = gather.MatchResult;
 
-                    int signals = (popupAnchorVerified ? 1 : 0) + (expectedTitle.Found ? 1 : 0) + (gather.Found ? 1 : 0);
+                    int signals = (popupAnchorVerified ? 1 : 0)
+                        + (expectedResourceVerified ? 1 : 0) + (gather.Found ? 1 : 0);
                     bool detected = signals >= 2 && popupAnchorVerified;
                     popupObserved |= detected || detection.State == GameState.ResourcePopup;
-                    if (!expectedTitle.Found && mismatch.HasValue && popupAnchorVerified)
+                    if (!expectedTitle.Found && mismatch.HasValue && gather.Found)
                         return Complete(result, ResourcePopupOutcome.ResourcePopupMismatch, watch,
                             $"Popup title belongs to {mismatch.Value}, not expected {resourceType}; no Gather input was sent.", null);
-                    bool ready = popupAnchorVerified && expectedTitle.Found && gather.Found;
+                    bool ready = popupAnchorVerified && expectedResourceVerified && gather.Found;
                     readyFrames = ready ? readyFrames + 1 : 0;
                     LogFrame(deviceName, result, anchor, expectedTitle, gather);
                     if (readyFrames >= options.RequiredConsecutiveReadyFrames)
                         return Complete(result, ResourcePopupOutcome.ResourcePopupReady, watch,
-                            $"{resourceType} resource popup and enabled Gather button were verified.", null);
+                            gatherOnlyVerified
+                                ? $"{resourceType} resource popup was verified by a fresh enabled Gather button in the configured action ROI."
+                                : $"{resourceType} resource popup and enabled Gather button were verified.", null);
                     await Task.Delay(options.PollIntervalMs, cancellationToken);
                 }
 
@@ -244,7 +267,8 @@ namespace ADB_Tool_Automation_Post_FB.Infrastructure.ResourcePopup
             logger.Info($"[Resource Popup Verification] InitialState='{result.InitialState}', FinalState='{result.FinalState}', "
                 + $"HeaderRegion={Region(options.HeaderRegion)}, ActionRegion={Region(options.ActionRegion)}, "
                 + $"PopupAnchor={result.PopupAnchorVerified}, ExpectedTitle={result.ExpectedResourceVerified}, "
-                + $"GatherButton={result.GatherButtonVerified}, Outcome='{outcome}', "
+                + $"GatherButton={result.GatherButtonVerified}, VerificationSource='{result.VerificationSource ?? string.Empty}', "
+                + $"Outcome='{outcome}', "
                 + $"ObservedFrames={result.ObservedFrameCount}, DurationMs={result.Duration.TotalMilliseconds:F0}, "
                 + $"Cancellation={outcome == ResourcePopupOutcome.Cancelled}, Error='{error ?? string.Empty}'");
             return result;
@@ -290,9 +314,9 @@ namespace ADB_Tool_Automation_Post_FB.Infrastructure.ResourcePopup
 
         private string BuildNotReadyMessage(ResourcePopupVerificationResult result)
         {
-            if (!result.PopupAnchorFound)
+            if (!result.PopupAnchorVerified)
                 return $"ResourcePopup was detected, but {TemplateId.ResourcePopupInfoAnchor} was not found in HeaderRegion {Region(options.HeaderRegion)}.";
-            if (!result.ExpectedResourceTitleFound)
+            if (!result.ExpectedResourceVerified)
                 return $"ResourcePopup was detected, but {result.ExpectedPopupTitleTemplate} was not found in HeaderRegion {Region(options.HeaderRegion)}.";
             if (!result.GatherButtonFound)
                 return $"ResourcePopup was detected, but {TemplateId.GatherButtonEnabled} was not found in ActionRegion {Region(options.ActionRegion)}.";

@@ -23,6 +23,8 @@ namespace ADB_Tool_Automation_Post_FB.Core.ResourcePopup
         public bool GatherButtonVerified { get; set; }
         public bool PopupAnchorFound { get; set; }
         public bool ExpectedResourceTitleFound { get; set; }
+        public bool ExpectedResourceInferredFromSearch { get; set; }
+        public string VerificationSource { get; set; }
         public bool GatherButtonFound { get; set; }
         public ImageRegion HeaderRegion { get; set; }
         public ImageRegion ActionRegion { get; set; }

@@ -244,13 +244,16 @@ namespace ADB_Tool_Automation_Post_FB.Infrastructure.ResourceSearch
                                 .ToList();
                         }
 
+                        int effectiveSearchLevel = configured.EffectiveLevel
+                            ?? configured.ObservedLevel
+                            ?? level;
                         ResourceSearchExecutionResult searched = await search.ExecuteAsync(deviceName,
                             new ResourceSearchExecutionRequest
                             {
                                 Configuration = request,
                                 ConfigureBeforeSearch = false,
                                 RunId = runId,
-                                EffectiveLevel = configured.EffectiveLevel ?? configured.ObservedLevel ?? level,
+                                EffectiveLevel = effectiveSearchLevel,
                                 LevelCapped = configured.LevelCapped,
                                 AreaEpoch = policy.AreaEpoch,
                                 ExpectedTeam = policy.ExpectedTeam,
@@ -283,16 +286,25 @@ namespace ADB_Tool_Automation_Post_FB.Infrastructure.ResourceSearch
                                 null, watch, $"level-{level}_searchtapnotapplied", token,
                                 options.SaveExhaustedScreenshot);
                         }
-                        if (searched.Outcome == ResourceSearchOutcome.ResourceAreaLv2Redirect)
+                        bool mappedNotFoundRedirect = searched.Outcome
+                                == ResourceSearchOutcome.ResourceNotFound
+                            && searched.NotFoundToastVerified
+                            && IsRecognizedNotFoundVariant(searched.MatchedNotFoundVariant)
+                            && ResourceAreaLv2PointSelector
+                                .GetPointsForResourceLevel(effectiveSearchLevel).Count > 0;
+                        if (searched.Outcome == ResourceSearchOutcome.ResourceAreaLv2Redirect
+                            || mappedNotFoundRedirect)
                         {
                             result.MatchedNotFoundVariant = searched.MatchedNotFoundVariant;
-                            result.FailureReason = searched.FailureReason;
+                            result.FailureReason = ResourceSearchFailureReason.ResourceAreaLv2Redirect;
                             attempt.Message = searched.Message;
                             attempt.ErrorMessage = searched.ErrorMessage;
                             logger.Info($"[Resource Level Fallback] RunId='{runId}', DeviceName='{deviceName}', "
                                 + "Outcome='ResourceAreaLv2Redirect', "
                                 + $"MatchedNotFoundVariant='{searched.MatchedNotFoundVariant ?? string.Empty}', "
-                                + "CountsTowardAreaFailure=false, NextAction='ReturnToFarmCoordinator'");
+                                + $"EffectiveLevel={effectiveSearchLevel}, "
+                                + $"RedirectSource='{(mappedNotFoundRedirect ? "VerifiedNotFoundToast" : "DedicatedLv2Toast")}', "
+                                + "CountsTowardAreaFailure=false, NextAction='MoveToMappedCityAreaPoint'");
                             return await CompleteAsync(deviceName, runId, result,
                                 ResourceLevelFallbackOutcome.ResourceAreaLv2Redirect,
                                 searched.Message, searched.ErrorMessage, watch,
@@ -342,6 +354,14 @@ namespace ADB_Tool_Automation_Post_FB.Infrastructure.ResourceSearch
                     "Resource level fallback failed.", exception.Message, watch,
                     "fallback-failed", token, true);
             }
+        }
+
+        private static bool IsRecognizedNotFoundVariant(string variant)
+        {
+            return string.Equals(variant, "LegacyMoveArea", StringComparison.Ordinal)
+                || string.Equals(variant, "SearchOtherRegion", StringComparison.Ordinal)
+                || string.Equals(variant, "TargetLevelTooLow", StringComparison.Ordinal)
+                || string.Equals(variant, "ResourceAreaLv2Redirect", StringComparison.Ordinal);
         }
 
         private async Task<NotFoundToastObservation> ObserveNotFoundToastAsync(
