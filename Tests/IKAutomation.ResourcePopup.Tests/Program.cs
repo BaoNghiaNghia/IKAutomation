@@ -34,6 +34,7 @@ namespace IKAutomation.ResourcePopup.Tests
             Run("Verification sends no input", SendsNoInput);
             Run("Cancellation is returned", CancellationReturned);
             Run("Timeout is bounded", TimeoutBounded);
+            Run("Slow first frame cannot consume the only popup observation", SlowFirstFrameStillGetsConfirmation);
             Run("Diagnostic failure does not replace outcome", DiagnosticFailureSafe);
             Run("Ready frame requirement is honored", ReadyFramesHonored);
             Run("Options validate polling", OptionsValidatePolling);
@@ -111,6 +112,21 @@ namespace IKAutomation.ResourcePopup.Tests
         { Fixture f = Setup(); using (var source = new CancellationTokenSource()) { source.Cancel(); var r = Run(f, source.Token); Equal(ResourcePopupOutcome.Cancelled, r.Outcome); } }
         private static void TimeoutBounded()
         { Fixture f = Setup(); var watch = Stopwatch.StartNew(); Run(f); Assert(watch.Elapsed < TimeSpan.FromSeconds(2), "Timeout was not bounded."); }
+        private static void SlowFirstFrameStillGetsConfirmation()
+        {
+            Fixture f = Setup(TemplateId.GatherButtonEnabled);
+            f.Client.CaptureDelayMs = 1100;
+            f.Matcher.MatchGatherFromCapture = 2;
+            f.Matcher.CaptureNumber = () => f.Client.Captures;
+
+            var result = ((IResourceAwarePopupVerificationService)f.Service)
+                .VerifyAsync("LDPlayer", ResourceType.Iron, Token)
+                .GetAwaiter().GetResult();
+
+            Equal(ResourcePopupOutcome.ResourcePopupReady, result.Outcome);
+            Equal(2, result.ObservedFrameCount,
+                "The verifier did not process a confirmation frame after the wall timeout.");
+        }
         private static void DiagnosticFailureSafe()
         { Fixture f = Setup(TemplateId.ResourcePopupInfoAnchor, TemplateId.ResourcePopupIronTitle); f.Store.Throw = true; var r = Run(f); Equal(ResourcePopupOutcome.ResourcePopupDetectedButNotReady, r.Outcome); }
         private static void ReadyFramesHonored()
@@ -240,15 +256,15 @@ namespace IKAutomation.ResourcePopup.Tests
         private sealed class FakeRegistry : ITemplateRegistry
         { public TemplateId? Missing; public bool UseImageIronTitleTemplate; public TemplateDefinition GetDefinition(TemplateId id) => new TemplateDefinition(id, id + ".png", .8); public string GetPath(TemplateId id) => Path.Combine("templates", id + ".png"); public byte[] LoadBytes(TemplateId id) => id==TemplateId.ResourcePopupIronTitle&&UseImageIronTitleTemplate?CreateTitleTemplate():new[] { (byte)id }; public bool Exists(TemplateId id) => Missing != id; private static byte[] CreateTitleTemplate(){using(var b=new Bitmap(184,81))using(var g=Graphics.FromImage(b))using(var s=new MemoryStream()){g.Clear(Color.LightBlue);g.DrawString("Sắt",SystemFonts.DefaultFont,Brushes.DarkBlue,110,8);b.Save(s,ImageFormat.Png);return s.ToArray();}} }
         private sealed class FakeMatcher : IImageMatcher
-        { public HashSet<TemplateId> Matches = new HashSet<TemplateId>(); public Dictionary<TemplateId, ImageRegion?> Regions = new Dictionary<TemplateId, ImageRegion?>(); public bool StableIronTitleOnly; public ImageMatchResult Find(byte[] s, byte[] t, ImageRegion? r = null) { if(t.Length>1&&t[0]==137){using(var stream=new MemoryStream(t))using(var bitmap=new Bitmap(stream))return StableIronTitleOnly&&bitmap.Width<100?ImageMatchResult.FoundAt(850,240,bitmap.Width,bitmap.Height):ImageMatchResult.NotFound();} var id = (TemplateId)t[0]; Regions[id] = r; return Matches.Contains(id) ? ImageMatchResult.FoundAt(id == TemplateId.GatherButtonEnabled ? 700 : 600, id == TemplateId.GatherButtonEnabled ? 520 : 430, 80, 40) : ImageMatchResult.NotFound(); } }
+        { public HashSet<TemplateId> Matches = new HashSet<TemplateId>(); public Dictionary<TemplateId, ImageRegion?> Regions = new Dictionary<TemplateId, ImageRegion?>(); public bool StableIronTitleOnly; public int MatchGatherFromCapture; public Func<int> CaptureNumber; public ImageMatchResult Find(byte[] s, byte[] t, ImageRegion? r = null) { if(t.Length>1&&t[0]==137){using(var stream=new MemoryStream(t))using(var bitmap=new Bitmap(stream))return StableIronTitleOnly&&bitmap.Width<100?ImageMatchResult.FoundAt(850,240,bitmap.Width,bitmap.Height):ImageMatchResult.NotFound();} var id = (TemplateId)t[0]; Regions[id] = r; bool delayedGather = id == TemplateId.GatherButtonEnabled && MatchGatherFromCapture > 0; bool found = Matches.Contains(id) && (!delayedGather || (CaptureNumber != null && CaptureNumber() >= MatchGatherFromCapture)); return found ? ImageMatchResult.FoundAt(id == TemplateId.GatherButtonEnabled ? 700 : 600, id == TemplateId.GatherButtonEnabled ? 520 : 430, 80, 40) : ImageMatchResult.NotFound(); } }
         private sealed class FakeStore : IResourcePopupDiagnosticStore
         { public bool Throw; public Task<string> SaveAsync(string d, ResourcePopupOutcome o, byte[] p, CancellationToken t) { if (Throw) throw new IOException("disk full"); return Task.FromResult("popup.png"); } }
         private sealed class FakeLogger : IDiagnosticLogger
         { public void Info(string m) { } public void Error(string m, Exception e) { } }
         private sealed class FakeClient : ILdPlayerClient
         {
-            public byte[] Screenshot = Png(Color.Black); public int Captures, InputCalls;
-            public Task<byte[]> CaptureScreenshotPngAsync(string d, CancellationToken t) { Captures++; return Task.FromResult(Screenshot); }
+            public byte[] Screenshot = Png(Color.Black); public int Captures, InputCalls, CaptureDelayMs;
+            public async Task<byte[]> CaptureScreenshotPngAsync(string d, CancellationToken t) { Captures++; if (CaptureDelayMs > 0) await Task.Delay(CaptureDelayMs, t); return Screenshot; }
             public Task<IReadOnlyList<string>> GetDeviceNamesAsync(CancellationToken t) => Task.FromResult<IReadOnlyList<string>>(new[] { "LDPlayer" });
             public Task<bool> IsRunningAsync(string d, CancellationToken t) => Task.FromResult(true); public Task OpenAsync(string d, CancellationToken t) => Task.CompletedTask; public Task CloseAsync(string d, CancellationToken t) => Task.CompletedTask; public Task RunAppAsync(string d, string p, CancellationToken t) => Task.CompletedTask;
             private Task Input() { InputCalls++; return Task.CompletedTask; }

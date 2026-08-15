@@ -89,7 +89,18 @@ namespace ADB_Tool_Automation_Post_FB.Infrastructure.ResourcePopup
                 int readyFrames = 0;
                 bool popupObserved = false;
                 var timeout = TimeSpan.FromSeconds(options.VerificationTimeoutSeconds);
-                while (watch.Elapsed < timeout)
+                // The timeout includes time spent waiting for the shared screenshot/vision
+                // pipeline. With many devices a single fresh capture can consume the whole
+                // wall-clock window, so a one-frame transitional miss used to terminate a
+                // real popup. Always process a small minimum number of fresh frames, while
+                // retaining a hard attempt cap derived from the configured bounded window.
+                int minimumProcessedFrames = Math.Max(2,
+                    options.RequiredConsecutiveReadyFrames);
+                int maximumProcessedFrames = Math.Max(minimumProcessedFrames,
+                    (int)Math.Ceiling(timeout.TotalMilliseconds / options.PollIntervalMs) + 1);
+                while (result.ObservedFrameCount < minimumProcessedFrames
+                    || (watch.Elapsed < timeout
+                        && result.ObservedFrameCount < maximumProcessedFrames))
                 {
                     cancellationToken.ThrowIfCancellationRequested();
                     lastFrame = await client.CaptureScreenshotPngAsync(deviceName, cancellationToken);
@@ -152,7 +163,10 @@ namespace ADB_Tool_Automation_Post_FB.Infrastructure.ResourcePopup
                             gatherOnlyVerified
                                 ? $"{resourceType} resource popup was verified by a fresh enabled Gather button in the configured action ROI."
                                 : $"{resourceType} resource popup and enabled Gather button were verified.", null);
-                    await Task.Delay(options.PollIntervalMs, cancellationToken);
+                    if (result.ObservedFrameCount < maximumProcessedFrames
+                        && (result.ObservedFrameCount < minimumProcessedFrames
+                            || watch.Elapsed < timeout))
+                        await Task.Delay(options.PollIntervalMs, cancellationToken);
                 }
 
                 ResourcePopupOutcome outcome = popupObserved

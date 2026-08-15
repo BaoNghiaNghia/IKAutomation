@@ -225,6 +225,12 @@ namespace ADB_Tool_Automation_Post_FB.Infrastructure.TeamSelection
                                 retryState.ErrorMessage, lastFrame, watch, cancellationToken);
                         await Task.Delay(options.GatherTapRetryDelayMs, cancellationToken);
                         await TapGatherAsync(deviceName, retryPopup.Gather.MatchResult, result, cancellationToken);
+                        // A busy multi-device screenshot queue can consume the original
+                        // transition window before this bounded retry is sent. The retry is a
+                        // new accepted Gather input, so give only that attempt its own bounded
+                        // visual-confirmation window. MaxGatherTapAttempts still caps input.
+                        transitionDeadline = DateTimeOffset.UtcNow.AddSeconds(
+                            options.TransitionTimeoutSeconds);
                     }
                     else if (visiblePopup.Gather.Found)
                     {

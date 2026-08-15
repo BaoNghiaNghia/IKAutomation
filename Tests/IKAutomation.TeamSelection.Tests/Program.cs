@@ -38,6 +38,7 @@ namespace IKAutomation.TeamSelection.Tests
             Run("Panel plus Action confirms", () => TwoSignalSuccess(TemplateId.TeamActionButtonEnabled));
             Run("All Team signals are ready", AllSignalsReady);
             Run("Pre-tap work does not consume transition timeout", PreTapWorkDoesNotConsumeTransitionTimeout);
+            Run("Slow popup retry receives a fresh bounded transition window", SlowRetryGetsFreshTransitionWindow);
             Run("Panel alone is not confirmed", PanelAlone);
             Run("Controls without panel are not confirmed", ControlsWithoutPanel);
             Run("Ready required returns OpenedButNotReady", ReadyRequired);
@@ -153,6 +154,27 @@ namespace IKAutomation.TeamSelection.Tests
             OpenTeamSelectionResult r = Execute(f);
             Equal(OpenTeamSelectionOutcome.TeamSelectionOpened, r.Outcome);
             Assert(r.ObservedFrameCount > 0, "No post-tap frame was observed.");
+        }
+
+        private static void SlowRetryGetsFreshTransitionWindow()
+        {
+            Fixture f = Setup();
+            PrepareFreshPopup(f, true);
+            f.Client.Frames.Enqueue(Frame(3));
+            f.Detector.Offline[3] = GameState.ResourcePopup;
+            MatchPopup(f, 3, 710, 510);
+            f.Client.Frames.Enqueue(Frame(4));
+            f.Detector.Offline[4] = GameState.ResourcePopup;
+            MatchPopup(f, 4, 760, 560);
+            PrepareTeamFrame(f, 2, TemplateId.TeamSelectionPanelAnchor,
+                TemplateId.TeamAdjustFormationButton, TemplateId.TeamActionButtonEnabled);
+            f.Client.DelayOnCaptureNumber = 2;
+            f.Client.CaptureDelayMs = 1100;
+
+            OpenTeamSelectionResult result = Execute(f);
+
+            Equal(OpenTeamSelectionOutcome.TeamSelectionOpened, result.Outcome);
+            Equal(2, result.GatherTapCount);
         }
 
         private static void PanelAlone()
@@ -397,8 +419,8 @@ namespace IKAutomation.TeamSelection.Tests
 
         private sealed class FakeClient : ILdPlayerClient
         {
-            public readonly Queue<byte[]> Frames = new Queue<byte[]>(); public int Captures, Taps, LastX, LastY, ProhibitedInputs;
-            public Task<byte[]> CaptureScreenshotPngAsync(string d, CancellationToken t) { t.ThrowIfCancellationRequested(); Captures++; return Task.FromResult(Frames.Count > 0 ? Frames.Dequeue() : Frame(255)); }
+            public readonly Queue<byte[]> Frames = new Queue<byte[]>(); public int Captures, Taps, LastX, LastY, ProhibitedInputs, DelayOnCaptureNumber, CaptureDelayMs;
+            public async Task<byte[]> CaptureScreenshotPngAsync(string d, CancellationToken t) { t.ThrowIfCancellationRequested(); Captures++; if (Captures == DelayOnCaptureNumber && CaptureDelayMs > 0) await Task.Delay(CaptureDelayMs, t); return Frames.Count > 0 ? Frames.Dequeue() : Frame(255); }
             public Task TapAsync(string d, int x, int y, CancellationToken t) { t.ThrowIfCancellationRequested(); Taps++; LastX = x; LastY = y; return Task.CompletedTask; }
             private Task Prohibited() { ProhibitedInputs++; return Task.CompletedTask; }
             public Task<IReadOnlyList<string>> GetDeviceNamesAsync(CancellationToken t) => Task.FromResult<IReadOnlyList<string>>(new[] { "LDPlayer" });
