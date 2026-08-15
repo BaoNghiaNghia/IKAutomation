@@ -178,6 +178,10 @@ internal static class Program
         Run("Continuous UI coalesces per-device progress", ContinuousUiCoalescesProgress);
         Run("Critical continuous UI states use bounded coalescing", ContinuousUiBoundsCriticalProgress);
         Run("Farm progress list virtualizes off-screen devices", FarmProgressListIsVirtualized);
+        Run("Continuous UI uses a bounded render time slice", ContinuousUiUsesTimeSlice);
+        Run("Continuous UI skips semantic duplicates", ContinuousUiSkipsDuplicates);
+        Run("Off-screen farm cards update less frequently", OffscreenFarmCardsAreThrottled);
+        Run("Farm card resources are reused", FarmCardResourcesAreReused);
         Run("Team selection clears stale territory color UI", TeamSelectionClearsStaleTerritoryColor);
         Run("Vietnamese message catalog validates placeholders", VietnameseMessageCatalogIsComplete);
         Run("Vietnamese display names format farm values", VietnameseDisplayNamesAreComplete);
@@ -2064,8 +2068,8 @@ internal static class Program
             && code.Contains("pendingContinuousUpdates[deviceName] = update")
             && code.Contains("TimeSpan.FromMilliseconds(500)"),
             "latest device updates are not coalesced into a bounded timer flush");
-        Is(code.Contains("TimeSpan.FromSeconds(1)"),
-            "full health summary is rebuilt more often than once per second");
+        Is(code.Contains("lastContinuousHealthFlush >= TimeSpan.FromSeconds(2)"),
+            "full health summary is rebuilt more often than once per two seconds");
     }
     static void ContinuousUiBoundsCriticalProgress()
     {
@@ -2092,6 +2096,48 @@ internal static class Program
             && xaml.Contains("<VirtualizingStackPanel/>")
             && xaml.Contains("CanContentScroll=\"True\""),
             "off-screen farm device cards are still fully rendered");
+    }
+    static void ContinuousUiUsesTimeSlice()
+    {
+        string code = File.ReadAllText(Path.Combine(Environment.CurrentDirectory,
+            "ADB", "UI", "DeviceDiagnosticWindow.xaml.cs"));
+        Is(code.Contains("MaxContinuousDeviceUpdatesPerFlush = 5")
+            && code.Contains("ContinuousUiTimeBudgetMs = 10")
+            && code.Contains("System.Diagnostics.Stopwatch.StartNew()")
+            && code.Contains("RequeueContinuousUpdate(update)"),
+            "continuous device cards are still rendered in one unbounded UI tick");
+    }
+    static void ContinuousUiSkipsDuplicates()
+    {
+        string code = File.ReadAllText(Path.Combine(Environment.CurrentDirectory,
+            "ADB", "UI", "DeviceDiagnosticWindow.xaml.cs"));
+        Is(code.Contains("BuildContinuousUiFingerprint(progress)")
+            && code.Contains("lastContinuousUiFingerprints")
+            && code.Contains("previousFingerprint, update.UiFingerprint"),
+            "semantically identical supervisor snapshots still reach WPF bindings");
+    }
+    static void OffscreenFarmCardsAreThrottled()
+    {
+        string code = File.ReadAllText(Path.Combine(Environment.CurrentDirectory,
+            "ADB", "UI", "DeviceDiagnosticWindow.xaml.cs"));
+        string xaml = File.ReadAllText(Path.Combine(Environment.CurrentDirectory,
+            "ADB", "UI", "DeviceDiagnosticWindow.xaml"));
+        Is(code.Contains("OffscreenContinuousUiInterval")
+            && code.Contains("ContainerFromItem(item)")
+            && code.Contains("container.IsVisible"),
+            "realized and off-screen cards use the same update frequency");
+        Is(xaml.Contains("<Expander IsExpanded=\"False\" Margin=\"0,0,0,8\""),
+            "device detail content is still created eagerly for every card");
+    }
+    static void FarmCardResourcesAreReused()
+    {
+        string code = File.ReadAllText(Path.Combine(Environment.CurrentDirectory,
+            "ADB", "UI", "DeviceDiagnosticWindow.xaml.cs"));
+        Is(code.Contains("CreateStageBrushes()")
+            && code.Contains("brush.Freeze()")
+            && code.Contains("synchronizedTeamRosterKey")
+            && code.Contains("SequenceEqual(ordered)"),
+            "farm cards still allocate brushes or rebuild an unchanged team roster");
     }
     static void DiagnosticScreenshotCooldown()
     {

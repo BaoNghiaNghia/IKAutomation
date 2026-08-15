@@ -38,8 +38,17 @@ namespace ADB_Tool_Automation_Post_FB.UI
         private readonly object continuousProgressSync = new object();
         private readonly Dictionary<string, PendingContinuousUpdate> pendingContinuousUpdates =
             new Dictionary<string, PendingContinuousUpdate>(StringComparer.OrdinalIgnoreCase);
+        private readonly Dictionary<string, string> lastContinuousUiFingerprints =
+            new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
+        private readonly Dictionary<string, DateTimeOffset> lastContinuousUiAppliedAt =
+            new Dictionary<string, DateTimeOffset>(StringComparer.OrdinalIgnoreCase);
+        private const int MaxContinuousDeviceUpdatesPerFlush = 5;
+        private const int ContinuousUiTimeBudgetMs = 10;
+        private static readonly TimeSpan OffscreenContinuousUiInterval =
+            TimeSpan.FromSeconds(2);
         private PendingContinuousUpdate pendingContinuousHealth;
         private DateTimeOffset lastContinuousHealthFlush = DateTimeOffset.MinValue;
+        private string lastContinuousHealthFingerprint = string.Empty;
         private bool isBatchingContinuousUi;
         private bool deviceSummaryRefreshPending;
         private bool progressOverviewRefreshPending;
@@ -89,7 +98,7 @@ namespace ADB_Tool_Automation_Post_FB.UI
             DeviceSelectionListBox.ItemsSource = deviceSelections;
             FarmProgressItemsControl.ItemsSource = farmProgressItems;
             oneShotFarmProgressTimer = new DispatcherTimer(DispatcherPriority.Background)
-                { Interval = TimeSpan.FromSeconds(1) };
+                { Interval = TimeSpan.FromSeconds(2) };
             oneShotFarmProgressTimer.Tick += OneShotFarmProgressTimer_Tick;
             continuousProgressFlushTimer = new DispatcherTimer(DispatcherPriority.Background)
                 { Interval = TimeSpan.FromMilliseconds(500) };
@@ -310,6 +319,8 @@ namespace ADB_Tool_Automation_Post_FB.UI
                 attemptVersions[deviceName] = attemptVersion;
                 deviceAttemptVersions[deviceName] = attemptVersion;
                 activeDeviceNames.Add(deviceName);
+                lastContinuousUiFingerprints.Remove(deviceName);
+                lastContinuousUiAppliedAt.Remove(deviceName);
             }
             var progress = new DirectProgress<ContinuousFarmSupervisorProgress>(value =>
                 QueueContinuousFarmProgress(runGeneration, runCancellation,
@@ -345,7 +356,7 @@ namespace ADB_Tool_Automation_Post_FB.UI
                     activeDeviceNames.Remove(deviceName);
                 StopOneShotFarmProgressTimer();
                 continuousProgressFlushTimer.Stop();
-                FlushContinuousProgress();
+                FlushContinuousProgress(true);
                 if (ReferenceEquals(oneShotFarmCancellation, runCancellation))
                     oneShotFarmCancellation = null;
                 runCancellation.Dispose();
@@ -407,7 +418,7 @@ namespace ADB_Tool_Automation_Post_FB.UI
         {
             if (progress == null) return;
             var update = new PendingContinuousUpdate(runGeneration, runCancellation,
-                attemptVersions, progress);
+                attemptVersions, progress, BuildContinuousUiFingerprint(progress));
             lock (continuousProgressSync)
             {
                 if (progress.Device != null)
@@ -441,31 +452,153 @@ namespace ADB_Tool_Automation_Post_FB.UI
                 || farmStage == OneShotFarmProgressStage.WaitingForReadyTeam;
         }
 
+        private static string BuildContinuousUiFingerprint(
+            ContinuousFarmSupervisorProgress progress)
+        {
+            ContinuousFarmDeviceSnapshot device = progress?.Device;
+            OneShotFarmProgress farm = progress?.FarmProgress?.DeviceProgress;
+            if (device == null) return string.Empty;
+            return string.Join("|", new[]
+            {
+                device.DeviceName ?? string.Empty,
+                device.State.ToString(),
+                device.CycleCount.ToString(CultureInfo.InvariantCulture),
+                device.ConsecutiveFailures.ToString(CultureInfo.InvariantCulture),
+                device.CurrentOperation ?? string.Empty,
+                device.CurrentResource ?? string.Empty,
+                device.CurrentLevel?.ToString(CultureInfo.InvariantCulture) ?? string.Empty,
+                device.CurrentTeam ?? string.Empty,
+                device.CurrentExpectedTeam ?? string.Empty,
+                device.CurrentSelectedTeam ?? string.Empty,
+                device.ConfirmedRosterCount.ToString(CultureInfo.InvariantCulture),
+                device.RosterConfidence ?? string.Empty,
+                device.MapRepositionState.ToString(),
+                device.TerritoryColorSummary ?? string.Empty,
+                device.NextAttemptAt?.UtcDateTime.Ticks.ToString(CultureInfo.InvariantCulture) ?? string.Empty,
+                device.Message ?? string.Empty,
+                device.LastError ?? string.Empty,
+                farm?.Stage.ToString() ?? string.Empty,
+                farm?.Message ?? string.Empty,
+                farm?.CurrentStep?.ToString() ?? string.Empty,
+                farm?.CurrentResource?.ToString() ?? string.Empty,
+                farm?.CurrentLevel?.ToString(CultureInfo.InvariantCulture) ?? string.Empty,
+                farm?.CurrentTeam?.ToString() ?? string.Empty,
+                farm?.CurrentExpectedTeam?.ToString() ?? string.Empty,
+                farm?.CurrentSelectedTeam?.ToString() ?? string.Empty,
+                farm?.ConfirmedRosterCount.ToString(CultureInfo.InvariantCulture) ?? string.Empty,
+                farm?.RosterConfidence ?? string.Empty,
+                FormatTeamFingerprint(farm?.AllowedTeams),
+                FormatTeamFingerprint(farm?.DetectedTeams),
+                FormatTeamFingerprint(farm?.ReadyTeams),
+                FormatTeamFingerprint(farm?.EligibleReadyTeams),
+                farm?.ResourceToastText ?? string.Empty,
+                farm?.ResourceToastVariant ?? string.Empty,
+                farm?.ResourceToastState ?? string.Empty,
+                farm?.NextCheckAt?.UtcDateTime.Ticks.ToString(CultureInfo.InvariantCulture) ?? string.Empty,
+                farm?.WaitDeadline?.UtcDateTime.Ticks.ToString(CultureInfo.InvariantCulture) ?? string.Empty
+            });
+        }
+
+        private static string FormatTeamFingerprint(
+            IReadOnlyList<TeamNumber> teams) => teams == null
+                ? string.Empty
+                : string.Join(",", teams.Select(team =>
+                    ((int)team).ToString(CultureInfo.InvariantCulture)));
+
+        private static string BuildContinuousHealthFingerprint(
+            ContinuousFarmHealthSnapshot health)
+        {
+            if (health == null) return string.Empty;
+            return string.Join("|", new[]
+            {
+                health.TotalDevices.ToString(CultureInfo.InvariantCulture),
+                health.HealthyDevices.ToString(CultureInfo.InvariantCulture),
+                health.PreflightDevices.ToString(CultureInfo.InvariantCulture),
+                health.ReadyDevices.ToString(CultureInfo.InvariantCulture),
+                health.RunningDevices.ToString(CultureInfo.InvariantCulture),
+                health.WaitingDevices.ToString(CultureInfo.InvariantCulture),
+                health.RecoveringDevices.ToString(CultureInfo.InvariantCulture),
+                health.QuarantinedDevices.ToString(CultureInfo.InvariantCulture),
+                health.StoppedDevices.ToString(CultureInfo.InvariantCulture),
+                health.DevicesWithFailures.ToString(CultureInfo.InvariantCulture),
+                health.LowDiskDevices.ToString(CultureInfo.InvariantCulture),
+                health.ActiveExecutions.ToString(CultureInfo.InvariantCulture),
+                health.ConcurrencyLimit.ToString(CultureInfo.InvariantCulture),
+                health.FarmQueued.ToString(CultureInfo.InvariantCulture),
+                health.PreflightActive.ToString(CultureInfo.InvariantCulture),
+                health.PreflightQueued.ToString(CultureInfo.InvariantCulture),
+                health.ScreenshotActive.ToString(CultureInfo.InvariantCulture),
+                health.ScreenshotQueued.ToString(CultureInfo.InvariantCulture),
+                health.VisionActive.ToString(CultureInfo.InvariantCulture),
+                health.VisionQueued.ToString(CultureInfo.InvariantCulture),
+                health.LastHeartbeatSucceeded?.ToString() ?? string.Empty,
+                health.HeartbeatMessage ?? string.Empty
+            });
+        }
+
         private void ContinuousProgressFlushTimer_Tick(object sender, EventArgs e) =>
             FlushContinuousProgress();
 
-        private void FlushContinuousProgress()
+        private void FlushContinuousProgress(bool drainAll = false)
         {
             PendingContinuousUpdate[] updates;
             PendingContinuousUpdate health = null;
+            DateTimeOffset now = DateTimeOffset.UtcNow;
             lock (continuousProgressSync)
             {
                 updates = pendingContinuousUpdates.Values.ToArray();
                 pendingContinuousUpdates.Clear();
-                if (DateTimeOffset.UtcNow - lastContinuousHealthFlush >= TimeSpan.FromSeconds(1))
+                if (now - lastContinuousHealthFlush >= TimeSpan.FromSeconds(2))
                 {
                     health = pendingContinuousHealth;
                     pendingContinuousHealth = null;
-                    lastContinuousHealthFlush = DateTimeOffset.UtcNow;
+                    lastContinuousHealthFlush = now;
                 }
             }
+            updates = updates
+                .OrderByDescending(update => IsCriticalContinuousUpdate(update.Progress))
+                .ThenByDescending(update => IsFarmProgressVisible(
+                    update.Progress?.Device?.DeviceName))
+                .ThenBy(update => GetLastContinuousUiAppliedAt(
+                    update.Progress?.Device?.DeviceName))
+                .ToArray();
+
+            var stopwatch = System.Diagnostics.Stopwatch.StartNew();
+            int appliedCount = 0;
             isBatchingContinuousUi = true;
             try
             {
                 foreach (PendingContinuousUpdate update in updates)
+                {
+                    if (!IsCurrentContinuousUpdate(update)) continue;
+                    string deviceName = update.Progress.Device.DeviceName;
+                    bool critical = IsCriticalContinuousUpdate(update.Progress);
+                    string previousFingerprint;
+                    if (lastContinuousUiFingerprints.TryGetValue(deviceName,
+                        out previousFingerprint)
+                        && string.Equals(previousFingerprint, update.UiFingerprint,
+                            StringComparison.Ordinal))
+                        continue;
+                    if (!drainAll && !critical && !IsFarmProgressVisible(deviceName)
+                        && now - GetLastContinuousUiAppliedAt(deviceName)
+                            < OffscreenContinuousUiInterval)
+                    {
+                        RequeueContinuousUpdate(update);
+                        continue;
+                    }
+                    if (!drainAll && (appliedCount >= MaxContinuousDeviceUpdatesPerFlush
+                        || stopwatch.ElapsedMilliseconds >= ContinuousUiTimeBudgetMs))
+                    {
+                        RequeueContinuousUpdate(update);
+                        continue;
+                    }
                     ApplyContinuousFarmProgress(update.RunGeneration,
                         update.RunCancellation, update.AttemptVersions,
                         update.Progress);
+                    lastContinuousUiFingerprints[deviceName] = update.UiFingerprint;
+                    lastContinuousUiAppliedAt[deviceName] = now;
+                    appliedCount++;
+                }
                 ApplyContinuousHealth(health);
             }
             finally
@@ -475,12 +608,57 @@ namespace ADB_Tool_Automation_Post_FB.UI
             }
         }
 
+        private bool IsCurrentContinuousUpdate(PendingContinuousUpdate update) =>
+            update?.Progress?.Device != null
+            && OneShotFarmProgressUtilities.IsCurrentRun(
+                update.RunGeneration, oneShotFarmRunGeneration,
+                update.RunCancellation, oneShotFarmCancellation)
+            && IsCurrentDeviceAttempt(update.Progress.Device.DeviceName,
+                update.AttemptVersions);
+
+        private void RequeueContinuousUpdate(PendingContinuousUpdate update)
+        {
+            if (update?.Progress?.Device == null) return;
+            string deviceName = update.Progress.Device.DeviceName;
+            lock (continuousProgressSync)
+            {
+                PendingContinuousUpdate newer;
+                if (!pendingContinuousUpdates.TryGetValue(deviceName, out newer))
+                    pendingContinuousUpdates[deviceName] = update;
+            }
+        }
+
+        private bool IsFarmProgressVisible(string deviceName)
+        {
+            if (string.IsNullOrWhiteSpace(deviceName)) return false;
+            DeviceFarmProgressItem item = farmProgressItems.FirstOrDefault(value =>
+                string.Equals(value.DeviceName, deviceName,
+                    StringComparison.OrdinalIgnoreCase));
+            if (item == null) return true;
+            FrameworkElement container = FarmProgressItemsControl.ItemContainerGenerator
+                .ContainerFromItem(item) as FrameworkElement;
+            return container != null && container.IsVisible;
+        }
+
+        private DateTimeOffset GetLastContinuousUiAppliedAt(string deviceName)
+        {
+            DateTimeOffset value;
+            return !string.IsNullOrWhiteSpace(deviceName)
+                && lastContinuousUiAppliedAt.TryGetValue(deviceName, out value)
+                    ? value : DateTimeOffset.MinValue;
+        }
+
         private void ApplyContinuousHealth(PendingContinuousUpdate update)
         {
             if (update?.Progress?.Health == null
                 || !OneShotFarmProgressUtilities.IsCurrentRun(
                     update.RunGeneration, oneShotFarmRunGeneration,
                     update.RunCancellation, oneShotFarmCancellation)) return;
+            string fingerprint = BuildContinuousHealthFingerprint(
+                update.Progress.Health);
+            if (string.Equals(lastContinuousHealthFingerprint, fingerprint,
+                StringComparison.Ordinal)) return;
+            lastContinuousHealthFingerprint = fingerprint;
             ApplyHealthDashboard(update.Progress.Health);
         }
 
@@ -1286,17 +1464,20 @@ namespace ADB_Tool_Automation_Post_FB.UI
             public PendingContinuousUpdate(long runGeneration,
                 CancellationTokenSource runCancellation,
                 IReadOnlyDictionary<string, long> attemptVersions,
-                ContinuousFarmSupervisorProgress progress)
+                ContinuousFarmSupervisorProgress progress,
+                string uiFingerprint)
             {
                 RunGeneration = runGeneration;
                 RunCancellation = runCancellation;
                 AttemptVersions = attemptVersions;
                 Progress = progress;
+                UiFingerprint = uiFingerprint ?? string.Empty;
             }
             public long RunGeneration { get; }
             public CancellationTokenSource RunCancellation { get; }
             public IReadOnlyDictionary<string, long> AttemptVersions { get; }
             public ContinuousFarmSupervisorProgress Progress { get; }
+            public string UiFingerprint { get; }
         }
 
         private sealed class DirectProgress<T> : IProgress<T>
@@ -1310,6 +1491,20 @@ namespace ADB_Tool_Automation_Post_FB.UI
 
     internal sealed class DeviceSelectionItem : INotifyPropertyChanged
     {
+        private static readonly Tuple<Brush, Brush, Brush> FailureColors =
+            Colors(185, 28, 28, 254, 242, 242, 254, 202, 202);
+        private static readonly Tuple<Brush, Brush, Brush> RecoveryColors =
+            Colors(194, 65, 12, 255, 247, 237, 254, 215, 170);
+        private static readonly Tuple<Brush, Brush, Brush> WaitingColors =
+            Colors(180, 83, 9, 255, 251, 235, 253, 230, 138);
+        private static readonly Tuple<Brush, Brush, Brush> RunningColors =
+            Colors(29, 78, 216, 239, 246, 255, 191, 219, 254);
+        private static readonly Tuple<Brush, Brush, Brush> ReadyColors =
+            Colors(4, 120, 87, 236, 253, 245, 167, 243, 208);
+        private static readonly Tuple<Brush, Brush, Brush> CheckingColors =
+            Colors(3, 105, 161, 240, 249, 255, 186, 230, 253);
+        private static readonly Tuple<Brush, Brush, Brush> NeutralColors =
+            Colors(71, 85, 105, 248, 250, 252, 226, 232, 240);
         private bool isSelected;
         private string status;
         private bool isRunning;
@@ -1394,24 +1589,24 @@ namespace ADB_Tool_Automation_Post_FB.UI
             string value = status ?? string.Empty;
             if (value.StartsWith("Thất bại", StringComparison.Ordinal)
                 || value.StartsWith("Tạm cách ly", StringComparison.Ordinal))
-                return Colors(185, 28, 28, 254, 242, 242, 254, 202, 202);
+                return FailureColors;
             if (value.StartsWith("Đang khôi phục", StringComparison.Ordinal)
                 || value.StartsWith("Đang dừng", StringComparison.Ordinal))
-                return Colors(194, 65, 12, 255, 247, 237, 254, 215, 170);
+                return RecoveryColors;
             if (value.StartsWith("Đang chờ", StringComparison.Ordinal)
                 || value.StartsWith("Đang xếp hàng", StringComparison.Ordinal))
-                return Colors(180, 83, 9, 255, 251, 235, 253, 230, 138);
+                return WaitingColors;
             if (value.StartsWith("Đang chạy", StringComparison.Ordinal))
-                return Colors(29, 78, 216, 239, 246, 255, 191, 219, 254);
+                return RunningColors;
             if (value.StartsWith("Sẵn sàng", StringComparison.Ordinal)
                 || value.StartsWith("Hoàn tất", StringComparison.Ordinal)
                 || value.StartsWith("Đã tìm thấy đội", StringComparison.Ordinal)
                 || value.StartsWith("Đang mở", StringComparison.Ordinal))
-                return Colors(4, 120, 87, 236, 253, 245, 167, 243, 208);
+                return ReadyColors;
             if (value.StartsWith("Đang kiểm tra", StringComparison.Ordinal)
                 || value.StartsWith("Đang chuẩn bị", StringComparison.Ordinal))
-                return Colors(3, 105, 161, 240, 249, 255, 186, 230, 253);
-            return Colors(71, 85, 105, 248, 250, 252, 226, 232, 240);
+                return CheckingColors;
+            return NeutralColors;
         }
 
         private static Tuple<Brush, Brush, Brush> Colors(
@@ -1419,10 +1614,17 @@ namespace ADB_Tool_Automation_Post_FB.UI
             byte backgroundR, byte backgroundG, byte backgroundB,
             byte borderR, byte borderG, byte borderB)
         {
-            return Tuple.Create<Brush, Brush, Brush>(
-                new SolidColorBrush(Color.FromRgb(foregroundR, foregroundG, foregroundB)),
-                new SolidColorBrush(Color.FromRgb(backgroundR, backgroundG, backgroundB)),
-                new SolidColorBrush(Color.FromRgb(borderR, borderG, borderB)));
+            Brush foreground = FrozenBrush(foregroundR, foregroundG, foregroundB);
+            Brush background = FrozenBrush(backgroundR, backgroundG, backgroundB);
+            Brush border = FrozenBrush(borderR, borderG, borderB);
+            return Tuple.Create(foreground, background, border);
+        }
+
+        private static Brush FrozenBrush(byte red, byte green, byte blue)
+        {
+            var brush = new SolidColorBrush(Color.FromRgb(red, green, blue));
+            if (brush.CanFreeze) brush.Freeze();
+            return brush;
         }
 
         public bool IsRunning
@@ -1676,6 +1878,8 @@ namespace ADB_Tool_Automation_Post_FB.UI
     {
         private static readonly TimeSpan ResourceToastDisplayDuration =
             TimeSpan.FromMinutes(2);
+        private static readonly IReadOnlyDictionary<string, Brush> StageBrushes =
+            CreateStageBrushes();
 
         private string stage = "Queued";
         private string message = "Đang chờ thực thi.";
@@ -1693,6 +1897,7 @@ namespace ADB_Tool_Automation_Post_FB.UI
         private DateTimeOffset? nextCheckAt;
         private DateTimeOffset? waitDeadline;
         private bool rosterScanCompleted;
+        private string synchronizedTeamRosterKey = string.Empty;
 
         public DeviceFarmProgressItem(string deviceName)
         {
@@ -1778,6 +1983,7 @@ namespace ADB_Tool_Automation_Post_FB.UI
             ActiveTeamOperationRunId = string.Empty;
             TeamsSummary = string.Empty;
             Teams.Clear();
+            synchronizedTeamRosterKey = string.Empty;
             rosterScanCompleted = false;
         }
 
@@ -2036,6 +2242,13 @@ namespace ADB_Tool_Automation_Post_FB.UI
         {
             TeamNumber[] ordered = visibleTeams.Distinct()
                 .OrderBy(team => (int)team).ToArray();
+            string rosterKey = string.Join(",", ordered.Select(team =>
+                ((int)team).ToString(CultureInfo.InvariantCulture)));
+            if (string.Equals(synchronizedTeamRosterKey, rosterKey,
+                StringComparison.Ordinal)
+                && Teams.Count == ordered.Length
+                && Teams.Select(item => item.Team).SequenceEqual(ordered))
+                return;
             foreach (TeamFarmProgressItem obsolete in Teams
                 .Where(item => !ordered.Contains(item.Team)).ToArray())
                 Teams.Remove(obsolete);
@@ -2052,6 +2265,7 @@ namespace ADB_Tool_Automation_Post_FB.UI
                     if (currentIndex != index) Teams.Move(currentIndex, index);
                 }
             }
+            synchronizedTeamRosterKey = rosterKey;
         }
 
         private static IReadOnlyList<TeamNumber> ExpandToConfirmedRoster(
@@ -2077,6 +2291,7 @@ namespace ADB_Tool_Automation_Post_FB.UI
                 : Teams.TakeWhile(item => (int)item.Team < (int)team).Count();
             Teams.Insert(Math.Min(insertIndex, Teams.Count),
                 new TeamFarmProgressItem(team));
+            synchronizedTeamRosterKey = string.Empty;
         }
 
         public void UpdateCountdown(DateTimeOffset now)
@@ -2107,36 +2322,45 @@ namespace ADB_Tool_Automation_Post_FB.UI
 
         private static Brush ResolveStageBrush(string value)
         {
-            switch (value)
+            Brush brush;
+            return StageBrushes.TryGetValue(value ?? string.Empty, out brush)
+                ? brush : StageBrushes["Queued"];
+        }
+
+        private static IReadOnlyDictionary<string, Brush> CreateStageBrushes()
+        {
+            Brush slate = CreateFrozenBrush(71, 85, 105);
+            Brush blue = CreateFrozenBrush(37, 99, 235);
+            Brush green = CreateFrozenBrush(5, 150, 105);
+            Brush amber = CreateFrozenBrush(180, 83, 9);
+            Brush stopped = CreateFrozenBrush(100, 116, 139);
+            return new Dictionary<string, Brush>(StringComparer.Ordinal)
             {
-                case "Queued": return new SolidColorBrush(Color.FromRgb(71, 85, 105));
-                case "Preflight": return new SolidColorBrush(Color.FromRgb(3, 105, 161));
-                case "Ready": return new SolidColorBrush(Color.FromRgb(5, 150, 105));
-                case "Running": return new SolidColorBrush(Color.FromRgb(37, 99, 235));
-                case "Waiting": return new SolidColorBrush(Color.FromRgb(180, 83, 9));
-                case "Recovering": return new SolidColorBrush(Color.FromRgb(234, 88, 12));
-                case "Quarantined": return new SolidColorBrush(Color.FromRgb(185, 28, 28));
-                case "Stopped": return new SolidColorBrush(Color.FromRgb(100, 116, 139));
-                case "Stopping": return new SolidColorBrush(Color.FromRgb(194, 65, 12));
-                case "CheckingTeamAvailability":
-                    return new SolidColorBrush(Color.FromRgb(2, 132, 199));
-                case "WaitingForReadyTeam":
-                    return new SolidColorBrush(Color.FromRgb(180, 83, 9));
-                case "ReadyTeamFound":
-                    return new SolidColorBrush(Color.FromRgb(5, 150, 105));
-                case "PreparingFarm":
-                    return new SolidColorBrush(Color.FromRgb(79, 70, 229));
-                case "RunningFarmStep":
-                    return new SolidColorBrush(Color.FromRgb(37, 99, 235));
-                case "Completed":
-                    return new SolidColorBrush(Color.FromRgb(21, 128, 61));
-                case "Failed":
-                    return new SolidColorBrush(Color.FromRgb(220, 38, 38));
-                case "Cancelled":
-                    return new SolidColorBrush(Color.FromRgb(100, 116, 139));
-                default:
-                    return new SolidColorBrush(Color.FromRgb(71, 85, 105));
-            }
+                ["Queued"] = slate,
+                ["Preflight"] = CreateFrozenBrush(3, 105, 161),
+                ["Ready"] = green,
+                ["Running"] = blue,
+                ["Waiting"] = amber,
+                ["Recovering"] = CreateFrozenBrush(234, 88, 12),
+                ["Quarantined"] = CreateFrozenBrush(185, 28, 28),
+                ["Stopped"] = stopped,
+                ["Stopping"] = CreateFrozenBrush(194, 65, 12),
+                ["CheckingTeamAvailability"] = CreateFrozenBrush(2, 132, 199),
+                ["WaitingForReadyTeam"] = amber,
+                ["ReadyTeamFound"] = green,
+                ["PreparingFarm"] = CreateFrozenBrush(79, 70, 229),
+                ["RunningFarmStep"] = blue,
+                ["Completed"] = CreateFrozenBrush(21, 128, 61),
+                ["Failed"] = CreateFrozenBrush(220, 38, 38),
+                ["Cancelled"] = stopped
+            };
+        }
+
+        private static Brush CreateFrozenBrush(byte red, byte green, byte blue)
+        {
+            var brush = new SolidColorBrush(Color.FromRgb(red, green, blue));
+            if (brush.CanFreeze) brush.Freeze();
+            return brush;
         }
 
         private void Set(ref string field, string value, string propertyName)

@@ -404,7 +404,7 @@
                             </ItemsControl.ItemsPanel>
                                 <ItemsControl.ItemTemplate>
                                     <DataTemplate>
-                                        <Expander IsExpanded="True" Margin="0,0,0,8"
+                                        <Expander IsExpanded="False" Margin="0,0,0,8"
                                                   HorizontalContentAlignment="Stretch">
                                             <Expander.Header>
                                                 <Grid HorizontalAlignment="Stretch"
