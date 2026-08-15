@@ -123,15 +123,27 @@ namespace ADB_Tool_Automation_Post_FB.Infrastructure.ResourceSearch
                 }
                 else
                 {
-                    GameDetectionResult current = await detector.DetectAsync(deviceName, cancellationToken);
-                    result.InitialState = current.State;
-                    result.FinalState = current.State;
-                    RememberKnownState(deviceName, current.State, context);
-                    if (!ResourceSearchPanelReadinessVerifier.Evaluate(current).IsReady)
-                        return await CompleteAsync(deviceName, result, context, ResourceSearchOutcome.Failed,
-                            "SearchButtonEnabled was not found in the configured ResourceSearchPanel ROI; Search was not tapped.",
-                            ResourceSearchPanelReadinessVerifier.Evaluate(current).Reason
-                                ?? current.ErrorMessage, watch, cancellationToken);
+                    if (request.Configuration != null && request.Configuration.PanelReady)
+                    {
+                        result.InitialState = GameState.ResourceSearchPanel;
+                        result.FinalState = GameState.ResourceSearchPanel;
+                        RememberKnownState(deviceName, GameState.ResourceSearchPanel, context);
+                        logger.Info($"[Resource Search Execution] DeviceName='{deviceName}', "
+                            + "PanelReadyHandoff=true, FullGameStateDetectionSkipped=true, "
+                            + "NextAction='FreshSearchButtonRoiProbe'");
+                    }
+                    else
+                    {
+                        GameDetectionResult current = await detector.DetectAsync(deviceName, cancellationToken);
+                        result.InitialState = current.State;
+                        result.FinalState = current.State;
+                        RememberKnownState(deviceName, current.State, context);
+                        if (!ResourceSearchPanelReadinessVerifier.Evaluate(current).IsReady)
+                            return await CompleteAsync(deviceName, result, context, ResourceSearchOutcome.Failed,
+                                "SearchButtonEnabled was not found in the configured ResourceSearchPanel ROI; Search was not tapped.",
+                                ResourceSearchPanelReadinessVerifier.Evaluate(current).Reason
+                                    ?? current.ErrorMessage, watch, cancellationToken);
+                    }
                 }
 
                 int maxSearchTapAttempts = request.ExecutionMode == ResourceSearchExecutionMode.ResourceAreaLv2PointRetry

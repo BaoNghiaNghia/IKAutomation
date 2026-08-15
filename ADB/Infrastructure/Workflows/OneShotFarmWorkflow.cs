@@ -191,20 +191,19 @@ namespace ADB_Tool_Automation_Post_FB.Infrastructure.Workflows
                     return await StopAsync(result, OneShotFarmOutcome.WorldMapUnavailable, ensure.Message,
                         ensure.ErrorMessage, OneShotFarmStep.EnsureWorldMap, watch, runId, token);
                 }
-                GameDetectionResult world = await detector.DetectAsync(deviceName, token);
-                result.FinalState = world.State;
-                if (world.State != GameState.WorldMap)
+                result.FinalState = ensure.FinalState;
+                if (ensure.FinalState != GameState.WorldMap)
                 {
-                    Add(steps, OneShotFarmStep.EnsureWorldMap, false, started, "WorldMap was not confirmed after navigation.", world.ErrorMessage, ensure);
+                    Add(steps, OneShotFarmStep.EnsureWorldMap, false, started, "WorldMap was not confirmed after navigation.", ensure.ErrorMessage, ensure);
                     return await StopAsync(result, OneShotFarmOutcome.WorldMapUnavailable,
-                        "WorldMap was not confirmed after navigation.", world.ErrorMessage,
+                        "WorldMap was not confirmed after navigation.", ensure.ErrorMessage,
                         OneShotFarmStep.EnsureWorldMap, watch, runId, token);
                 }
                 AddSuccess(result, steps, OneShotFarmStep.EnsureWorldMap, started, ensure.Message, ensure);
 
                 if (resourceFarmFallback != null)
                     return await RunResourcePlanAsync(deviceName, request, token, result,
-                        steps, watch, runId, world.State, progress);
+                        steps, watch, runId, ensure.FinalState, progress);
 
                 Report(progress, OneShotFarmProgressStage.RunningFarmStep,
                     OneShotFarmStep.OpenSearchPanel, request, null, "Opening resource search panel.");
@@ -252,7 +251,8 @@ namespace ADB_Tool_Automation_Post_FB.Infrastructure.Workflows
                     AttemptsPerLevel = request.AttemptsPerResourceLevel,
                     StopOnFirstLocated = true,
                     WaitForToastClearBetweenAttempts = true,
-                    RunId = runId.ToString()
+                    RunId = runId.ToString(),
+                    PanelReady = true
                 };
                 Report(progress, OneShotFarmProgressStage.RunningFarmStep,
                     OneShotFarmStep.SearchWithLevelFallback, request, null,
@@ -447,10 +447,8 @@ namespace ADB_Tool_Automation_Post_FB.Infrastructure.Workflows
                 AddSuccess(result, steps, OneShotFarmStep.DispatchTeam, started, dispatched.Message, dispatched);
 
                 token.ThrowIfCancellationRequested(); started = Start(runId, deviceName, OneShotFarmStep.FinalVerification);
-                GameDetectionResult final = await detector.DetectAsync(deviceName, token);
-                result.FinalState = final.State;
                 AddSuccess(result, steps, OneShotFarmStep.FinalVerification, started,
-                    "March was already verified by DispatchSelectedTeamService; no further input was sent.", final);
+                    "March was already verified by DispatchSelectedTeamService; redundant full-state verification was skipped.", dispatched);
                 started = Start(runId, deviceName, OneShotFarmStep.Completed);
                 AddSuccess(result, steps, OneShotFarmStep.Completed, started, "One-shot farm completed.", dispatched);
                 result.Outcome = OneShotFarmOutcome.MarchStarted; result.Success = true;
@@ -799,10 +797,8 @@ namespace ADB_Tool_Automation_Post_FB.Infrastructure.Workflows
 
             token.ThrowIfCancellationRequested();
             started = Start(runId, deviceName, OneShotFarmStep.FinalVerification);
-            GameDetectionResult final = await detector.DetectAsync(deviceName, token);
-            result.FinalState = final.State;
             AddSuccess(result, steps, OneShotFarmStep.FinalVerification, started,
-                "March was verified by the four-resource fallback; no further input was sent.", final);
+                "March was verified by the four-resource fallback; redundant full-state verification was skipped.", fallbackResult);
             started = Start(runId, deviceName, OneShotFarmStep.Completed);
             AddSuccess(result, steps, OneShotFarmStep.Completed, started,
                 "One-shot four-resource farm completed.", fallbackResult);
@@ -855,11 +851,7 @@ namespace ADB_Tool_Automation_Post_FB.Infrastructure.Workflows
                     ReportedAt = DateTimeOffset.UtcNow,
                     AllowedTeams = request?.AllowedTeams ?? new TeamNumber[0],
                     CurrentStep = value.CurrentStep ?? OneShotFarmStep.ResourceFarmFallback,
-                    Message = value.CurrentStep == OneShotFarmStep.OpenTeamSelection
-                        ? "Opening team selection."
-                        : value.CurrentStep == OneShotFarmStep.SelectTeam
-                            ? "Selecting an eligible farm team."
-                            : "Running the resource and level fallback plan.",
+                    Message = ProgressMessage(value.CurrentStep),
                     TerritoryColorSummary = value.ClearTerritoryColor
                         ? null : value.TerritoryColorSummary,
                     MapRepositionState = value.MapRepositionState,
@@ -877,6 +869,25 @@ namespace ADB_Tool_Automation_Post_FB.Infrastructure.Workflows
                 logger.Error(
                     "[OneShotFarm] Territory color progress callback failed; workflow continues.",
                     exception);
+            }
+        }
+
+        private static string ProgressMessage(OneShotFarmStep? step)
+        {
+            switch (step)
+            {
+                case OneShotFarmStep.OpenSearchPanel:
+                    return "Đang mở bảng tìm tài nguyên.";
+                case OneShotFarmStep.SearchWithLevelFallback:
+                    return "Đang tìm tài nguyên và thử các cấp phù hợp.";
+                case OneShotFarmStep.VerifyResourcePopup:
+                    return "Đang xác minh mỏ tài nguyên.";
+                case OneShotFarmStep.OpenTeamSelection:
+                    return "Đang mở màn hình chọn đội.";
+                case OneShotFarmStep.SelectTeam:
+                    return "Đang chọn đội farm phù hợp.";
+                default:
+                    return "Đang chạy kế hoạch tài nguyên và cấp.";
             }
         }
 

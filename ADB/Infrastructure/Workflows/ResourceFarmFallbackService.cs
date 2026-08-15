@@ -110,6 +110,8 @@ namespace ADB_Tool_Automation_Post_FB.Infrastructure.Workflows
                             attempt.Message, attempt.ErrorMessage);
                     }
 
+                    ReportStep(progress, OneShotFarmStep.OpenSearchPanel,
+                        clearTerritoryColor: false, resource: resource);
                     NavigationResult panel = await navigation.OpenResourceSearchPanelAsync(
                         deviceName, cancellationToken);
                     result.FinalState = panel.FinalState;
@@ -129,8 +131,11 @@ namespace ADB_Tool_Automation_Post_FB.Infrastructure.Workflows
                         AttemptsPerLevel = request.AttemptsPerResourceLevel,
                         StopOnFirstLocated = true,
                         WaitForToastClearBetweenAttempts = true,
-                        RunId = runId
+                        RunId = runId,
+                        PanelReady = true
                     };
+                    ReportStep(progress, OneShotFarmStep.SearchWithLevelFallback,
+                        clearTerritoryColor: false, resource: resource);
                     ResourceLevelFallbackResult level = await levelFallback.SearchAsync(
                         deviceName, resource, levelPolicy, request.UnoccupiedOnly, cancellationToken);
                     attempt.LevelFallbackResult = level;
@@ -289,6 +294,9 @@ namespace ADB_Tool_Automation_Post_FB.Infrastructure.Workflows
 
                     result.LocatedResource = resource; result.LocatedLevel = level.LocatedLevel;
                     result.LastCompletedStep = OneShotFarmStep.SearchWithLevelFallback;
+                    ReportStep(progress, OneShotFarmStep.VerifyResourcePopup,
+                        clearTerritoryColor: false, resource: resource,
+                        effectiveLevel: level.LocatedLevel);
                     ResourcePopupVerificationResult popupResult = await popup.VerifyAsync(
                         deviceName, resource, cancellationToken);
                     attempt.PopupResult = popupResult; result.FinalState = popupResult.FinalState;
@@ -707,7 +715,9 @@ namespace ADB_Tool_Automation_Post_FB.Infrastructure.Workflows
         private static void ReportStep(
             IProgress<ResourceFarmFallbackProgress> progress,
             OneShotFarmStep step,
-            bool clearTerritoryColor)
+            bool clearTerritoryColor,
+            ResourceType? resource = null,
+            int? effectiveLevel = null)
         {
             if (progress == null) return;
             try
@@ -716,6 +726,8 @@ namespace ADB_Tool_Automation_Post_FB.Infrastructure.Workflows
                 {
                     CurrentStep = step,
                     ClearTerritoryColor = clearTerritoryColor,
+                    CurrentResource = resource,
+                    EffectiveLevel = effectiveLevel,
                     MapRepositionState = MapRepositionState.None
                 });
             }

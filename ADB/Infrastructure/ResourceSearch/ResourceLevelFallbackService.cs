@@ -88,7 +88,8 @@ namespace ADB_Tool_Automation_Post_FB.Infrastructure.ResourceSearch
                 AttemptsPerLevel = 1,
                 StopOnFirstLocated = true,
                 WaitForToastClearBetweenAttempts = true,
-                RunId = runId
+                RunId = runId,
+                PanelReady = true
             }, unoccupiedOnly, cancellationToken);
         }
 
@@ -106,7 +107,8 @@ namespace ADB_Tool_Automation_Post_FB.Infrastructure.ResourceSearch
                 RunId = runId,
                 AreaEpoch = areaEpoch,
                 ExpectedTeam = expectedTeam,
-                ExecutionMode = ResourceSearchExecutionMode.ResourceAreaLv2PointRetry
+                ExecutionMode = ResourceSearchExecutionMode.ResourceAreaLv2PointRetry,
+                PanelReady = true
             }, unoccupiedOnly, cancellationToken);
         }
 
@@ -121,15 +123,25 @@ namespace ADB_Tool_Automation_Post_FB.Infrastructure.ResourceSearch
             try
             {
                 token.ThrowIfCancellationRequested();
-                GameDetectionResult initial = await detector.DetectAsync(deviceName, token);
-                result.InitialState = initial.State; result.FinalState = initial.State;
-                ResourceSearchPanelReadinessResult readiness =
-                    ResourceSearchPanelReadinessVerifier.Evaluate(initial);
-                if (!readiness.IsReady)
-                    return await CompleteAsync(deviceName, runId, result, ResourceLevelFallbackOutcome.PanelUnavailable,
-                        "ResourceSearchPanel chưa sẵn sàng; chưa bắt đầu kiểm tra toast.",
-                        readiness.Reason ?? initial.ErrorMessage,
-                        watch, "panel-unavailable", token, true);
+                if (policy.PanelReady)
+                {
+                    result.InitialState = GameState.ResourceSearchPanel;
+                    result.FinalState = GameState.ResourceSearchPanel;
+                    logger.Info($"[Resource Level Fallback] RunId='{runId}', DeviceName='{deviceName}', "
+                        + "PanelReadyHandoff=true, FullGameStateDetectionSkipped=true");
+                }
+                else
+                {
+                    GameDetectionResult initial = await detector.DetectAsync(deviceName, token);
+                    result.InitialState = initial.State; result.FinalState = initial.State;
+                    ResourceSearchPanelReadinessResult readiness =
+                        ResourceSearchPanelReadinessVerifier.Evaluate(initial);
+                    if (!readiness.IsReady)
+                        return await CompleteAsync(deviceName, runId, result, ResourceLevelFallbackOutcome.PanelUnavailable,
+                            "ResourceSearchPanel chưa sẵn sàng; chưa bắt đầu kiểm tra toast.",
+                            readiness.Reason ?? initial.ErrorMessage,
+                            watch, "panel-unavailable", token, true);
+                }
 
                 bool needsToastClear = false;
                 int? knownCeiling = GetKnownCeiling(deviceName, runId);
