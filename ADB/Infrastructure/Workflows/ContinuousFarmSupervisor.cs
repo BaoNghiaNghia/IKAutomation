@@ -386,8 +386,13 @@ namespace ADB_Tool_Automation_Post_FB.Infrastructure.Workflows
                 var farmProgress = new InlineProgress<MultiDeviceOneShotFarmProgress>(value =>
                 {
                     if (attemptToken.IsCancellationRequested) return;
-                    Volatile.Write(ref usesExtendedNoProgressTimeout,
-                        IsExpectedLongRunningOperation(value));
+                    // Resource fallback deliberately reports its focused substeps
+                    // (search, popup verification, team selection and dispatch).
+                    // Those reports must not shorten the watchdog again after the
+                    // fallback has begun: a fresh pre-tap screenshot can otherwise
+                    // be cancelled at the five-minute boundary.
+                    if (IsExpectedLongRunningOperation(value))
+                        Volatile.Write(ref usesExtendedNoProgressTimeout, true);
                     ApplyFarmProgress(snapshot, value);
                     MarkProgress(snapshot, value?.Message ?? "Farm progress");
                     Publish(snapshot, progress, value, attemptToken);
@@ -483,9 +488,8 @@ namespace ADB_Tool_Automation_Post_FB.Infrastructure.Workflows
 
         private static bool IsExpectedLongRunningOperation(
             MultiDeviceOneShotFarmProgress progress) =>
-            progress?.Stage == MultiDeviceOneShotFarmStage.Queued
-            || (progress?.DeviceProgress?.Stage == OneShotFarmProgressStage.RunningFarmStep
-                && progress.DeviceProgress.CurrentStep == OneShotFarmStep.ResourceFarmFallback);
+            progress?.DeviceProgress?.Stage == OneShotFarmProgressStage.RunningFarmStep
+                && progress.DeviceProgress.CurrentStep == OneShotFarmStep.ResourceFarmFallback;
 
         private static int? GetNextCheckDelayMs(DateTimeOffset? nextCheckAt)
         {

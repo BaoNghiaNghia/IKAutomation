@@ -2462,6 +2462,19 @@ internal static class Program
                     Message="Running the resource and level fallback plan."
                 }
             });
+            // Resource fallback emits its own substeps after the outer fallback
+            // marker. The supervisor must retain the extended watchdog budget.
+            progress?.Report(new MultiDeviceOneShotFarmProgress
+            {
+                DeviceName=device,Stage=MultiDeviceOneShotFarmStage.Running,
+                Message="Selecting a farm team within the resource fallback plan.",
+                DeviceProgress=new OneShotFarmProgress
+                {
+                    Stage=OneShotFarmProgressStage.RunningFarmStep,
+                    CurrentStep=OneShotFarmStep.SelectTeam,
+                    Message="Selecting a farm team within the resource fallback plan."
+                }
+            });
             await Task.Delay(80,token);
             cancellation.Cancel();
             var farm=new OneShotFarmResult
