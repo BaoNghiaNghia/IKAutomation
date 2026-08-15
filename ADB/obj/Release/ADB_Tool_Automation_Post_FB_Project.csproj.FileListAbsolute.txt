@@ -378,10 +378,10 @@ D:\Bot_Tool_Auto_Game\IKAutomation\ADB\bin\Release\x64\msvcp140.dll
 D:\Bot_Tool_Auto_Game\IKAutomation\ADB\bin\Release\x64\opencv_videoio_ffmpeg411_64.dll
 D:\Bot_Tool_Auto_Game\IKAutomation\ADB\bin\Release\x64\vcruntime140.dll
 D:\Bot_Tool_Auto_Game\IKAutomation\ADB\bin\Release\x86\concrt140.dll
+D:\Bot_Tool_Auto_Game\IKAutomation\ADB\bin\Release\x86\cvextern.dll
 D:\Bot_Tool_Auto_Game\IKAutomation\ADB\bin\Release\x86\msvcp140.dll
 D:\Bot_Tool_Auto_Game\IKAutomation\ADB\bin\Release\x86\opencv_videoio_ffmpeg411.dll
 D:\Bot_Tool_Auto_Game\IKAutomation\ADB\bin\Release\x86\vcruntime140.dll
-D:\Bot_Tool_Auto_Game\IKAutomation\ADB\bin\Release\x86\cvextern.dll
 D:\Bot_Tool_Auto_Game\IKAutomation\ADB\bin\Release\MainWindow.xaml.cs
 D:\Bot_Tool_Auto_Game\IKAutomation\ADB\bin\Release\ADB_Tool_Automation_Post_FB.exe.config
 D:\Bot_Tool_Auto_Game\IKAutomation\ADB\bin\Release\ADB_Tool_Automation_Post_FB.exe

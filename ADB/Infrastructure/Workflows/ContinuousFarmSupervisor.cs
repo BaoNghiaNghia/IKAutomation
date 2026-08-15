@@ -98,7 +98,7 @@ namespace ADB_Tool_Automation_Post_FB.Infrastructure.Workflows
             {
                 Task heartbeatTask = RunHeartbeatLoopAsync(snapshots, startedAt,
                     heartbeatState, progress, heartbeatCancellation.Token);
-                Task[] deviceTasks = devices.Select(device => RunDeviceLoopAsync(device,
+                Task[] deviceTasks = devices.Select(device => StartDeviceLoopAsync(device,
                     request, snapshots, dashboardProgress, cancellationToken)).ToArray();
                 try
                 {
@@ -117,6 +117,25 @@ namespace ADB_Tool_Automation_Post_FB.Infrastructure.Workflows
                 Devices = devices.Select(device => Copy(snapshots[device])).ToArray(),
                 WasCancelled = cancellationToken.IsCancellationRequested
             };
+        }
+
+        private Task StartDeviceLoopAsync(string deviceName, OneShotFarmRequest request,
+            ConcurrentDictionary<string, ContinuousFarmDeviceSnapshot> snapshots,
+            IProgress<ContinuousFarmSupervisorProgress> progress,
+            CancellationToken cancellationToken)
+        {
+            // An async method runs synchronously until its first incomplete await. Starting all
+            // device loops directly from Select therefore lets capture/discovery/maintenance
+            // work in one loop delay creation of every following loop. Pin only the loop entry
+            // to the default scheduler so each device owns an independent asynchronous pipeline
+            // while the existing preflight, screenshot, vision and gameplay gates still bound
+            // expensive shared work.
+            return Task.Factory.StartNew(
+                () => RunDeviceLoopAsync(deviceName, request, snapshots, progress,
+                    cancellationToken),
+                cancellationToken,
+                TaskCreationOptions.DenyChildAttach,
+                TaskScheduler.Default).Unwrap();
         }
 
         private async Task RunHeartbeatLoopAsync(

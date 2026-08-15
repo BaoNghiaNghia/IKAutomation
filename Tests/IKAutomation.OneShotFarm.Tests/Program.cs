@@ -187,6 +187,7 @@ internal static class Program
         Run("Off-screen farm cards update less frequently", OffscreenFarmCardsAreThrottled);
         Run("Farm card resources are reused", FarmCardResourcesAreReused);
         Run("Continuous supervisor never inherits the WPF dispatcher", ContinuousSupervisorRunsOffDispatcher);
+        Run("Continuous supervisor starts independent device workers", ContinuousSupervisorStartsIndependentDeviceWorkers);
         Run("Farm health card distinguishes preparation from failures", FarmHealthCardIsCompactAndAccurate);
         Run("Team selection clears stale territory color UI", TeamSelectionClearsStaleTerritoryColor);
         Run("Vietnamese message catalog validates placeholders", VietnameseMessageCatalogIsComplete);
@@ -2168,6 +2169,18 @@ internal static class Program
         Is(method.Contains("DirectProgress<ContinuousFarmSupervisorProgress>")
             && method.Contains("QueueContinuousFarmProgress"),
             "background supervisor bypasses the bounded UI progress queue");
+    }
+    static void ContinuousSupervisorStartsIndependentDeviceWorkers()
+    {
+        string code = File.ReadAllText(Path.Combine(Environment.CurrentDirectory,
+            "ADB", "Infrastructure", "Workflows", "ContinuousFarmSupervisor.cs"));
+        Is(code.Contains("devices.Select(device => StartDeviceLoopAsync(device,")
+            && code.Contains("Task.Factory.StartNew(")
+            && code.Contains("TaskCreationOptions.DenyChildAttach")
+            && code.Contains("TaskScheduler.Default).Unwrap()"),
+            "device loops can still execute synchronous prefixes serially");
+        Is(code.Contains("await Task.WhenAll(deviceTasks)"),
+            "supervisor no longer owns the lifetime of all independent device workers");
     }
     static void FarmHealthCardIsCompactAndAccurate()
     {
