@@ -23,6 +23,8 @@ namespace ADB_Tool_Automation_Post_FB.Core.Workflows
             AllowedTeams = new TeamNumber[0];
             DetectedTeams = new TeamNumber[0];
             ReadyTeams = new TeamNumber[0];
+            BusyTeams = new TeamNumber[0];
+            LockedTeams = new TeamNumber[0];
             EligibleReadyTeams = new TeamNumber[0];
         }
 
@@ -32,6 +34,11 @@ namespace ADB_Tool_Automation_Post_FB.Core.Workflows
         public IReadOnlyList<TeamNumber> AllowedTeams { get; set; }
         public IReadOnlyList<TeamNumber> DetectedTeams { get; set; }
         public IReadOnlyList<TeamNumber> ReadyTeams { get; set; }
+        // These are the latest focused WorldMap roster observations.  They are
+        // carried with waiting progress so the UI never has to invent a
+        // "Chưa kiểm tra" state after a completed scan.
+        public IReadOnlyList<TeamNumber> BusyTeams { get; set; }
+        public IReadOnlyList<TeamNumber> LockedTeams { get; set; }
         public IReadOnlyList<TeamNumber> EligibleReadyTeams { get; set; }
         public DateTimeOffset? NextCheckAt { get; set; }
         public DateTimeOffset? WaitDeadline { get; set; }

@@ -500,6 +500,8 @@ namespace ADB_Tool_Automation_Post_FB.UI
                 FormatTeamFingerprint(farm?.AllowedTeams),
                 FormatTeamFingerprint(farm?.DetectedTeams),
                 FormatTeamFingerprint(farm?.ReadyTeams),
+                FormatTeamFingerprint(farm?.BusyTeams),
+                FormatTeamFingerprint(farm?.LockedTeams),
                 FormatTeamFingerprint(farm?.EligibleReadyTeams),
                 farm?.ResourceToastText ?? string.Empty,
                 farm?.ResourceToastVariant ?? string.Empty,
@@ -2054,6 +2056,8 @@ namespace ADB_Tool_Automation_Post_FB.UI
             IReadOnlyList<TeamNumber> allowed = progress.AllowedTeams ?? new TeamNumber[0];
             IReadOnlyList<TeamNumber> detected = progress.DetectedTeams ?? new TeamNumber[0];
             IReadOnlyList<TeamNumber> ready = progress.ReadyTeams ?? new TeamNumber[0];
+            IReadOnlyList<TeamNumber> busy = progress.BusyTeams ?? new TeamNumber[0];
+            IReadOnlyList<TeamNumber> locked = progress.LockedTeams ?? new TeamNumber[0];
             IReadOnlyList<TeamNumber> eligible = progress.EligibleReadyTeams ?? new TeamNumber[0];
             bool isAvailabilityUpdate =
                 progress.Stage == OneShotFarmProgressStage.CheckingTeamAvailability
@@ -2086,12 +2090,16 @@ namespace ADB_Tool_Automation_Post_FB.UI
                 {
                     bool isAllowed = allowed.Contains(item.Team);
                     bool isReady = ready.Contains(item.Team);
+                    bool isBusy = busy.Contains(item.Team);
+                    bool isLocked = locked.Contains(item.Team);
                     bool isEligible = eligible.Contains(item.Team);
                     // Readiness is valid evidence even while a follow-up scan is
                     // being published.  The previous ordering overwrote every
                     // badge with "Chưa kiểm tra" during that window, hiding the
                     // statuses that had just been detected.
-                    string status = isEligible ? "Sẵn sàng"
+                    string status = isLocked ? "Khóa"
+                        : isBusy ? "Bận"
+                        : isEligible ? "Sẵn sàng"
                         : isReady && isAllowed ? "Sẵn sàng"
                         : isReady ? "Sẵn sàng · không chọn"
                         : isAvailabilityUpdate && (!scanCompleted || rosterUncertain)

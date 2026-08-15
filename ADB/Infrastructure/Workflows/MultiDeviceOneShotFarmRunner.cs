@@ -445,7 +445,12 @@ namespace ADB_Tool_Automation_Post_FB.Infrastructure.Workflows
                     ? VietnameseUserMessageLocalizer.Default.Format(
                         UiMessageKey.PreflightEligibleTeams, string.Join(", ", eligible))
                     : VietnameseUserMessageLocalizer.Default.Get(UiMessageKey.PreflightNoReadyTeam);
-                Report(progress, deviceName, stage, null, status, null,
+                // The preflight scan is a completed team observation, not just
+                // an admission result.  Preserve it for the device card when
+                // the device waits for a team, otherwise the UI falls back to
+                // its "Chưa kiểm tra" placeholders until a later scan.
+                Report(progress, deviceName, stage,
+                    CreateAvailabilityProgress(request, availability, stage, status), status, null,
                     queueWait.ElapsedMilliseconds, execution.ElapsedMilliseconds);
                 succeeded = true;
                 return new PreflightResult
@@ -561,6 +566,62 @@ namespace ADB_Tool_Automation_Post_FB.Infrastructure.Workflows
                 .Any(team => (request.AllowedTeams ?? new TeamNumber[0]).Contains(team));
         }
 
+        private static OneShotFarmProgress CreateAvailabilityProgress(
+            OneShotFarmRequest request, WorldMapTeamAvailabilityResult availability,
+            MultiDeviceOneShotFarmStage stage, string message)
+        {
+            int delayMs = request?.ReadyTeamOptions?.CheckIntervalMs ?? 120000;
+            bool waiting = stage == MultiDeviceOneShotFarmStage.WaitingForReadyTeam;
+            TeamNumber[] ready = (availability?.ReadyTeams ?? new TeamNumber[0]).ToArray();
+            TeamNumber[] detected = (availability?.AvailableTeams
+                ?? availability?.ExistingTeams ?? new TeamNumber[0]).ToArray();
+            TeamNumber[] allowed = (request?.AllowedTeams ?? new TeamNumber[0]).ToArray();
+            return new OneShotFarmProgress
+            {
+                Stage = waiting ? OneShotFarmProgressStage.WaitingForReadyTeam
+                    : OneShotFarmProgressStage.ReadyTeamFound,
+                ReportedAt = DateTimeOffset.UtcNow,
+                AllowedTeams = allowed,
+                DetectedTeams = detected,
+                ReadyTeams = ready,
+                BusyTeams = (availability?.BusyTeams ?? new TeamNumber[0]).ToArray(),
+                LockedTeams = (availability?.LockedTeams ?? new TeamNumber[0]).ToArray(),
+                EligibleReadyTeams = ready.Where(team => allowed.Contains(team)).ToArray(),
+                ConfirmedRosterCount = availability?.ConfirmedRosterCount ?? 0,
+                RosterConfidence = availability?.RosterConfidence
+                    ?? (availability?.IsRosterUncertain == true ? "Uncertain" : "Confirmed"),
+                RosterSource = availability?.RosterSource
+                    ?? availability?.RosterEvidenceSource.ToString(),
+                NextCheckAt = waiting ? (DateTimeOffset?)DateTimeOffset.UtcNow
+                    .AddMilliseconds(delayMs) : null,
+                Message = message
+            };
+        }
+
+        private static OneShotFarmProgress CreateResultProgress(
+            OneShotFarmRequest request, OneShotFarmResult result,
+            MultiDeviceOneShotFarmStage stage, string message)
+        {
+            if (stage != MultiDeviceOneShotFarmStage.WaitingForReadyTeam
+                || result == null)
+                return null;
+
+            return new OneShotFarmProgress
+            {
+                Stage = OneShotFarmProgressStage.WaitingForReadyTeam,
+                ReportedAt = DateTimeOffset.UtcNow,
+                TeamAvailabilityChecks = result.TeamAvailabilityChecks,
+                AllowedTeams = (request?.AllowedTeams ?? new TeamNumber[0]).ToArray(),
+                DetectedTeams = (result.DetectedTeams ?? new TeamNumber[0]).ToArray(),
+                ReadyTeams = (result.ReadyTeams ?? new TeamNumber[0]).ToArray(),
+                BusyTeams = (result.BusyTeams ?? new TeamNumber[0]).ToArray(),
+                LockedTeams = (result.LockedTeams ?? new TeamNumber[0]).ToArray(),
+                EligibleReadyTeams = new TeamNumber[0],
+                NextCheckAt = result.NextCheckAt,
+                Message = message
+            };
+        }
+
         private static MultiDeviceOneShotFarmItemResult WaitingForReadyTeam(string deviceName,
             WorldMapTeamAvailabilityResult availability, OneShotFarmRequest request)
         {
@@ -637,7 +698,8 @@ namespace ADB_Tool_Automation_Post_FB.Infrastructure.Workflows
                 string message = result?.Message ?? result?.ErrorMessage
                     ?? VietnameseUserMessageLocalizer.Default.Get(UiMessageKey.OneShotReturnedNoResult);
                 if (result?.RequeueRequested != true)
-                    Report(progress, deviceName, stage, null, message);
+                    Report(progress, deviceName, stage,
+                        CreateResultProgress(sourceRequest, result, stage, message), message);
                 return new MultiDeviceOneShotFarmItemResult
                 {
                     DeviceName = deviceName,

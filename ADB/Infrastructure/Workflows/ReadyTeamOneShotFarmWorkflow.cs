@@ -149,6 +149,8 @@ namespace ADB_Tool_Automation_Post_FB.Infrastructure.Workflows
                             AllowedTeams = effectiveAllowedTeams,
                             DetectedTeams = detectedTeams,
                             ReadyTeams = check.ReadyTeams ?? new TeamNumber[0],
+                            BusyTeams = check.BusyTeams ?? new TeamNumber[0],
+                            LockedTeams = check.LockedTeams ?? new TeamNumber[0],
                             EligibleReadyTeams = eligibleReadyTeams,
                             CurrentExpectedTeam = expectedTeam,
                             CurrentTeam = expectedTeam,
@@ -173,6 +175,8 @@ namespace ADB_Tool_Automation_Post_FB.Infrastructure.Workflows
                         result.ReadyTeamObserved = true;
                         result.DetectedTeams = detectedTeams;
                         result.ReadyTeams = eligibleReadyTeams;
+                        result.BusyTeams = check.BusyTeams ?? new TeamNumber[0];
+                        result.LockedTeams = check.LockedTeams ?? new TeamNumber[0];
                         result.Duration = watch.Elapsed;
                         if (!result.Success || !request.RunUntilNoReadyTeams)
                         {
@@ -220,6 +224,8 @@ namespace ADB_Tool_Automation_Post_FB.Infrastructure.Workflows
                             AllowedTeams = effectiveAllowedTeams,
                             DetectedTeams = detectedTeams,
                             ReadyTeams = check.ReadyTeams ?? new TeamNumber[0],
+                            BusyTeams = check.BusyTeams ?? new TeamNumber[0],
+                            LockedTeams = check.LockedTeams ?? new TeamNumber[0],
                             EligibleReadyTeams = new TeamNumber[0],
                             ConfirmedRosterCount = check.ConfirmedRosterCount,
                             RosterConfidence = check.RosterConfidence
@@ -235,6 +241,8 @@ namespace ADB_Tool_Automation_Post_FB.Infrastructure.Workflows
                         waiting.NextCheckAt = scheduledCheckAt;
                         waiting.DetectedTeams = detectedTeams;
                         waiting.ReadyTeams = check.ReadyTeams ?? new TeamNumber[0];
+                        waiting.BusyTeams = check.BusyTeams ?? new TeamNumber[0];
+                        waiting.LockedTeams = check.LockedTeams ?? new TeamNumber[0];
                         return waiting;
                     }
 
@@ -255,6 +263,8 @@ namespace ADB_Tool_Automation_Post_FB.Infrastructure.Workflows
                                 AllowedTeams = effectiveAllowedTeams,
                                 DetectedTeams = detectedTeams,
                                 ReadyTeams = check.ReadyTeams ?? new TeamNumber[0],
+                                BusyTeams = check.BusyTeams ?? new TeamNumber[0],
+                                LockedTeams = check.LockedTeams ?? new TeamNumber[0],
                                 EligibleReadyTeams = new TeamNumber[0],
                                 ConfirmedRosterCount = check.ConfirmedRosterCount,
                                 RosterConfidence = check.RosterConfidence
@@ -306,6 +316,8 @@ namespace ADB_Tool_Automation_Post_FB.Infrastructure.Workflows
                         AllowedTeams = effectiveAllowedTeams,
                         DetectedTeams = detectedTeams,
                         ReadyTeams = check.ReadyTeams ?? new TeamNumber[0],
+                        BusyTeams = check.BusyTeams ?? new TeamNumber[0],
+                        LockedTeams = check.LockedTeams ?? new TeamNumber[0],
                         EligibleReadyTeams = new TeamNumber[0],
                         ConfirmedRosterCount = check.ConfirmedRosterCount,
                         RosterConfidence = check.RosterConfidence
@@ -503,6 +515,8 @@ namespace ADB_Tool_Automation_Post_FB.Infrastructure.Workflows
                 ReadyTeamObserved = false,
                 DetectedTeams = new TeamNumber[0],
                 ReadyTeams = new TeamNumber[0],
+                BusyTeams = new TeamNumber[0],
+                LockedTeams = new TeamNumber[0],
                 CompletedDispatches = 0,
                 DispatchedResources = new ResourceType[0],
                 BatchDispatchedTeams = new TeamNumber[0],
