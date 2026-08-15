@@ -176,7 +176,8 @@ internal static class Program
         Run("One-Shot UI hides manual diagnostic controls", OneShotUiIsFocused);
         Run("Initial Farm Control spinner remains animated while loading", InitialLoadingSpinnerAnimates);
         Run("Continuous UI coalesces per-device progress", ContinuousUiCoalescesProgress);
-        Run("Critical continuous UI states flush immediately", ContinuousUiFlushesCriticalProgress);
+        Run("Critical continuous UI states use bounded coalescing", ContinuousUiBoundsCriticalProgress);
+        Run("Farm progress list virtualizes off-screen devices", FarmProgressListIsVirtualized);
         Run("Team selection clears stale territory color UI", TeamSelectionClearsStaleTerritoryColor);
         Run("Vietnamese message catalog validates placeholders", VietnameseMessageCatalogIsComplete);
         Run("Vietnamese display names format farm values", VietnameseDisplayNamesAreComplete);
@@ -2060,23 +2061,37 @@ internal static class Program
         string code = File.ReadAllText(Path.Combine(Environment.CurrentDirectory,
             "ADB", "UI", "DeviceDiagnosticWindow.xaml.cs"));
         Is(code.Contains("Dictionary<string, PendingContinuousUpdate>")
-            && code.Contains("pendingContinuousUpdates[progress.Device.DeviceName]")
-            && code.Contains("TimeSpan.FromMilliseconds(350)"),
+            && code.Contains("pendingContinuousUpdates[deviceName] = update")
+            && code.Contains("TimeSpan.FromMilliseconds(500)"),
             "latest device updates are not coalesced into a bounded timer flush");
         Is(code.Contains("TimeSpan.FromSeconds(1)"),
             "full health summary is rebuilt more often than once per second");
     }
-    static void ContinuousUiFlushesCriticalProgress()
+    static void ContinuousUiBoundsCriticalProgress()
     {
         string code = File.ReadAllText(Path.Combine(Environment.CurrentDirectory,
             "ADB", "UI", "DeviceDiagnosticWindow.xaml.cs"));
         Is(code.Contains("ContinuousFarmDeviceState.Recovering")
             && code.Contains("ContinuousFarmDeviceState.Quarantined")
             && code.Contains("ContinuousFarmDeviceState.Stopped")
-            && code.Contains("Dispatcher.BeginInvoke"),
-            "critical recovery/failure/stop transitions are delayed by coalescing");
+            && code.Contains("IsCriticalContinuousUpdate(pending.Progress)")
+            && !code.Contains("Dispatcher.BeginInvoke"),
+            "critical recovery/failure/stop transitions can flood the dispatcher");
         Is(code.Contains("DirectProgress<ContinuousFarmSupervisorProgress>"),
             "Progress<T> still posts every event to the dispatcher");
+        Is(code.Contains("isBatchingContinuousUi")
+            && code.Contains("FlushAggregateUiRefreshes()"),
+            "aggregate dashboard values are still recomputed for every device update");
+    }
+    static void FarmProgressListIsVirtualized()
+    {
+        string xaml = File.ReadAllText(Path.Combine(Environment.CurrentDirectory,
+            "ADB", "UI", "DeviceDiagnosticWindow.xaml"));
+        Is(xaml.Contains("VirtualizingPanel.IsVirtualizing=\"True\"")
+            && xaml.Contains("VirtualizingPanel.VirtualizationMode=\"Recycling\"")
+            && xaml.Contains("<VirtualizingStackPanel/>")
+            && xaml.Contains("CanContentScroll=\"True\""),
+            "off-screen farm device cards are still fully rendered");
     }
     static void DiagnosticScreenshotCooldown()
     {

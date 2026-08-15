@@ -40,6 +40,9 @@ namespace ADB_Tool_Automation_Post_FB.UI
             new Dictionary<string, PendingContinuousUpdate>(StringComparer.OrdinalIgnoreCase);
         private PendingContinuousUpdate pendingContinuousHealth;
         private DateTimeOffset lastContinuousHealthFlush = DateTimeOffset.MinValue;
+        private bool isBatchingContinuousUi;
+        private bool deviceSummaryRefreshPending;
+        private bool progressOverviewRefreshPending;
         private CancellationTokenSource oneShotFarmCancellation;
         private bool oneShotFarmCancellationRequested;
         private long oneShotFarmRunGeneration;
@@ -85,10 +88,11 @@ namespace ADB_Tool_Automation_Post_FB.UI
             InitializeComponent();
             DeviceSelectionListBox.ItemsSource = deviceSelections;
             FarmProgressItemsControl.ItemsSource = farmProgressItems;
-            oneShotFarmProgressTimer = new DispatcherTimer { Interval = TimeSpan.FromSeconds(1) };
+            oneShotFarmProgressTimer = new DispatcherTimer(DispatcherPriority.Background)
+                { Interval = TimeSpan.FromSeconds(1) };
             oneShotFarmProgressTimer.Tick += OneShotFarmProgressTimer_Tick;
-            continuousProgressFlushTimer = new DispatcherTimer
-                { Interval = TimeSpan.FromMilliseconds(350) };
+            continuousProgressFlushTimer = new DispatcherTimer(DispatcherPriority.Background)
+                { Interval = TimeSpan.FromMilliseconds(500) };
             continuousProgressFlushTimer.Tick += ContinuousProgressFlushTimer_Tick;
             ApplyFarmPreferences(defaultFarmPreferences);
             Loaded += DeviceDiagnosticWindow_Loaded;
@@ -197,7 +201,7 @@ namespace ADB_Tool_Automation_Post_FB.UI
                 }
 
                 await RefreshDeviceRuntimeStateAsync(deviceNames, cancellationToken);
-                UpdateDeviceSummary();
+                RequestDeviceSummaryRefresh();
 
                     return deviceNames.Count == 0
                         ? "No LDPlayer instances were found. Check LDCONSOLE_PATH and create an instance in LDPlayer."
@@ -358,8 +362,6 @@ namespace ADB_Tool_Automation_Post_FB.UI
             if (progress == null || !OneShotFarmProgressUtilities.IsCurrentRun(
                 runGeneration, oneShotFarmRunGeneration, runCancellation,
                 oneShotFarmCancellation)) return;
-            if (progress.Health != null)
-                ApplyHealthDashboard(progress.Health);
             if (progress.Device == null
                 || !IsCurrentDeviceAttempt(progress.Device.DeviceName,
                     attemptVersions)) return;
@@ -372,7 +374,7 @@ namespace ADB_Tool_Automation_Post_FB.UI
                 item.IsRunning = true;
                 item.IsInGame = true;
                 item.Status = FarmProgressVietnamese.Stage(snapshot.State.ToString());
-                UpdateDeviceSummary();
+                RequestDeviceSummaryRefresh();
             }
             if (snapshot.State == ContinuousFarmDeviceState.Stopped)
                 activeDeviceNames.Remove(snapshot.DeviceName);
@@ -406,35 +408,37 @@ namespace ADB_Tool_Automation_Post_FB.UI
             if (progress == null) return;
             var update = new PendingContinuousUpdate(runGeneration, runCancellation,
                 attemptVersions, progress);
-            OneShotFarmProgressStage? farmStage =
-                progress.FarmProgress?.DeviceProgress?.Stage;
-            bool teamAvailabilityResolved =
-                farmStage == OneShotFarmProgressStage.ReadyTeamFound
-                || farmStage == OneShotFarmProgressStage.WaitingForReadyTeam;
-            bool critical = progress.Device != null
-                && (progress.Device.State == ContinuousFarmDeviceState.Recovering
-                    || progress.Device.State == ContinuousFarmDeviceState.Quarantined
-                    || progress.Device.State == ContinuousFarmDeviceState.Stopped
-                    || teamAvailabilityResolved);
-            if (critical)
-            {
-                // The resolved roster carries the Ready/Busy badge state. Do not let
-                // a later Running snapshot coalesce it away before the UI receives it.
-                lock (continuousProgressSync)
-                {
-                    pendingContinuousUpdates.Remove(progress.Device.DeviceName);
-                }
-                Dispatcher.BeginInvoke(new Action(() => ApplyContinuousFarmProgress(
-                    update.RunGeneration, update.RunCancellation,
-                    update.AttemptVersions, update.Progress)));
-                return;
-            }
             lock (continuousProgressSync)
             {
                 if (progress.Device != null)
-                    pendingContinuousUpdates[progress.Device.DeviceName] = update;
+                {
+                    string deviceName = progress.Device.DeviceName;
+                    PendingContinuousUpdate pending;
+                    bool hasPending = pendingContinuousUpdates.TryGetValue(
+                        deviceName, out pending);
+                    // Keep a resolved roster/recovery transition until the next
+                    // bounded UI flush. A later noisy Running snapshot may not
+                    // overwrite it, but it also must not enqueue an unbounded
+                    // Dispatcher callback for every progress event.
+                    if (!hasPending || IsCriticalContinuousUpdate(progress)
+                        || !IsCriticalContinuousUpdate(pending.Progress))
+                        pendingContinuousUpdates[deviceName] = update;
+                }
                 if (progress.Health != null) pendingContinuousHealth = update;
             }
+        }
+
+        private static bool IsCriticalContinuousUpdate(
+            ContinuousFarmSupervisorProgress progress)
+        {
+            if (progress?.Device == null) return false;
+            OneShotFarmProgressStage? farmStage =
+                progress.FarmProgress?.DeviceProgress?.Stage;
+            return progress.Device.State == ContinuousFarmDeviceState.Recovering
+                || progress.Device.State == ContinuousFarmDeviceState.Quarantined
+                || progress.Device.State == ContinuousFarmDeviceState.Stopped
+                || farmStage == OneShotFarmProgressStage.ReadyTeamFound
+                || farmStage == OneShotFarmProgressStage.WaitingForReadyTeam;
         }
 
         private void ContinuousProgressFlushTimer_Tick(object sender, EventArgs e) =>
@@ -455,13 +459,63 @@ namespace ADB_Tool_Automation_Post_FB.UI
                     lastContinuousHealthFlush = DateTimeOffset.UtcNow;
                 }
             }
-            foreach (PendingContinuousUpdate update in updates)
-                ApplyContinuousFarmProgress(update.RunGeneration, update.RunCancellation,
-                    update.AttemptVersions, update.Progress);
-            if (health != null && (health.Progress.Device == null
-                || !updates.Any(update => ReferenceEquals(update.Progress, health.Progress))))
-                ApplyContinuousFarmProgress(health.RunGeneration, health.RunCancellation,
-                    health.AttemptVersions, health.Progress);
+            isBatchingContinuousUi = true;
+            try
+            {
+                foreach (PendingContinuousUpdate update in updates)
+                    ApplyContinuousFarmProgress(update.RunGeneration,
+                        update.RunCancellation, update.AttemptVersions,
+                        update.Progress);
+                ApplyContinuousHealth(health);
+            }
+            finally
+            {
+                isBatchingContinuousUi = false;
+                FlushAggregateUiRefreshes();
+            }
+        }
+
+        private void ApplyContinuousHealth(PendingContinuousUpdate update)
+        {
+            if (update?.Progress?.Health == null
+                || !OneShotFarmProgressUtilities.IsCurrentRun(
+                    update.RunGeneration, oneShotFarmRunGeneration,
+                    update.RunCancellation, oneShotFarmCancellation)) return;
+            ApplyHealthDashboard(update.Progress.Health);
+        }
+
+        private void RequestDeviceSummaryRefresh()
+        {
+            if (!isBatchingContinuousUi)
+            {
+                UpdateDeviceSummary();
+                return;
+            }
+            deviceSummaryRefreshPending = true;
+        }
+
+        private void RequestProgressOverviewRefresh()
+        {
+            if (!isBatchingContinuousUi)
+            {
+                UpdateProgressOverview();
+                return;
+            }
+            progressOverviewRefreshPending = true;
+        }
+
+        private void FlushAggregateUiRefreshes()
+        {
+            if (deviceSummaryRefreshPending)
+            {
+                deviceSummaryRefreshPending = false;
+                UpdateDeviceSummary();
+            }
+            if (progressOverviewRefreshPending)
+            {
+                progressOverviewRefreshPending = false;
+                UpdateProgressOverview();
+            }
         }
 
         private void ApplyHealthDashboard(ContinuousFarmHealthSnapshot health)
@@ -673,7 +727,7 @@ namespace ADB_Tool_Automation_Post_FB.UI
             {
                 item.IsInGame = true;
                 item.Status = FarmProgressVietnamese.Stage(progress.Stage.ToString());
-                UpdateDeviceSummary();
+                RequestDeviceSummaryRefresh();
             }
             if (progress.Stage == MultiDeviceOneShotFarmStage.Failed)
             {
@@ -694,7 +748,7 @@ namespace ADB_Tool_Automation_Post_FB.UI
                 ApplyOneShotFarmProgress(runGeneration, runCancellation,
                     progress.DeviceName, progress.DeviceProgress);
             }
-            UpdateProgressOverview();
+            RequestProgressOverviewRefresh();
         }
 
         private bool IsCurrentDeviceAttempt(string deviceName,
@@ -770,7 +824,7 @@ namespace ADB_Tool_Automation_Post_FB.UI
                     if (!farmProgressItems.Any(item => item.IsWaiting))
                         StopOneShotFarmProgressTimer();
                 }
-                UpdateProgressOverview();
+                RequestProgressOverviewRefresh();
             }
             catch (Exception)
             {
