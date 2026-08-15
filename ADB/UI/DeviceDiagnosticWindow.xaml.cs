@@ -482,6 +482,10 @@ namespace ADB_Tool_Automation_Post_FB.UI
                 device.CurrentSelectedTeam ?? string.Empty,
                 device.ConfirmedRosterCount.ToString(CultureInfo.InvariantCulture),
                 device.RosterConfidence ?? string.Empty,
+                FormatTeamFingerprint(device.DetectedTeams),
+                FormatTeamFingerprint(device.ReadyTeams),
+                FormatTeamFingerprint(device.BusyTeams),
+                FormatTeamFingerprint(device.LockedTeams),
                 device.MapRepositionState.ToString(),
                 device.TerritoryColorSummary ?? string.Empty,
                 device.NextAttemptAt?.UtcDateTime.Ticks.ToString(CultureInfo.InvariantCulture) ?? string.Empty,
@@ -2201,7 +2205,13 @@ namespace ADB_Tool_Automation_Post_FB.UI
 
             SynchronizeSnapshotTeams(snapshot);
 
-            Stage = snapshot.State == ContinuousFarmDeviceState.Waiting
+            bool waitingForUncertainRoster = snapshot.State == ContinuousFarmDeviceState.Waiting
+                && string.Equals(snapshot.RosterConfidence, "Uncertain",
+                    StringComparison.OrdinalIgnoreCase)
+                && !HasSnapshotRoster(snapshot);
+            Stage = waitingForUncertainRoster
+                ? OneShotFarmProgressStage.CheckingTeamAvailability.ToString()
+                : snapshot.State == ContinuousFarmDeviceState.Waiting
                 ? OneShotFarmProgressStage.WaitingForReadyTeam.ToString()
                 : snapshot.State.ToString();
             Message = FarmProgressVietnamese.Message(snapshot.Message);
@@ -2230,6 +2240,35 @@ namespace ADB_Tool_Automation_Post_FB.UI
             TeamNumber? activeTeam = ParseTeam(snapshot.CurrentSelectedTeam)
                 ?? ParseTeam(snapshot.CurrentExpectedTeam)
                 ?? ParseTeam(snapshot.CurrentTeam);
+            if (HasSnapshotRoster(snapshot))
+            {
+                IReadOnlyList<TeamNumber> detected = snapshot.DetectedTeams
+                    ?? new TeamNumber[0];
+                IReadOnlyList<TeamNumber> ready = snapshot.ReadyTeams
+                    ?? new TeamNumber[0];
+                IReadOnlyList<TeamNumber> busy = snapshot.BusyTeams
+                    ?? new TeamNumber[0];
+                IReadOnlyList<TeamNumber> locked = snapshot.LockedTeams
+                    ?? new TeamNumber[0];
+                TeamNumber[] knownTeams = detected.Concat(ready).Concat(busy)
+                    .Concat(locked).Distinct().OrderBy(team => (int)team).ToArray();
+                int snapshotKnownCount = Math.Max(snapshot.ConfirmedRosterCount,
+                    knownTeams.Select(team => (int)team).DefaultIfEmpty(0).Max());
+                SynchronizeTeams(ExpandToConfirmedRoster(knownTeams, snapshotKnownCount));
+                foreach (TeamFarmProgressItem item in Teams)
+                {
+                    bool isLocked = locked.Contains(item.Team);
+                    bool isBusy = busy.Contains(item.Team);
+                    bool isReady = ready.Contains(item.Team);
+                    if (isLocked) item.SetStatus("Khóa", false);
+                    else if (isBusy) item.SetStatus("Bận", false);
+                    else if (isReady) item.SetStatus("Sẵn sàng", true);
+                    else if (detected.Contains(item.Team)) item.SetStatus("Bận", false);
+                }
+                TeamsSummary = string.Join(" · ", Teams.Select(item =>
+                    $"{item.TeamName}: {ShortTeamStatus(item.Status)}"));
+                return;
+            }
             // A preflight snapshot may carry the last/default roster count.
             // Never render it as current until the fresh availability scan
             // has completed and published its progress result. Still retain a
@@ -2270,6 +2309,15 @@ namespace ADB_Tool_Automation_Post_FB.UI
             }
             TeamsSummary = string.Join(" · ", Teams.Select(item =>
                 $"{item.TeamName}: {ShortTeamStatus(item.Status)}"));
+        }
+
+        private static bool HasSnapshotRoster(ContinuousFarmDeviceSnapshot snapshot)
+        {
+            if (snapshot == null) return false;
+            return (snapshot.DetectedTeams?.Length ?? 0) > 0
+                || (snapshot.ReadyTeams?.Length ?? 0) > 0
+                || (snapshot.BusyTeams?.Length ?? 0) > 0
+                || (snapshot.LockedTeams?.Length ?? 0) > 0;
         }
 
         private static TeamNumber? ParseTeam(string value)

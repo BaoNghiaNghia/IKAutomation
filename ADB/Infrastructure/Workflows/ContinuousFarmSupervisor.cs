@@ -643,6 +643,30 @@ namespace ADB_Tool_Automation_Post_FB.Infrastructure.Workflows
                     snapshot.RosterConfidence = progress.DeviceProgress.RosterConfidence;
                 if (!string.IsNullOrWhiteSpace(progress.DeviceProgress.RosterSource))
                     snapshot.RosterSource = progress.DeviceProgress.RosterSource;
+                bool rosterIsUncertain = string.Equals(
+                    progress.DeviceProgress.RosterConfidence, "Uncertain",
+                    StringComparison.OrdinalIgnoreCase);
+                TeamNumber[] observedTeams = (progress.DeviceProgress.DetectedTeams
+                    ?? new TeamNumber[0])
+                    .Concat(progress.DeviceProgress.LockedTeams ?? new TeamNumber[0])
+                    .Distinct()
+                    .OrderBy(team => (int)team)
+                    .ToArray();
+                // A no-evidence pass must not erase the last complete roster
+                // from the device card. Only a complete/non-uncertain scan can
+                // replace the status users see while the device is waiting.
+                if (!rosterIsUncertain && observedTeams.Length > 0)
+                {
+                    snapshot.DetectedTeams = observedTeams;
+                    snapshot.ReadyTeams = (progress.DeviceProgress.ReadyTeams
+                        ?? new TeamNumber[0]).ToArray();
+                    snapshot.BusyTeams = (progress.DeviceProgress.BusyTeams
+                        ?? new TeamNumber[0]).ToArray();
+                    snapshot.LockedTeams = (progress.DeviceProgress.LockedTeams
+                        ?? new TeamNumber[0]).ToArray();
+                    snapshot.ConfirmedRosterCount = Math.Max(
+                        snapshot.ConfirmedRosterCount, observedTeams.Length);
+                }
                 snapshot.MapRepositionState = progress.DeviceProgress.MapRepositionState;
                 snapshot.TerritoryColorSummary = snapshot.MapRepositionState == MapRepositionState.None
                     ? null : progress.DeviceProgress.TerritoryColorSummary;
@@ -930,6 +954,10 @@ namespace ADB_Tool_Automation_Post_FB.Infrastructure.Workflows
                 ConfirmedRosterCount = source.ConfirmedRosterCount,
                 RosterConfidence = source.RosterConfidence,
                 RosterSource = source.RosterSource,
+                DetectedTeams = (source.DetectedTeams ?? new TeamNumber[0]).ToArray(),
+                ReadyTeams = (source.ReadyTeams ?? new TeamNumber[0]).ToArray(),
+                BusyTeams = (source.BusyTeams ?? new TeamNumber[0]).ToArray(),
+                LockedTeams = (source.LockedTeams ?? new TeamNumber[0]).ToArray(),
                 MapRepositionState = source.MapRepositionState,
                 TerritoryColorSummary = source.TerritoryColorSummary,
                 RestoredFromCheckpoint = source.RestoredFromCheckpoint,

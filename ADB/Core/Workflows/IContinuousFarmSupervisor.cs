@@ -2,6 +2,7 @@ using System;
 using System.Collections.Generic;
 using System.Threading;
 using System.Threading.Tasks;
+using ADB_Tool_Automation_Post_FB.Core.TeamSelection;
 
 namespace ADB_Tool_Automation_Post_FB.Core.Workflows
 {
@@ -53,6 +54,13 @@ namespace ADB_Tool_Automation_Post_FB.Core.Workflows
         public int ConfirmedRosterCount { get; set; }
         public string RosterConfidence { get; set; }
         public string RosterSource { get; set; }
+        // The supervisor outlives an individual one-shot progress update. Keep
+        // the last complete roster classification so a waiting/recovery card
+        // cannot fall back to invented "not checked" badges.
+        public TeamNumber[] DetectedTeams { get; set; }
+        public TeamNumber[] ReadyTeams { get; set; }
+        public TeamNumber[] BusyTeams { get; set; }
+        public TeamNumber[] LockedTeams { get; set; }
         public MapRepositionState MapRepositionState { get; set; }
         public string TerritoryColorSummary { get; set; }
         public bool RestoredFromCheckpoint { get; set; }
