@@ -329,11 +329,21 @@ namespace ADB_Tool_Automation_Post_FB.UI
             SetFarmActionButtonRunning();
             OneShotFarmResourcesGroupBox.IsEnabled = false;
             StatusTextBlock.Text = $"Continuous supervisor đang quản lý {deviceNames.Length} thiết bị...";
+            // The supervisor performs synchronous checkpoint preparation before its
+            // first await and many legacy workflow awaits intentionally have no WPF
+            // awareness. Starting it from this event handler would therefore inherit
+            // the Dispatcher context and let automation continuations compete with
+            // layout/input when many devices run. Paint the running state first, then
+            // keep the complete supervisor call behind a background boundary. UI
+            // progress still reaches WPF only through the bounded coalescing timer.
+            await Dispatcher.Yield(DispatcherPriority.Render);
             try
             {
                 ContinuousFarmSupervisorResult result =
-                    await continuousFarmSupervisor.RunAsync(deviceNames, request,
-                        progress, runCancellation.Token);
+                    await Task.Run(async () =>
+                        await continuousFarmSupervisor.RunAsync(deviceNames, request,
+                            progress, runCancellation.Token).ConfigureAwait(false),
+                        runCancellation.Token);
                 StatusTextBlock.Text = "Continuous supervisor đã dừng."
                     + Environment.NewLine + string.Join(Environment.NewLine,
                         result.Devices.Select(item =>

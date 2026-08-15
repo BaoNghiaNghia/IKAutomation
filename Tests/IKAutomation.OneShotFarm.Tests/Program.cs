@@ -182,6 +182,7 @@ internal static class Program
         Run("Continuous UI skips semantic duplicates", ContinuousUiSkipsDuplicates);
         Run("Off-screen farm cards update less frequently", OffscreenFarmCardsAreThrottled);
         Run("Farm card resources are reused", FarmCardResourcesAreReused);
+        Run("Continuous supervisor never inherits the WPF dispatcher", ContinuousSupervisorRunsOffDispatcher);
         Run("Team selection clears stale territory color UI", TeamSelectionClearsStaleTerritoryColor);
         Run("Vietnamese message catalog validates placeholders", VietnameseMessageCatalogIsComplete);
         Run("Vietnamese display names format farm values", VietnameseDisplayNamesAreComplete);
@@ -2138,6 +2139,25 @@ internal static class Program
             && code.Contains("synchronizedTeamRosterKey")
             && code.Contains("SequenceEqual(ordered)"),
             "farm cards still allocate brushes or rebuild an unchanged team roster");
+    }
+    static void ContinuousSupervisorRunsOffDispatcher()
+    {
+        string code = File.ReadAllText(Path.Combine(Environment.CurrentDirectory,
+            "ADB", "UI", "DeviceDiagnosticWindow.xaml.cs"));
+        int start = code.IndexOf("private async Task RunContinuousSupervisorAsync",
+            StringComparison.Ordinal);
+        int end = code.IndexOf("private void ApplyContinuousFarmProgress",
+            StringComparison.Ordinal);
+        Is(start >= 0 && end > start, "continuous supervisor UI method is missing");
+        string method = code.Substring(start, end - start);
+        Is(method.Contains("Dispatcher.Yield(DispatcherPriority.Render)")
+            && method.Contains("await Task.Run(async () =>")
+            && method.Contains("continuousFarmSupervisor.RunAsync")
+            && method.Contains("ConfigureAwait(false)"),
+            "continuous automation can still capture and block the WPF dispatcher");
+        Is(method.Contains("DirectProgress<ContinuousFarmSupervisorProgress>")
+            && method.Contains("QueueContinuousFarmProgress"),
+            "background supervisor bypasses the bounded UI progress queue");
     }
     static void DiagnosticScreenshotCooldown()
     {
