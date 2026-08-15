@@ -107,6 +107,8 @@ namespace ADB_Tool_Automation_Post_FB.Infrastructure.TeamSelection
             var lockedTeamsFresh = new HashSet<TeamNumber>();
             var rowEvidenceTeams = new HashSet<TeamNumber>();
             int verifiedFrameCount = 0;
+            int focusedWorldMapFrameCount = 0;
+            int fullDetectionFallbackCount = 0;
             GameDetectionResult lastState = null;
             WorldMapTeamRosterLayout lastLayout = null;
             for (int frame = 0; frame < options.ObservationFrameCount; frame++)
@@ -121,27 +123,23 @@ namespace ADB_Tool_Automation_Post_FB.Infrastructure.TeamSelection
                 if (layout == null)
                     return Failed("Team roster region falls outside the captured frame.",
                         state: GameState.WorldMap);
-                lastState = Detect(screenshot, deviceName,
-                    new GameStateDetectionContext(GameState.WorldMap, GameState.WorldMap));
-                if (lastState == null || !lastState.IsSuccessful
-                    || lastState.State != GameState.WorldMap)
-                    continue;
-
-                verifiedFrameCount++;
                 var badgeRequests = teams.Select((team, index) => new ImageMatchRequest(
                     registry.LoadBytes(BadgeTemplate(team)), layout.SearchRows[index])).ToArray();
                 IReadOnlyList<ImageMatchResult> badgeResults = await FindManyAsync(
                     screenshot, badgeRequests, cancellationToken);
                 var frameBadgeMatches = new Dictionary<TeamNumber, ImageMatchResult>();
+                var frameReadyMatchesByTeam = new Dictionary<TeamNumber, ImageMatchResult>();
+                var frameBusyTeams = new HashSet<TeamNumber>();
+                var frameLockedTeams = new HashSet<TeamNumber>();
+                var frameRowEvidenceTeams = new HashSet<TeamNumber>();
                 for (int index = 0; index < teams.Length; index++)
                 {
                     TeamNumber team = teams[index];
                     ImageMatchResult badgeMatch = badgeResults[index] ?? ImageMatchResult.NotFound();
                     if (IsMatchInsideRow(badgeMatch, layout.Rows[index]))
                     {
-                        badgeMatches[team] = badgeMatch;
                         frameBadgeMatches[team] = badgeMatch;
-                        rowEvidenceTeams.Add(team);
+                        frameRowEvidenceTeams.Add(team);
                     }
                 }
                 layout = WorldMapTeamRosterLayoutResolver.AlignToNumberedBadges(
@@ -172,16 +170,51 @@ namespace ADB_Tool_Automation_Post_FB.Infrastructure.TeamSelection
                     string signal = statusSignals[index].Item2;
                     ImageMatchResult rowMatch = statusResults[index] ?? ImageMatchResult.NotFound();
                     TeamNumber team = signal == "Ready"
-                        ? ResolveStatusTeam(requestedTeam, rowMatch, badgeMatches, layout)
+                        ? ResolveStatusTeam(requestedTeam, rowMatch, frameBadgeMatches, layout)
                         : requestedTeam;
                     if (IsMatchInsideRow(rowMatch, layout.Rows[(int)team - 1]))
                     {
-                        if (signal == "Ready") readyMatchesByTeam[team] = rowMatch;
-                        else if (signal == "Locked") lockedTeamsFresh.Add(team);
-                        else busyTeamsFresh.Add(team);
-                        rowEvidenceTeams.Add(team);
+                        if (signal == "Ready") frameReadyMatchesByTeam[team] = rowMatch;
+                        else if (signal == "Locked") frameLockedTeams.Add(team);
+                        else frameBusyTeams.Add(team);
+                        frameRowEvidenceTeams.Add(team);
                     }
                 }
+
+                // EnsureWorldMapAsync already performed the complete state check immediately
+                // before this read-only scan. Numbered team rows and row-local status anchors
+                // are themselves focused WorldMap evidence, so do not run the entire global
+                // detector again for every roster frame. Only frames with no roster evidence
+                // pay for the full detector fallback.
+                bool focusedWorldMapEvidence = frameRowEvidenceTeams.Count > 0;
+                if (!focusedWorldMapEvidence)
+                {
+                    fullDetectionFallbackCount++;
+                    lastState = Detect(screenshot, deviceName,
+                        new GameStateDetectionContext(GameState.WorldMap, GameState.WorldMap));
+                    if (lastState == null || !lastState.IsSuccessful
+                        || lastState.State != GameState.WorldMap)
+                        continue;
+                }
+                else
+                {
+                    focusedWorldMapFrameCount++;
+                    lastState = new GameDetectionResult
+                    {
+                        State = GameState.WorldMap,
+                        IsSuccessful = true,
+                        Evidence = new GameDetectionEvidence[0]
+                    };
+                }
+
+                verifiedFrameCount++;
+                foreach (KeyValuePair<TeamNumber, ImageMatchResult> item in frameBadgeMatches)
+                    badgeMatches[item.Key] = item.Value;
+                foreach (KeyValuePair<TeamNumber, ImageMatchResult> item in frameReadyMatchesByTeam)
+                    readyMatchesByTeam[item.Key] = item.Value;
+                busyTeamsFresh.UnionWith(frameBusyTeams);
+                lockedTeamsFresh.UnionWith(frameLockedTeams);
+                rowEvidenceTeams.UnionWith(frameRowEvidenceTeams);
                 }
             }
 
@@ -310,6 +343,8 @@ namespace ADB_Tool_Automation_Post_FB.Infrastructure.TeamSelection
                     lastLayout.Rows.Sum(row => row.Height));
             logger.Info($"[WorldMap Team Roster] DeviceName='{deviceName}', "
                 + $"ObservationFrames={verifiedFrameCount}/{options.ObservationFrameCount}, "
+                + $"FocusedWorldMapFrames={focusedWorldMapFrameCount}, "
+                + $"FullDetectionFallbacks={fullDetectionFallbackCount}, "
                 + $"Ready={ready}, ReadyTeams='{string.Join(",", readyTeams)}', "
                 + $"AvailableTeams='{string.Join(",", availableTeams)}', "
                 + $"BusyTeams='{string.Join(",", busyTeams)}', LockedTeams='{string.Join(",", lockedTeams)}', "
