@@ -11,6 +11,8 @@ using ADB_Tool_Automation_Post_FB.Infrastructure.TeamSelection;
 using System;
 using System.Collections.Generic;
 using System.Diagnostics;
+using System.Drawing;
+using System.IO;
 using System.Linq;
 using System.Threading;
 using System.Threading.Tasks;
@@ -118,8 +120,12 @@ namespace ADB_Tool_Automation_Post_FB.Infrastructure.MarchDispatch
                 // template and could keep a visibly ready "thu thập" dialog open for
                 // 20-30 seconds before its action was tapped.  Use one fresh frame and
                 // only the three stable team-selection controls instead.
-                lastFrame = await client.CaptureScreenshotPngAsync(deviceName, cancellationToken);
-                FocusedTeamSelectionEvidence initial = GetFocusedTeamSelectionEvidence(lastFrame);
+                // Keep the hot pre-dispatch checks on the decoded capture path.  Encoding a
+                // screenshot to PNG only to immediately decode it in the matcher was a
+                // substantial source of avoidable queue time with many devices.
+                FocusedTeamSelectionEvidence initial;
+                using (CapturedFrame initialFrame = await CaptureFrameAsync(deviceName, cancellationToken))
+                    initial = GetFocusedTeamSelectionEvidence(initialFrame);
                 result.InitialState = initial.IsReady
                     ? GameState.TeamSelection : GameState.Unknown;
                 result.FinalState = result.InitialState;
@@ -138,8 +144,9 @@ namespace ADB_Tool_Automation_Post_FB.Infrastructure.MarchDispatch
                 ImageRegion teamRegion = teamOptions.TeamRegions[request.ExpectedTeam];
                 if (request.RequireExpectedTeamSelected)
                 {
-                    lastFrame = await client.CaptureScreenshotPngAsync(deviceName, cancellationToken);
-                    Verification precheck = VerifySelection(lastFrame, request.ExpectedTeam, badgeId);
+                    Verification precheck;
+                    using (CapturedFrame precheckFrame = await CaptureFrameAsync(deviceName, cancellationToken))
+                        precheck = VerifySelection(precheckFrame, request.ExpectedTeam, badgeId);
                     result.ActualSelectedTeam = precheck.ActualSelectedTeam;
                     result.ObservedSelectedTeam = precheck.ActualSelectedTeam;
                     result.VisibleTeams = precheck.VisibleTeams;
@@ -169,39 +176,51 @@ namespace ADB_Tool_Automation_Post_FB.Infrastructure.MarchDispatch
                     logger.Info($"[Dispatch Guard] RunId='{request.RunId ?? string.Empty}', DeviceName='{deviceName}', ExpectedTeam='{request.ExpectedTeam}', ActionTapSent=false, Outcome='TrustedReadyTeam'");
                 }
 
-                byte[] beforeDispatch = await client.CaptureScreenshotPngAsync(deviceName, cancellationToken);
-                FocusedTeamSelectionEvidence fresh = GetFocusedTeamSelectionEvidence(beforeDispatch);
-                result.FinalState = fresh.IsReady ? GameState.TeamSelection : GameState.Unknown;
-                Verification freshSelection = request.RequireExpectedTeamSelected
-                    ? VerifySelection(beforeDispatch, request.ExpectedTeam, badgeId) : null;
-                if (freshSelection != null)
+                byte[] beforeDispatch;
+                TeamMarchTimerDetectionResult timerBefore;
+                using (CapturedFrame beforeDispatchFrame = await CaptureFrameAsync(deviceName, cancellationToken))
                 {
-                    result.ActualSelectedTeam = freshSelection.ActualSelectedTeam;
-                    result.ObservedSelectedTeam = freshSelection.ActualSelectedTeam;
-                    result.VisibleTeams = freshSelection.VisibleTeams;
-                }
-                ImageMatchResult action = fresh.Action;
-                logger.Info($"[March Dispatch] DeviceName='{deviceName}', FreshState='{result.FinalState}', FocusedReady={fresh.IsReady}, ExpectedSelectionRequired={request.RequireExpectedTeamSelected}, ExpectedBadgeFound={freshSelection?.BadgeFound}, ExpectedSelected={freshSelection?.SelectedFound}, ActionButtonFound={HasBounds(action)}, ActionButtonBounds={FormatBounds(action)}");
-                if (!fresh.IsReady || (request.RequireExpectedTeamSelected
-                    && (freshSelection.Ambiguous || !freshSelection.SelectedFound)))
-                    return await CompleteAsync(deviceName, result, DispatchMarchOutcome.ExpectedTeamNotSelected,
-                        "Đội dự kiến chưa được chọn chính xác; chưa thực hiện lệnh thu thập.", null,
-                        beforeDispatch, watch, cancellationToken);
-                if (!HasBounds(action))
-                    return await CompleteAsync(deviceName, result, DispatchMarchOutcome.ActionButtonUnavailable,
-                        "Team action button has no valid fresh bounds; no Tap was sent.", null,
-                        beforeDispatch, watch, cancellationToken);
+                    FocusedTeamSelectionEvidence fresh = GetFocusedTeamSelectionEvidence(beforeDispatchFrame);
+                    result.FinalState = fresh.IsReady ? GameState.TeamSelection : GameState.Unknown;
+                    Verification freshSelection = request.RequireExpectedTeamSelected
+                        ? VerifySelection(beforeDispatchFrame, request.ExpectedTeam, badgeId) : null;
+                    if (freshSelection != null)
+                    {
+                        result.ActualSelectedTeam = freshSelection.ActualSelectedTeam;
+                        result.ObservedSelectedTeam = freshSelection.ActualSelectedTeam;
+                        result.VisibleTeams = freshSelection.VisibleTeams;
+                    }
+                    ImageMatchResult action = fresh.Action;
+                    logger.Info($"[March Dispatch] DeviceName='{deviceName}', FreshState='{result.FinalState}', FocusedReady={fresh.IsReady}, ExpectedSelectionRequired={request.RequireExpectedTeamSelected}, ExpectedBadgeFound={freshSelection?.BadgeFound}, ExpectedSelected={freshSelection?.SelectedFound}, ActionButtonFound={HasBounds(action)}, ActionButtonBounds={FormatBounds(action)}");
+                    if (!fresh.IsReady || (request.RequireExpectedTeamSelected
+                        && (freshSelection.Ambiguous || !freshSelection.SelectedFound)))
+                    {
+                        beforeDispatch = beforeDispatchFrame.GetPngBytes();
+                        return await CompleteAsync(deviceName, result, DispatchMarchOutcome.ExpectedTeamNotSelected,
+                            "Đội dự kiến chưa được chọn chính xác; chưa thực hiện lệnh thu thập.", null,
+                            beforeDispatch, watch, cancellationToken);
+                    }
+                    if (!HasBounds(action))
+                    {
+                        beforeDispatch = beforeDispatchFrame.GetPngBytes();
+                        return await CompleteAsync(deviceName, result, DispatchMarchOutcome.ActionButtonUnavailable,
+                            "Team action button has no valid fresh bounds; no Tap was sent.", null,
+                            beforeDispatch, watch, cancellationToken);
+                    }
 
-                TeamMarchTimerDetectionResult timerBefore = timerDetector.DetectContent(
-                    beforeDispatch, timerRegion);
-                result.TimerContentBeforeDispatch = timerBefore.ContentDetected;
-                result.FinalTimerForegroundRatio = timerBefore.ForegroundRatio;
-                result.ExpectedTeamReadyBeforeDispatch = options.EnableReadyDisappearanceVerification
-                    && OptionalFound(beforeDispatch, TemplateId.WorldMapTeamReadyAnchor, timerRegion);
-                logger.Info($"[March Dispatch] DeviceName='{deviceName}', ExpectedTeam='{request.ExpectedTeam}', ReadyBeforeDispatch={result.ExpectedTeamReadyBeforeDispatch}, TimerContentBeforeDispatch={timerBefore.ContentDetected}, TimerForegroundRatio={timerBefore.ForegroundRatio:F4}, TimerRegion=({timerRegion.X},{timerRegion.Y},{timerRegion.Width},{timerRegion.Height})");
-                result.ActionButtonVerified = true;
-                lastFrame = beforeDispatch;
-                await TapActionAsync(deviceName, result, action, cancellationToken, false);
+                    // The timer analyser is byte based today.  Encode only this one capture
+                    // because it is also needed as the transition-comparison baseline.
+                    beforeDispatch = beforeDispatchFrame.GetPngBytes();
+                    timerBefore = timerDetector.DetectContent(beforeDispatch, timerRegion);
+                    result.TimerContentBeforeDispatch = timerBefore.ContentDetected;
+                    result.FinalTimerForegroundRatio = timerBefore.ForegroundRatio;
+                    result.ExpectedTeamReadyBeforeDispatch = options.EnableReadyDisappearanceVerification
+                        && OptionalFound(beforeDispatchFrame, TemplateId.WorldMapTeamReadyAnchor, timerRegion);
+                    logger.Info($"[March Dispatch] DeviceName='{deviceName}', ExpectedTeam='{request.ExpectedTeam}', ReadyBeforeDispatch={result.ExpectedTeamReadyBeforeDispatch}, TimerContentBeforeDispatch={timerBefore.ContentDetected}, TimerForegroundRatio={timerBefore.ForegroundRatio:F4}, TimerRegion=({timerRegion.X},{timerRegion.Y},{timerRegion.Width},{timerRegion.Height})");
+                    result.ActionButtonVerified = true;
+                    lastFrame = beforeDispatch;
+                    await TapActionAsync(deviceName, result, action, cancellationToken, false);
+                }
                 DateTimeOffset lastTapAt = DateTimeOffset.UtcNow;
                 DateTimeOffset transitionDeadline = DateTimeOffset.UtcNow.AddSeconds(
                     options.TransitionTimeoutSeconds);
@@ -502,9 +521,80 @@ namespace ADB_Tool_Automation_Post_FB.Infrastructure.MarchDispatch
             };
         }
 
+        private Verification VerifySelection(CapturedFrame frame, TeamNumber expectedTeam,
+            TemplateId badgeId)
+        {
+            TeamNumber[] teams = { TeamNumber.Team1, TeamNumber.Team2,
+                TeamNumber.Team3, TeamNumber.Team4 };
+            var badgeRequests = teams.Where(team => registry.Exists(BadgeId(team)))
+                .Select(team => new KeyValuePair<TeamNumber, ImageMatchRequest>(team,
+                    new ImageMatchRequest(registry.LoadBytes(BadgeId(team)),
+                        teamOptions.TeamSelectionRosterRegion))).ToArray();
+            IReadOnlyList<ImageMatchResult> badgeResults = FindMany(frame,
+                badgeRequests.Select(item => item.Value).ToArray());
+            var badges = new Dictionary<TeamNumber, ImageMatchResult>();
+            for (int index = 0; index < badgeRequests.Length; index++)
+                if (HasBounds(badgeResults[index]))
+                    badges[badgeRequests[index].Key] = badgeResults[index];
+            TeamSelectionRosterLayout layout = TeamSelectionRosterLayoutResolver.Resolve(
+                badges, teamOptions.TeamSelectionRosterRegion,
+                teamOptions.ExpectedWidth, teamOptions.ExpectedHeight);
+            bool badge = layout.Rows.TryGetValue(expectedTeam,
+                out ImageRegion expectedRegion);
+            var selected = new List<TeamNumber>();
+            foreach (KeyValuePair<TeamNumber, ImageRegion> item in layout.Rows)
+            {
+                ImageMatchResult selectedMatch = Match(frame,
+                    TemplateId.TeamSelectedBorderAnchor, item.Value);
+                if (HasBounds(selectedMatch) && Overlaps(item.Value, selectedMatch))
+                    selected.Add(item.Key);
+            }
+            return new Verification
+            {
+                BadgeFound = badge,
+                SelectedFound = selected.Contains(expectedTeam),
+                Ambiguous = selected.Count > 1 && !selected.Contains(expectedTeam),
+                ActualSelectedTeam = selected.Contains(expectedTeam)
+                    ? (TeamNumber?)expectedTeam
+                    : selected.Count == 1 ? (TeamNumber?)selected[0] : null,
+                VisibleTeams = layout.VisibleTeams,
+                ExpectedRowBounds = expectedRegion
+            };
+        }
+
         private ImageMatchResult Match(byte[] frame, TemplateId id, ImageRegion? region) =>
             matcher.Find(frame, registry.LoadBytes(id), region) ?? ImageMatchResult.NotFound();
+        private ImageMatchResult Match(CapturedFrame frame, TemplateId id, ImageRegion? region)
+        {
+            var frameMatcher = matcher as IFrameImageMatcher;
+            return frameMatcher != null
+                ? frameMatcher.Find(frame, registry.LoadBytes(id), region) ?? ImageMatchResult.NotFound()
+                : Match(frame.GetPngBytes(), id, region);
+        }
+        private IReadOnlyList<ImageMatchResult> FindMany(CapturedFrame frame,
+            IReadOnlyList<ImageMatchRequest> requests)
+        {
+            var frameMatcher = matcher as IFrameImageMatcher;
+            if (frameMatcher != null) return frameMatcher.FindMany(frame, requests);
+            var batchMatcher = matcher as IBatchImageMatcher;
+            if (batchMatcher != null) return batchMatcher.FindMany(frame.GetPngBytes(), requests);
+            return requests.Select(request => matcher.Find(frame.GetPngBytes(),
+                request.TemplatePng, request.SearchRegion)).ToArray();
+        }
         private FocusedTeamSelectionEvidence GetFocusedTeamSelectionEvidence(byte[] frame)
+        {
+            ImageMatchResult panel = Match(frame, TemplateId.TeamSelectionPanelAnchor, null);
+            ImageMatchResult adjust = Match(frame, TemplateId.TeamAdjustFormationButton, null);
+            ImageMatchResult action = Match(frame, TemplateId.TeamActionButtonEnabled, null);
+            return new FocusedTeamSelectionEvidence
+            {
+                PanelFound = HasBounds(panel),
+                AdjustFound = HasBounds(adjust),
+                ActionFound = HasBounds(action),
+                Action = action
+            };
+        }
+        private FocusedTeamSelectionEvidence GetFocusedTeamSelectionEvidence(CapturedFrame frame)
         {
             ImageMatchResult panel = Match(frame, TemplateId.TeamSelectionPanelAnchor, null);
             ImageMatchResult adjust = Match(frame, TemplateId.TeamAdjustFormationButton, null);
@@ -520,6 +610,8 @@ namespace ADB_Tool_Automation_Post_FB.Infrastructure.MarchDispatch
         private static string FormatBounds(ImageMatchResult match) => HasBounds(match)
             ? $"({match.X},{match.Y},{match.Width},{match.Height})" : string.Empty;
         private bool OptionalFound(byte[] frame, TemplateId id, ImageRegion region) =>
+            registry.Exists(id) && Match(frame, id, region).Found;
+        private bool OptionalFound(CapturedFrame frame, TemplateId id, ImageRegion region) =>
             registry.Exists(id) && Match(frame, id, region).Found;
         private static bool HasBounds(ImageMatchResult match) =>
             match != null && match.Found && match.Width > 0 && match.Height > 0;
@@ -615,6 +707,19 @@ namespace ADB_Tool_Automation_Post_FB.Infrastructure.MarchDispatch
             || mode == MarchVerificationMode.TimerProgressionPlusStructural
             || mode == MarchVerificationMode.WorldMapTimerAppeared
             || mode == MarchVerificationMode.WorldMapTimerProgression;
+
+        private async Task<CapturedFrame> CaptureFrameAsync(string deviceName,
+            CancellationToken cancellationToken)
+        {
+            var frameClient = client as IFrameCapturingLdPlayerClient;
+            if (frameClient != null)
+                return await frameClient.CaptureFrameAsync(deviceName, cancellationToken);
+
+            byte[] png = await client.CaptureScreenshotPngAsync(deviceName, cancellationToken);
+            using (var stream = new MemoryStream(png, writable: false))
+            using (var source = new Bitmap(stream))
+                return new CapturedFrame(new Bitmap(source), DateTimeOffset.UtcNow);
+        }
 
         private async Task<byte[]> TryCaptureAsync(string deviceName, CancellationToken token)
         {
