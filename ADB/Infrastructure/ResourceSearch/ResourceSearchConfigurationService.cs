@@ -28,7 +28,6 @@ namespace ADB_Tool_Automation_Post_FB.Infrastructure.ResourceSearch
         };
 
         private readonly IWorldMapNavigationService navigationService;
-        private readonly IGameStateDetector detector;
         private readonly ILdPlayerClient ldPlayerClient;
         private readonly ITemplateRegistry templateRegistry;
         private readonly IImageMatcher imageMatcher;
@@ -54,7 +53,7 @@ namespace ADB_Tool_Automation_Post_FB.Infrastructure.ResourceSearch
             IDiagnosticLogger logger, IResourceTemplateProfileProvider profileProvider)
         {
             this.navigationService = navigationService ?? throw new ArgumentNullException(nameof(navigationService));
-            this.detector = detector ?? throw new ArgumentNullException(nameof(detector));
+            if (detector == null) throw new ArgumentNullException(nameof(detector));
             this.ldPlayerClient = ldPlayerClient ?? throw new ArgumentNullException(nameof(ldPlayerClient));
             this.templateRegistry = templateRegistry ?? throw new ArgumentNullException(nameof(templateRegistry));
             this.imageMatcher = imageMatcher ?? throw new ArgumentNullException(nameof(imageMatcher));
@@ -110,24 +109,29 @@ namespace ADB_Tool_Automation_Post_FB.Infrastructure.ResourceSearch
                         return Complete(result, watch, "ResourceSearchPanel could not be opened.", navigation.ErrorMessage);
                     }
 
-                    GameDetectionResult panel = await detector.DetectAsync(deviceName, cancellationToken);
-                    List<ConfigurationTemplateEvidence> panelEvidence = PanelEvidence(panel);
-                    ResourceSearchPanelReadinessResult panelReadiness =
-                        ResourceSearchPanelReadinessVerifier.Evaluate(
-                            panel, navigation.SearchButtonBoundsStable,
-                            navigation.ScreenshotConfirmed);
-                    if (!panelReadiness.IsReady)
+                    // This workflow has just opened the resource panel.  Re-running the
+                    // global detector here used to search every unrelated game overlay
+                    // before configuration could begin.  The panel handoff is defined by
+                    // the Search button in its own lower-panel ROI, so verify that exact
+                    // control only.
+                    byte[] panelScreenshot = await ldPlayerClient.CaptureScreenshotPngAsync(
+                        deviceName, cancellationToken);
+                    ConfigurationTemplateEvidence panelSearchButton = Match(
+                        panelScreenshot, TemplateId.SearchButtonEnabled);
+                    if (!panelSearchButton.Found)
                     {
-                        AddStep(steps, "EnsurePanel", false, 1, panelEvidence,
+                        AddStep(steps, "EnsurePanel", false, 1,
+                            new[] { panelSearchButton },
                             "ResourceSearchPanel chưa sẵn sàng; chưa bắt đầu kiểm tra toast.",
-                            panelReadiness.Reason ?? panel.ErrorMessage);
-                        result.FinalState = panel.State;
+                            "SearchButtonEnabled was not found in the configured Search-button ROI.");
+                        result.FinalState = GameState.Unknown;
                         return Complete(result, watch,
                             "ResourceSearchPanel chưa sẵn sàng; chưa bắt đầu kiểm tra toast.",
-                            panelReadiness.Reason ?? panel.ErrorMessage);
+                            "SearchButtonEnabled was not found in the configured Search-button ROI.");
                     }
-                    result.FinalState = panel.State;
-                    AddStep(steps, "EnsurePanel", true, 1, panelEvidence,
+                    result.FinalState = GameState.ResourceSearchPanel;
+                    AddStep(steps, "EnsurePanel", true, 1,
+                        new[] { panelSearchButton },
                         "ResourceSearchPanel verified by SearchButton ROI.", null);
                 }
 
@@ -1063,7 +1067,9 @@ namespace ADB_Tool_Automation_Post_FB.Infrastructure.ResourceSearch
             // The blue level-plus glyph is also common in the upper HUD.  Within
             // the farm resource panel it only belongs below the screen midpoint,
             // so never search the full frame for this one template.
-            ImageRegion? region = templateId == TemplateId.LevelPlusButton
+            ImageRegion? region = templateId == TemplateId.SearchButtonEnabled
+                ? CreateSearchButtonRegion(screenshot)
+                : templateId == TemplateId.LevelPlusButton
                 ? CreateLowerHalfRegion(screenshot)
                 : (ImageRegion?)null;
             ImageMatchResult match = imageMatcher.Find(screenshot, templateRegistry.LoadBytes(templateId), region);
@@ -1079,6 +1085,18 @@ namespace ADB_Tool_Automation_Post_FB.Infrastructure.ResourceSearch
             {
                 int top = image.Height / 2;
                 return new ImageRegion(0, top, image.Width, Math.Max(1, image.Height - top));
+            }
+        }
+
+        private static ImageRegion CreateSearchButtonRegion(byte[] screenshot)
+        {
+            using (var stream = new MemoryStream(screenshot, writable: false))
+            using (var image = Image.FromStream(stream))
+            {
+                int x = image.Width * 3 / 5;
+                int y = image.Height * 3 / 5;
+                return new ImageRegion(x, y, Math.Max(1, image.Width - x),
+                    Math.Max(1, image.Height - y));
             }
         }
 
@@ -1245,25 +1263,6 @@ namespace ADB_Tool_Automation_Post_FB.Infrastructure.ResourceSearch
                 case 7: templateId = TemplateId.LevelValue7; return true;
                 default: templateId = default(TemplateId); return false;
             }
-        }
-
-        private static bool IsVerifiedPanel(GameDetectionResult result)
-        {
-            return ResourceSearchPanelReadinessVerifier.Evaluate(result).IsReady;
-        }
-
-        private static List<ConfigurationTemplateEvidence> PanelEvidence(GameDetectionResult result)
-        {
-            var evidence = new List<ConfigurationTemplateEvidence>();
-            if (result?.Evidence == null) return evidence;
-            foreach (GameDetectionEvidence item in result.Evidence.Where(item =>
-                item.TemplateId == TemplateId.ResourceSearchPanelAnchor
-                || item.TemplateId == TemplateId.LevelMinusButton
-                || item.TemplateId == TemplateId.ResourceTabSelected
-                || item.TemplateId == TemplateId.ResourceTabUnselected
-                || item.TemplateId == TemplateId.SearchButtonEnabled))
-                evidence.Add(Evidence(item.TemplateId, item.MatchResult, item.Message));
-            return evidence;
         }
 
         private static ConfigurationTemplateEvidence Evidence(TemplateId id,

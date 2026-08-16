@@ -28,7 +28,6 @@ namespace ADB_Tool_Automation_Post_FB.Infrastructure.TeamSelection
         };
 
         private readonly IResourcePopupVerificationService popupVerifier;
-        private readonly IGameStateDetector detector;
         private readonly ILdPlayerClient client;
         private readonly ITemplateRegistry registry;
         private readonly IImageMatcher matcher;
@@ -44,7 +43,7 @@ namespace ADB_Tool_Automation_Post_FB.Infrastructure.TeamSelection
             IDiagnosticLogger logger)
         {
             this.popupVerifier = popupVerifier ?? throw new ArgumentNullException(nameof(popupVerifier));
-            this.detector = detector ?? throw new ArgumentNullException(nameof(detector));
+            if (detector == null) throw new ArgumentNullException(nameof(detector));
             this.client = client ?? throw new ArgumentNullException(nameof(client));
             this.registry = registry ?? throw new ArgumentNullException(nameof(registry));
             this.matcher = matcher ?? throw new ArgumentNullException(nameof(matcher));
@@ -89,35 +88,20 @@ namespace ADB_Tool_Automation_Post_FB.Infrastructure.TeamSelection
             byte[] lastFrame = null;
             try
             {
-                GameDetectionResult initial = await detector.DetectAsync(deviceName, cancellationToken);
-                result.InitialState = initial.State;
-                result.FinalState = initial.State;
-                result.FinalEvidence = initial.Evidence ?? new GameDetectionEvidence[0];
-                if (!initial.IsSuccessful)
-                {
-                    lastFrame = await TryCaptureDiagnosticFrameAsync(deviceName, cancellationToken);
-                    return await CompleteAsync(deviceName, result, OpenTeamSelectionOutcome.Failed,
-                        "Initial state detection failed.", initial.ErrorMessage, lastFrame, watch, cancellationToken);
-                }
-
-                if (initial.State == GameState.TeamSelection)
-                {
-                    ApplyTeamEvidence(result, initial.Evidence);
-                    if (result.TeamSelectionVerified)
-                        return Complete(result, OpenTeamSelectionOutcome.AlreadyOpen,
-                            "Team Selection is already open; no Tap was sent.", null, watch);
-
-                    lastFrame = await client.CaptureScreenshotPngAsync(deviceName, cancellationToken);
-                    TeamMatch freshTeam = MatchTeam(lastFrame);
-                    ApplyTeamMatch(result, freshTeam);
-                    result.FinalEvidence = freshTeam.Evidence;
-                    if (freshTeam.Confirmed)
-                        return Complete(result, OpenTeamSelectionOutcome.AlreadyOpen,
-                            "Team Selection was verified on a fresh screenshot; no Tap was sent.", null, watch);
-                    return await CompleteAsync(deviceName, result, OpenTeamSelectionOutcome.ResourcePopupNotReady,
-                        "TeamSelection state lacked required UI evidence; no Tap was sent.", null,
-                        lastFrame, watch, cancellationToken);
-                }
+                // This workflow can only safely start from two focused overlays:
+                // TeamSelection or ResourcePopup.  A global state pass here scans
+                // unrelated City/WorldMap/Search templates and used to dominate the
+                // normal Gather -> TeamSelection transition under multi-device load.
+                lastFrame = await client.CaptureScreenshotPngAsync(deviceName, cancellationToken);
+                TeamMatch initialTeam = MatchTeam(lastFrame);
+                result.InitialState = initialTeam.Confirmed
+                    ? GameState.TeamSelection : GameState.Unknown;
+                result.FinalState = result.InitialState;
+                result.FinalEvidence = initialTeam.Evidence;
+                ApplyTeamMatch(result, initialTeam);
+                if (initialTeam.Confirmed)
+                    return Complete(result, OpenTeamSelectionOutcome.AlreadyOpen,
+                        "Team Selection is already open; no Tap was sent.", null, watch);
 
                 ResourcePopupVerificationResult popup;
                 if (popupVerifier is IResourceAwarePopupVerificationService resourceAware)
@@ -143,15 +127,16 @@ namespace ADB_Tool_Automation_Post_FB.Infrastructure.TeamSelection
 
                 lastFrame = await client.CaptureScreenshotPngAsync(deviceName, cancellationToken);
                 PopupMatch freshPopup = MatchPopup(lastFrame, expectedResource);
-                GameDetectionResult freshState = detector.Detect(lastFrame);
+                result.FinalState = freshPopup.Anchor.Found
+                    ? GameState.ResourcePopup : GameState.Unknown;
                 result.FinalEvidence = freshPopup.Evidence;
                 // The production tap target is Gather itself.  Rematching that popup-only
                 // control on the fresh frame is the authoritative pre-tap check; requiring the
                 // older title crop here would reintroduce the false negative already resolved
                 // by ResourcePopupVerificationService.
-                if (!freshState.IsSuccessful || !freshPopup.Gather.Found)
+                if (!freshPopup.Gather.Found)
                     return await CompleteAsync(deviceName, result, OpenTeamSelectionOutcome.ResourcePopupNotReady,
-                        "Resource Popup disappeared before Gather could be tapped.", freshState.ErrorMessage,
+                        "Resource Popup disappeared before Gather could be tapped.", null,
                         lastFrame, watch, cancellationToken);
                 if (!HasBounds(freshPopup.Gather.MatchResult))
                     return await CompleteAsync(deviceName, result, OpenTeamSelectionOutcome.GatherButtonNotAvailable,
@@ -203,14 +188,9 @@ namespace ADB_Tool_Automation_Post_FB.Infrastructure.TeamSelection
                         continue;
                     }
 
-                    // The focused Team Selection evidence is authoritative when present. Run
-                    // the much heavier global detector only when it did not confirm the panel.
-                    GameDetectionResult state = detector.Detect(lastFrame);
-                    if (!state.IsSuccessful)
-                        return await CompleteAsync(deviceName, result, OpenTeamSelectionOutcome.Failed,
-                            "State detection failed during Team Selection transition.", state.ErrorMessage,
-                            lastFrame, watch, cancellationToken);
-                    result.FinalState = state.State;
+                    PopupMatch visiblePopup = MatchPopup(lastFrame, expectedResource);
+                    result.FinalState = visiblePopup.Anchor.Found
+                        ? GameState.ResourcePopup : GameState.Unknown;
                     observations.Add(new TeamSelectionObservation
                     {
                         Timestamp = DateTimeOffset.Now, State = result.FinalState,
@@ -223,9 +203,9 @@ namespace ADB_Tool_Automation_Post_FB.Infrastructure.TeamSelection
                             : team.Confirmed ? "Team Selection confirmed but not ready."
                             : "Team Selection not confirmed."
                     });
-                    LogObservation(deviceName, result, team, state.State);
+                    LogObservation(deviceName, result, team, result.FinalState);
 
-                    if (state.State == GameState.Unknown)
+                    if (result.FinalState == GameState.Unknown)
                     {
                         result.TransientUnknownFrameCount++;
                         if (result.TransientUnknownFrameCount > options.MaxTransientUnknownFrames)
@@ -236,18 +216,15 @@ namespace ADB_Tool_Automation_Post_FB.Infrastructure.TeamSelection
                     }
                     result.TransientUnknownFrameCount = 0;
 
-                    PopupMatch visiblePopup = MatchPopup(lastFrame, expectedResource);
                     if (visiblePopup.Gather.Found
                         && result.GatherTapCount < options.MaxGatherTapAttempts)
                     {
                         lastFrame = await client.CaptureScreenshotPngAsync(deviceName, cancellationToken);
-                        GameDetectionResult retryState = detector.Detect(lastFrame);
                         PopupMatch retryPopup = MatchPopup(lastFrame, expectedResource);
-                        if (!retryState.IsSuccessful || !retryPopup.Ready
-                            || !HasBounds(retryPopup.Gather.MatchResult))
+                        if (!retryPopup.Ready || !HasBounds(retryPopup.Gather.MatchResult))
                             return await CompleteAsync(deviceName, result, OpenTeamSelectionOutcome.TransitionTimeout,
                                 "Gather retry was unsafe because Resource Popup was no longer ready.",
-                                retryState.ErrorMessage, lastFrame, watch, cancellationToken);
+                                null, lastFrame, watch, cancellationToken);
                         await Task.Delay(options.GatherTapRetryDelayMs, cancellationToken);
                         await TapGatherAsync(deviceName, retryPopup.Gather.MatchResult, result, cancellationToken);
                         // A busy multi-device screenshot queue can consume the original
@@ -265,7 +242,7 @@ namespace ADB_Tool_Automation_Post_FB.Infrastructure.TeamSelection
                         // the underlying WorldMap classification for a vanished popup.
                         continue;
                     }
-                    else if (state.State != GameState.ResourcePopup)
+                    else if (result.FinalState != GameState.ResourcePopup)
                     {
                         return await CompleteAsync(deviceName, result, OpenTeamSelectionOutcome.TransitionTimeout,
                             "Transition left Resource Popup without opening Team Selection.", null,
@@ -383,19 +360,6 @@ namespace ADB_Tool_Automation_Post_FB.Infrastructure.TeamSelection
         private static bool HasBounds(ImageMatchResult match) =>
             match != null && match.Found && match.Width > 0 && match.Height > 0;
 
-        private static void ApplyTeamEvidence(OpenTeamSelectionResult result,
-            IReadOnlyList<GameDetectionEvidence> evidence)
-        {
-            bool panel = Found(evidence, TemplateId.TeamSelectionPanelAnchor);
-            bool adjust = Found(evidence, TemplateId.TeamAdjustFormationButton);
-            bool action = Found(evidence, TemplateId.TeamActionButtonEnabled);
-            result.PanelAnchorVerified = panel;
-            result.AdjustFormationButtonVerified = adjust;
-            result.TeamActionButtonVerified = action;
-            result.TeamSelectionVerified = panel && (adjust || action);
-            result.TeamSelectionReady = panel && adjust && action;
-        }
-
         private static void ApplyTeamMatch(OpenTeamSelectionResult result, TeamMatch match)
         {
             result.PanelAnchorVerified = match.Panel.Found;
@@ -404,9 +368,6 @@ namespace ADB_Tool_Automation_Post_FB.Infrastructure.TeamSelection
             result.TeamSelectionVerified = match.Confirmed;
             result.TeamSelectionReady = match.Ready;
         }
-
-        private static bool Found(IReadOnlyList<GameDetectionEvidence> evidence, TemplateId id) =>
-            evidence != null && evidence.Any(item => item.TemplateId == id && item.Found);
 
         private string ValidateTemplates(ResourceType expectedResource)
         {

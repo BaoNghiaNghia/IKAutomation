@@ -19,7 +19,6 @@ namespace ADB_Tool_Automation_Post_FB.Infrastructure.TeamSelection
     public sealed class WorldMapTeamAvailabilityService : IWorldMapTeamAvailabilityService
     {
         private readonly IWorldMapNavigationService navigation;
-        private readonly IGameStateDetector detector;
         private readonly ILdPlayerClient client;
         private readonly ITemplateRegistry registry;
         private readonly IImageMatcher matcher;
@@ -36,7 +35,7 @@ namespace ADB_Tool_Automation_Post_FB.Infrastructure.TeamSelection
             IDiagnosticLogger logger)
         {
             this.navigation = navigation ?? throw new ArgumentNullException(nameof(navigation));
-            this.detector = detector ?? throw new ArgumentNullException(nameof(detector));
+            if (detector == null) throw new ArgumentNullException(nameof(detector));
             this.client = client ?? throw new ArgumentNullException(nameof(client));
             this.registry = registry ?? throw new ArgumentNullException(nameof(registry));
             this.matcher = matcher ?? throw new ArgumentNullException(nameof(matcher));
@@ -55,6 +54,7 @@ namespace ADB_Tool_Automation_Post_FB.Infrastructure.TeamSelection
             TemplateId[] requiredTemplates =
             {
                 TemplateId.WorldMapTeamReadyAnchor,
+                TemplateId.WorldMapAnchor,
                 TemplateId.Team1Badge,
                 TemplateId.Team2Badge,
                 TemplateId.Team3Badge,
@@ -169,7 +169,7 @@ namespace ADB_Tool_Automation_Post_FB.Infrastructure.TeamSelection
             var rowEvidenceTeams = new HashSet<TeamNumber>();
             int verifiedFrameCount = 0;
             int focusedWorldMapFrameCount = 0;
-            int fullDetectionFallbackCount = 0;
+            int focusedWorldMapAnchorFallbackCount = 0;
             bool earlyCompleted = false;
             GameDetectionResult lastState = null;
             WorldMapTeamRosterLayout lastLayout = null;
@@ -263,20 +263,22 @@ namespace ADB_Tool_Automation_Post_FB.Infrastructure.TeamSelection
                     }
                     else
                     {
-                        fullDetectionFallbackCount++;
-                        lastState = Detect(screenshot, deviceName,
-                            new GameStateDetectionContext(GameState.WorldMap, GameState.WorldMap));
-                        if (lastState == null || !lastState.IsSuccessful
-                            || lastState.State != GameState.WorldMap)
+                        focusedWorldMapAnchorFallbackCount++;
+                        if (!await HasFocusedWorldMapAnchorAsync(screenshot,
+                            cancellationToken))
                             break;
+                        lastState = new GameDetectionResult
+                        {
+                            State = GameState.WorldMap,
+                            IsSuccessful = true,
+                            Evidence = new GameDetectionEvidence[0]
+                        };
                     }
 
-                    // A successful full-state fallback proves the screen, but it
-                    // did not produce any roster evidence. Repeating the same
-                    // costly 22-template detector on two more frames cannot make
-                    // a safe team decision. Return the existing cached/uncertain
-                    // roster promptly; the scheduler will scan again on its next
-                    // normal cycle.
+                    // The focused map-anchor fallback proves this is still the map,
+                    // but it produced no roster evidence. Repeating more roster
+                    // frames cannot make a safe team decision, so return the
+                    // existing cached/uncertain roster promptly.
                     verifiedFrameCount++;
                     earlyCompleted = true;
                     break;
@@ -448,7 +450,7 @@ namespace ADB_Tool_Automation_Post_FB.Infrastructure.TeamSelection
             logger.Info($"[WorldMap Team Roster] DeviceName='{deviceName}', "
                 + $"ObservationFrames={verifiedFrameCount}/{options.ObservationFrameCount}, "
                 + $"FocusedWorldMapFrames={focusedWorldMapFrameCount}, "
-                + $"FullDetectionFallbacks={fullDetectionFallbackCount}, "
+                + $"FocusedWorldMapAnchorFallbacks={focusedWorldMapAnchorFallbackCount}, "
                 + $"EarlyCompletion={earlyCompleted}, "
                 + $"Ready={ready}, ReadyTeams='{string.Join(",", readyTeams)}', "
                 + $"AvailableTeams='{string.Join(",", availableTeams)}', "
@@ -551,13 +553,19 @@ namespace ADB_Tool_Automation_Post_FB.Infrastructure.TeamSelection
                 return new CapturedFrame(new Bitmap(source), DateTimeOffset.UtcNow);
         }
 
-        private GameDetectionResult Detect(CapturedFrame frame, string deviceName,
-            GameStateDetectionContext context)
+        private async Task<bool> HasFocusedWorldMapAnchorAsync(CapturedFrame frame,
+            CancellationToken cancellationToken)
         {
-            var frameDetector = detector as IFrameGameStateDetector;
-            return frameDetector != null
-                ? frameDetector.Detect(frame, deviceName, context)
-                : detector.Detect(frame.GetPngBytes());
+            int top = frame.Height / 2;
+            ImageRegion region = new ImageRegion(0, top, frame.Width / 2,
+                Math.Max(1, frame.Height - top));
+            var requests = new[]
+            {
+                new ImageMatchRequest(registry.LoadBytes(TemplateId.WorldMapAnchor), region)
+            };
+            IReadOnlyList<ImageMatchResult> matches = await FindManyAsync(frame, requests,
+                cancellationToken);
+            return matches.Count == 1 && IsMatchInsideRegion(matches[0], region);
         }
 
         private async Task<IReadOnlyList<ImageMatchResult>> FindManyAsync(CapturedFrame frame,

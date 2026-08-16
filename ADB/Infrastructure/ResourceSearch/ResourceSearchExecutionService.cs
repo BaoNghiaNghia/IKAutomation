@@ -135,15 +135,23 @@ namespace ADB_Tool_Automation_Post_FB.Infrastructure.ResourceSearch
                     }
                     else
                     {
-                        GameDetectionResult current = await detector.DetectAsync(deviceName, cancellationToken);
-                        result.InitialState = current.State;
-                        result.FinalState = current.State;
-                        RememberKnownState(deviceName, current.State, context);
-                        if (!ResourceSearchPanelReadinessVerifier.Evaluate(current).IsReady)
-                            return await CompleteAsync(deviceName, result, context, ResourceSearchOutcome.Failed,
-                                "SearchButtonEnabled was not found in the configured ResourceSearchPanel ROI; Search was not tapped.",
-                                ResourceSearchPanelReadinessVerifier.Evaluate(current).Reason
-                                    ?? current.ErrorMessage, watch, cancellationToken);
+                        using (CapturedFrame panelFrame = await CaptureFrameAsync(
+                            deviceName, cancellationToken))
+                        {
+                            ImageMatchResult panelSearchButton = Match(panelFrame,
+                                TemplateId.SearchButtonEnabled,
+                                CreateSearchButtonRegion(panelFrame));
+                            if (!HasBounds(panelSearchButton))
+                                return await CompleteAsync(deviceName, result, context,
+                                    ResourceSearchOutcome.Failed,
+                                    "SearchButtonEnabled was not found in the configured ResourceSearchPanel ROI; Search was not tapped.",
+                                    "FocusedSearchButtonProbeFailed", watch, cancellationToken);
+                        }
+                        result.InitialState = GameState.ResourceSearchPanel;
+                        result.FinalState = GameState.ResourceSearchPanel;
+                        RememberKnownState(deviceName, GameState.ResourceSearchPanel, context);
+                        logger.Info($"[Resource Search Execution] DeviceName='{deviceName}', "
+                            + "PanelReadyBy='FocusedSearchButtonRoi', FullGameStateDetectionSkipped=true");
                     }
                 }
 
@@ -170,7 +178,8 @@ namespace ADB_Tool_Automation_Post_FB.Infrastructure.ResourceSearch
                             "Search screenshot resolution is invalid.", resolutionError, watch, cancellationToken);
                     }
 
-                    ImageMatchResult button = Match(beforeTap, TemplateId.SearchButtonEnabled, null);
+                    ImageMatchResult button = Match(beforeTap, TemplateId.SearchButtonEnabled,
+                        CreateSearchButtonRegion(beforeTap));
                     if (!HasBounds(button))
                     {
                         // The button briefly disappears while the panel applies the
@@ -907,6 +916,14 @@ namespace ADB_Tool_Automation_Post_FB.Infrastructure.ResourceSearch
             return frameMatcher != null
                 ? frameMatcher.Find(frame, template, region)
                 : imageMatcher.Find(frame.GetPngBytes(), template, region);
+        }
+
+        private static ImageRegion CreateSearchButtonRegion(CapturedFrame frame)
+        {
+            int x = frame.Width * 3 / 5;
+            int y = frame.Height * 3 / 5;
+            return new ImageRegion(x, y, Math.Max(1, frame.Width - x),
+                Math.Max(1, frame.Height - y));
         }
 
         private async Task<IReadOnlyList<ImageMatchResult>> MatchResourceAreaLv2AnchorsAsync(

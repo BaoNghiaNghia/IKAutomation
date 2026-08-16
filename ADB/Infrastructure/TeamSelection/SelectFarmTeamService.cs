@@ -114,7 +114,7 @@ namespace ADB_Tool_Automation_Post_FB.Infrastructure.TeamSelection
                 // selection screen: a focused frame validates the panel, badge and
                 // action control, then the normal detector remains a bounded fallback
                 // only when that focused evidence is unavailable.
-                if (useInitialCityTeam && client is IFrameCapturingLdPlayerClient)
+                if (useInitialCityTeam)
                     return await SelectAuthoritativeCityTeamFastAsync(deviceName, request,
                         target.TargetTeam.Value, result, attempts, attemptedTeams, watch,
                         cancellationToken);
@@ -1396,14 +1396,11 @@ namespace ADB_Tool_Automation_Post_FB.Infrastructure.TeamSelection
             bool adjust = HasBounds(matches[1]);
             bool action = HasBounds(matches[2]);
             var evidence = new FocusedTeamSelectionEvidence(panel, adjust, action, false);
-            if (evidence.IsSelectionReady)
-                return evidence;
-
-            // Keep the complete detector as a single bounded compatibility fallback
-            // for legacy templates/screens where focused anchors are unavailable.
-            GameDetectionResult fallback = detector.Detect(frame.GetPngBytes());
-            return new FocusedTeamSelectionEvidence(IsSelectionScreen(fallback),
-                HasEnabledAction(fallback), HasEnabledAction(fallback), true);
+            // The normal City -> popup -> team-selection handoff needs only the
+            // panel, Adjust and action anchors.  Do not turn a transient animation
+            // miss into a complete state scan; the bounded caller will capture the
+            // next focused frame before it ever sends another input.
+            return evidence;
         }
 
         private async Task<ImageMatchResult> MatchFrameAsync(CapturedFrame frame,

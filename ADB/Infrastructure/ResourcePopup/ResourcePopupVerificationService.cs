@@ -21,7 +21,6 @@ namespace ADB_Tool_Automation_Post_FB.Infrastructure.ResourcePopup
             TemplateId.GatherButtonEnabled
         };
 
-        private readonly IGameStateDetector detector;
         private readonly ILdPlayerClient client;
         private readonly ITemplateRegistry registry;
         private readonly IImageMatcher matcher;
@@ -43,7 +42,7 @@ namespace ADB_Tool_Automation_Post_FB.Infrastructure.ResourcePopup
             IResourcePopupDiagnosticStore diagnosticStore, IDiagnosticLogger logger,
             IResourceTemplateProfileProvider profileProvider)
         {
-            this.detector = detector ?? throw new ArgumentNullException(nameof(detector));
+            if (detector == null) throw new ArgumentNullException(nameof(detector));
             this.client = client ?? throw new ArgumentNullException(nameof(client));
             this.registry = registry ?? throw new ArgumentNullException(nameof(registry));
             this.matcher = matcher ?? throw new ArgumentNullException(nameof(matcher));
@@ -104,15 +103,7 @@ namespace ADB_Tool_Automation_Post_FB.Infrastructure.ResourcePopup
                 {
                     cancellationToken.ThrowIfCancellationRequested();
                     lastFrame = await client.CaptureScreenshotPngAsync(deviceName, cancellationToken);
-                    GameDetectionResult detection = detector.Detect(lastFrame);
-                    if (detection == null || !detection.IsSuccessful)
-                        return await CompleteWithDiagnosticAsync(deviceName, result,
-                            ResourcePopupOutcome.Failed, watch, "Game state detection failed.",
-                            detection?.ErrorMessage, lastFrame, cancellationToken);
-
                     result.ObservedFrameCount++;
-                    if (result.ObservedFrameCount == 1) result.InitialState = detection.State;
-                    result.FinalState = detection.State;
                     GameDetectionEvidence anchor = Match(lastFrame,
                         TemplateId.ResourcePopupInfoAnchor, options.HeaderRegion, "HeaderRegion");
                     ResourceTemplateProfile expectedProfile = profileProvider.Get(resourceType);
@@ -151,7 +142,10 @@ namespace ADB_Tool_Automation_Post_FB.Infrastructure.ResourcePopup
                     int signals = (popupAnchorVerified ? 1 : 0)
                         + (expectedResourceVerified ? 1 : 0) + (gather.Found ? 1 : 0);
                     bool detected = signals >= 2 && popupAnchorVerified;
-                    popupObserved |= detected || detection.State == GameState.ResourcePopup;
+                    if (result.ObservedFrameCount == 1)
+                        result.InitialState = detected ? GameState.ResourcePopup : GameState.Unknown;
+                    result.FinalState = detected ? GameState.ResourcePopup : GameState.Unknown;
+                    popupObserved |= detected;
                     if (!expectedTitle.Found && mismatch.HasValue && gather.Found)
                         return Complete(result, ResourcePopupOutcome.ResourcePopupMismatch, watch,
                             $"Popup title belongs to {mismatch.Value}, not expected {resourceType}; no Gather input was sent.", null);
