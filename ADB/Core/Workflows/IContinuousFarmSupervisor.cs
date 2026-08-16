@@ -141,7 +141,8 @@ namespace ADB_Tool_Automation_Post_FB.Core.Workflows
             if (backgroundRosterPriorityPollMs < 1 || backgroundRosterPriorityPollMs > 5000)
                 throw new ArgumentOutOfRangeException(nameof(backgroundRosterPriorityPollMs));
             if (backgroundRosterMaxDeferralMs < 0
-                || backgroundRosterMaxDeferralMs < backgroundRosterPriorityPollMs)
+                || (backgroundRosterMaxDeferralMs > 0
+                    && backgroundRosterMaxDeferralMs < backgroundRosterPriorityPollMs))
                 throw new ArgumentOutOfRangeException(nameof(backgroundRosterMaxDeferralMs));
             CycleIntervalMs = cycleIntervalMs;
             FailureRetryDelayMs = failureRetryDelayMs;
