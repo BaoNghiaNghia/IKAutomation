@@ -28,6 +28,7 @@ internal static class Program
     private static int Main()
     {
         Run("TeamSelection not ready sends no Tap", NotReady);
+        Run("Focused ready check avoids global detector before Gather", FocusedReadyCheckAvoidsGlobalDetector);
         Run("Expected Team4 not selected sends no Tap", NotSelected);
         Run("Expected Team2 with selected Team3 sends no action", WrongObservedTeamBlocked);
         Run("Trusted ready team only requires fresh action", TrustedReadyTeamOnlyRequiresFreshAction);
@@ -119,7 +120,8 @@ internal static class Program
     private static void Is(bool value, string message) { if (!value) throw new Exception(message); }
     private static void Eq<T>(T expected, T actual, string message) { if (!Equals(expected, actual)) throw new Exception($"{message} Expected={expected}, Actual={actual}"); }
 
-    private static void NotReady() { var h = new Harness(); h.Detector.Initial = h.Detector.Result(GameState.Unknown, false); var r = Execute(h); Eq(DispatchMarchOutcome.TeamSelectionNotReady, r.Outcome, "outcome"); Eq(0, h.Client.Taps.Count, "tap count"); }
+    private static void NotReady() { var h = new Harness(); h.Matcher.Rule = (f,id,roi) => id == TemplateId.TeamSelectionPanelAnchor ? ImageMatchResult.NotFound() : h.Matcher.Default(f,id,roi); var r = Execute(h); Eq(DispatchMarchOutcome.TeamSelectionNotReady, r.Outcome, "outcome"); Eq(0, h.Client.Taps.Count, "tap count"); }
+    private static void FocusedReadyCheckAvoidsGlobalDetector() { var h = new Harness(); var r = Execute(h); Eq(DispatchMarchOutcome.MarchStarted, r.Outcome, "outcome"); Eq(0, h.Detector.AsyncCalls, "global async detector ran before Gather"); Is(h.Detector.FrameCalls > 0, "post-tap validation was not retained"); }
     private static void NotSelected() { var h = new Harness(); h.Matcher.Rule = (f, id, roi) => id == TemplateId.TeamSelectedBorderAnchor ? ImageMatchResult.NotFound() : h.Matcher.Default(f, id, roi); var r = Execute(h); Eq(DispatchMarchOutcome.ExpectedTeamNotSelected, r.Outcome, "outcome"); Eq(0, h.Client.Taps.Count, "tap count"); }
     private static void WrongObservedTeamBlocked() { var h=new Harness();h.Request.ExpectedTeam=TeamNumber.Team2;h.Matcher.SelectedTeam=TeamNumber.Team3;var r=Execute(h);Eq(DispatchMarchOutcome.ExpectedTeamNotSelected,r.Outcome,"outcome");Eq((TeamNumber?)TeamNumber.Team3,r.ObservedSelectedTeam,"observed team");Is(r.SelectionMismatch,"mismatch flag");Is(!r.ActionTapSent&&h.Client.Taps.Count==0,"wrong team action"); }
     private static void TrustedReadyTeamOnlyRequiresFreshAction() { var h=new Harness(); h.Request.ExpectedTeam=TeamNumber.Team2; h.Request.RequireExpectedTeamSelected=false; h.Matcher.SelectedTeam=TeamNumber.Team3; var r=Execute(h); Eq(DispatchMarchOutcome.MarchStarted,r.Outcome,"outcome"); Eq(1,r.ActionTapCount,"fresh yellow action tap"); Is(r.ExpectedTeamSelectedBeforeTap,"trusted ready team"); }
@@ -377,10 +379,11 @@ internal static class Program
     private sealed class FakeDetector:IGameStateDetector
     {
         public GameDetectionResult Initial; public GameState AfterState=GameState.WorldMap; public int DelayMs;
+        public int AsyncCalls; public int FrameCalls;
         public Queue<GameState> AsyncStates = new Queue<GameState>();
         public FakeDetector(){Initial=Result(GameState.TeamSelection,true);}
-        public async Task<GameDetectionResult> DetectAsync(string d,CancellationToken t){t.ThrowIfCancellationRequested();if(DelayMs>0)await Task.Delay(DelayMs,t);return AsyncStates.Count>0?Result(AsyncStates.Dequeue(),false):Initial;}
-        public GameDetectionResult Detect(byte[] f)=>Result(f[0]<=2?GameState.TeamSelection:AfterState,f[0]<=2);
+        public async Task<GameDetectionResult> DetectAsync(string d,CancellationToken t){AsyncCalls++;t.ThrowIfCancellationRequested();if(DelayMs>0)await Task.Delay(DelayMs,t);return AsyncStates.Count>0?Result(AsyncStates.Dequeue(),false):Initial;}
+        public GameDetectionResult Detect(byte[] f){FrameCalls++;return Result(f[0]<=2?GameState.TeamSelection:AfterState,f[0]<=2);}
         public GameDetectionResult Result(GameState s,bool ready)=>new GameDetectionResult{State=s,IsSuccessful=s!=GameState.Unknown,Evidence=ready?new[]{TemplateId.TeamSelectionPanelAnchor,TemplateId.TeamAdjustFormationButton,TemplateId.TeamActionButtonEnabled}.Select(id=>new GameDetectionEvidence{TemplateId=id,Found=true}).ToArray():new GameDetectionEvidence[0]};
     }
     private sealed class FakeRegistry:ITemplateRegistry

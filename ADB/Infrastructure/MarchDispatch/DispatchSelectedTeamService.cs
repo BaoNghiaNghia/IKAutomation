@@ -113,16 +113,24 @@ namespace ADB_Tool_Automation_Post_FB.Infrastructure.MarchDispatch
                     return Complete(result, DispatchMarchOutcome.Failed,
                         "Required march-dispatch templates are incomplete; no Tap was sent.", templateError, watch);
 
-                GameDetectionResult initial = await detector.DetectAsync(deviceName, cancellationToken);
-                result.InitialState = initial.State;
-                result.FinalState = initial.State;
-                if (!IsReady(initial))
-                {
-                    lastFrame = await TryCaptureAsync(deviceName, cancellationToken);
+                // Dispatch is entered only after OpenTeamSelection and SelectTeam have
+                // already accepted the panel.  A full game-state pass here used every
+                // template and could keep a visibly ready "thu thập" dialog open for
+                // 20-30 seconds before its action was tapped.  Use one fresh frame and
+                // only the three stable team-selection controls instead.
+                lastFrame = await client.CaptureScreenshotPngAsync(deviceName, cancellationToken);
+                FocusedTeamSelectionEvidence initial = GetFocusedTeamSelectionEvidence(lastFrame);
+                result.InitialState = initial.IsReady
+                    ? GameState.TeamSelection : GameState.Unknown;
+                result.FinalState = result.InitialState;
+                logger.Info($"[March Dispatch Ready Check] DeviceName='{deviceName}', "
+                    + $"Phase='Initial', PanelFound={initial.PanelFound}, "
+                    + $"AdjustFound={initial.AdjustFound}, ActionFound={initial.ActionFound}, "
+                    + $"ActionBounds={FormatBounds(initial.Action)}, Ready={initial.IsReady}");
+                if (!initial.IsReady)
                     return await CompleteAsync(deviceName, result, DispatchMarchOutcome.TeamSelectionNotReady,
-                        "Team Selection is not ready; no Tap was sent.", initial.ErrorMessage,
+                        "Team Selection is not ready; no Tap was sent.", null,
                         lastFrame, watch, cancellationToken);
-                }
                 result.TeamSelectionVerified = true;
 
                 ImageRegion timerRegion = options.TeamTimerRegions[request.ExpectedTeam];
@@ -162,7 +170,8 @@ namespace ADB_Tool_Automation_Post_FB.Infrastructure.MarchDispatch
                 }
 
                 byte[] beforeDispatch = await client.CaptureScreenshotPngAsync(deviceName, cancellationToken);
-                GameDetectionResult freshState = detector.Detect(beforeDispatch);
+                FocusedTeamSelectionEvidence fresh = GetFocusedTeamSelectionEvidence(beforeDispatch);
+                result.FinalState = fresh.IsReady ? GameState.TeamSelection : GameState.Unknown;
                 Verification freshSelection = request.RequireExpectedTeamSelected
                     ? VerifySelection(beforeDispatch, request.ExpectedTeam, badgeId) : null;
                 if (freshSelection != null)
@@ -171,9 +180,9 @@ namespace ADB_Tool_Automation_Post_FB.Infrastructure.MarchDispatch
                     result.ObservedSelectedTeam = freshSelection.ActualSelectedTeam;
                     result.VisibleTeams = freshSelection.VisibleTeams;
                 }
-                ImageMatchResult action = Match(beforeDispatch, TemplateId.TeamActionButtonEnabled, null);
-                logger.Info($"[March Dispatch] DeviceName='{deviceName}', FreshState='{freshState.State}', ExpectedSelectionRequired={request.RequireExpectedTeamSelected}, ExpectedBadgeFound={freshSelection?.BadgeFound}, ExpectedSelected={freshSelection?.SelectedFound}, ActionButtonFound={HasBounds(action)}, ActionButtonBounds={(HasBounds(action) ? $"({action.X},{action.Y},{action.Width},{action.Height})" : string.Empty)}");
-                if (!IsReady(freshState) || (request.RequireExpectedTeamSelected
+                ImageMatchResult action = fresh.Action;
+                logger.Info($"[March Dispatch] DeviceName='{deviceName}', FreshState='{result.FinalState}', FocusedReady={fresh.IsReady}, ExpectedSelectionRequired={request.RequireExpectedTeamSelected}, ExpectedBadgeFound={freshSelection?.BadgeFound}, ExpectedSelected={freshSelection?.SelectedFound}, ActionButtonFound={HasBounds(action)}, ActionButtonBounds={FormatBounds(action)}");
+                if (!fresh.IsReady || (request.RequireExpectedTeamSelected
                     && (freshSelection.Ambiguous || !freshSelection.SelectedFound)))
                     return await CompleteAsync(deviceName, result, DispatchMarchOutcome.ExpectedTeamNotSelected,
                         "Đội dự kiến chưa được chọn chính xác; chưa thực hiện lệnh thu thập.", null,
@@ -495,6 +504,21 @@ namespace ADB_Tool_Automation_Post_FB.Infrastructure.MarchDispatch
 
         private ImageMatchResult Match(byte[] frame, TemplateId id, ImageRegion? region) =>
             matcher.Find(frame, registry.LoadBytes(id), region) ?? ImageMatchResult.NotFound();
+        private FocusedTeamSelectionEvidence GetFocusedTeamSelectionEvidence(byte[] frame)
+        {
+            ImageMatchResult panel = Match(frame, TemplateId.TeamSelectionPanelAnchor, null);
+            ImageMatchResult adjust = Match(frame, TemplateId.TeamAdjustFormationButton, null);
+            ImageMatchResult action = Match(frame, TemplateId.TeamActionButtonEnabled, null);
+            return new FocusedTeamSelectionEvidence
+            {
+                PanelFound = HasBounds(panel),
+                AdjustFound = HasBounds(adjust),
+                ActionFound = HasBounds(action),
+                Action = action
+            };
+        }
+        private static string FormatBounds(ImageMatchResult match) => HasBounds(match)
+            ? $"({match.X},{match.Y},{match.Width},{match.Height})" : string.Empty;
         private bool OptionalFound(byte[] frame, TemplateId id, ImageRegion region) =>
             registry.Exists(id) && Match(frame, id, region).Found;
         private static bool HasBounds(ImageMatchResult match) =>
@@ -522,10 +546,14 @@ namespace ADB_Tool_Automation_Post_FB.Infrastructure.MarchDispatch
             return true;
         }
 
-        private static bool IsReady(GameDetectionResult result) =>
-            result != null && result.IsSuccessful && result.State == GameState.TeamSelection
-            && ReadyTemplates.All(id => result.Evidence != null
-                && result.Evidence.Any(item => item.TemplateId == id && item.Found));
+        private sealed class FocusedTeamSelectionEvidence
+        {
+            public bool PanelFound { get; set; }
+            public bool AdjustFound { get; set; }
+            public bool ActionFound { get; set; }
+            public ImageMatchResult Action { get; set; }
+            public bool IsReady => PanelFound && AdjustFound && ActionFound;
+        }
         private static TemplateId BadgeId(TeamNumber team)
         {
             switch (team)
