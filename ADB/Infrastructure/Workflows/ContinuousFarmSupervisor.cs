@@ -271,8 +271,11 @@ namespace ADB_Tool_Automation_Post_FB.Infrastructure.Workflows
                         snapshot.LastBackoffDelayMs = ordinaryDelay;
                         DateTimeOffset ordinaryRetryAt = DateTimeOffset.UtcNow
                             .AddMilliseconds(ordinaryDelay);
-                        Transition(snapshot, ContinuousFarmDeviceState.Recovering,
-                            "Cycle failed; this device will retry independently.",
+                        // A normal business/workflow retry is not a device recovery.  Keeping
+                        // it in Waiting prevents the UI from reporting a broad "recovering"
+                        // incident when a resource/roster attempt simply needs another cycle.
+                        Transition(snapshot, ContinuousFarmDeviceState.Waiting,
+                            "Cycle did not complete; this device will retry independently.",
                             attempt.Error, ordinaryRetryAt);
                         Publish(snapshot, progress, null, cancellationToken);
                         await Task.Delay(ordinaryDelay, cancellationToken);
@@ -530,9 +533,37 @@ namespace ADB_Tool_Automation_Post_FB.Infrastructure.Workflows
         }
 
         private static bool IsExpectedLongRunningOperation(
-            MultiDeviceOneShotFarmProgress progress) =>
-            progress?.DeviceProgress?.Stage == OneShotFarmProgressStage.RunningFarmStep
-                && progress.DeviceProgress.CurrentStep == OneShotFarmStep.ResourceFarmFallback;
+            MultiDeviceOneShotFarmProgress progress)
+        {
+            if (progress == null)
+                return false;
+
+            // A device may spend several minutes in navigation, search, team selection or
+            // dispatch before it reports ResourceFarmFallback.  Treat every non-terminal
+            // active farm phase as long-running once it has reported progress.  This keeps
+            // the five-minute watchdog from cancelling many healthy devices in lockstep.
+            switch (progress.Stage)
+            {
+                case MultiDeviceOneShotFarmStage.PreflightQueued:
+                case MultiDeviceOneShotFarmStage.Preflight:
+                case MultiDeviceOneShotFarmStage.Queued:
+                case MultiDeviceOneShotFarmStage.ReadyForGameplay:
+                case MultiDeviceOneShotFarmStage.DispatchingTeam:
+                case MultiDeviceOneShotFarmStage.Requeued:
+                case MultiDeviceOneShotFarmStage.WaitingForReadyTeam:
+                case MultiDeviceOneShotFarmStage.Running:
+                    return true;
+                default:
+                    break;
+            }
+
+            OneShotFarmProgressStage? stage = progress.DeviceProgress?.Stage;
+            return stage.HasValue
+                && stage.Value != OneShotFarmProgressStage.Completed
+                && stage.Value != OneShotFarmProgressStage.Failed
+                && stage.Value != OneShotFarmProgressStage.Cancelled
+                && stage.Value != OneShotFarmProgressStage.Stopping;
+        }
 
         private static int? GetNextCheckDelayMs(DateTimeOffset? nextCheckAt)
         {
@@ -723,14 +754,17 @@ namespace ADB_Tool_Automation_Post_FB.Infrastructure.Workflows
             {
                 case MultiDeviceOneShotFarmStage.PreflightQueued:
                 case MultiDeviceOneShotFarmStage.Preflight: state = ContinuousFarmDeviceState.Preflight; break;
-                case MultiDeviceOneShotFarmStage.PreflightFailed: state = ContinuousFarmDeviceState.Recovering; break;
+                // The supervisor classifies the returned attempt after the runner exits.
+                // Until then, a preflight/farm failure can still be a normal retry (for
+                // example no usable resource), so it must not be displayed as recovery.
+                case MultiDeviceOneShotFarmStage.PreflightFailed: state = ContinuousFarmDeviceState.Waiting; break;
                 case MultiDeviceOneShotFarmStage.Queued: state = ContinuousFarmDeviceState.Ready; break;
                 case MultiDeviceOneShotFarmStage.ReadyForGameplay: state = ContinuousFarmDeviceState.Ready; break;
                 case MultiDeviceOneShotFarmStage.DispatchingTeam: state = ContinuousFarmDeviceState.Running; break;
                 case MultiDeviceOneShotFarmStage.Requeued: state = ContinuousFarmDeviceState.Ready; break;
                 case MultiDeviceOneShotFarmStage.WaitingForReadyTeam: state = ContinuousFarmDeviceState.Waiting; break;
                 case MultiDeviceOneShotFarmStage.Completed: state = ContinuousFarmDeviceState.Waiting; break;
-                case MultiDeviceOneShotFarmStage.Failed: state = ContinuousFarmDeviceState.Recovering; break;
+                case MultiDeviceOneShotFarmStage.Failed: state = ContinuousFarmDeviceState.Waiting; break;
                 case MultiDeviceOneShotFarmStage.Cancelled: state = ContinuousFarmDeviceState.Stopped; break;
                 default: state = MapDeviceProgress(progress.DeviceProgress); break;
             }
@@ -746,7 +780,7 @@ namespace ADB_Tool_Automation_Post_FB.Infrastructure.Workflows
                 case OneShotFarmProgressStage.WaitingForReadyTeam: return ContinuousFarmDeviceState.Waiting;
                 case OneShotFarmProgressStage.ReadyTeamFound:
                 case OneShotFarmProgressStage.PreparingFarm: return ContinuousFarmDeviceState.Ready;
-                case OneShotFarmProgressStage.Failed: return ContinuousFarmDeviceState.Recovering;
+                case OneShotFarmProgressStage.Failed: return ContinuousFarmDeviceState.Waiting;
                 case OneShotFarmProgressStage.Cancelled:
                 case OneShotFarmProgressStage.Stopping: return ContinuousFarmDeviceState.Stopped;
                 default: return ContinuousFarmDeviceState.Running;

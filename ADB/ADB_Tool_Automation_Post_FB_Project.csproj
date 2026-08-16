@@ -430,6 +430,5 @@
   <ItemGroup />
   <Import Project="$(MSBuildToolsPath)\Microsoft.CSharp.targets" />
   <!-- The .NET CLI does not automatically import WPF targets for non-SDK-style projects. -->
-  <Import Project="$(MSBuildSDKsPath)\Microsoft.NET.Sdk.WindowsDesktop\targets\Microsoft.WinFX.targets"
-          Condition="'$(MSBuildRuntimeType)' == 'Core'" />
+  <Import Project="$(MSBuildSDKsPath)\Microsoft.NET.Sdk.WindowsDesktop\targets\Microsoft.WinFX.targets" Condition="'$(MSBuildRuntimeType)' == 'Core'" />
 </Project>
