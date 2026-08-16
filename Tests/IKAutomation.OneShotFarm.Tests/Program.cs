@@ -1161,7 +1161,7 @@ internal static class Program
             "configured maximum concurrency");
         Is(config.Contains("Operations.MaxConcurrentScreenshots\" value=\"4\""),
             "screenshot gate changed");
-        Is(config.Contains("Operations.MaxConcurrentVisionOperations\" value=\"8\""),
+        Is(config.Contains("Operations.MaxConcurrentVisionOperations\" value=\"12\""),
             "vision gate changed");
     }
 
