@@ -7,6 +7,8 @@ using ADB_Tool_Automation_Post_FB.Core.Vision;
 using System;
 using System.Collections.Generic;
 using System.Diagnostics;
+using System.Drawing;
+using System.IO;
 using System.Linq;
 using System.Threading;
 using System.Threading.Tasks;
@@ -106,6 +108,16 @@ namespace ADB_Tool_Automation_Post_FB.Infrastructure.TeamSelection
                     return Complete(result, SelectFarmTeamOutcome.Failed,
                         "Farm team selection templates are incomplete; no Tap was sent.", error, watch);
                 }
+
+                // The city roster has already identified the exact ready team.  Do not
+                // spend several complete game-state passes rediscovering the same
+                // selection screen: a focused frame validates the panel, badge and
+                // action control, then the normal detector remains a bounded fallback
+                // only when that focused evidence is unavailable.
+                if (useInitialCityTeam && client is IFrameCapturingLdPlayerClient)
+                    return await SelectAuthoritativeCityTeamFastAsync(deviceName, request,
+                        target.TargetTeam.Value, result, attempts, attemptedTeams, watch,
+                        cancellationToken);
 
                 GameDetectionResult initial = await detector.DetectAsync(deviceName, cancellationToken);
                 result.InitialState = initial.State;
@@ -1125,6 +1137,334 @@ namespace ADB_Tool_Automation_Post_FB.Infrastructure.TeamSelection
                     await Task.Delay(250, cancellationToken);
             }
             return last;
+        }
+
+        /// <summary>
+        /// Fast path for the normal farm hand-off.  The preceding City roster scan is
+        /// authoritative for the team number, so this method only needs focused
+        /// TeamSelection evidence and one fresh target-row match before input.
+        /// </summary>
+        private async Task<SelectFarmTeamResult> SelectAuthoritativeCityTeamFastAsync(
+            string deviceName, TeamSelectionRequest request, TeamNumber team,
+            SelectFarmTeamResult result, IList<TeamSelectionAttempt> attempts,
+            IList<TeamNumber> attemptedTeams, Stopwatch watch,
+            CancellationToken cancellationToken)
+        {
+            TemplateId? badgeIdValue = BadgeId(team);
+            if (!badgeIdValue.HasValue || !registry.Exists(badgeIdValue.Value))
+            {
+                result.FailureReason = "TargetBadgeTemplateUnavailable";
+                return Complete(result, SelectFarmTeamOutcome.Failed,
+                    "Không có mẫu nhận diện đội dự kiến; không gửi thao tác chọn đội.",
+                    result.FailureReason, watch);
+            }
+
+            if (!options.TeamRegions.TryGetValue(team, out ImageRegion configuredRow))
+            {
+                result.FailureReason = "TargetRowNotConfigured";
+                return Complete(result, SelectFarmTeamOutcome.Failed,
+                    "Không có vùng chọn an toàn cho đội dự kiến; không gửi thao tác chọn đội.",
+                    result.FailureReason, watch);
+            }
+
+            attemptedTeams.Add(team);
+            result.VisibleTeams = request.WorldMapAvailableTeams == null
+                ? new[] { team }
+                : request.WorldMapAvailableTeams.Where(options.TeamRegions.ContainsKey)
+                    .OrderBy(item => (int)item).ToArray();
+
+            CapturedFrame lastFrame = null;
+            try
+            {
+                for (int attemptNumber = 1;
+                    attemptNumber <= options.MaxSelectionAttemptsPerTeam;
+                    attemptNumber++)
+                {
+                    cancellationToken.ThrowIfCancellationRequested();
+                    lastFrame?.Dispose();
+                    lastFrame = await CaptureFocusedFrameAsync(deviceName, cancellationToken);
+                    FocusedTeamSelectionEvidence focused = await InspectFocusedTeamSelectionAsync(
+                        lastFrame, cancellationToken);
+                    ApplyFocusedSelectionState(result, focused);
+                    if (!focused.IsSelectionReady)
+                    {
+                        result.FailureReason = "FocusedTeamSelectionNotReady";
+                        return await CompleteFrameAsync(deviceName, result,
+                            SelectFarmTeamOutcome.TeamSelectionNotReady,
+                            "Màn hình chọn đội chưa sẵn sàng trên ảnh mới; không gửi thao tác chọn đội.",
+                            result.FailureReason, lastFrame, watch, cancellationToken);
+                    }
+
+                    ImageMatchResult badge = await MatchFrameAsync(lastFrame,
+                        badgeIdValue.Value, configuredRow, cancellationToken);
+                    bool disabled = await IsDisabledAsync(lastFrame, configuredRow,
+                        cancellationToken);
+                    var selectionAttempt = new TeamSelectionAttempt
+                    {
+                        TeamNumber = team,
+                        BadgeFound = HasBounds(badge),
+                        BadgeMatch = badge,
+                        DisabledDetected = disabled,
+                        RowBounds = configuredRow,
+                        TapAttempt = attemptNumber,
+                        SelectedBefore = result.ActualSelectedTeam
+                    };
+                    attempts.Add(selectionAttempt);
+
+                    if (disabled)
+                    {
+                        result.FailureReason = "TargetTeamDisabled";
+                        selectionAttempt.Message = "Đội dự kiến đang bận; không gửi thao tác chọn đội.";
+                        return await CompleteFrameAsync(deviceName, result,
+                            SelectFarmTeamOutcome.ExpectedTeamUnavailable,
+                            "Đội dự kiến không còn sẵn sàng.", result.FailureReason,
+                            lastFrame, watch, cancellationToken);
+                    }
+
+                    bool trustedConfiguredRow = CanUseTrustedConfiguredTargetRow(request,
+                        team, options.TeamRegions);
+                    if (!HasBounds(badge) && !trustedConfiguredRow)
+                    {
+                        result.FailureReason = "TargetBadgeNotFound";
+                        selectionAttempt.Message = "Không thấy badge đội dự kiến trên ảnh mới; không gửi thao tác.";
+                        return await CompleteFrameAsync(deviceName, result,
+                            SelectFarmTeamOutcome.ExpectedTeamNotVisible,
+                            "Không thấy đội dự kiến trong màn hình chọn đội.", result.FailureReason,
+                            lastFrame, watch, cancellationToken);
+                    }
+
+                    int tapX;
+                    int tapY;
+                    string tapSkipReason;
+                    if (!TryGetSafeTapPoint(configuredRow, badge, options.TeamRegions,
+                        out tapX, out tapY, out tapSkipReason))
+                    {
+                        result.FailureReason = tapSkipReason ?? "TargetGeometryInvalid";
+                        selectionAttempt.Message = "Không xác định được vùng tap an toàn cho đội dự kiến.";
+                        return await CompleteFrameAsync(deviceName, result,
+                            SelectFarmTeamOutcome.Failed,
+                            "Không xác định được vùng chọn đội an toàn.", result.FailureReason,
+                            lastFrame, watch, cancellationToken);
+                    }
+
+                    int frameAgeMs = (int)Math.Max(0,
+                        (DateTimeOffset.UtcNow - lastFrame.CapturedAt).TotalMilliseconds);
+                    if (frameAgeMs > options.MaxInputFrameAgeMs)
+                    {
+                        // A focused rematch is cheaper than using a stale row and is
+                        // required before every production tap.
+                        lastFrame.Dispose();
+                        lastFrame = await CaptureFocusedFrameAsync(deviceName, cancellationToken);
+                        focused = await InspectFocusedTeamSelectionAsync(lastFrame,
+                            cancellationToken);
+                        ApplyFocusedSelectionState(result, focused);
+                        if (!focused.IsSelectionReady)
+                        {
+                            result.FailureReason = "FocusedTeamSelectionNotReadyAfterRecapture";
+                            return await CompleteFrameAsync(deviceName, result,
+                                SelectFarmTeamOutcome.TeamSelectionNotReady,
+                                "Màn hình chọn đội không còn sẵn sàng trên ảnh xác nhận.",
+                                result.FailureReason, lastFrame, watch, cancellationToken);
+                        }
+                        badge = await MatchFrameAsync(lastFrame, badgeIdValue.Value,
+                            configuredRow, cancellationToken);
+                        disabled = await IsDisabledAsync(lastFrame, configuredRow,
+                            cancellationToken);
+                        if (disabled || (!HasBounds(badge) && !trustedConfiguredRow)
+                            || !TryGetSafeTapPoint(configuredRow, badge, options.TeamRegions,
+                                out tapX, out tapY, out tapSkipReason))
+                        {
+                            result.FailureReason = disabled ? "TargetTeamDisabledAfterRecapture"
+                                : tapSkipReason ?? "TargetBadgeNotFoundAfterRecapture";
+                            return await CompleteFrameAsync(deviceName, result,
+                                disabled ? SelectFarmTeamOutcome.ExpectedTeamUnavailable
+                                    : SelectFarmTeamOutcome.ExpectedTeamNotVisible,
+                                "Không thể xác nhận đội dự kiến trên ảnh mới trước thao tác.",
+                                result.FailureReason, lastFrame, watch, cancellationToken);
+                        }
+                    }
+
+                    LogTapPlanned(deviceName, team, attemptNumber, badge, false,
+                        configuredRow, tapX, tapY, true, null, result.TeamTapCount,
+                        lastFrame.CapturedAt);
+                    try
+                    {
+                        await client.TapAsync(deviceName, tapX, tapY, cancellationToken);
+                        result.TeamTapCount++;
+                        selectionAttempt.TapSent = true;
+                        LogTapIssued(deviceName, team, attemptNumber, tapX, tapY, true,
+                            result.TeamTapCount, null);
+                    }
+                    catch (OperationCanceledException)
+                    {
+                        throw;
+                    }
+                    catch (Exception exception)
+                    {
+                        LogTapIssued(deviceName, team, attemptNumber, tapX, tapY, false,
+                            result.TeamTapCount, exception.Message);
+                        if (attemptNumber == options.MaxSelectionAttemptsPerTeam)
+                        {
+                            result.FailureReason = "TargetTapFailed";
+                            return await CompleteFrameAsync(deviceName, result,
+                                SelectFarmTeamOutcome.Failed,
+                                "Không gửi được thao tác chọn đội dự kiến.", exception.Message,
+                                lastFrame, watch, cancellationToken);
+                        }
+                        await Task.Delay(options.TapRetryDelayMs, cancellationToken);
+                        continue;
+                    }
+
+                    // A pair of focused observations is enough for the normal path.
+                    // No selected-border scan is necessary: City selected this exact
+                    // ready team before the panel was opened.
+                    for (int observation = 1; observation <= 2; observation++)
+                    {
+                        await Task.Delay(options.PollIntervalMs, cancellationToken);
+                        lastFrame.Dispose();
+                        lastFrame = await CaptureFocusedFrameAsync(deviceName, cancellationToken);
+                        focused = await InspectFocusedTeamSelectionAsync(lastFrame,
+                            cancellationToken);
+                        ApplyFocusedSelectionState(result, focused);
+                        result.SelectionVerificationFrames++;
+                        logger.Info($"[Farm Team Selection Focused PostTap] DeviceName='{deviceName}', ExpectedTeam='{team}', Attempt={attemptNumber}, Observation={observation}, PanelFound={focused.PanelFound}, ActionEnabled={focused.ActionEnabled}, FallbackUsed={focused.DetectorFallbackUsed}, Outcome='{(focused.IsSelectionReady && focused.ActionEnabled ? "Accepted" : "Retry")}'");
+                        if (focused.IsSelectionReady && focused.ActionEnabled)
+                        {
+                            selectionAttempt.SelectedVerified = true;
+                            selectionAttempt.Message = "Đã chọn đội từ roster City và xác nhận nút thu thập trên ảnh mới.";
+                            result.SelectedTeam = team;
+                            result.ActualSelectedTeam = team;
+                            result.SelectedStateVerified = true;
+                            result.FinalState = GameState.TeamSelection;
+                            return Complete(result, SelectFarmTeamOutcome.TeamSelected,
+                                $"Đã chọn đội {((int)team)} từ lần quét City.", null, watch);
+                        }
+                    }
+
+                    result.FailureReason = "PostTapActionNotReady";
+                    selectionAttempt.Message = "Màn hình chọn đội chưa sẵn sàng sau tap; sẽ thử lại có giới hạn.";
+                    if (attemptNumber < options.MaxSelectionAttemptsPerTeam)
+                        await Task.Delay(options.TapRetryDelayMs, cancellationToken);
+                }
+
+                return await CompleteFrameAsync(deviceName, result,
+                    SelectFarmTeamOutcome.TeamSelectionNotReady,
+                    "Không xác nhận được nút thu thập sau khi chọn đội dự kiến.",
+                    result.FailureReason ?? "PostTapActionNotReady", lastFrame, watch,
+                    cancellationToken);
+            }
+            finally
+            {
+                lastFrame?.Dispose();
+            }
+        }
+
+        private async Task<CapturedFrame> CaptureFocusedFrameAsync(string deviceName,
+            CancellationToken cancellationToken)
+        {
+            var frameClient = client as IFrameCapturingLdPlayerClient;
+            if (frameClient != null)
+                return await frameClient.CaptureFrameAsync(deviceName, cancellationToken);
+
+            byte[] png = await client.CaptureScreenshotPngAsync(deviceName, cancellationToken);
+            using (var stream = new MemoryStream(png, false))
+            using (var decoded = new Bitmap(stream))
+                return new CapturedFrame(new Bitmap(decoded), DateTimeOffset.UtcNow);
+        }
+
+        private async Task<FocusedTeamSelectionEvidence> InspectFocusedTeamSelectionAsync(
+            CapturedFrame frame, CancellationToken cancellationToken)
+        {
+            var requests = ReadyTemplates.Select(id => new ImageMatchRequest(
+                registry.LoadBytes(id))).ToArray();
+            IReadOnlyList<ImageMatchResult> matches;
+            var asyncMatcher = matcher as IAsyncFrameImageMatcher;
+            if (asyncMatcher != null)
+                matches = await asyncMatcher.FindManyAsync(frame, requests, cancellationToken);
+            else
+            {
+                var frameMatcher = matcher as IFrameImageMatcher;
+                matches = frameMatcher != null
+                    ? frameMatcher.FindMany(frame, requests)
+                    : (matcher as IBatchImageMatcher) != null
+                        ? ((IBatchImageMatcher)matcher).FindMany(frame.GetPngBytes(), requests)
+                        : requests.Select(request => matcher.Find(frame.GetPngBytes(),
+                            request.TemplatePng, request.SearchRegion)).ToArray();
+            }
+
+            bool panel = HasBounds(matches[0]);
+            bool adjust = HasBounds(matches[1]);
+            bool action = HasBounds(matches[2]);
+            var evidence = new FocusedTeamSelectionEvidence(panel, adjust, action, false);
+            if (evidence.IsSelectionReady)
+                return evidence;
+
+            // Keep the complete detector as a single bounded compatibility fallback
+            // for legacy templates/screens where focused anchors are unavailable.
+            GameDetectionResult fallback = detector.Detect(frame.GetPngBytes());
+            return new FocusedTeamSelectionEvidence(IsSelectionScreen(fallback),
+                HasEnabledAction(fallback), HasEnabledAction(fallback), true);
+        }
+
+        private async Task<ImageMatchResult> MatchFrameAsync(CapturedFrame frame,
+            TemplateId id, ImageRegion region, CancellationToken cancellationToken)
+        {
+            byte[] template = registry.LoadBytes(id);
+            var asyncMatcher = matcher as IAsyncFrameImageMatcher;
+            if (asyncMatcher != null)
+                return await asyncMatcher.FindAsync(frame, template, region,
+                    cancellationToken) ?? ImageMatchResult.NotFound();
+            var frameMatcher = matcher as IFrameImageMatcher;
+            return (frameMatcher != null
+                ? frameMatcher.Find(frame, template, region)
+                : matcher.Find(frame.GetPngBytes(), template, region))
+                ?? ImageMatchResult.NotFound();
+        }
+
+        private async Task<bool> IsDisabledAsync(CapturedFrame frame, ImageRegion region,
+            CancellationToken cancellationToken)
+        {
+            return registry.Exists(TemplateId.TeamDisabledAnchor)
+                && HasBounds(await MatchFrameAsync(frame, TemplateId.TeamDisabledAnchor,
+                    region, cancellationToken));
+        }
+
+        private static void ApplyFocusedSelectionState(SelectFarmTeamResult result,
+            FocusedTeamSelectionEvidence focused)
+        {
+            result.InitialState = result.InitialState == GameState.Unknown
+                ? (focused.IsSelectionReady ? GameState.TeamSelection : GameState.Unknown)
+                : result.InitialState;
+            result.FinalState = focused.IsSelectionReady ? GameState.TeamSelection
+                : result.FinalState;
+            result.TeamSelectionScreenVerified |= focused.IsSelectionReady;
+        }
+
+        private async Task<SelectFarmTeamResult> CompleteFrameAsync(string deviceName,
+            SelectFarmTeamResult result, SelectFarmTeamOutcome outcome, string message,
+            string error, CapturedFrame frame, Stopwatch watch, CancellationToken token)
+        {
+            byte[] png = frame == null ? null : frame.GetPngBytes();
+            return await CompleteAsync(deviceName, result, outcome, message, error, png,
+                watch, token);
+        }
+
+        private sealed class FocusedTeamSelectionEvidence
+        {
+            public FocusedTeamSelectionEvidence(bool panelFound, bool adjustFound,
+                bool actionEnabled, bool detectorFallbackUsed)
+            {
+                PanelFound = panelFound;
+                AdjustFound = adjustFound;
+                ActionEnabled = actionEnabled;
+                DetectorFallbackUsed = detectorFallbackUsed;
+            }
+
+            public bool PanelFound { get; }
+            public bool AdjustFound { get; }
+            public bool ActionEnabled { get; }
+            public bool DetectorFallbackUsed { get; }
+            public bool IsSelectionReady => PanelFound && (AdjustFound || ActionEnabled);
         }
 
         private static bool IsSelectionScreen(GameDetectionResult state) =>
