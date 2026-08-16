@@ -70,17 +70,78 @@ namespace ADB_Tool_Automation_Post_FB.Infrastructure.TeamSelection
                 return Failed($"Required template '{missingTemplate.Value}' was not found at '{path}'.");
             }
 
-            NavigationResult navigationResult = await navigation.EnsureWorldMapAsync(
-                deviceName.Trim(), cancellationToken);
-            if (!navigationResult.Success || navigationResult.FinalState != GameState.WorldMap)
+            string normalizedDeviceName = deviceName.Trim();
+
+            // A numbered roster row or its ready label is a stable, focused WorldMap
+            // anchor.  Do this inexpensive read first: falling through to
+            // EnsureWorldMapAsync on every roster refresh can invoke the global
+            // detector when WorldMapAnchor is temporarily missed, which blocks all
+            // of the other devices behind expensive unrelated template checks.
+            bool focusedRosterVisible = await operationLock.RunAsync(normalizedDeviceName,
+                token => HasFocusedRosterEvidenceAsync(normalizedDeviceName, token),
+                cancellationToken);
+            if (!focusedRosterVisible)
             {
-                return Failed("WorldMap could not be verified before checking team availability.",
-                    navigationResult.ErrorMessage ?? navigationResult.Message,
-                    navigationResult.FinalState);
+                NavigationResult navigationResult = await navigation.EnsureWorldMapAsync(
+                    normalizedDeviceName, cancellationToken);
+                if (!navigationResult.Success || navigationResult.FinalState != GameState.WorldMap)
+                {
+                    return Failed("WorldMap could not be verified before checking team availability.",
+                        navigationResult.ErrorMessage ?? navigationResult.Message,
+                        navigationResult.FinalState);
+                }
             }
 
-            return await operationLock.RunAsync(deviceName.Trim(),
-                token => CheckCoreAsync(deviceName.Trim(), token), cancellationToken);
+            return await operationLock.RunAsync(normalizedDeviceName,
+                token => CheckCoreAsync(normalizedDeviceName, focusedRosterVisible, token), cancellationToken);
+        }
+
+        private async Task<bool> HasFocusedRosterEvidenceAsync(string deviceName,
+            CancellationToken cancellationToken)
+        {
+            using (CapturedFrame screenshot = await CaptureFrameAsync(deviceName, cancellationToken))
+            {
+                WorldMapTeamRosterLayout layout = WorldMapTeamRosterLayoutResolver.Resolve(
+                    screenshot.Width, screenshot.Height, options);
+                if (layout == null)
+                    return false;
+                ImageRegion rosterRegion = new ImageRegion(layout.Rows[0].X, layout.Rows[0].Y,
+                    layout.Rows[0].Width, layout.Rows.Sum(row => row.Height));
+
+                TemplateId[] badgeTemplates =
+                {
+                    TemplateId.Team1Badge,
+                    TemplateId.Team2Badge,
+                    TemplateId.Team3Badge,
+                    TemplateId.Team4Badge
+                };
+                var requests = new List<ImageMatchRequest>();
+                for (int index = 0; index < badgeTemplates.Length; index++)
+                {
+                    requests.Add(new ImageMatchRequest(registry.LoadBytes(badgeTemplates[index]),
+                        layout.SearchRows[index]));
+                }
+                requests.Add(new ImageMatchRequest(
+                    registry.LoadBytes(TemplateId.WorldMapTeamReadyAnchor),
+                    rosterRegion));
+
+                IReadOnlyList<ImageMatchResult> results = await FindManyAsync(
+                    screenshot, requests, cancellationToken);
+                bool numberedRowFound = results.Take(badgeTemplates.Length)
+                    .Where((match, index) => IsMatchInsideRow(match, layout.Rows[index]))
+                    .Any(match => match != null && match.Found);
+                bool readyLabelFound = results.Count > badgeTemplates.Length
+                    && IsMatchInsideRegion(results[badgeTemplates.Length], rosterRegion);
+                bool confirmed = numberedRowFound || readyLabelFound;
+
+                logger.Info($"[WorldMap Team Roster Preflight] DeviceName='{deviceName}', "
+                    + $"FocusedRosterVisible={confirmed}, NumberedRowFound={numberedRowFound}, "
+                    + $"ReadyLabelFound={readyLabelFound}, "
+                    + $"Region=({rosterRegion.X},{rosterRegion.Y},"
+                    + $"{rosterRegion.Width},{rosterRegion.Height}), "
+                    + $"NextAction='{(confirmed ? "FocusedRosterScan" : "EnsureWorldMap")}'");
+                return confirmed;
+            }
         }
 
         public void ClearKnownRoster(string deviceName = null)
@@ -94,7 +155,7 @@ namespace ADB_Tool_Automation_Post_FB.Infrastructure.TeamSelection
         }
 
         private async Task<WorldMapTeamAvailabilityResult> CheckCoreAsync(string deviceName,
-            CancellationToken cancellationToken)
+            bool focusedWorldMapPreflightConfirmed, CancellationToken cancellationToken)
         {
             cancellationToken.ThrowIfCancellationRequested();
             TeamNumber[] teams =
@@ -184,20 +245,31 @@ namespace ADB_Tool_Automation_Post_FB.Infrastructure.TeamSelection
                     }
                 }
 
-                // EnsureWorldMapAsync already performed the complete state check immediately
-                // before this read-only scan. Numbered team rows and row-local status anchors
-                // are themselves focused WorldMap evidence, so do not run the entire global
-                // detector again for every roster frame. Only frames with no roster evidence
-                // pay for the full detector fallback.
+                // The preflight may already have proved this is the WorldMap from a fresh
+                // roster frame. Numbered rows and row-local status anchors are focused
+                // WorldMap evidence, so a transiently blank follow-up roster frame must not
+                // force the global detector back through every unrelated game template.
                 bool focusedWorldMapEvidence = frameRowEvidenceTeams.Count > 0;
                 if (!focusedWorldMapEvidence)
                 {
-                    fullDetectionFallbackCount++;
-                    lastState = Detect(screenshot, deviceName,
-                        new GameStateDetectionContext(GameState.WorldMap, GameState.WorldMap));
-                    if (lastState == null || !lastState.IsSuccessful
-                        || lastState.State != GameState.WorldMap)
-                        break;
+                    if (focusedWorldMapPreflightConfirmed)
+                    {
+                        lastState = new GameDetectionResult
+                        {
+                            State = GameState.WorldMap,
+                            IsSuccessful = true,
+                            Evidence = new GameDetectionEvidence[0]
+                        };
+                    }
+                    else
+                    {
+                        fullDetectionFallbackCount++;
+                        lastState = Detect(screenshot, deviceName,
+                            new GameStateDetectionContext(GameState.WorldMap, GameState.WorldMap));
+                        if (lastState == null || !lastState.IsSuccessful
+                            || lastState.State != GameState.WorldMap)
+                            break;
+                    }
 
                     // A successful full-state fallback proves the screen, but it
                     // did not produce any roster evidence. Repeating the same
@@ -610,6 +682,14 @@ namespace ADB_Tool_Automation_Post_FB.Infrastructure.TeamSelection
             int tolerance = options.RowVerticalTolerance;
             return match.Y >= row.Y - tolerance
                 && match.Y + match.Height <= row.Y + row.Height + tolerance;
+        }
+
+        private static bool IsMatchInsideRegion(ImageMatchResult match, ImageRegion region)
+        {
+            return match != null && match.Found && match.Width > 0 && match.Height > 0
+                && match.X >= region.X && match.Y >= region.Y
+                && match.X + match.Width <= region.X + region.Width
+                && match.Y + match.Height <= region.Y + region.Height;
         }
 
         private static TeamNumber ResolveStatusTeam(TeamNumber requestedTeam,
