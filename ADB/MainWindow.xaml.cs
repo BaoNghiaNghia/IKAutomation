@@ -242,6 +242,7 @@ namespace ADB_Tool_Automation_Post_FB
                 null, preflightConcurrencyGate);
             farmControlWindow = new DeviceDiagnosticWindow(
                 DeviceDiagnosticServiceFactory.CreateFromAppConfig(),
+                new LdPlayerLaunchConfigurationService(),
                 multiDeviceRunner,
                 new ContinuousFarmSupervisor(multiDeviceRunner,
                     LdPlayerDeviceRecoveryServiceFactory.CreateFromAppConfig(),

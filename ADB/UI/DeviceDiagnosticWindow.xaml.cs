@@ -1,4 +1,5 @@
 using ADB_Tool_Automation_Post_FB.Core.Diagnostics;
+using ADB_Tool_Automation_Post_FB.Core.Abstractions;
 using ADB_Tool_Automation_Post_FB.Core.GameDetection;
 using ADB_Tool_Automation_Post_FB.Core.MarchDispatch;
 using ADB_Tool_Automation_Post_FB.Core.Navigation;
@@ -26,6 +27,7 @@ namespace ADB_Tool_Automation_Post_FB.UI
     public partial class DeviceDiagnosticWindow : Window
     {
         private readonly IDeviceDiagnosticService diagnosticService;
+        private readonly ILdPlayerLaunchConfigurationService launchConfigurationService;
         private readonly IMultiDeviceOneShotFarmRunner multiDeviceFarmRunner;
         private readonly IContinuousFarmSupervisor continuousFarmSupervisor;
         private readonly OneShotFarmRequest defaultOneShotFarmRequest;
@@ -71,6 +73,7 @@ namespace ADB_Tool_Automation_Post_FB.UI
 
         public DeviceDiagnosticWindow(
             IDeviceDiagnosticService diagnosticService,
+            ILdPlayerLaunchConfigurationService launchConfigurationService,
             IMultiDeviceOneShotFarmRunner multiDeviceFarmRunner,
             IContinuousFarmSupervisor continuousFarmSupervisor,
             OneShotFarmRequest defaultOneShotFarmRequest,
@@ -80,6 +83,8 @@ namespace ADB_Tool_Automation_Post_FB.UI
         {
             this.diagnosticService = diagnosticService
                 ?? throw new ArgumentNullException(nameof(diagnosticService));
+            this.launchConfigurationService = launchConfigurationService
+                ?? throw new ArgumentNullException(nameof(launchConfigurationService));
             this.multiDeviceFarmRunner = multiDeviceFarmRunner
                 ?? throw new ArgumentNullException(nameof(multiDeviceFarmRunner));
             this.continuousFarmSupervisor = continuousFarmSupervisor
@@ -277,19 +282,43 @@ namespace ADB_Tool_Automation_Post_FB.UI
                 StopOneShotFarm_Click(sender, e);
                 return;
             }
-            string[] selectedDevices = deviceSelections
-                .Where(item => item.IsSelected && item.IsInGame)
-                .Select(item => item.DeviceName)
-                .ToArray();
-            if (selectedDevices.Length == 0)
-            {
-                StatusTextBlock.Text = "Chỉ có thể chạy các thiết bị đã chọn và đang trong game.";
-                return;
-            }
             if (!TryReadFarmPreferences(out FarmUiPreferences preferences,
                 out string validationError))
             {
                 StatusTextBlock.Text = validationError;
+                return;
+            }
+
+            string[] allDevices = deviceSelections.Select(item => item.DeviceName).ToArray();
+            if (allDevices.Length == 0)
+            {
+                StatusTextBlock.Text = "Không có thiết bị LDPlayer để kiểm tra.";
+                return;
+            }
+            StatusTextBlock.Text = "Đang kiểm tra cấu hình 1280x720 DPI 240 và Debug ADB cho toàn bộ thiết bị...";
+            LdPlayerLaunchConfigurationResult configuration = await Task.Run(() =>
+                launchConfigurationService.ConfigureAsync(allDevices, lifetimeCancellation.Token),
+                lifetimeCancellation.Token);
+            foreach (LdPlayerInstanceConfigurationResult result in configuration.Devices)
+            {
+                DeviceSelectionItem item = deviceSelections.FirstOrDefault(value =>
+                    string.Equals(value.DeviceName, result.DeviceName,
+                        StringComparison.OrdinalIgnoreCase));
+                if (item != null) item.Status = result.Success ? "Đã cấu hình" : "Kiểm tra lỗi";
+            }
+            if (!configuration.Success)
+            {
+                StatusTextBlock.Text = "Chưa chạy farm vì có thiết bị cấu hình thất bại: "
+                    + string.Join("; ", configuration.Devices.Where(item => !item.Success)
+                        .Select(item => item.DeviceName + " - " + item.Message));
+                return;
+            }
+            await RefreshDeviceRuntimeStateAsync(allDevices, lifetimeCancellation.Token);
+            string[] selectedDevices = deviceSelections.Where(item => item.IsSelected && item.IsInGame)
+                .Select(item => item.DeviceName).ToArray();
+            if (selectedDevices.Length == 0)
+            {
+                StatusTextBlock.Text = "Cấu hình xong nhưng chưa có thiết bị đã chọn sẵn sàng chạy.";
                 return;
             }
 

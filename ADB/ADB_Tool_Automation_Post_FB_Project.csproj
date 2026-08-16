@@ -86,6 +86,7 @@
       <SubType>Code</SubType>
     </Compile>
     <Compile Include="Core\Abstractions\ILdPlayerClient.cs" />
+    <Compile Include="Core\Abstractions\ILdPlayerLaunchConfigurationService.cs" />
     <Compile Include="Core\Abstractions\IFrameCapturingLdPlayerClient.cs" />
     <Compile Include="Core\Abstractions\IFocusedInputValueReader.cs" />
     <Compile Include="Core\Concurrency\IDeviceOperationLock.cs" />
@@ -249,6 +250,7 @@
     <Compile Include="Helpers\RealisticCommentGenerator.cs" />
     <Compile Include="Helpers\UIInteractionHelper.cs" />
     <Compile Include="Infrastructure\LDPlayer\AutoLdPlayerClient.cs" />
+    <Compile Include="Infrastructure\LDPlayer\LdPlayerLaunchConfigurationService.cs" />
     <Compile Include="Infrastructure\LDPlayer\LdPlayerDiagnosticService.cs" />
     <Compile Include="Infrastructure\Diagnostics\AppConfigDiagnosticOptionsProvider.cs" />
     <Compile Include="Infrastructure\Diagnostics\ApplicationDiagnosticLogger.cs" />
