@@ -1153,15 +1153,15 @@ internal static class Program
         Eq(20, options.MaximumConcurrency, "default maximum concurrency");
         string config = File.ReadAllText(Path.Combine(Environment.CurrentDirectory,
             "ADB", "App.config"));
-        Is(config.Contains("Operations.AdaptiveMinimumConcurrency\" value=\"5\""),
+        Is(config.Contains("Operations.AdaptiveMinimumConcurrency\" value=\"4\""),
             "configured minimum concurrency");
-        Is(config.Contains("Operations.AdaptiveInitialConcurrency\" value=\"6\""),
+        Is(config.Contains("Operations.AdaptiveInitialConcurrency\" value=\"4\""),
             "configured initial concurrency");
-        Is(config.Contains("Operations.AdaptiveMaximumConcurrency\" value=\"6\""),
+        Is(config.Contains("Operations.AdaptiveMaximumConcurrency\" value=\"4\""),
             "configured maximum concurrency");
-        Is(config.Contains("Operations.MaxConcurrentScreenshots\" value=\"6\""),
+        Is(config.Contains("Operations.MaxConcurrentScreenshots\" value=\"4\""),
             "screenshot gate changed");
-        Is(config.Contains("Operations.MaxConcurrentVisionOperations\" value=\"6\""),
+        Is(config.Contains("Operations.MaxConcurrentVisionOperations\" value=\"8\""),
             "vision gate changed");
     }
 
