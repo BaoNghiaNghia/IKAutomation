@@ -259,6 +259,11 @@ namespace ADB_Tool_Automation_Post_FB.Infrastructure.Workflows
             Stopwatch leaseHeld = null;
             try
             {
+                // This is the real per-quantum farm limit. It covers the focused
+                // roster preflight and the following gameplay work so queued devices
+                // do not compete for screenshots and vision before a farm slot exists.
+                await executionGate.WaitAsync(cancellationToken);
+                entered = true;
                 PreflightResult preflight;
                 using (ScreenshotCaptureContext.Push("Preflight"))
                     preflight = availabilityFactory == null
@@ -286,12 +291,7 @@ namespace ADB_Tool_Automation_Post_FB.Infrastructure.Workflows
                 Report(progress, deviceName, MultiDeviceOneShotFarmStage.Queued, null,
                     VietnameseUserMessageLocalizer.Default.Get(UiMessageKey.WaitingForExecutionSlot));
                 leaseWait = Stopwatch.StartNew();
-                if (adaptiveConcurrencyGate == null)
-                {
-                    await executionGate.WaitAsync(cancellationToken);
-                    entered = true;
-                }
-                else if (adaptiveConcurrencyGate is IAdaptiveConcurrencyAdmissionGate admissionGate)
+                if (adaptiveConcurrencyGate is IAdaptiveConcurrencyAdmissionGate admissionGate)
                 {
                     adaptiveLease = await admissionGate.AcquireAsync(deviceName,
                         AdaptiveOperationKind.Automation, new AdaptiveAdmissionRequest

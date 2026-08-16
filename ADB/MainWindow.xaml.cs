@@ -236,7 +236,7 @@ namespace ADB_Tool_Automation_Post_FB
             var multiDeviceRunner = new MultiDeviceOneShotFarmRunner(
                 () => OneShotFarmWorkflowFactory.CreateFromAppConfig(),
                 () => OneShotFarmWorkflowFactory.CreateTeamAvailabilityFromAppConfig(),
-                MultiDeviceOneShotFarmRunner.MaximumSupportedConcurrency,
+                adaptiveConfiguration.Options.MaximumConcurrency,
                 adaptiveConcurrencyGate, Logger.LogInfo,
                 AppConfigMultiDeviceOneShotFarmRunnerOptionsProvider.Load(), null,
                 null, preflightConcurrencyGate);
