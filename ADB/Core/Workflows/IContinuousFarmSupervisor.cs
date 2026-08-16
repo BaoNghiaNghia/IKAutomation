@@ -95,7 +95,7 @@ namespace ADB_Tool_Automation_Post_FB.Core.Workflows
     public sealed class ContinuousFarmSupervisorOptions
     {
         public ContinuousFarmSupervisorOptions(int cycleIntervalMs = 900000,
-            int failureRetryDelayMs = 120000, int noProgressTimeoutMs = 300000,
+            int failureRetryDelayMs = 30000, int noProgressTimeoutMs = 300000,
             int watchdogPollIntervalMs = 1000, int cancellationGraceMs = 10000,
             int waitingNoProgressTimeoutMs = 1200000,
             IReadOnlyList<int> technicalRetryDelaysMs = null,
@@ -103,7 +103,9 @@ namespace ADB_Tool_Automation_Post_FB.Core.Workflows
             int circuitWindowMs = 1800000, int quarantineCooldownMs = 1800000,
             int checkpointIntervalMs = 30000,
             int heartbeatIntervalMs = 21600000,
-            int allCandidateStoragesFullDelayMs = 21600000)
+            int allCandidateStoragesFullDelayMs = 21600000,
+            int backgroundRosterPriorityPollMs = 500,
+            int backgroundRosterMaxDeferralMs = 10000)
         {
             if (cycleIntervalMs < 1)
                 throw new ArgumentOutOfRangeException(nameof(cycleIntervalMs));
@@ -136,6 +138,11 @@ namespace ADB_Tool_Automation_Post_FB.Core.Workflows
                 throw new ArgumentOutOfRangeException(nameof(heartbeatIntervalMs));
             if (allCandidateStoragesFullDelayMs < 1)
                 throw new ArgumentOutOfRangeException(nameof(allCandidateStoragesFullDelayMs));
+            if (backgroundRosterPriorityPollMs < 1 || backgroundRosterPriorityPollMs > 5000)
+                throw new ArgumentOutOfRangeException(nameof(backgroundRosterPriorityPollMs));
+            if (backgroundRosterMaxDeferralMs < 0
+                || backgroundRosterMaxDeferralMs < backgroundRosterPriorityPollMs)
+                throw new ArgumentOutOfRangeException(nameof(backgroundRosterMaxDeferralMs));
             CycleIntervalMs = cycleIntervalMs;
             FailureRetryDelayMs = failureRetryDelayMs;
             NoProgressTimeoutMs = noProgressTimeoutMs;
@@ -150,6 +157,8 @@ namespace ADB_Tool_Automation_Post_FB.Core.Workflows
             CheckpointIntervalMs = checkpointIntervalMs;
             HeartbeatIntervalMs = heartbeatIntervalMs;
             AllCandidateStoragesFullDelayMs = allCandidateStoragesFullDelayMs;
+            BackgroundRosterPriorityPollMs = backgroundRosterPriorityPollMs;
+            BackgroundRosterMaxDeferralMs = backgroundRosterMaxDeferralMs;
         }
 
         public int CycleIntervalMs { get; }
@@ -166,5 +175,7 @@ namespace ADB_Tool_Automation_Post_FB.Core.Workflows
         public int CheckpointIntervalMs { get; }
         public int HeartbeatIntervalMs { get; }
         public int AllCandidateStoragesFullDelayMs { get; }
+        public int BackgroundRosterPriorityPollMs { get; }
+        public int BackgroundRosterMaxDeferralMs { get; }
     }
 }

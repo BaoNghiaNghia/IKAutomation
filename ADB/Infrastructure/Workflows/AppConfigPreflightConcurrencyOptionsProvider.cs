@@ -7,7 +7,7 @@ namespace ADB_Tool_Automation_Post_FB.Infrastructure.Workflows
     {
         public static PreflightConcurrencyOptions Load()
         {
-            int maximum = Read("Operations.MaxConcurrentPreflightVerifications", 12);
+            int maximum = Read("Operations.MaxConcurrentPreflightVerifications", 20);
             int minimumStagger = Read("Operations.PreflightStaggerMinMs", 0);
             int maximumStagger = Read("Operations.PreflightStaggerMaxMs", 0);
             try

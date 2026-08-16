@@ -157,10 +157,12 @@ namespace ADB_Tool_Automation_Post_FB.Infrastructure.TeamSelection
                         TemplateId.WorldMapTeamReadyAnchor, rowRegion);
                     AddStatusRequest(statusRequests, statusSignals, team, "Locked",
                         TemplateId.TeamDisabledAnchor, rowRegion);
-                    AddStatusRequest(statusRequests, statusSignals, team, "Busy",
-                        TemplateId.TeamBusyStatusAnchor, rowRegion);
-                    AddStatusRequest(statusRequests, statusSignals, team, "Timer",
-                        TemplateId.TeamMarchTimerAnchor, rowRegion);
+                    // A confirmed, unlocked row without the focused Ready label is
+                    // already treated as Busy below. Matching the optional Busy and
+                    // Timer artwork for every row duplicates that decision and is
+                    // particularly expensive because the native matcher is
+                    // serialized across devices. Keep the explicit Locked check:
+                    // it is the only negative signal that changes roster membership.
                 }
                 IReadOnlyList<ImageMatchResult> statusResults = statusRequests.Count == 0
                     ? new ImageMatchResult[0] : await FindManyAsync(
@@ -195,7 +197,17 @@ namespace ADB_Tool_Automation_Post_FB.Infrastructure.TeamSelection
                         new GameStateDetectionContext(GameState.WorldMap, GameState.WorldMap));
                     if (lastState == null || !lastState.IsSuccessful
                         || lastState.State != GameState.WorldMap)
-                        continue;
+                        break;
+
+                    // A successful full-state fallback proves the screen, but it
+                    // did not produce any roster evidence. Repeating the same
+                    // costly 22-template detector on two more frames cannot make
+                    // a safe team decision. Return the existing cached/uncertain
+                    // roster promptly; the scheduler will scan again on its next
+                    // normal cycle.
+                    verifiedFrameCount++;
+                    earlyCompleted = true;
+                    break;
                 }
                 else
                 {
@@ -217,15 +229,20 @@ namespace ADB_Tool_Automation_Post_FB.Infrastructure.TeamSelection
                 lockedTeamsFresh.UnionWith(frameLockedTeams);
                 rowEvidenceTeams.UnionWith(frameRowEvidenceTeams);
 
-                // One frame is authoritative when every roster row has an explicit
-                // ready, busy/timer, or locked status. Keep the multi-frame fallback
-                // for partially obscured rows instead of holding every device for
-                // all configured frames unconditionally.
+                // A fresh Ready label is the information the scheduler needs for
+                // the next state transition. Its row (and all preceding rows) is
+                // retained as fresh roster evidence below, so waiting for all four
+                // optional rows only delays other devices in the preflight queue.
+                bool readyFrameEvidence = frameReadyMatchesByTeam.Count > 0;
+
+                // Keep this complete-evidence condition for callers that opt into
+                // more than one observation frame, but the normal configuration
+                // uses one current frame rather than three stale duplicates.
                 bool completeFrameEvidence = teams.All(team =>
                     frameReadyMatchesByTeam.ContainsKey(team)
                     || frameBusyTeams.Contains(team)
                     || frameLockedTeams.Contains(team));
-                if (completeFrameEvidence)
+                if (readyFrameEvidence || completeFrameEvidence)
                 {
                     earlyCompleted = true;
                     break;

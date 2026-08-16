@@ -197,9 +197,15 @@ namespace ADB_Tool_Automation_Post_FB.Infrastructure.Workflows
             Publish(snapshot, progress, null, cancellationToken);
             try
             {
+                bool backgroundRosterRecheck = false;
                 while (true)
                 {
                     cancellationToken.ThrowIfCancellationRequested();
+                    if (backgroundRosterRecheck)
+                    {
+                        await YieldBackgroundRosterRecheckToActiveFarmAsync(deviceName,
+                            snapshot, snapshots, progress, cancellationToken);
+                    }
                     await RunMaintenanceSafelyAsync(snapshot, progress, cancellationToken);
                     snapshot.CycleCount++;
                     snapshot.CurrentResource = null;
@@ -227,6 +233,7 @@ namespace ADB_Tool_Automation_Post_FB.Infrastructure.Workflows
 
                     if (attempt.Success)
                     {
+                        backgroundRosterRecheck = false;
                         snapshot.ConsecutiveFailures = 0;
                         snapshot.LastSuccessAt = DateTimeOffset.UtcNow;
                         DateTimeOffset next = DateTimeOffset.UtcNow.AddMilliseconds(options.CycleIntervalMs);
@@ -239,6 +246,7 @@ namespace ADB_Tool_Automation_Post_FB.Infrastructure.Workflows
 
                     if (attempt.WaitForNextCycle)
                     {
+                        backgroundRosterRecheck = attempt.IsBackgroundRosterRecheck;
                         snapshot.ConsecutiveFailures = 0;
                         int nextCycleDelayMs = attempt.NextCycleDelayMs
                             ?? options.CycleIntervalMs;
@@ -251,6 +259,8 @@ namespace ADB_Tool_Automation_Post_FB.Infrastructure.Workflows
                         await Task.Delay(nextCycleDelayMs, cancellationToken);
                         continue;
                     }
+
+                    backgroundRosterRecheck = false;
 
                     snapshot.ConsecutiveFailures++;
                     snapshot.LastFailureAt = DateTimeOffset.UtcNow;
@@ -343,6 +353,39 @@ namespace ADB_Tool_Automation_Post_FB.Infrastructure.Workflows
                 checkpointWriteStates.TryRemove(deviceName,
                     out CheckpointWriteState ignoredCheckpointState);
             }
+        }
+
+        private async Task YieldBackgroundRosterRecheckToActiveFarmAsync(string deviceName,
+            ContinuousFarmDeviceSnapshot snapshot,
+            ConcurrentDictionary<string, ContinuousFarmDeviceSnapshot> snapshots,
+            IProgress<ContinuousFarmSupervisorProgress> progress,
+            CancellationToken cancellationToken)
+        {
+            if (options.BackgroundRosterMaxDeferralMs == 0)
+                return;
+
+            DateTimeOffset startedAt = DateTimeOffset.UtcNow;
+            while (HasAnotherActiveFarm(deviceName, snapshots)
+                && (DateTimeOffset.UtcNow - startedAt).TotalMilliseconds
+                    < options.BackgroundRosterMaxDeferralMs)
+            {
+                DateTimeOffset nextAttemptAt = DateTimeOffset.UtcNow.AddMilliseconds(
+                    options.BackgroundRosterPriorityPollMs);
+                Transition(snapshot, ContinuousFarmDeviceState.Waiting,
+                    "Ưu tiên lượt chụp/nhận diện cho thiết bị đang farm; sẽ quét lại đội sau.",
+                    null, nextAttemptAt);
+                Publish(snapshot, progress, null, cancellationToken);
+                await Task.Delay(options.BackgroundRosterPriorityPollMs, cancellationToken);
+            }
+        }
+
+        private static bool HasAnotherActiveFarm(string deviceName,
+            ConcurrentDictionary<string, ContinuousFarmDeviceSnapshot> snapshots)
+        {
+            return snapshots.Any(pair => !string.Equals(pair.Key, deviceName,
+                StringComparison.OrdinalIgnoreCase)
+                && pair.Value != null
+                && pair.Value.State == ContinuousFarmDeviceState.Running);
         }
 
         private async Task RunMaintenanceSafelyAsync(ContinuousFarmDeviceSnapshot snapshot,
@@ -453,7 +496,7 @@ namespace ADB_Tool_Automation_Post_FB.Infrastructure.Workflows
                     int? nextCheckDelayMs = GetNextCheckDelayMs(item.Result?.NextCheckAt);
                     return AttemptResult.WaitingForNextCycle(
                         item.Result?.Message ?? "No allowed team is ready; waiting for the next check.",
-                        nextCheckDelayMs);
+                        nextCheckDelayMs, true);
                 }
                 if (item?.Result?.Outcome == OneShotFarmOutcome.TeamDispatchFailed
                     && item.Result.DispatchResult?.Outcome
@@ -1033,16 +1076,18 @@ namespace ADB_Tool_Automation_Post_FB.Infrastructure.Workflows
             public bool RunnerDidNotStop { get; private set; }
             public bool NeedsRecovery { get; private set; }
             public bool WaitForNextCycle { get; private set; }
+            public bool IsBackgroundRosterRecheck { get; private set; }
             public string WaitMessage { get; private set; }
             public int? NextCycleDelayMs { get; private set; }
             public string Error { get; private set; }
             public static AttemptResult Completed() => new AttemptResult { Success = true };
             public static AttemptResult WaitingForNextCycle(string message,
-                int? nextCycleDelayMs = null) => new AttemptResult
+                int? nextCycleDelayMs = null, bool isBackgroundRosterRecheck = false) => new AttemptResult
                 {
                     WaitForNextCycle = true,
                     WaitMessage = message,
-                    NextCycleDelayMs = nextCycleDelayMs
+                    NextCycleDelayMs = nextCycleDelayMs,
+                    IsBackgroundRosterRecheck = isBackgroundRosterRecheck
                 };
             public static AttemptResult Failed(string error) => new AttemptResult { Error = error };
             public static AttemptResult TechnicalFailure(string error) => new AttemptResult

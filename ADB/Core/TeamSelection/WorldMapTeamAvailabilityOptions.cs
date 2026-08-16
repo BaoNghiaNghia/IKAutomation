@@ -9,7 +9,7 @@ namespace ADB_Tool_Automation_Post_FB.Core.TeamSelection
     {
         public WorldMapTeamAvailabilityOptions(ImageRegion teamRosterRegion,
             int teamRowCount = 4, int? teamRowHeight = null, int badgeTopPadding = 8,
-            int rowVerticalTolerance = 16, int observationFrameCount = 3,
+            int rowVerticalTolerance = 16, int observationFrameCount = 1,
             int observationIntervalMs = 150,
             IReadOnlyDictionary<string, int> knownUnlockedTeamCounts = null,
             int expectedWidth = 1280, int expectedHeight = 720)

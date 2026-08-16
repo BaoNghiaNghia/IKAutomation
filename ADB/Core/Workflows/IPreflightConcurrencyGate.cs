@@ -29,7 +29,7 @@ namespace ADB_Tool_Automation_Post_FB.Core.Workflows
 
     public sealed class PreflightConcurrencyOptions
     {
-        public PreflightConcurrencyOptions(int maximumConcurrency = 12,
+        public PreflightConcurrencyOptions(int maximumConcurrency = 20,
             int staggerMinMs = 0, int staggerMaxMs = 0)
         {
             if (maximumConcurrency < 1 || maximumConcurrency > 25)
