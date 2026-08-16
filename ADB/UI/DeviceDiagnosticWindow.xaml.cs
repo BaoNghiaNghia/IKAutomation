@@ -459,7 +459,14 @@ namespace ADB_Tool_Automation_Post_FB.UI
                 || progress.Device.State == ContinuousFarmDeviceState.Quarantined
                 || progress.Device.State == ContinuousFarmDeviceState.Stopped
                 || farmStage == OneShotFarmProgressStage.ReadyTeamFound
-                || farmStage == OneShotFarmProgressStage.WaitingForReadyTeam;
+                || farmStage == OneShotFarmProgressStage.WaitingForReadyTeam
+                // A verified resource toast is short-lived and immediately followed by
+                // recovery progress. Preserve it through the bounded UI queue so the
+                // device card can show why the mapped-area retry started.
+                || !string.IsNullOrWhiteSpace(
+                    progress.FarmProgress?.DeviceProgress?.ResourceToastVariant)
+                || !string.IsNullOrWhiteSpace(
+                    progress.FarmProgress?.DeviceProgress?.ResourceToastText);
         }
 
         private static string BuildContinuousUiFingerprint(
