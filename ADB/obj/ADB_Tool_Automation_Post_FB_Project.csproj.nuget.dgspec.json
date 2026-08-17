@@ -57,10 +57,6 @@
             "KAutoHelper_Kteam": {
               "target": "Package",
               "version": "[1.0.1.2, )"
-            },
-            "Tesseract": {
-              "target": "Package",
-              "version": "[4.1.1, )"
             }
           }
         }

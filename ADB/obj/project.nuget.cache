@@ -1,13 +1,12 @@
 {
   "version": 2,
-  "dgSpecHash": "D0qBYI/622g=",
+  "dgSpecHash": "LvRFXWyCxd8=",
   "success": true,
   "projectFilePath": "D:\\Bot_Tool_Auto_Game\\IKAutomation\\ADB\\ADB_Tool_Automation_Post_FB_Project.csproj",
   "expectedPackageFiles": [
     "C:\\Users\\baong\\.nuget\\packages\\auto_ldplayer\\1.1.0\\auto_ldplayer.1.1.0.nupkg.sha512",
     "C:\\Users\\baong\\.nuget\\packages\\emgu.cv\\4.1.1.3497\\emgu.cv.4.1.1.3497.nupkg.sha512",
     "C:\\Users\\baong\\.nuget\\packages\\kautohelper_kteam\\1.0.1.2\\kautohelper_kteam.1.0.1.2.nupkg.sha512",
-    "C:\\Users\\baong\\.nuget\\packages\\tesseract\\4.1.1\\tesseract.4.1.1.nupkg.sha512",
     "C:\\Users\\baong\\.nuget\\packages\\zedgraph\\5.1.7\\zedgraph.5.1.7.nupkg.sha512"
   ],
   "logs": [

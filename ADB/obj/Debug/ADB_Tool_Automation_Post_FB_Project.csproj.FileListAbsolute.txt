@@ -503,3 +503,7 @@ D:\Bot_Tool_Auto_Game\IKAutomation\ADB\bin\CodexVerify\LiveTerritoryProgress\ADB
 D:\Bot_Tool_Auto_Game\IKAutomation\ADB\bin\CodexVerify\LiveTerritoryProgress\Auto_LDPlayer.dll
 D:\Bot_Tool_Auto_Game\IKAutomation\ADB\bin\CodexVerify\LiveTerritoryProgress\KAutoHelper.dll
 D:\Bot_Tool_Auto_Game\IKAutomation\ADB\bin\CodexVerify\LiveTerritoryProgress\Tesseract.dll
+D:\Bot_Tool_Auto_Game\IKAutomation\ADB\obj\Debug\UI\Fruit2048Window.baml
+D:\Bot_Tool_Auto_Game\IKAutomation\ADB\obj\Debug\UI\Fruit2048CalibrationWindow.baml
+D:\Bot_Tool_Auto_Game\IKAutomation\ADB\obj\Debug\UI\Fruit2048Window.g.cs
+D:\Bot_Tool_Auto_Game\IKAutomation\ADB\obj\Debug\UI\Fruit2048CalibrationWindow.g.cs

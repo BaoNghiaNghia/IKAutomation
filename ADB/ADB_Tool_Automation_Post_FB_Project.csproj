@@ -244,8 +244,6 @@
     <Compile Include="Exceptions\TaskExepction.cs" />
     <Compile Include="Helpers\BitmapHelper.cs" />
     <Compile Include="Helpers\Delay.cs" />
-    <Compile Include="Helpers\DeviceHelper.cs" />
-    <Compile Include="Helpers\FacebookLiteHelper.cs" />
     <Compile Include="Helpers\Logger.cs" />
     <Compile Include="Helpers\RealisticCommentGenerator.cs" />
     <Compile Include="Helpers\UIInteractionHelper.cs" />
@@ -373,7 +371,6 @@
     </Compile>
   </ItemGroup>
   <ItemGroup>
-    <Compile Include="Models\LegacyFacebookModels.cs" />
     <Compile Include="Properties\AssemblyInfo.cs">
       <SubType>Code</SubType>
     </Compile>
@@ -409,9 +406,6 @@
     </PackageReference>
     <PackageReference Include="KAutoHelper_Kteam">
       <Version>1.0.1.2</Version>
-    </PackageReference>
-    <PackageReference Include="Tesseract">
-      <Version>4.1.1</Version>
     </PackageReference>
   </ItemGroup>
   <ItemGroup>

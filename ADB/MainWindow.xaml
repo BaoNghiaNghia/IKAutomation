@@ -7,6 +7,80 @@
         WindowStartupLocation="Manual"
         Icon="logo_1.ico">
     <Grid Margin="24">
+        <Grid.Resources>
+            <Style TargetType="Button">
+                <Setter Property="Template">
+                    <Setter.Value>
+                        <ControlTemplate TargetType="Button">
+                            <Grid RenderTransformOrigin="0.5,0.5">
+                                <Grid.RenderTransform>
+                                    <ScaleTransform x:Name="HoverScale" ScaleX="1" ScaleY="1"/>
+                                </Grid.RenderTransform>
+                                <Border x:Name="RunningBackground" Margin="4" CornerRadius="13" Opacity="0" IsHitTestVisible="False">
+                                    <Border.Background>
+                                        <LinearGradientBrush StartPoint="0,0" EndPoint="1,0">
+                                            <LinearGradientBrush.RelativeTransform>
+                                                <TranslateTransform x:Name="RunningGradientShift" X="-1"/>
+                                            </LinearGradientBrush.RelativeTransform>
+                                            <GradientStop Color="#0F172A" Offset="0"/>
+                                            <GradientStop Color="#172554" Offset="0.34"/>
+                                            <GradientStop Color="#312E81" Offset="0.66"/>
+                                            <GradientStop Color="#0F172A" Offset="1"/>
+                                        </LinearGradientBrush>
+                                    </Border.Background>
+                                </Border>
+                                <Border x:Name="ButtonBorder" Background="{TemplateBinding Background}"
+                                        BorderBrush="{TemplateBinding BorderBrush}" BorderThickness="1"
+                                        CornerRadius="16" Padding="{TemplateBinding Padding}">
+                                    <ContentPresenter HorizontalAlignment="Center" VerticalAlignment="Center"/>
+                                </Border>
+                                <Rectangle x:Name="RunningBorder" Margin="-3" RadiusX="19" RadiusY="19"
+                                           StrokeThickness="2" 
+                                           Opacity="0" IsHitTestVisible="False">
+                                    <Rectangle.Stroke>
+                                        <LinearGradientBrush StartPoint="0,0" EndPoint="1,1">
+                                            <LinearGradientBrush.RelativeTransform>
+                                                <TranslateTransform x:Name="BorderGradientShift" X="-1"/>
+                                            </LinearGradientBrush.RelativeTransform>
+                                            <GradientStop Color="#38BDF8" Offset="0"/>
+                                            <GradientStop Color="#818CF8" Offset="0.5"/>
+                                            <GradientStop Color="#C4B5FD" Offset="1"/>
+                                        </LinearGradientBrush>
+                                    </Rectangle.Stroke>
+                                </Rectangle>
+                                <Rectangle x:Name="RunningRunner" Margin="-3" RadiusX="19" RadiusY="19"
+                                           Stroke="#E0F2FE" StrokeThickness="3" StrokeDashArray="18,140"
+                                           StrokeDashCap="Round" Opacity="0" IsHitTestVisible="False"/>
+                            </Grid>
+                            <ControlTemplate.Triggers>
+                                <Trigger Property="Tag" Value="Running">
+                                    <Setter TargetName="RunningBackground" Property="Opacity" Value="1"/>
+                                    <Setter TargetName="ButtonBorder" Property="Margin" Value="4"/>
+                                    <Setter TargetName="ButtonBorder" Property="Background" Value="Transparent"/>
+                                    <Setter TargetName="RunningBorder" Property="Opacity" Value="1"/>
+                                    <Setter TargetName="RunningRunner" Property="Opacity" Value="1"/>
+                                    <Trigger.EnterActions>
+                                        <BeginStoryboard x:Name="RunningAnimation"><Storyboard>
+                                            <DoubleAnimation Storyboard.TargetName="RunningBorder" Storyboard.TargetProperty="Opacity"
+                                                             From="0.35" To="1" Duration="0:0:0.7" AutoReverse="True" RepeatBehavior="Forever"/>
+                                            <DoubleAnimation Storyboard.TargetName="BorderGradientShift" Storyboard.TargetProperty="X"
+                                                             From="-1" To="1" Duration="0:0:1.35" RepeatBehavior="Forever"/>
+                                            <DoubleAnimation Storyboard.TargetName="RunningGradientShift" Storyboard.TargetProperty="X"
+                                                             From="-1" To="1" Duration="0:0:1.8" RepeatBehavior="Forever"/>
+                                            <DoubleAnimation Storyboard.TargetName="RunningRunner" Storyboard.TargetProperty="StrokeDashOffset"
+                                                             From="0" To="-158" Duration="0:0:1.05" RepeatBehavior="Forever"/>
+                                        </Storyboard></BeginStoryboard>
+                                    </Trigger.EnterActions>
+                                    <Trigger.ExitActions>
+                                        <StopStoryboard BeginStoryboardName="RunningAnimation"/>
+                                    </Trigger.ExitActions>
+                                </Trigger>
+                            </ControlTemplate.Triggers>
+                        </ControlTemplate>
+                    </Setter.Value>
+                </Setter>
+            </Style>
+        </Grid.Resources>
         <Grid.RowDefinitions>
             <RowDefinition Height="Auto"/>
             <RowDefinition Height="Auto"/>

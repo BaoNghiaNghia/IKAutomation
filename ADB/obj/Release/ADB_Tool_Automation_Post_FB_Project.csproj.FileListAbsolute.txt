@@ -368,10 +368,6 @@ D:\Bot_Tool_Auto_Game\IKAutomation\ADB\bin\Release\Data\InfinityKingdom\1280x720
 D:\Bot_Tool_Auto_Game\IKAutomation\ADB\bin\Release\Data\InfinityKingdom\1280x720\vi\Teams\team_selected_border_anchor.png
 D:\Bot_Tool_Auto_Game\IKAutomation\ADB\bin\Release\Data\InfinityKingdom\1280x720\vi\Teams\team_selection_panel_anchor.png
 D:\Bot_Tool_Auto_Game\IKAutomation\ADB\bin\Release\Data\InfinityKingdom\1280x720\vi\Teams\world_map_team_ready_anchor.png
-D:\Bot_Tool_Auto_Game\IKAutomation\ADB\bin\Release\x86\leptonica-1.80.0.dll
-D:\Bot_Tool_Auto_Game\IKAutomation\ADB\bin\Release\x86\tesseract41.dll
-D:\Bot_Tool_Auto_Game\IKAutomation\ADB\bin\Release\x64\leptonica-1.80.0.dll
-D:\Bot_Tool_Auto_Game\IKAutomation\ADB\bin\Release\x64\tesseract41.dll
 D:\Bot_Tool_Auto_Game\IKAutomation\ADB\bin\Release\x64\concrt140.dll
 D:\Bot_Tool_Auto_Game\IKAutomation\ADB\bin\Release\x64\cvextern.dll
 D:\Bot_Tool_Auto_Game\IKAutomation\ADB\bin\Release\x64\msvcp140.dll
@@ -390,7 +386,6 @@ D:\Bot_Tool_Auto_Game\IKAutomation\ADB\bin\Release\Auto_LDPlayer.dll
 D:\Bot_Tool_Auto_Game\IKAutomation\ADB\bin\Release\Emgu.CV.UI.dll
 D:\Bot_Tool_Auto_Game\IKAutomation\ADB\bin\Release\Emgu.CV.World.dll
 D:\Bot_Tool_Auto_Game\IKAutomation\ADB\bin\Release\KAutoHelper.dll
-D:\Bot_Tool_Auto_Game\IKAutomation\ADB\bin\Release\Tesseract.dll
 D:\Bot_Tool_Auto_Game\IKAutomation\ADB\bin\Release\ZedGraph.dll
 D:\Bot_Tool_Auto_Game\IKAutomation\ADB\bin\Release\de\ZedGraph.resources.dll
 D:\Bot_Tool_Auto_Game\IKAutomation\ADB\bin\Release\es\ZedGraph.resources.dll

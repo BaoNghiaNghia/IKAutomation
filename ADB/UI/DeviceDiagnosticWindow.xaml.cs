@@ -26,6 +26,8 @@ namespace ADB_Tool_Automation_Post_FB.UI
 {
     public partial class DeviceDiagnosticWindow : Window
     {
+        public event EventHandler FarmRunStateChanged;
+        public bool IsFarmRunning => oneShotFarmCancellation != null;
         private readonly IDeviceDiagnosticService diagnosticService;
         private readonly ILdPlayerLaunchConfigurationService launchConfigurationService;
         private readonly IMultiDeviceOneShotFarmRunner multiDeviceFarmRunner;
@@ -1025,6 +1027,7 @@ namespace ADB_Tool_Automation_Post_FB.UI
             RunContinuousFarmButton.Background = new SolidColorBrush(
                 Color.FromRgb(15, 118, 110));
             RunContinuousFarmButton.IsEnabled = true;
+            FarmRunStateChanged?.Invoke(this, EventArgs.Empty);
         }
 
         private void SetFarmActionButtonRunning()
@@ -1033,6 +1036,7 @@ namespace ADB_Tool_Automation_Post_FB.UI
             RunContinuousFarmButton.Background = new SolidColorBrush(
                 Color.FromRgb(220, 38, 38));
             RunContinuousFarmButton.IsEnabled = true;
+            FarmRunStateChanged?.Invoke(this, EventArgs.Empty);
         }
 
         private void SetFarmActionButtonStopping()
@@ -1041,6 +1045,7 @@ namespace ADB_Tool_Automation_Post_FB.UI
             RunContinuousFarmButton.Background = new SolidColorBrush(
                 Color.FromRgb(185, 28, 28));
             RunContinuousFarmButton.IsEnabled = false;
+            FarmRunStateChanged?.Invoke(this, EventArgs.Empty);
         }
 
         private void ApplyOneShotFarmProgress(long runGeneration,
