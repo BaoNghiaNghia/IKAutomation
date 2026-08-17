@@ -48,8 +48,8 @@
                                         </LinearGradientBrush>
                                     </Rectangle.Stroke>
                                 </Rectangle>
-                                <Rectangle x:Name="RunningRunner" Margin="-3" RadiusX="19" RadiusY="19"
-                                           Stroke="#E0F2FE" StrokeThickness="3" StrokeDashArray="18,140"
+                                <Rectangle x:Name="RunningRunner" Margin="-4" RadiusX="20" RadiusY="20"
+                                           Stroke="#FFFFFF" StrokeThickness="4" StrokeDashArray="30,128"
                                            StrokeDashCap="Round" Opacity="0" IsHitTestVisible="False"/>
                             </Grid>
                             <ControlTemplate.Triggers>
@@ -64,11 +64,11 @@
                                             <DoubleAnimation Storyboard.TargetName="RunningBorder" Storyboard.TargetProperty="Opacity"
                                                              From="0.35" To="1" Duration="0:0:0.7" AutoReverse="True" RepeatBehavior="Forever"/>
                                             <DoubleAnimation Storyboard.TargetName="BorderGradientShift" Storyboard.TargetProperty="X"
-                                                             From="-1" To="1" Duration="0:0:1.35" RepeatBehavior="Forever"/>
+                                                             From="-1" To="1" Duration="0:0:2.8" RepeatBehavior="Forever"/>
                                             <DoubleAnimation Storyboard.TargetName="RunningGradientShift" Storyboard.TargetProperty="X"
-                                                             From="-1" To="1" Duration="0:0:1.8" RepeatBehavior="Forever"/>
+                                                             From="-1" To="1" Duration="0:0:3.6" RepeatBehavior="Forever"/>
                                             <DoubleAnimation Storyboard.TargetName="RunningRunner" Storyboard.TargetProperty="StrokeDashOffset"
-                                                             From="0" To="-158" Duration="0:0:1.05" RepeatBehavior="Forever"/>
+                                                             From="0" To="-158" Duration="0:0:2.4" RepeatBehavior="Forever"/>
                                         </Storyboard></BeginStoryboard>
                                     </Trigger.EnterActions>
                                     <Trigger.ExitActions>
