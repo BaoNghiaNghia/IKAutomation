@@ -34,8 +34,8 @@
                                         CornerRadius="16" Padding="{TemplateBinding Padding}">
                                     <ContentPresenter HorizontalAlignment="Center" VerticalAlignment="Center"/>
                                 </Border>
-                                <Rectangle x:Name="RunningBorder" Margin="-3" RadiusX="19" RadiusY="19"
-                                           StrokeThickness="2" 
+                                <Rectangle x:Name="RunningBorder" Margin="-6" RadiusX="22" RadiusY="22"
+                                           StrokeThickness="4" 
                                            Opacity="0" IsHitTestVisible="False">
                                     <Rectangle.Stroke>
                                         <LinearGradientBrush StartPoint="0,0" EndPoint="1,1">
@@ -48,8 +48,8 @@
                                         </LinearGradientBrush>
                                     </Rectangle.Stroke>
                                 </Rectangle>
-                                <Rectangle x:Name="RunningRunner" Margin="-4" RadiusX="20" RadiusY="20"
-                                           Stroke="#FFFFFF" StrokeThickness="4" StrokeDashArray="30,128"
+                                <Rectangle x:Name="RunningRunner" Margin="-6" RadiusX="22" RadiusY="22"
+                                           Stroke="#FFFFFF" StrokeThickness="5" StrokeDashArray="30,128"
                                            StrokeDashCap="Round" Opacity="0" IsHitTestVisible="False"/>
                             </Grid>
                             <ControlTemplate.Triggers>
