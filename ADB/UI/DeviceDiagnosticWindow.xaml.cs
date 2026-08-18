@@ -352,7 +352,12 @@ namespace ADB_Tool_Automation_Post_FB.UI
                 activeDeviceNames.Add(deviceName);
                 lastContinuousUiFingerprints.Remove(deviceName);
                 lastContinuousUiAppliedAt.Remove(deviceName);
+                // Populate every selected device before the supervisor starts.
+                // With 25 devices, waiting for each asynchronous preflight update
+                // made the progress pane appear blank for too long.
+                GetOrCreateFarmProgress(deviceName).SetQueued();
             }
+            RequestProgressOverviewRefresh();
             var progress = new DirectProgress<ContinuousFarmSupervisorProgress>(value =>
                 QueueContinuousFarmProgress(runGeneration, runCancellation,
                     attemptVersions, value));

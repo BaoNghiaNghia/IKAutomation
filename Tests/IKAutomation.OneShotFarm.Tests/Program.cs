@@ -181,6 +181,7 @@ internal static class Program
         Run("Waiting roster badges retain scanned Busy/Locked state", FarmUiPreservesScannedTeamStatuses);
         Run("Initial Farm Control spinner remains animated while loading", InitialLoadingSpinnerAnimates);
         Run("Continuous UI coalesces per-device progress", ContinuousUiCoalescesProgress);
+        Run("Continuous UI pre-populates cards before supervisor progress", ContinuousUiPrepopulatesCards);
         Run("Critical continuous UI states use bounded coalescing", ContinuousUiBoundsCriticalProgress);
         Run("Farm progress list virtualizes off-screen devices", FarmProgressListIsVirtualized);
         Run("Continuous UI uses a bounded render time slice", ContinuousUiUsesTimeSlice);
@@ -2119,6 +2120,18 @@ internal static class Program
             "latest device updates are not coalesced into a bounded timer flush");
         Is(code.Contains("lastContinuousHealthFlush >= TimeSpan.FromSeconds(2)"),
             "full health summary is rebuilt more often than once per two seconds");
+    }
+    static void ContinuousUiPrepopulatesCards()
+    {
+        string code = File.ReadAllText(Path.Combine(Environment.CurrentDirectory,
+            "ADB", "UI", "DeviceDiagnosticWindow.xaml.cs"));
+        int start = code.IndexOf("private async Task RunContinuousSupervisorAsync",
+            StringComparison.Ordinal);
+        int end = code.IndexOf("private void ApplyContinuousFarmProgress",
+            StringComparison.Ordinal);
+        Is(start >= 0 && end > start && code.Substring(start, end - start)
+            .Contains("GetOrCreateFarmProgress(deviceName).SetQueued()"),
+            "continuous progress cards are not initialized before supervisor updates");
     }
     static void ContinuousUiBoundsCriticalProgress()
     {
