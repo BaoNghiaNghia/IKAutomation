@@ -24,7 +24,7 @@ namespace IK_Auto_ADB.Infrastructure.LDPlayer
     /// New automation code must depend on ILdPlayerClient instead of calling
     /// Auto_LDPlayer.LDPlayer directly.
     /// </summary>
-    public sealed class AutoLdPlayerClient : ILdPlayerClient, IAbsoluteSwipeLdPlayerClient, IAdbEndpointRefreshable, IFocusedInputValueReader,
+    public sealed class AutoLdPlayerClient : ILdPlayerClient, IAbsoluteSwipeLdPlayerClient, IAdbEndpointRefreshable, IForegroundPackageReader, IFocusedInputValueReader,
         IFrameCapturingLdPlayerClient
     {
         private const int InputCommandTimeoutMilliseconds = 3000;
@@ -205,6 +205,32 @@ namespace IK_Auto_ADB.Infrastructure.LDPlayer
             HealthyDevices.TryRemove(deviceName.Trim(), out DateTimeOffset ignored);
             IReadOnlyList<string> devices = await GetDeviceNamesAsync(cancellationToken);
             return devices.Any(name => string.Equals(name, deviceName.Trim(), StringComparison.OrdinalIgnoreCase));
+        }
+
+        public Task<string> GetForegroundPackageAsync(string deviceName,
+            CancellationToken cancellationToken)
+        {
+            cancellationToken.ThrowIfCancellationRequested();
+            ValidateDeviceName(deviceName);
+
+            string output = Auto_LDPlayer.LDPlayer.Adb(
+                LDType.Name,
+                deviceName,
+                "shell dumpsys window windows",
+                InputCommandTimeoutMilliseconds,
+                0);
+            cancellationToken.ThrowIfCancellationRequested();
+            if (string.IsNullOrWhiteSpace(output))
+                throw new InvalidOperationException(
+                    $"Could not read the foreground Android package from LDPlayer device '{deviceName}'.");
+
+            Match match = Regex.Match(output,
+                @"(?:mCurrentFocus|mFocusedApp)=[^\r\n]*?\bu\d+\s+([A-Za-z0-9_.$]+)(?:/[^\s}\]]+)?",
+                RegexOptions.IgnoreCase);
+            if (!match.Success)
+                return Task.FromResult<string>(null);
+
+            return Task.FromResult(match.Groups[1].Value);
         }
 
         public Task OpenAsync(string deviceName, CancellationToken cancellationToken)

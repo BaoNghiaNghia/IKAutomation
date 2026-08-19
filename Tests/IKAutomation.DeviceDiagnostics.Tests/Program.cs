@@ -24,6 +24,7 @@ namespace IKAutomation.DeviceDiagnostics.Tests
             Run("Create screenshot path", TestScreenshotPath);
             Run("Serialize metadata JSON", TestMetadataJson);
             Run("Validate screenshot resolution", TestResolutionValidation);
+            Run("Validate foreground game package", TestForegroundPackageValidation);
             Run("Reject percent outside zero to one hundred", TestRejectInvalidPercent);
             Run("Reject dangerous state name", TestRejectDangerousStateName);
             Run("Handle null and failed screenshot capture", TestScreenshotCaptureFailures);
@@ -87,11 +88,26 @@ namespace IKAutomation.DeviceDiagnostics.Tests
             Equal(1280, result.ScreenshotWidth.Value, "Unexpected screenshot width.");
             Equal(720, result.ScreenshotHeight.Value, "Unexpected screenshot height.");
             Assert(result.MatchesExpectedResolution, "Expected resolution should match.");
+            Assert(result.PackageMatches == true, "Expected game package should match.");
 
             var mismatchFake = new FakeLdPlayerClient { Screenshot = CreatePng(960, 540) };
             DeviceDiagnosticResult mismatch = CreateService(mismatchFake)
                 .CheckDeviceAsync("IK-2", TestToken).GetAwaiter().GetResult();
             Assert(!mismatch.MatchesExpectedResolution, "Unexpected resolution should not match.");
+        }
+
+        private static void TestForegroundPackageValidation()
+        {
+            var fake = new FakeLdPlayerClient
+            {
+                Screenshot = CreatePng(1280, 720),
+                ForegroundPackage = "com.example.other"
+            };
+            DeviceDiagnosticResult result = CreateService(fake)
+                .CheckDeviceAsync("IK-1", TestToken).GetAwaiter().GetResult();
+            Assert(result.PackageMatches == false, "A different foreground package was accepted.");
+            Equal("com.example.other", result.CurrentForegroundPackage,
+                "Foreground package was not returned.");
         }
 
         private static void TestRejectInvalidPercent()
@@ -186,7 +202,7 @@ namespace IKAutomation.DeviceDiagnostics.Tests
             public void Error(string message, Exception exception) { }
         }
 
-        private sealed class FakeLdPlayerClient : ILdPlayerClient
+        private sealed class FakeLdPlayerClient : ILdPlayerClient, IForegroundPackageReader
         {
             public bool IsRunning { get; set; } = true;
             public byte[] Screenshot { get; set; } = CreatePng(10, 10);
@@ -195,6 +211,7 @@ namespace IKAutomation.DeviceDiagnostics.Tests
             public int TapByPercentCallCount { get; private set; }
             public CancellationToken IsRunningToken { get; private set; }
             public CancellationToken CaptureToken { get; private set; }
+            public string ForegroundPackage { get; set; } = "com.example.ik";
 
             public Task<IReadOnlyList<string>> GetDeviceNamesAsync(CancellationToken token)
                 => Task.FromResult<IReadOnlyList<string>>(new[] { "LDPlayer" });
@@ -207,6 +224,8 @@ namespace IKAutomation.DeviceDiagnostics.Tests
                 if (CaptureException != null) throw CaptureException;
                 return Task.FromResult(Screenshot);
             }
+            public Task<string> GetForegroundPackageAsync(string deviceName, CancellationToken token)
+            { token.ThrowIfCancellationRequested(); return Task.FromResult(ForegroundPackage); }
             public Task TapByPercentAsync(string deviceName, double x, double y, CancellationToken token)
             { TapByPercentCallCount++; return Task.CompletedTask; }
             public Task RunAppAsync(string d, string p, CancellationToken t) => Task.CompletedTask;

@@ -253,11 +253,12 @@ namespace IK_Auto_ADB.UI
                         item.IsRunning = result.IsRunning;
                         item.IsInGame = result.IsRunning
                             && result.ScreenshotSucceeded
-                            && result.MatchesExpectedResolution;
+                            && result.PackageMatches == true;
                         if (!item.IsInGame)
                             item.IsSelected = false;
                         if (!activeDeviceNames.Contains(deviceName))
-                            item.Status = item.IsRunning ? "Đang mở" : "Đã tắt";
+                            item.Status = !item.IsRunning ? "Đã tắt"
+                                : item.IsInGame ? "Trong game" : "Chưa vào game";
                     }
                     finally
                     {

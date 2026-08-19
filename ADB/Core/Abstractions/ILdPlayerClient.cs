@@ -79,4 +79,11 @@ namespace IK_Auto_ADB.Core.Abstractions
     {
         Task<bool> RefreshAdbEndpointAsync(string deviceName, CancellationToken cancellationToken);
     }
+
+    /// <summary>Reads the Android package currently displayed in the foreground.</summary>
+    public interface IForegroundPackageReader
+    {
+        Task<string> GetForegroundPackageAsync(string deviceName,
+            CancellationToken cancellationToken);
+    }
 }

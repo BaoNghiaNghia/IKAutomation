@@ -75,9 +75,19 @@ namespace IK_Auto_ADB.Infrastructure.Diagnostics
                 result.MatchesExpectedResolution = width == Configuration.ExpectedWidth
                     && height == Configuration.ExpectedHeight;
 
+                var foregroundReader = ldPlayerClient as IForegroundPackageReader;
+                if (foregroundReader != null
+                    && !string.IsNullOrWhiteSpace(Configuration.PackageName))
+                {
+                    result.CurrentForegroundPackage = await foregroundReader
+                        .GetForegroundPackageAsync(deviceName, cancellationToken);
+                    result.PackageMatches = string.Equals(result.CurrentForegroundPackage,
+                        Configuration.PackageName, StringComparison.OrdinalIgnoreCase);
+                }
+
                 string resolutionResult = result.MatchesExpectedResolution
-                    ? $"Success; Resolution={width}x{height}; PackageCheck=Unavailable"
-                    : $"ResolutionMismatch; Actual={width}x{height}; Expected={Configuration.ExpectedWidth}x{Configuration.ExpectedHeight}; PackageCheck=Unavailable";
+                    ? $"Success; Resolution={width}x{height}; Package='{result.CurrentForegroundPackage ?? "Unavailable"}'; PackageMatches={result.PackageMatches}"
+                    : $"ResolutionMismatch; Actual={width}x{height}; Expected={Configuration.ExpectedWidth}x{Configuration.ExpectedHeight}; Package='{result.CurrentForegroundPackage ?? "Unavailable"}'; PackageMatches={result.PackageMatches}";
                 LogResult(deviceName, "CheckDevice", resolutionResult, stopwatch.Elapsed, null);
                 return result;
             }
