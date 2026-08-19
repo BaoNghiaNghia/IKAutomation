@@ -2,7 +2,7 @@ using System.Collections.Generic;
 using System.Threading;
 using System.Threading.Tasks;
 
-namespace ADB_Tool_Automation_Post_FB.Core.Workflows
+namespace IK_Auto_ADB.Core.Workflows
 {
     public interface IDeviceRecoveryService
     {

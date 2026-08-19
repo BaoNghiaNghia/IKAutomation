@@ -1,7 +1,7 @@
-using ADB_Tool_Automation_Post_FB.Core.Diagnostics;
-using ADB_Tool_Automation_Post_FB.Infrastructure.LDPlayer;
+using IK_Auto_ADB.Core.Diagnostics;
+using IK_Auto_ADB.Infrastructure.LDPlayer;
 
-namespace ADB_Tool_Automation_Post_FB.Infrastructure.Diagnostics
+namespace IK_Auto_ADB.Infrastructure.Diagnostics
 {
     public static class DeviceDiagnosticServiceFactory
     {

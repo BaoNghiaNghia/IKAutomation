@@ -1,7 +1,7 @@
-<Window x:Class="ADB_Tool_Automation_Post_FB.MainWindow"
+<Window x:Class="IK_Auto_ADB.MainWindow"
         xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
         xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
-        Title="IKAutomation"
+        Title="IK Auto ADB"
         Width="500" Height="250"
         MinWidth="440" MinHeight="230"
         WindowStartupLocation="Manual"
@@ -89,7 +89,7 @@
         </Grid.RowDefinitions>
 
         <TextBlock Grid.Row="0"
-                   Text="IKAutomation"
+                   Text="IK Auto ADB"
                    FontSize="24"
                    FontWeight="Bold"/>
 
@@ -125,7 +125,7 @@
             <Button x:Name="DeviceDiagnosticButton"
                     Grid.Column="1"
                     Grid.Row="0"
-                    ToolTip="Mở IKAutomation - Điều khiển Farm"
+                    ToolTip="Mở IK Auto ADB - Điều khiển Farm"
                     Click="Button_Click_DeviceDiagnostic"
                     Height="50"
                     Margin="6,0,0,0"

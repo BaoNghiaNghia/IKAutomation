@@ -1,9 +1,9 @@
-using ADB_Tool_Automation_Post_FB.Core.Fruit2048;
+using IK_Auto_ADB.Core.Fruit2048;
 using System;
 using System.Collections.Generic;
 using System.Linq;
 
-namespace ADB_Tool_Automation_Post_FB.Infrastructure.Fruit2048
+namespace IK_Auto_ADB.Infrastructure.Fruit2048
 {
     /// <summary>
     /// Pure post-swipe structural check.  It consumes simulator output and a board-reader

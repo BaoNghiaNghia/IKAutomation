@@ -2,7 +2,7 @@ using System;
 using System.Collections.Generic;
 using System.Linq;
 
-namespace ADB_Tool_Automation_Post_FB.Core.Fruit2048
+namespace IK_Auto_ADB.Core.Fruit2048
 {
     public sealed class Fruit2048TransitionLearner : IFruit2048TransitionLearner
     {

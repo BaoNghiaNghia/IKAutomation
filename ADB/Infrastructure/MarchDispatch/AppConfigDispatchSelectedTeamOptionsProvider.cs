@@ -1,12 +1,12 @@
-using ADB_Tool_Automation_Post_FB.Core.MarchDispatch;
-using ADB_Tool_Automation_Post_FB.Core.TeamSelection;
-using ADB_Tool_Automation_Post_FB.Core.Vision;
-using ADB_Tool_Automation_Post_FB.Infrastructure.TeamSelection;
+using IK_Auto_ADB.Core.MarchDispatch;
+using IK_Auto_ADB.Core.TeamSelection;
+using IK_Auto_ADB.Core.Vision;
+using IK_Auto_ADB.Infrastructure.TeamSelection;
 using System.Collections.Generic;
 using System.Configuration;
 using System.Globalization;
 
-namespace ADB_Tool_Automation_Post_FB.Infrastructure.MarchDispatch
+namespace IK_Auto_ADB.Infrastructure.MarchDispatch
 {
     public static class AppConfigDispatchSelectedTeamOptionsProvider
     {

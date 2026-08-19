@@ -1,8 +1,8 @@
-using ADB_Tool_Automation_Post_FB.Core.Diagnostics;
-using ADB_Tool_Automation_Post_FB.Core.GameDetection;
-using ADB_Tool_Automation_Post_FB.Core.ResourceSearch;
-using ADB_Tool_Automation_Post_FB.Core.TeamSelection;
-using ADB_Tool_Automation_Post_FB.Core.Workflows;
+using IK_Auto_ADB.Core.Diagnostics;
+using IK_Auto_ADB.Core.GameDetection;
+using IK_Auto_ADB.Core.ResourceSearch;
+using IK_Auto_ADB.Core.TeamSelection;
+using IK_Auto_ADB.Core.Workflows;
 using System;
 using System.Collections.Generic;
 using System.Diagnostics;
@@ -10,7 +10,7 @@ using System.Linq;
 using System.Threading;
 using System.Threading.Tasks;
 
-namespace ADB_Tool_Automation_Post_FB.Infrastructure.Workflows
+namespace IK_Auto_ADB.Infrastructure.Workflows
 {
     public sealed class ReadyTeamOneShotFarmWorkflow : IOneShotFarmWorkflow
     {

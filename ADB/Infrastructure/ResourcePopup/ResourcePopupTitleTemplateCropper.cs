@@ -3,7 +3,7 @@ using System.Drawing;
 using System.Drawing.Imaging;
 using System.IO;
 
-namespace ADB_Tool_Automation_Post_FB.Infrastructure.ResourcePopup
+namespace IK_Auto_ADB.Infrastructure.ResourcePopup
 {
     public static class ResourcePopupTitleTemplateCropper
     {

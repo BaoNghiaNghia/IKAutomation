@@ -4,7 +4,7 @@ using System.IO;
 using System.Runtime.Serialization;
 using System.Runtime.Serialization.Json;
 
-namespace ADB_Tool_Automation_Post_FB.Infrastructure.Fruit2048
+namespace IK_Auto_ADB.Infrastructure.Fruit2048
 {
     /// <summary>Owns user-created bootstrap seeds; never writes into the installed application.</summary>
     public sealed class Fruit2048CalibratedSeedStore

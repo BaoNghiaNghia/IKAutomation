@@ -1,7 +1,7 @@
-using ADB_Tool_Automation_Post_FB.Core.Vision;
+using IK_Auto_ADB.Core.Vision;
 using System.Linq;
 
-namespace ADB_Tool_Automation_Post_FB.Core.GameDetection
+namespace IK_Auto_ADB.Core.GameDetection
 {
     public static class TeamSelectionEvidence
     {

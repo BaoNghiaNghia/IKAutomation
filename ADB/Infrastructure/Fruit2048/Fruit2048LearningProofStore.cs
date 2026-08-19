@@ -1,8 +1,8 @@
-using ADB_Tool_Automation_Post_FB.Core.Fruit2048;
+using IK_Auto_ADB.Core.Fruit2048;
 using System;
 using System.IO;
 
-namespace ADB_Tool_Automation_Post_FB.Infrastructure.Fruit2048
+namespace IK_Auto_ADB.Infrastructure.Fruit2048
 {
     /// <summary>Stores the concise result of a FirstLearningProof run; no screenshots are retained.</summary>
     public sealed class Fruit2048LearningProofStore

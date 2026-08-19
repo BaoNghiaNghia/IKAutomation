@@ -1,8 +1,8 @@
-using ADB_Tool_Automation_Post_FB.Core.ResourceSearch;
+using IK_Auto_ADB.Core.ResourceSearch;
 using System.Threading;
 using System.Threading.Tasks;
 
-namespace ADB_Tool_Automation_Post_FB.Core.ResourcePopup
+namespace IK_Auto_ADB.Core.ResourcePopup
 {
     public interface IResourceAwarePopupVerificationService : IResourcePopupVerificationService
     {

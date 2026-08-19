@@ -1,8 +1,8 @@
-using ADB_Tool_Automation_Post_FB.Core.ResourceSearch;
+using IK_Auto_ADB.Core.ResourceSearch;
 using System.Configuration;
 using System.Globalization;
 
-namespace ADB_Tool_Automation_Post_FB.Infrastructure.ResourceSearch
+namespace IK_Auto_ADB.Infrastructure.ResourceSearch
 {
     public static class AppConfigResourceSearchConfigurationOptionsProvider
     {

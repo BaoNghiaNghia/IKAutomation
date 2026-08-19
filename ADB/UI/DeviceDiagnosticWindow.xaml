@@ -1,4 +1,4 @@
-<Window x:Class="ADB_Tool_Automation_Post_FB.UI.DeviceDiagnosticWindow"
+<Window x:Class="IK_Auto_ADB.UI.DeviceDiagnosticWindow"
         xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
         xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
         Title="IKAutomation - Farm Control"

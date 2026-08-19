@@ -1,11 +1,11 @@
-using ADB_Tool_Automation_Post_FB.Core.ResourceSearch;
-using ADB_Tool_Automation_Post_FB.Core.TeamSelection;
+using IK_Auto_ADB.Core.ResourceSearch;
+using IK_Auto_ADB.Core.TeamSelection;
 using System;
 using System.Collections.Generic;
 using System.Globalization;
 using System.IO;
 
-namespace ADB_Tool_Automation_Post_FB.Core.Workflows
+namespace IK_Auto_ADB.Core.Workflows
 {
     public enum UiMessageKey
     {

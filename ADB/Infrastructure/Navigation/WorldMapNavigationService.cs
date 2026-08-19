@@ -1,10 +1,10 @@
-using ADB_Tool_Automation_Post_FB.Core.Abstractions;
-using ADB_Tool_Automation_Post_FB.Core.Concurrency;
-using ADB_Tool_Automation_Post_FB.Core.Diagnostics;
-using ADB_Tool_Automation_Post_FB.Core.GameDetection;
-using ADB_Tool_Automation_Post_FB.Core.Navigation;
-using ADB_Tool_Automation_Post_FB.Core.ResourceSearch;
-using ADB_Tool_Automation_Post_FB.Core.Vision;
+using IK_Auto_ADB.Core.Abstractions;
+using IK_Auto_ADB.Core.Concurrency;
+using IK_Auto_ADB.Core.Diagnostics;
+using IK_Auto_ADB.Core.GameDetection;
+using IK_Auto_ADB.Core.Navigation;
+using IK_Auto_ADB.Core.ResourceSearch;
+using IK_Auto_ADB.Core.Vision;
 using System;
 using System.Collections.Generic;
 using System.Diagnostics;
@@ -15,9 +15,9 @@ using System.Linq;
 using System.Runtime.InteropServices;
 using System.Threading;
 using System.Threading.Tasks;
-using ADB_Tool_Automation_Post_FB.Infrastructure.Concurrency;
+using IK_Auto_ADB.Infrastructure.Concurrency;
 
-namespace ADB_Tool_Automation_Post_FB.Infrastructure.Navigation
+namespace IK_Auto_ADB.Infrastructure.Navigation
 {
     public sealed class WorldMapNavigationService :
         IWorldMapNavigationService,

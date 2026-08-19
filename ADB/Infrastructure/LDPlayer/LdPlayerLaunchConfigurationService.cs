@@ -1,4 +1,4 @@
-using ADB_Tool_Automation_Post_FB.Core.Abstractions;
+using IK_Auto_ADB.Core.Abstractions;
 using System;
 using System.Collections.Generic;
 using System.Configuration;
@@ -9,7 +9,7 @@ using System.Text.RegularExpressions;
 using System.Threading;
 using System.Threading.Tasks;
 
-namespace ADB_Tool_Automation_Post_FB.Infrastructure.LDPlayer
+namespace IK_Auto_ADB.Infrastructure.LDPlayer
 {
     /// <summary>
     /// Uses LDPlayer's documented console commands for the display profile and

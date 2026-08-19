@@ -1,10 +1,10 @@
 using System;
 using System.Collections.Generic;
 using System.IO;
-using ADB_Tool_Automation_Post_FB.Core.TeamSelection;
-using ADB_Tool_Automation_Post_FB.Core.Vision;
+using IK_Auto_ADB.Core.TeamSelection;
+using IK_Auto_ADB.Core.Vision;
 
-namespace ADB_Tool_Automation_Post_FB.Core.MarchDispatch
+namespace IK_Auto_ADB.Core.MarchDispatch
 {
     public sealed class DispatchSelectedTeamOptions
     {

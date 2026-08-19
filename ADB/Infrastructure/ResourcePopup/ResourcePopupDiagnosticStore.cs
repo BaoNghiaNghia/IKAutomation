@@ -1,11 +1,11 @@
-using ADB_Tool_Automation_Post_FB.Core.ResourcePopup;
-using ADB_Tool_Automation_Post_FB.Infrastructure.Diagnostics;
+using IK_Auto_ADB.Core.ResourcePopup;
+using IK_Auto_ADB.Infrastructure.Diagnostics;
 using System;
 using System.IO;
 using System.Threading;
 using System.Threading.Tasks;
 
-namespace ADB_Tool_Automation_Post_FB.Infrastructure.ResourcePopup
+namespace IK_Auto_ADB.Infrastructure.ResourcePopup
 {
     public sealed class ResourcePopupDiagnosticStore : IResourcePopupDiagnosticStore
     {
@@ -21,7 +21,7 @@ namespace ADB_Tool_Automation_Post_FB.Infrastructure.ResourcePopup
             byte[] pngBytes, CancellationToken cancellationToken)
         {
             cancellationToken.ThrowIfCancellationRequested();
-            if (!ADB_Tool_Automation_Post_FB.Core.Diagnostics.DiagnosticStorageGate.IsWriteEnabled)
+            if (!IK_Auto_ADB.Core.Diagnostics.DiagnosticStorageGate.IsWriteEnabled)
                 return null;
             if (pngBytes == null || pngBytes.Length == 0) throw new ArgumentException("PNG data is required.", nameof(pngBytes));
             DateTimeOffset now = DateTimeOffset.Now;

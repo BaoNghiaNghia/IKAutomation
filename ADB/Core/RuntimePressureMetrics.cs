@@ -2,7 +2,7 @@ using System;
 using System.Collections.Generic;
 using System.Linq;
 
-namespace ADB_Tool_Automation_Post_FB.Core.Diagnostics
+namespace IK_Auto_ADB.Core.Diagnostics
 {
     public sealed class RuntimePressureSnapshot
     {

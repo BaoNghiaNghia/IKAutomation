@@ -1,8 +1,8 @@
-using ADB_Tool_Automation_Post_FB.Infrastructure.Diagnostics;
+using IK_Auto_ADB.Infrastructure.Diagnostics;
 using System;
 using System.Net.Http;
 
-namespace ADB_Tool_Automation_Post_FB.Infrastructure.Notifications
+namespace IK_Auto_ADB.Infrastructure.Notifications
 {
     public static class TelegramFailureNotifierFactory
     {

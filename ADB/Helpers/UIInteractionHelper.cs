@@ -2,7 +2,7 @@ using System.Diagnostics;
 using System.IO;
 using System.Windows;
 
-namespace ADB_Tool_Automation_Post_FB.Helpers
+namespace IK_Auto_ADB.Helpers
 {
     public static class UIEventHelper
     {

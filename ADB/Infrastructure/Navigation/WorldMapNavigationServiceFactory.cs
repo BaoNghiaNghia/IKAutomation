@@ -1,10 +1,10 @@
-using ADB_Tool_Automation_Post_FB.Core.Navigation;
-using ADB_Tool_Automation_Post_FB.Infrastructure.Diagnostics;
-using ADB_Tool_Automation_Post_FB.Infrastructure.GameDetection;
-using ADB_Tool_Automation_Post_FB.Infrastructure.LDPlayer;
-using ADB_Tool_Automation_Post_FB.Infrastructure.Concurrency;
+using IK_Auto_ADB.Core.Navigation;
+using IK_Auto_ADB.Infrastructure.Diagnostics;
+using IK_Auto_ADB.Infrastructure.GameDetection;
+using IK_Auto_ADB.Infrastructure.LDPlayer;
+using IK_Auto_ADB.Infrastructure.Concurrency;
 
-namespace ADB_Tool_Automation_Post_FB.Infrastructure.Navigation
+namespace IK_Auto_ADB.Infrastructure.Navigation
 {
     public static class WorldMapNavigationServiceFactory
     {

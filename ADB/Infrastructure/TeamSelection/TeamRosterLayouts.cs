@@ -1,10 +1,10 @@
-using ADB_Tool_Automation_Post_FB.Core.TeamSelection;
-using ADB_Tool_Automation_Post_FB.Core.Vision;
+using IK_Auto_ADB.Core.TeamSelection;
+using IK_Auto_ADB.Core.Vision;
 using System;
 using System.Collections.Generic;
 using System.Linq;
 
-namespace ADB_Tool_Automation_Post_FB.Infrastructure.TeamSelection
+namespace IK_Auto_ADB.Infrastructure.TeamSelection
 {
     public sealed class WorldMapTeamRosterLayout
     {

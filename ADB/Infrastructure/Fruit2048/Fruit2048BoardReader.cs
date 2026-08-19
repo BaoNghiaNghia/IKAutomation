@@ -1,7 +1,7 @@
-using ADB_Tool_Automation_Post_FB.Core.Abstractions;
-using ADB_Tool_Automation_Post_FB.Core.Diagnostics;
-using ADB_Tool_Automation_Post_FB.Core.Fruit2048;
-using ADB_Tool_Automation_Post_FB.Core.Vision;
+using IK_Auto_ADB.Core.Abstractions;
+using IK_Auto_ADB.Core.Diagnostics;
+using IK_Auto_ADB.Core.Fruit2048;
+using IK_Auto_ADB.Core.Vision;
 using System;
 using System.Collections.Generic;
 using System.Diagnostics;
@@ -9,7 +9,7 @@ using System.Linq;
 using System.Threading;
 using System.Threading.Tasks;
 
-namespace ADB_Tool_Automation_Post_FB.Infrastructure.Fruit2048
+namespace IK_Auto_ADB.Infrastructure.Fruit2048
 {
     public sealed class Fruit2048BoardReader : IFruit2048BoardReader, IFruit2048BootstrapSessionController
     {

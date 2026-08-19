@@ -1,8 +1,8 @@
-using ADB_Tool_Automation_Post_FB.Core.Workflows;
-using ADB_Tool_Automation_Post_FB.Core.TeamSelection;
-using ADB_Tool_Automation_Post_FB.Core.Diagnostics;
-using ADB_Tool_Automation_Post_FB.Core.Concurrency;
-using ADB_Tool_Automation_Post_FB.Infrastructure.Concurrency;
+using IK_Auto_ADB.Core.Workflows;
+using IK_Auto_ADB.Core.TeamSelection;
+using IK_Auto_ADB.Core.Diagnostics;
+using IK_Auto_ADB.Core.Concurrency;
+using IK_Auto_ADB.Infrastructure.Concurrency;
 using System;
 using System.Collections.Generic;
 using System.Diagnostics;
@@ -10,7 +10,7 @@ using System.Linq;
 using System.Threading;
 using System.Threading.Tasks;
 
-namespace ADB_Tool_Automation_Post_FB.Infrastructure.Workflows
+namespace IK_Auto_ADB.Infrastructure.Workflows
 {
     public sealed class MultiDeviceOneShotFarmRunner : IMultiDeviceOneShotFarmRunner
     {
@@ -155,7 +155,7 @@ namespace ADB_Tool_Automation_Post_FB.Infrastructure.Workflows
                         cancellationToken);
                     state.LastResult = item;
                     state.LastKnownGameState = item.Result?.FinalState
-                        ?? ADB_Tool_Automation_Post_FB.Core.GameDetection.GameState.Unknown;
+                        ?? IK_Auto_ADB.Core.GameDetection.GameState.Unknown;
                     state.AnotherTeamMayBeReady = item.Result?.RequeueRequested == true;
                     state.PreflightDurationMs += item.PreflightDurationMs;
                     state.GameplayLeaseWaitMs += item.GameplayLeaseWaitMs;
@@ -226,9 +226,9 @@ namespace ADB_Tool_Automation_Post_FB.Infrastructure.Workflows
         {
             foreach (TeamNumber team in result?.BatchDispatchedTeams ?? new TeamNumber[0])
                 if (!state.DispatchedTeams.Contains(team)) state.DispatchedTeams.Add(team);
-            foreach (ADB_Tool_Automation_Post_FB.Core.ResourceSearch.ResourceType resource
+            foreach (IK_Auto_ADB.Core.ResourceSearch.ResourceType resource
                 in result?.DispatchedResources
-                    ?? new ADB_Tool_Automation_Post_FB.Core.ResourceSearch.ResourceType[0])
+                    ?? new IK_Auto_ADB.Core.ResourceSearch.ResourceType[0])
                 state.DispatchedResources.Add(resource);
         }
 
@@ -550,10 +550,10 @@ namespace ADB_Tool_Automation_Post_FB.Infrastructure.Workflows
                         Message = message,
                         ErrorMessage = error ?? message,
                         AttemptedLevels = new int[0],
-                        AttemptedResources = new ADB_Tool_Automation_Post_FB.Core.ResourceSearch.ResourceType[0],
+                        AttemptedResources = new IK_Auto_ADB.Core.ResourceSearch.ResourceType[0],
                         MissingRuntimeTemplates = new MissingRuntimeTemplate[0],
-                        StorageFullResources = new ADB_Tool_Automation_Post_FB.Core.ResourceSearch.ResourceType[0],
-                        LevelsExhaustedResources = new ADB_Tool_Automation_Post_FB.Core.ResourceSearch.ResourceType[0],
+                        StorageFullResources = new IK_Auto_ADB.Core.ResourceSearch.ResourceType[0],
+                        LevelsExhaustedResources = new IK_Auto_ADB.Core.ResourceSearch.ResourceType[0],
                         Steps = new OneShotFarmStepResult[0]
                     }
                 }
@@ -643,10 +643,10 @@ namespace ADB_Tool_Automation_Post_FB.Infrastructure.Workflows
                     DetectedTeams = availability?.AvailableTeams ?? new TeamNumber[0],
                     ReadyTeams = availability?.ReadyTeams ?? new TeamNumber[0],
                     AttemptedLevels = new int[0],
-                    AttemptedResources = new ADB_Tool_Automation_Post_FB.Core.ResourceSearch.ResourceType[0],
+                    AttemptedResources = new IK_Auto_ADB.Core.ResourceSearch.ResourceType[0],
                     MissingRuntimeTemplates = new MissingRuntimeTemplate[0],
-                    StorageFullResources = new ADB_Tool_Automation_Post_FB.Core.ResourceSearch.ResourceType[0],
-                    LevelsExhaustedResources = new ADB_Tool_Automation_Post_FB.Core.ResourceSearch.ResourceType[0],
+                    StorageFullResources = new IK_Auto_ADB.Core.ResourceSearch.ResourceType[0],
+                    LevelsExhaustedResources = new IK_Auto_ADB.Core.ResourceSearch.ResourceType[0],
                     Steps = new OneShotFarmStepResult[0]
                 }
             };
@@ -886,7 +886,7 @@ namespace ADB_Tool_Automation_Post_FB.Infrastructure.Workflows
                 DeviceIndex = deviceIndex;
                 RunId = Guid.NewGuid().ToString();
                 DispatchedTeams = new List<TeamNumber>();
-                DispatchedResources = new List<ADB_Tool_Automation_Post_FB.Core.ResourceSearch.ResourceType>();
+                DispatchedResources = new List<IK_Auto_ADB.Core.ResourceSearch.ResourceType>();
             }
 
             public string DeviceName { get; }
@@ -897,10 +897,10 @@ namespace ADB_Tool_Automation_Post_FB.Infrastructure.Workflows
             public int RetryCount { get; set; }
             public int RequeueCount { get; set; }
             public bool AnotherTeamMayBeReady { get; set; }
-            public ADB_Tool_Automation_Post_FB.Core.GameDetection.GameState LastKnownGameState { get; set; }
+            public IK_Auto_ADB.Core.GameDetection.GameState LastKnownGameState { get; set; }
             public DateTimeOffset NextEligibleExecutionTime { get; set; }
             public List<TeamNumber> DispatchedTeams { get; }
-            public List<ADB_Tool_Automation_Post_FB.Core.ResourceSearch.ResourceType> DispatchedResources { get; }
+            public List<IK_Auto_ADB.Core.ResourceSearch.ResourceType> DispatchedResources { get; }
             public MultiDeviceOneShotFarmItemResult LastResult { get; set; }
             public long PreflightDurationMs { get; set; }
             public long GameplayLeaseWaitMs { get; set; }

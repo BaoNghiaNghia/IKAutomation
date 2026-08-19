@@ -1,10 +1,10 @@
-﻿using ADB_Tool_Automation_Post_FB.Helpers;
+﻿using IK_Auto_ADB.Helpers;
 using System;
 using System.Threading.Tasks;
 using System.Windows;
 using System.Windows.Threading;
 
-namespace ADB_Tool_Automation_Post_FB.Exceptions
+namespace IK_Auto_ADB.Exceptions
 {
     internal static class TaskExceptions
     {

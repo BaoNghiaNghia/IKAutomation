@@ -2,7 +2,7 @@ using System;
 using System.Collections.Generic;
 using System.Linq;
 
-namespace ADB_Tool_Automation_Post_FB.Core.Fruit2048
+namespace IK_Auto_ADB.Core.Fruit2048
 {
     public enum Fruit2048Move { Up, Down, Left, Right }
 

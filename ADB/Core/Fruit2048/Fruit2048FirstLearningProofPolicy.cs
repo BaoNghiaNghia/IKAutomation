@@ -1,7 +1,7 @@
 using System;
 using System.Linq;
 
-namespace ADB_Tool_Automation_Post_FB.Core.Fruit2048
+namespace IK_Auto_ADB.Core.Fruit2048
 {
     /// <summary>Small, deterministic rules for the teacher-only Tier 2 learning proof.</summary>
     public static class Fruit2048FirstLearningProofPolicy

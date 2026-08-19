@@ -1,4 +1,4 @@
-<Window x:Class="ADB_Tool_Automation_Post_FB.UI.Fruit2048Window"
+<Window x:Class="IK_Auto_ADB.UI.Fruit2048Window"
         xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
         xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
         Title="IKAutomation - Lễ Hội Trái Cây" Width="1180" Height="820"

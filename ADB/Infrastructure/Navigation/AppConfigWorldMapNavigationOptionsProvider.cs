@@ -1,8 +1,8 @@
-using ADB_Tool_Automation_Post_FB.Core.Navigation;
+using IK_Auto_ADB.Core.Navigation;
 using System.Configuration;
 using System.Globalization;
 
-namespace ADB_Tool_Automation_Post_FB.Infrastructure.Navigation
+namespace IK_Auto_ADB.Infrastructure.Navigation
 {
     public static class AppConfigWorldMapNavigationOptionsProvider
     {

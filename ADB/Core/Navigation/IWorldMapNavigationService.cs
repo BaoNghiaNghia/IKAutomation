@@ -2,7 +2,7 @@ using System;
 using System.Threading;
 using System.Threading.Tasks;
 
-namespace ADB_Tool_Automation_Post_FB.Core.Navigation
+namespace IK_Auto_ADB.Core.Navigation
 {
     public interface IWorldMapNavigationService
     {

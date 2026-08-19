@@ -1,13 +1,13 @@
-using ADB_Tool_Automation_Post_FB.Core.Diagnostics;
-using ADB_Tool_Automation_Post_FB.Core.Abstractions;
-using ADB_Tool_Automation_Post_FB.Core.GameDetection;
-using ADB_Tool_Automation_Post_FB.Core.MarchDispatch;
-using ADB_Tool_Automation_Post_FB.Core.Navigation;
-using ADB_Tool_Automation_Post_FB.Core.Notifications;
-using ADB_Tool_Automation_Post_FB.Core.ResourceSearch;
-using ADB_Tool_Automation_Post_FB.Core.ResourcePopup;
-using ADB_Tool_Automation_Post_FB.Core.TeamSelection;
-using ADB_Tool_Automation_Post_FB.Core.Workflows;
+using IK_Auto_ADB.Core.Diagnostics;
+using IK_Auto_ADB.Core.Abstractions;
+using IK_Auto_ADB.Core.GameDetection;
+using IK_Auto_ADB.Core.MarchDispatch;
+using IK_Auto_ADB.Core.Navigation;
+using IK_Auto_ADB.Core.Notifications;
+using IK_Auto_ADB.Core.ResourceSearch;
+using IK_Auto_ADB.Core.ResourcePopup;
+using IK_Auto_ADB.Core.TeamSelection;
+using IK_Auto_ADB.Core.Workflows;
 using System;
 using System.Collections.Generic;
 using System.Collections.ObjectModel;
@@ -22,7 +22,7 @@ using System.Windows.Media;
 using System.Windows.Media.Animation;
 using System.Windows.Threading;
 
-namespace ADB_Tool_Automation_Post_FB.UI
+namespace IK_Auto_ADB.UI
 {
     public partial class DeviceDiagnosticWindow : Window
     {
@@ -1347,7 +1347,7 @@ namespace ADB_Tool_Automation_Post_FB.UI
                 + $"Error: {result.ErrorMessage ?? string.Empty}{Environment.NewLine}Attempts:{Environment.NewLine}{attempts}";
         }
 
-        private static string Bounds(ADB_Tool_Automation_Post_FB.Core.Vision.ImageMatchResult match) =>
+        private static string Bounds(IK_Auto_ADB.Core.Vision.ImageMatchResult match) =>
             match != null && match.Found
                 ? $"({match.X},{match.Y},{match.Width},{match.Height})" : string.Empty;
 
@@ -1407,13 +1407,13 @@ namespace ADB_Tool_Automation_Post_FB.UI
                 + $"Last completed step: {result.LastCompletedStep}{Environment.NewLine}Resource: {result.RequestedResource}{Environment.NewLine}"
                 + $"Preferred level: {result.RequestedLevel}{Environment.NewLine}Attempted levels: {string.Join(",", result.AttemptedLevels ?? new int[0])}{Environment.NewLine}"
                 + $"Located level: {result.LocatedLevel?.ToString() ?? string.Empty}{Environment.NewLine}Fallback outcome: {result.FallbackResult?.Outcome.ToString() ?? string.Empty}{Environment.NewLine}"
-                + $"Attempted resources: {string.Join(",", result.AttemptedResources ?? new ADB_Tool_Automation_Post_FB.Core.ResourceSearch.ResourceType[0])}{Environment.NewLine}"
-                + $"Selected resources: {string.Join(",", result.SelectedResources ?? new ADB_Tool_Automation_Post_FB.Core.ResourceSearch.ResourceType[0])}{Environment.NewLine}"
-                + $"Shuffled order: {string.Join(",", result.ShuffledResourcePriority ?? new ADB_Tool_Automation_Post_FB.Core.ResourceSearch.ResourceType[0])}{Environment.NewLine}"
+                + $"Attempted resources: {string.Join(",", result.AttemptedResources ?? new IK_Auto_ADB.Core.ResourceSearch.ResourceType[0])}{Environment.NewLine}"
+                + $"Selected resources: {string.Join(",", result.SelectedResources ?? new IK_Auto_ADB.Core.ResourceSearch.ResourceType[0])}{Environment.NewLine}"
+                + $"Shuffled order: {string.Join(",", result.ShuffledResourcePriority ?? new IK_Auto_ADB.Core.ResourceSearch.ResourceType[0])}{Environment.NewLine}"
                 + $"Missing templates: {string.Join(Environment.NewLine, (result.MissingRuntimeTemplates ?? new MissingRuntimeTemplate[0]).Select(item => $"resource={item.ResourceType}, TemplateId={item.TemplateId}, ExpectedPath={item.ExpectedPath}"))}{Environment.NewLine}"
-                + $"Storage full resources: {string.Join(",", result.StorageFullResources ?? new ADB_Tool_Automation_Post_FB.Core.ResourceSearch.ResourceType[0])}{Environment.NewLine}"
-                + $"Resource priority: {string.Join(",", resourcePlan?.RequestedResources ?? new ADB_Tool_Automation_Post_FB.Core.ResourceSearch.ResourceType[0])}{Environment.NewLine}"
-                + $"Levels exhausted resources: {string.Join(",", result.LevelsExhaustedResources ?? new ADB_Tool_Automation_Post_FB.Core.ResourceSearch.ResourceType[0])}{Environment.NewLine}"
+                + $"Storage full resources: {string.Join(",", result.StorageFullResources ?? new IK_Auto_ADB.Core.ResourceSearch.ResourceType[0])}{Environment.NewLine}"
+                + $"Resource priority: {string.Join(",", resourcePlan?.RequestedResources ?? new IK_Auto_ADB.Core.ResourceSearch.ResourceType[0])}{Environment.NewLine}"
+                + $"Levels exhausted resources: {string.Join(",", result.LevelsExhaustedResources ?? new IK_Auto_ADB.Core.ResourceSearch.ResourceType[0])}{Environment.NewLine}"
                 + $"Located resource: {result.LocatedResource?.ToString() ?? string.Empty}{Environment.NewLine}Dispatched resource: {result.DispatchedResource?.ToString() ?? string.Empty}{Environment.NewLine}"
                 + $"Recovery transitions: {result.ResourceFallbackResult?.RecoveryTransitions ?? 0}{Environment.NewLine}"
                 + $"StorageLimitDialog detected: {result.StorageLimitDialogDetected}{Environment.NewLine}Storage limit cancelled: {result.StorageLimitCancelled}{Environment.NewLine}"

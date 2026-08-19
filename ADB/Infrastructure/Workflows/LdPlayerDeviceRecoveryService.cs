@@ -1,11 +1,11 @@
-using ADB_Tool_Automation_Post_FB.Core.Abstractions;
-using ADB_Tool_Automation_Post_FB.Core.Workflows;
+using IK_Auto_ADB.Core.Abstractions;
+using IK_Auto_ADB.Core.Workflows;
 using System;
 using System.Collections.Generic;
 using System.Threading;
 using System.Threading.Tasks;
 
-namespace ADB_Tool_Automation_Post_FB.Infrastructure.Workflows
+namespace IK_Auto_ADB.Infrastructure.Workflows
 {
     public sealed class LdPlayerDeviceRecoveryOptions
     {

@@ -1,7 +1,7 @@
 using System;
 using System.Configuration;
 
-namespace ADB_Tool_Automation_Post_FB.Infrastructure.Workflows
+namespace IK_Auto_ADB.Infrastructure.Workflows
 {
     public sealed class MultiDeviceOneShotFarmRunnerOptions
     {

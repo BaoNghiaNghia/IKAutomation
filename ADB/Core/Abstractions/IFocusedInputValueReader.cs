@@ -1,7 +1,7 @@
 using System.Threading;
 using System.Threading.Tasks;
 
-namespace ADB_Tool_Automation_Post_FB.Core.Abstractions
+namespace IK_Auto_ADB.Core.Abstractions
 {
     public interface IFocusedInputValueReader
     {

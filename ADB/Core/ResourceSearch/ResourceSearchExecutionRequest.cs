@@ -1,6 +1,6 @@
-using ADB_Tool_Automation_Post_FB.Core.TeamSelection;
+using IK_Auto_ADB.Core.TeamSelection;
 
-namespace ADB_Tool_Automation_Post_FB.Core.ResourceSearch
+namespace IK_Auto_ADB.Core.ResourceSearch
 {
     public sealed class ResourceSearchExecutionRequest
     {

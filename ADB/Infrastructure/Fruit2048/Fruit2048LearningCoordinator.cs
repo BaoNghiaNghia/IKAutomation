@@ -1,8 +1,8 @@
-using ADB_Tool_Automation_Post_FB.Core.Diagnostics;
-using ADB_Tool_Automation_Post_FB.Core.Fruit2048;
+using IK_Auto_ADB.Core.Diagnostics;
+using IK_Auto_ADB.Core.Fruit2048;
 using System;
 
-namespace ADB_Tool_Automation_Post_FB.Infrastructure.Fruit2048
+namespace IK_Auto_ADB.Infrastructure.Fruit2048
 {
     /// <summary>Process-wide serialized writer for shared Fruit learning knowledge.</summary>
     public sealed class Fruit2048LearningCoordinator : IFruit2048LearningCoordinator

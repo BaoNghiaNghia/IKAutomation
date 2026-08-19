@@ -1,0 +1,16 @@
+D:\Bot_Tool_Auto_Game\IKAutomation\ADB\obj\Debug\IK_Auto_ADB.csproj.AssemblyReference.cache
+D:\Bot_Tool_Auto_Game\IKAutomation\ADB\obj\Debug\MainWindow.baml
+D:\Bot_Tool_Auto_Game\IKAutomation\ADB\obj\Debug\UI\DeviceDiagnosticWindow.baml
+D:\Bot_Tool_Auto_Game\IKAutomation\ADB\obj\Debug\UI\Fruit2048Window.baml
+D:\Bot_Tool_Auto_Game\IKAutomation\ADB\obj\Debug\UI\Fruit2048CalibrationWindow.baml
+D:\Bot_Tool_Auto_Game\IKAutomation\ADB\obj\Debug\MainWindow.g.cs
+D:\Bot_Tool_Auto_Game\IKAutomation\ADB\obj\Debug\UI\DeviceDiagnosticWindow.g.cs
+D:\Bot_Tool_Auto_Game\IKAutomation\ADB\obj\Debug\UI\Fruit2048Window.g.cs
+D:\Bot_Tool_Auto_Game\IKAutomation\ADB\obj\Debug\UI\Fruit2048CalibrationWindow.g.cs
+D:\Bot_Tool_Auto_Game\IKAutomation\ADB\obj\Debug\App.g.cs
+D:\Bot_Tool_Auto_Game\IKAutomation\ADB\obj\Debug\IK Auto ADB_Content.g.cs
+D:\Bot_Tool_Auto_Game\IKAutomation\ADB\obj\Debug\IK Auto ADB_MarkupCompile.cache
+D:\Bot_Tool_Auto_Game\IKAutomation\ADB\obj\Debug\IK Auto ADB.g.resources
+D:\Bot_Tool_Auto_Game\IKAutomation\ADB\obj\Debug\IK_Auto_ADB.Properties.Resources.resources
+D:\Bot_Tool_Auto_Game\IKAutomation\ADB\obj\Debug\IK_Auto_ADB.csproj.GenerateResource.cache
+D:\Bot_Tool_Auto_Game\IKAutomation\ADB\obj\Debug\IK_Auto_ADB.csproj.CoreCompileInputs.cache

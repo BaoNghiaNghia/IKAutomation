@@ -1,10 +1,10 @@
-using ADB_Tool_Automation_Post_FB.Core.Vision;
+using IK_Auto_ADB.Core.Vision;
 using System;
 using System.Collections.Generic;
 using System.IO;
 using System.Collections.Concurrent;
 
-namespace ADB_Tool_Automation_Post_FB.Infrastructure.Vision
+namespace IK_Auto_ADB.Infrastructure.Vision
 {
     public sealed class TemplateRegistry : ITemplateRegistry
     {

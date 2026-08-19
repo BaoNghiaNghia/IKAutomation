@@ -1,7 +1,7 @@
-using ADB_Tool_Automation_Post_FB.Core.Workflows;
+using IK_Auto_ADB.Core.Workflows;
 using System.Configuration;
 
-namespace ADB_Tool_Automation_Post_FB.Infrastructure.Workflows
+namespace IK_Auto_ADB.Infrastructure.Workflows
 {
     public static class AppConfigContinuousFarmSupervisorOptionsProvider
     {

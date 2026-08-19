@@ -1,11 +1,11 @@
-using ADB_Tool_Automation_Post_FB.Core.GameDetection;
-using ADB_Tool_Automation_Post_FB.Infrastructure.Diagnostics;
+using IK_Auto_ADB.Core.GameDetection;
+using IK_Auto_ADB.Infrastructure.Diagnostics;
 using System;
 using System.IO;
 using System.Threading;
 using System.Threading.Tasks;
 
-namespace ADB_Tool_Automation_Post_FB.Infrastructure.GameDetection
+namespace IK_Auto_ADB.Infrastructure.GameDetection
 {
     public sealed class UnknownScreenshotStore : IUnknownScreenshotStore
     {
@@ -34,7 +34,7 @@ namespace ADB_Tool_Automation_Post_FB.Infrastructure.GameDetection
             CancellationToken cancellationToken)
         {
             cancellationToken.ThrowIfCancellationRequested();
-            if (!ADB_Tool_Automation_Post_FB.Core.Diagnostics.DiagnosticStorageGate.IsWriteEnabled)
+            if (!IK_Auto_ADB.Core.Diagnostics.DiagnosticStorageGate.IsWriteEnabled)
                 return null;
             if (screenshotPng == null || screenshotPng.Length == 0)
                 throw new ArgumentException("Unknown-state screenshot PNG is required.", nameof(screenshotPng));

@@ -1,13 +1,13 @@
-using ADB_Tool_Automation_Post_FB.Core.GameDetection;
-using ADB_Tool_Automation_Post_FB.Core.MarchDispatch;
-using ADB_Tool_Automation_Post_FB.Core.Navigation;
-using ADB_Tool_Automation_Post_FB.Core.ResourcePopup;
-using ADB_Tool_Automation_Post_FB.Core.ResourceSearch;
-using ADB_Tool_Automation_Post_FB.Core.TeamSelection;
+using IK_Auto_ADB.Core.GameDetection;
+using IK_Auto_ADB.Core.MarchDispatch;
+using IK_Auto_ADB.Core.Navigation;
+using IK_Auto_ADB.Core.ResourcePopup;
+using IK_Auto_ADB.Core.ResourceSearch;
+using IK_Auto_ADB.Core.TeamSelection;
 using System;
 using System.Collections.Generic;
 
-namespace ADB_Tool_Automation_Post_FB.Core.Workflows
+namespace IK_Auto_ADB.Core.Workflows
 {
     public sealed class OneShotFarmResult
     {

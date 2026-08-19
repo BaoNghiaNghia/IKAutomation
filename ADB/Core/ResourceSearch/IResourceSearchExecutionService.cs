@@ -1,7 +1,7 @@
 using System.Threading;
 using System.Threading.Tasks;
 
-namespace ADB_Tool_Automation_Post_FB.Core.ResourceSearch
+namespace IK_Auto_ADB.Core.ResourceSearch
 {
     public interface IResourceSearchExecutionService
     {

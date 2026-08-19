@@ -1,7 +1,7 @@
-using ADB_Tool_Automation_Post_FB.Core.Abstractions;
-using ADB_Tool_Automation_Post_FB.Core.Concurrency;
-using ADB_Tool_Automation_Post_FB.Core.Fruit2048;
-using ADB_Tool_Automation_Post_FB.Infrastructure.Fruit2048;
+using IK_Auto_ADB.Core.Abstractions;
+using IK_Auto_ADB.Core.Concurrency;
+using IK_Auto_ADB.Core.Fruit2048;
+using IK_Auto_ADB.Infrastructure.Fruit2048;
 using System;
 using System.Collections.Generic;
 using System.Collections.ObjectModel;
@@ -17,7 +17,7 @@ using System.Windows.Threading;
 using System.IO;
 using System.Diagnostics;
 
-namespace ADB_Tool_Automation_Post_FB.UI
+namespace IK_Auto_ADB.UI
 {
     public partial class Fruit2048Window : Window
     {

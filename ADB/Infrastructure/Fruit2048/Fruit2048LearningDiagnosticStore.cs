@@ -1,5 +1,5 @@
-using ADB_Tool_Automation_Post_FB.Core.Fruit2048;
-using ADB_Tool_Automation_Post_FB.Core.Vision;
+using IK_Auto_ADB.Core.Fruit2048;
+using IK_Auto_ADB.Core.Vision;
 using System;
 using System.Collections.Generic;
 using System.Drawing;
@@ -7,7 +7,7 @@ using System.Drawing.Imaging;
 using System.IO;
 using System.Linq;
 
-namespace ADB_Tool_Automation_Post_FB.Infrastructure.Fruit2048
+namespace IK_Auto_ADB.Infrastructure.Fruit2048
 {
     /// <summary>Bounded persistence for terminal Fruit anomalies only.</summary>
     public sealed class Fruit2048LearningDiagnosticStore

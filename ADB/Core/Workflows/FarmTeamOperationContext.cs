@@ -1,7 +1,7 @@
-using ADB_Tool_Automation_Post_FB.Core.TeamSelection;
+using IK_Auto_ADB.Core.TeamSelection;
 using System;
 
-namespace ADB_Tool_Automation_Post_FB.Core.Workflows
+namespace IK_Auto_ADB.Core.Workflows
 {
     // A gather operation is bound to one fresh WorldMap roster observation.  This
     // is intentionally immutable so lower layers cannot silently replace the

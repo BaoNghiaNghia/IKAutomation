@@ -1,9 +1,9 @@
-using ADB_Tool_Automation_Post_FB.Core.Abstractions;
-using ADB_Tool_Automation_Post_FB.Core.Diagnostics;
-using ADB_Tool_Automation_Post_FB.Core.GameDetection;
-using ADB_Tool_Automation_Post_FB.Core.Vision;
-using ADB_Tool_Automation_Post_FB.Infrastructure.GameDetection;
-using ADB_Tool_Automation_Post_FB.Infrastructure.Vision;
+using IK_Auto_ADB.Core.Abstractions;
+using IK_Auto_ADB.Core.Diagnostics;
+using IK_Auto_ADB.Core.GameDetection;
+using IK_Auto_ADB.Core.Vision;
+using IK_Auto_ADB.Infrastructure.GameDetection;
+using IK_Auto_ADB.Infrastructure.Vision;
 using System;
 using System.Collections.Generic;
 using System.Drawing;

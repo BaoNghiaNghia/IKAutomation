@@ -1,5 +1,5 @@
-using ADB_Tool_Automation_Post_FB.Core.Fruit2048;
-using ADB_Tool_Automation_Post_FB.Infrastructure.Fruit2048;
+using IK_Auto_ADB.Core.Fruit2048;
+using IK_Auto_ADB.Infrastructure.Fruit2048;
 using System;
 using System.IO;
 using System.Windows;
@@ -9,7 +9,7 @@ using System.Windows.Input;
 using System.Windows.Media;
 using System.Windows.Media.Imaging;
 
-namespace ADB_Tool_Automation_Post_FB.UI
+namespace IK_Auto_ADB.UI
 {
     public partial class Fruit2048CalibrationWindow : Window
     {

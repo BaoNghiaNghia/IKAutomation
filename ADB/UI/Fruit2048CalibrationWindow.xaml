@@ -1,4 +1,4 @@
-<Window x:Class="ADB_Tool_Automation_Post_FB.UI.Fruit2048CalibrationWindow"
+<Window x:Class="IK_Auto_ADB.UI.Fruit2048CalibrationWindow"
         xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
         xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
         Title="Hiệu chỉnh nhận diện Fruit2048" Width="720" Height="700"

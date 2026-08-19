@@ -1,11 +1,11 @@
-using ADB_Tool_Automation_Post_FB.Core.Workflows;
-using ADB_Tool_Automation_Post_FB.Core.Diagnostics;
-using ADB_Tool_Automation_Post_FB.Helpers;
-using ADB_Tool_Automation_Post_FB.Infrastructure.Diagnostics;
+using IK_Auto_ADB.Core.Workflows;
+using IK_Auto_ADB.Core.Diagnostics;
+using IK_Auto_ADB.Helpers;
+using IK_Auto_ADB.Infrastructure.Diagnostics;
 using System;
 using System.Configuration;
 
-namespace ADB_Tool_Automation_Post_FB.Infrastructure.Workflows
+namespace IK_Auto_ADB.Infrastructure.Workflows
 {
     public static class AppConfigOperationalMaintenanceOptionsProvider
     {

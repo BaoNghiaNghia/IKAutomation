@@ -3,7 +3,7 @@ using System.Drawing;
 using System.Drawing.Imaging;
 using System.IO;
 
-namespace ADB_Tool_Automation_Post_FB.Core.Vision
+namespace IK_Auto_ADB.Core.Vision
 {
     /// <summary>Owns one decoded screenshot for the lifetime of a single observation.</summary>
     public sealed class CapturedFrame : IDisposable

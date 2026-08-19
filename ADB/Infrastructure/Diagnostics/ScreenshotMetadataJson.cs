@@ -2,7 +2,7 @@ using System;
 using System.IO;
 using System.Runtime.Serialization.Json;
 
-namespace ADB_Tool_Automation_Post_FB.Infrastructure.Diagnostics
+namespace IK_Auto_ADB.Infrastructure.Diagnostics
 {
     public static class ScreenshotMetadataJson
     {

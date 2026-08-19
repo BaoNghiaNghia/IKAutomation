@@ -1,10 +1,10 @@
-using ADB_Tool_Automation_Post_FB.Core.Vision;
+using IK_Auto_ADB.Core.Vision;
 using System;
 using System.Collections.Generic;
 using System.IO;
 using System.Linq;
 
-namespace ADB_Tool_Automation_Post_FB.Core.ResourceSearch
+namespace IK_Auto_ADB.Core.ResourceSearch
 {
     public sealed class ResourceLevelFallbackOptions
     {

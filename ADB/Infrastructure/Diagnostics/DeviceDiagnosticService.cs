@@ -1,5 +1,5 @@
-using ADB_Tool_Automation_Post_FB.Core.Abstractions;
-using ADB_Tool_Automation_Post_FB.Core.Diagnostics;
+using IK_Auto_ADB.Core.Abstractions;
+using IK_Auto_ADB.Core.Diagnostics;
 using System;
 using System.Collections.Generic;
 using System.Diagnostics;
@@ -8,7 +8,7 @@ using System.IO;
 using System.Threading;
 using System.Threading.Tasks;
 
-namespace ADB_Tool_Automation_Post_FB.Infrastructure.Diagnostics
+namespace IK_Auto_ADB.Infrastructure.Diagnostics
 {
     public sealed class DeviceDiagnosticService : IDeviceDiagnosticService
     {

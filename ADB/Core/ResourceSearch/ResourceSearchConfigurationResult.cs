@@ -1,8 +1,8 @@
-using ADB_Tool_Automation_Post_FB.Core.GameDetection;
+using IK_Auto_ADB.Core.GameDetection;
 using System;
 using System.Collections.Generic;
 
-namespace ADB_Tool_Automation_Post_FB.Core.ResourceSearch
+namespace IK_Auto_ADB.Core.ResourceSearch
 {
     public sealed class ResourceSearchConfigurationResult
     {

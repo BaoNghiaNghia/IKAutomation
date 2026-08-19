@@ -1,11 +1,11 @@
-using ADB_Tool_Automation_Post_FB.Core.ResourceSearch;
-using ADB_Tool_Automation_Post_FB.Infrastructure.Diagnostics;
+using IK_Auto_ADB.Core.ResourceSearch;
+using IK_Auto_ADB.Infrastructure.Diagnostics;
 using System;
 using System.IO;
 using System.Threading;
 using System.Threading.Tasks;
 
-namespace ADB_Tool_Automation_Post_FB.Infrastructure.ResourceSearch
+namespace IK_Auto_ADB.Infrastructure.ResourceSearch
 {
     public sealed class ResourceSearchDiagnosticStore : IResourceSearchDiagnosticStore
     {
@@ -22,7 +22,7 @@ namespace ADB_Tool_Automation_Post_FB.Infrastructure.ResourceSearch
             byte[] pngBytes, CancellationToken cancellationToken)
         {
             cancellationToken.ThrowIfCancellationRequested();
-            if (!ADB_Tool_Automation_Post_FB.Core.Diagnostics.DiagnosticStorageGate.IsWriteEnabled)
+            if (!IK_Auto_ADB.Core.Diagnostics.DiagnosticStorageGate.IsWriteEnabled)
                 return null;
             ValidateBytes(pngBytes);
             DateTimeOffset now = DateTimeOffset.Now;
@@ -39,7 +39,7 @@ namespace ADB_Tool_Automation_Post_FB.Infrastructure.ResourceSearch
             int frameIndex, byte[] pngBytes, CancellationToken cancellationToken)
         {
             cancellationToken.ThrowIfCancellationRequested();
-            if (!ADB_Tool_Automation_Post_FB.Core.Diagnostics.DiagnosticStorageGate.IsWriteEnabled)
+            if (!IK_Auto_ADB.Core.Diagnostics.DiagnosticStorageGate.IsWriteEnabled)
                 return;
             if (frameIndex < 1) throw new ArgumentOutOfRangeException(nameof(frameIndex));
             ValidateBytes(pngBytes);

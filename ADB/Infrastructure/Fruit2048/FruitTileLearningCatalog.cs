@@ -1,5 +1,5 @@
-using ADB_Tool_Automation_Post_FB.Core.Diagnostics;
-using ADB_Tool_Automation_Post_FB.Core.Fruit2048;
+using IK_Auto_ADB.Core.Diagnostics;
+using IK_Auto_ADB.Core.Fruit2048;
 using System;
 using System.Collections.Generic;
 using System.IO;
@@ -7,7 +7,7 @@ using System.Linq;
 using System.Runtime.Serialization;
 using System.Runtime.Serialization.Json;
 
-namespace ADB_Tool_Automation_Post_FB.Infrastructure.Fruit2048
+namespace IK_Auto_ADB.Infrastructure.Fruit2048
 {
     public sealed class FruitTileLearningCatalog : IFruitTileLearningCatalog
     {

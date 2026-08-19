@@ -1,6 +1,6 @@
 using System.Runtime.Serialization;
 
-namespace ADB_Tool_Automation_Post_FB.Infrastructure.Diagnostics
+namespace IK_Auto_ADB.Infrastructure.Diagnostics
 {
     [DataContract]
     public sealed class ScreenshotMetadata

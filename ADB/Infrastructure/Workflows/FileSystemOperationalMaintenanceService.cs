@@ -1,5 +1,5 @@
-using ADB_Tool_Automation_Post_FB.Core.Diagnostics;
-using ADB_Tool_Automation_Post_FB.Core.Workflows;
+using IK_Auto_ADB.Core.Diagnostics;
+using IK_Auto_ADB.Core.Workflows;
 using System;
 using System.Collections.Generic;
 using System.IO;
@@ -7,7 +7,7 @@ using System.Linq;
 using System.Threading;
 using System.Threading.Tasks;
 
-namespace ADB_Tool_Automation_Post_FB.Infrastructure.Workflows
+namespace IK_Auto_ADB.Infrastructure.Workflows
 {
     public sealed class FileSystemOperationalMaintenanceService : IOperationalMaintenanceService
     {

@@ -1,18 +1,18 @@
-using ADB_Tool_Automation_Post_FB.Core.Workflows;
-using ADB_Tool_Automation_Post_FB.Exceptions;
-using ADB_Tool_Automation_Post_FB.Helpers;
-using ADB_Tool_Automation_Post_FB.Infrastructure.Concurrency;
-using ADB_Tool_Automation_Post_FB.Infrastructure.Diagnostics;
-using ADB_Tool_Automation_Post_FB.Infrastructure.LDPlayer;
-using ADB_Tool_Automation_Post_FB.Infrastructure.Notifications;
-using ADB_Tool_Automation_Post_FB.Infrastructure.Workflows;
-using ADB_Tool_Automation_Post_FB.UI;
+using IK_Auto_ADB.Core.Workflows;
+using IK_Auto_ADB.Exceptions;
+using IK_Auto_ADB.Helpers;
+using IK_Auto_ADB.Infrastructure.Concurrency;
+using IK_Auto_ADB.Infrastructure.Diagnostics;
+using IK_Auto_ADB.Infrastructure.LDPlayer;
+using IK_Auto_ADB.Infrastructure.Notifications;
+using IK_Auto_ADB.Infrastructure.Workflows;
+using IK_Auto_ADB.UI;
 using System;
 using System.Configuration;
 using System.Windows;
 using System.Windows.Media;
 
-namespace ADB_Tool_Automation_Post_FB
+namespace IK_Auto_ADB
 {
     public partial class MainWindow : Window
     {

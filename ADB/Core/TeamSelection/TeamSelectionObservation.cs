@@ -1,7 +1,7 @@
-using ADB_Tool_Automation_Post_FB.Core.GameDetection;
+using IK_Auto_ADB.Core.GameDetection;
 using System;
 
-namespace ADB_Tool_Automation_Post_FB.Core.TeamSelection
+namespace IK_Auto_ADB.Core.TeamSelection
 {
     public sealed class TeamSelectionObservation
     {

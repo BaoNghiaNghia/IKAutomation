@@ -1,8 +1,8 @@
-using ADB_Tool_Automation_Post_FB.Core.StorageLimit;
+using IK_Auto_ADB.Core.StorageLimit;
 using System;
 using System.Configuration;
 
-namespace ADB_Tool_Automation_Post_FB.Infrastructure.StorageLimit
+namespace IK_Auto_ADB.Infrastructure.StorageLimit
 {
     public static class AppConfigStorageLimitDialogOptionsProvider
     {

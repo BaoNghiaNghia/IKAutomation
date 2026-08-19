@@ -1,7 +1,7 @@
 ﻿using System.Drawing;
 using System.IO;
 
-namespace ADB_Tool_Automation_Post_FB.Helpers
+namespace IK_Auto_ADB.Helpers
 {
     /*
      * BitmapHelper.cs

@@ -1,11 +1,11 @@
-using ADB_Tool_Automation_Post_FB.Core.Vision;
+using IK_Auto_ADB.Core.Vision;
 using System;
 using System.Drawing;
 using System.Drawing.Imaging;
 using System.IO;
 using System.Runtime.InteropServices;
 
-namespace ADB_Tool_Automation_Post_FB.Infrastructure.Vision
+namespace IK_Auto_ADB.Infrastructure.Vision
 {
     public sealed class FrameStabilityDetector : IFrameStabilityDetector
     {

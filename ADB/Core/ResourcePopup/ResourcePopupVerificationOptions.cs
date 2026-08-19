@@ -1,7 +1,7 @@
-using ADB_Tool_Automation_Post_FB.Core.Vision;
+using IK_Auto_ADB.Core.Vision;
 using System;
 
-namespace ADB_Tool_Automation_Post_FB.Core.ResourcePopup
+namespace IK_Auto_ADB.Core.ResourcePopup
 {
     public sealed class ResourcePopupVerificationOptions
     {

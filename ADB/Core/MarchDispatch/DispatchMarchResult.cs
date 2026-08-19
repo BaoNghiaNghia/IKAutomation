@@ -1,11 +1,11 @@
-using ADB_Tool_Automation_Post_FB.Core.GameDetection;
-using ADB_Tool_Automation_Post_FB.Core.TeamSelection;
-using ADB_Tool_Automation_Post_FB.Core.ResourceSearch;
-using ADB_Tool_Automation_Post_FB.Core.StorageLimit;
+using IK_Auto_ADB.Core.GameDetection;
+using IK_Auto_ADB.Core.TeamSelection;
+using IK_Auto_ADB.Core.ResourceSearch;
+using IK_Auto_ADB.Core.StorageLimit;
 using System;
 using System.Collections.Generic;
 
-namespace ADB_Tool_Automation_Post_FB.Core.MarchDispatch
+namespace IK_Auto_ADB.Core.MarchDispatch
 {
     public sealed class DispatchMarchResult
     {

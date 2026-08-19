@@ -1,9 +1,9 @@
-using ADB_Tool_Automation_Post_FB.Core.Diagnostics;
+using IK_Auto_ADB.Core.Diagnostics;
 using System;
 using System.Configuration;
 using System.Globalization;
 
-namespace ADB_Tool_Automation_Post_FB.Infrastructure.Diagnostics
+namespace IK_Auto_ADB.Infrastructure.Diagnostics
 {
     public static class AppConfigDiagnosticOptionsProvider
     {

@@ -1,13 +1,13 @@
-using ADB_Tool_Automation_Post_FB.Core.Abstractions;
-using ADB_Tool_Automation_Post_FB.Core.Diagnostics;
-using ADB_Tool_Automation_Post_FB.Helpers;
+using IK_Auto_ADB.Core.Abstractions;
+using IK_Auto_ADB.Core.Diagnostics;
+using IK_Auto_ADB.Helpers;
 using System;
 using System.IO;
 using System.Linq;
 using System.Threading;
 using System.Threading.Tasks;
 
-namespace ADB_Tool_Automation_Post_FB.Infrastructure.LDPlayer
+namespace IK_Auto_ADB.Infrastructure.LDPlayer
 {
     /// <summary>
     /// Explicitly invoked smoke diagnostic for the LDPlayer boundary.

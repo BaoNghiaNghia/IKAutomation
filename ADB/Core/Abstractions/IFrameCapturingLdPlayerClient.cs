@@ -1,8 +1,8 @@
-using ADB_Tool_Automation_Post_FB.Core.Vision;
+using IK_Auto_ADB.Core.Vision;
 using System.Threading;
 using System.Threading.Tasks;
 
-namespace ADB_Tool_Automation_Post_FB.Core.Abstractions
+namespace IK_Auto_ADB.Core.Abstractions
 {
     /// <summary>Optional high-throughput capture capability for vision hot paths.</summary>
     public interface IFrameCapturingLdPlayerClient

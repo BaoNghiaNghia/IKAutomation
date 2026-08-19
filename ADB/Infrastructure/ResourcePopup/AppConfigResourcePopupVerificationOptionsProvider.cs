@@ -1,9 +1,9 @@
-using ADB_Tool_Automation_Post_FB.Core.ResourcePopup;
-using ADB_Tool_Automation_Post_FB.Core.Vision;
+using IK_Auto_ADB.Core.ResourcePopup;
+using IK_Auto_ADB.Core.Vision;
 using System.Configuration;
 using System.Globalization;
 
-namespace ADB_Tool_Automation_Post_FB.Infrastructure.ResourcePopup
+namespace IK_Auto_ADB.Infrastructure.ResourcePopup
 {
     public static class AppConfigResourcePopupVerificationOptionsProvider
     {

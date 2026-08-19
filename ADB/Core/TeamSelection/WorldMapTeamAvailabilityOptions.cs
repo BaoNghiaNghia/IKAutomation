@@ -1,9 +1,9 @@
-using ADB_Tool_Automation_Post_FB.Core.Vision;
+using IK_Auto_ADB.Core.Vision;
 using System;
 using System.Collections.Generic;
 using System.Linq;
 
-namespace ADB_Tool_Automation_Post_FB.Core.TeamSelection
+namespace IK_Auto_ADB.Core.TeamSelection
 {
     public sealed class WorldMapTeamAvailabilityOptions
     {

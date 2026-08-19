@@ -1,12 +1,12 @@
-using ADB_Tool_Automation_Post_FB.Core.TeamSelection;
-using ADB_Tool_Automation_Post_FB.Infrastructure.Concurrency;
-using ADB_Tool_Automation_Post_FB.Infrastructure.Diagnostics;
-using ADB_Tool_Automation_Post_FB.Infrastructure.GameDetection;
-using ADB_Tool_Automation_Post_FB.Infrastructure.LDPlayer;
-using ADB_Tool_Automation_Post_FB.Infrastructure.ResourcePopup;
-using ADB_Tool_Automation_Post_FB.Infrastructure.Vision;
+using IK_Auto_ADB.Core.TeamSelection;
+using IK_Auto_ADB.Infrastructure.Concurrency;
+using IK_Auto_ADB.Infrastructure.Diagnostics;
+using IK_Auto_ADB.Infrastructure.GameDetection;
+using IK_Auto_ADB.Infrastructure.LDPlayer;
+using IK_Auto_ADB.Infrastructure.ResourcePopup;
+using IK_Auto_ADB.Infrastructure.Vision;
 
-namespace ADB_Tool_Automation_Post_FB.Infrastructure.TeamSelection
+namespace IK_Auto_ADB.Infrastructure.TeamSelection
 {
     public static class OpenTeamSelectionServiceFactory
     {

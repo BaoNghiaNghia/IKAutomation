@@ -1,7 +1,7 @@
-using ADB_Tool_Automation_Post_FB.Core.Navigation;
+using IK_Auto_ADB.Core.Navigation;
 using System.Drawing;
 
-namespace ADB_Tool_Automation_Post_FB.Core.ResourceSearch
+namespace IK_Auto_ADB.Core.ResourceSearch
 {
     public sealed class ResourceAreaLv2RecoveryResult
     {

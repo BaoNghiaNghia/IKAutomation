@@ -1,10 +1,10 @@
-using ADB_Tool_Automation_Post_FB.Core.ResourceSearch;
-using ADB_Tool_Automation_Post_FB.Core.Vision;
+using IK_Auto_ADB.Core.ResourceSearch;
+using IK_Auto_ADB.Core.Vision;
 using System;
 using System.Configuration;
 using System.Globalization;
 
-namespace ADB_Tool_Automation_Post_FB.Infrastructure.ResourceSearch
+namespace IK_Auto_ADB.Infrastructure.ResourceSearch
 {
     public static class AppConfigResourceSearchExecutionOptionsProvider
     {

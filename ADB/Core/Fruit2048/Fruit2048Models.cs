@@ -1,10 +1,10 @@
-using ADB_Tool_Automation_Post_FB.Core.Vision;
+using IK_Auto_ADB.Core.Vision;
 using System;
 using System.Collections.Generic;
 using System.Threading;
 using System.Threading.Tasks;
 
-namespace ADB_Tool_Automation_Post_FB.Core.Fruit2048
+namespace IK_Auto_ADB.Core.Fruit2048
 {
     public enum Fruit2048ScreenStatus { Ready, NotOpen, CaptureUnavailable, DeviceUnavailable }
     public enum Fruit2048RuntimeStatus { Idle, Starting, AcquiringDevice, Navigating, Bootstrapping, Scanning, Playing, WaitingPostMove, ValidatingTransition, Recovering, Paused, Stopping, Completed, TargetReached, NoMoves, BoardUnknown, NeedsFreshBoard, MissingSeeds, Disconnected, Failed, Cancelled }

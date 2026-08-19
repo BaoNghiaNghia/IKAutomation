@@ -1,14 +1,14 @@
-using ADB_Tool_Automation_Post_FB.Core.Concurrency;
-using ADB_Tool_Automation_Post_FB.Core.Fruit2048;
-using ADB_Tool_Automation_Post_FB.Infrastructure.Concurrency;
-using ADB_Tool_Automation_Post_FB.Infrastructure.Diagnostics;
-using ADB_Tool_Automation_Post_FB.Infrastructure.LDPlayer;
-using ADB_Tool_Automation_Post_FB.Infrastructure.Vision;
-using ADB_Tool_Automation_Post_FB.Core.Vision;
+using IK_Auto_ADB.Core.Concurrency;
+using IK_Auto_ADB.Core.Fruit2048;
+using IK_Auto_ADB.Infrastructure.Concurrency;
+using IK_Auto_ADB.Infrastructure.Diagnostics;
+using IK_Auto_ADB.Infrastructure.LDPlayer;
+using IK_Auto_ADB.Infrastructure.Vision;
+using IK_Auto_ADB.Core.Vision;
 using System.Drawing;
 using System.IO;
 
-namespace ADB_Tool_Automation_Post_FB.Infrastructure.Fruit2048
+namespace IK_Auto_ADB.Infrastructure.Fruit2048
 {
     public sealed class Fruit2048Feature
     {

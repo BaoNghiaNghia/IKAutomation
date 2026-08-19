@@ -1,8 +1,8 @@
-using ADB_Tool_Automation_Post_FB.Core.Workflows;
-using ADB_Tool_Automation_Post_FB.Infrastructure.Diagnostics;
-using ADB_Tool_Automation_Post_FB.Infrastructure.LDPlayer;
+using IK_Auto_ADB.Core.Workflows;
+using IK_Auto_ADB.Infrastructure.Diagnostics;
+using IK_Auto_ADB.Infrastructure.LDPlayer;
 
-namespace ADB_Tool_Automation_Post_FB.Infrastructure.Workflows
+namespace IK_Auto_ADB.Infrastructure.Workflows
 {
     public static class LdPlayerDeviceRecoveryServiceFactory
     {

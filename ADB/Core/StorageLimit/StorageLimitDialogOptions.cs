@@ -1,7 +1,7 @@
 using System;
-using ADB_Tool_Automation_Post_FB.Core.Vision;
+using IK_Auto_ADB.Core.Vision;
 
-namespace ADB_Tool_Automation_Post_FB.Core.StorageLimit
+namespace IK_Auto_ADB.Core.StorageLimit
 {
     public sealed class StorageLimitDialogOptions
     {

@@ -1,7 +1,7 @@
 using System;
 using System.IO;
 
-namespace ADB_Tool_Automation_Post_FB.Infrastructure.Notifications
+namespace IK_Auto_ADB.Infrastructure.Notifications
 {
     internal sealed class TelegramLocalSettings
     {

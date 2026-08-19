@@ -1,10 +1,10 @@
-using ADB_Tool_Automation_Post_FB.Core.Concurrency;
-using ADB_Tool_Automation_Post_FB.Core.Diagnostics;
+using IK_Auto_ADB.Core.Concurrency;
+using IK_Auto_ADB.Core.Diagnostics;
 using System;
 using System.Collections.Concurrent;
 using System.Diagnostics;
 
-namespace ADB_Tool_Automation_Post_FB.Infrastructure.Concurrency
+namespace IK_Auto_ADB.Infrastructure.Concurrency
 {
     public sealed class DeviceAutomationOwnershipService : IDeviceAutomationOwnershipService
     {

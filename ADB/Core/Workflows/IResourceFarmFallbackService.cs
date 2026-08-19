@@ -1,10 +1,10 @@
-using ADB_Tool_Automation_Post_FB.Core.GameDetection;
-using ADB_Tool_Automation_Post_FB.Core.ResourceSearch;
+using IK_Auto_ADB.Core.GameDetection;
+using IK_Auto_ADB.Core.ResourceSearch;
 using System;
 using System.Threading;
 using System.Threading.Tasks;
 
-namespace ADB_Tool_Automation_Post_FB.Core.Workflows
+namespace IK_Auto_ADB.Core.Workflows
 {
     public interface IResourceFarmFallbackService
     {

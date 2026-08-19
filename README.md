@@ -2,7 +2,7 @@
 
 IKAutomation is a Windows WPF automation application for **Infinity Kingdom** running on **LDPlayer**. The project is being migrated from an older Facebook automation codebase, while retaining the proven WPF shell, `Auto_LDPlayer`, image matching, device helpers, cancellation, diagnostics, and logging infrastructure.
 
-> The solution and executable still use some legacy names such as `ADB_Tool_Automation_Post_FB`. New Infinity Kingdom code should use the abstractions and services under `Core` and `Infrastructure`; do not extend the legacy Facebook workflow.
+> The solution and executable still use some legacy names such as `IK_Auto_ADB`. New Infinity Kingdom code should use the abstractions and services under `Core` and `Infrastructure`; do not extend the legacy Facebook workflow.
 
 ## Current capabilities
 
@@ -89,7 +89,7 @@ Before running automation:
 Visual Studio is the recommended build path for the legacy WPF project:
 
 1. Open `IKAutomation.sln`.
-2. Set `ADB_Tool_Automation_Post_FB_Project` as the startup project.
+2. Set `IK_Auto_ADB` as the startup project.
 3. Select `Release` and `Any CPU`.
 4. Choose **Build > Build Solution**.
 5. Run from Visual Studio or start the generated executable.
@@ -97,7 +97,7 @@ Visual Studio is the recommended build path for the legacy WPF project:
 The Release executable is currently produced at:
 
 ```text
-ADB\bin\Release\ADB_Tool_Automation_Post_FB.exe
+ADB\bin\Release\IK_Auto_ADB.exe
 ```
 
 Command-line builds are also supported when the .NET Framework targeting pack and all legacy package references resolve correctly:

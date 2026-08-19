@@ -1,7 +1,7 @@
-using ADB_Tool_Automation_Post_FB.Core.TeamSelection;
-using ADB_Tool_Automation_Post_FB.Core.ResourceSearch;
+using IK_Auto_ADB.Core.TeamSelection;
+using IK_Auto_ADB.Core.ResourceSearch;
 
-namespace ADB_Tool_Automation_Post_FB.Core.MarchDispatch
+namespace IK_Auto_ADB.Core.MarchDispatch
 {
     public sealed class DispatchMarchRequest
     {

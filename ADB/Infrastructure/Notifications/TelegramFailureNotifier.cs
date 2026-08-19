@@ -1,6 +1,6 @@
-using ADB_Tool_Automation_Post_FB.Core.Diagnostics;
-using ADB_Tool_Automation_Post_FB.Core.Notifications;
-using ADB_Tool_Automation_Post_FB.Core.Workflows;
+using IK_Auto_ADB.Core.Diagnostics;
+using IK_Auto_ADB.Core.Notifications;
+using IK_Auto_ADB.Core.Workflows;
 using System;
 using System.Collections.Generic;
 using System.Net;
@@ -9,7 +9,7 @@ using System.Text;
 using System.Threading;
 using System.Threading.Tasks;
 
-namespace ADB_Tool_Automation_Post_FB.Infrastructure.Notifications
+namespace IK_Auto_ADB.Infrastructure.Notifications
 {
     public sealed class TelegramFailureNotifier : IAutomationFailureNotifier,
         IContinuousFarmHeartbeatNotifier

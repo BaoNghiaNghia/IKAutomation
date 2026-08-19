@@ -1,11 +1,11 @@
-using ADB_Tool_Automation_Post_FB.Core.TeamSelection;
-using ADB_Tool_Automation_Post_FB.Infrastructure.Diagnostics;
+using IK_Auto_ADB.Core.TeamSelection;
+using IK_Auto_ADB.Infrastructure.Diagnostics;
 using System;
 using System.IO;
 using System.Threading;
 using System.Threading.Tasks;
 
-namespace ADB_Tool_Automation_Post_FB.Infrastructure.TeamSelection
+namespace IK_Auto_ADB.Infrastructure.TeamSelection
 {
     public sealed class SelectFarmTeamDiagnosticStore : ISelectFarmTeamDiagnosticStore
     {
@@ -21,7 +21,7 @@ namespace ADB_Tool_Automation_Post_FB.Infrastructure.TeamSelection
             byte[] screenshotPng, CancellationToken cancellationToken)
         {
             cancellationToken.ThrowIfCancellationRequested();
-            if (!ADB_Tool_Automation_Post_FB.Core.Diagnostics.DiagnosticStorageGate.IsWriteEnabled)
+            if (!IK_Auto_ADB.Core.Diagnostics.DiagnosticStorageGate.IsWriteEnabled)
                 return null;
             if (screenshotPng == null || screenshotPng.Length == 0)
                 throw new ArgumentException("Screenshot PNG is required.", nameof(screenshotPng));

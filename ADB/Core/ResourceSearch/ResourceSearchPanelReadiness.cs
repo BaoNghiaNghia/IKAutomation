@@ -1,9 +1,9 @@
 using System;
 using System.Linq;
-using ADB_Tool_Automation_Post_FB.Core.GameDetection;
-using ADB_Tool_Automation_Post_FB.Core.Vision;
+using IK_Auto_ADB.Core.GameDetection;
+using IK_Auto_ADB.Core.Vision;
 
-namespace ADB_Tool_Automation_Post_FB.Core.ResourceSearch
+namespace IK_Auto_ADB.Core.ResourceSearch
 {
     public enum ResourceSearchPanelReadiness
     {

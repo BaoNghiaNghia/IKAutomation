@@ -1,11 +1,11 @@
-using ADB_Tool_Automation_Post_FB.Core.Concurrency;
+using IK_Auto_ADB.Core.Concurrency;
 using System;
 using System.Collections.Concurrent;
 using System.Collections.Generic;
 using System.Threading;
 using System.Threading.Tasks;
 
-namespace ADB_Tool_Automation_Post_FB.Infrastructure.Concurrency
+namespace IK_Auto_ADB.Infrastructure.Concurrency
 {
     public sealed class DeviceOperationLock : IDeviceOperationLock
     {

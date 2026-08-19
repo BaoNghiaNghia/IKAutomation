@@ -1,4 +1,4 @@
-namespace ADB_Tool_Automation_Post_FB.Core.GameDetection
+namespace IK_Auto_ADB.Core.GameDetection
 {
     public enum GameState
     {
