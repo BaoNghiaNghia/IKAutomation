@@ -268,6 +268,7 @@ internal static class Program
         Run("Disk pressure gate uses resume hysteresis", MaintenanceDiskGateUsesHysteresis);
         Run("Operational maintenance is interval gated", MaintenanceRunsOnlyWhenDue);
         Run("Logger rotates without clearing startup log", LoggerUsesRotationAndRetention);
+        Run("Logger buffers verbose farm observations and caps archives", LoggerBatchesAndThrottlesVerboseLogs);
         Run("Diagnostic stores honor disk-pressure gate", DiagnosticStoresHonorStorageGate);
         Run("Diagnostic screenshot cooldown suppresses duplicates", DiagnosticScreenshotCooldown);
         Run("Diagnostic screenshot queue has bounded capacity", DiagnosticQueueIsBounded);
@@ -1066,6 +1067,27 @@ internal static class Program
         Is(!code.Contains("Xóa toàn bộ log khi khởi động")
             && !code.Contains("File.WriteAllText(LogFilePath, string.Empty);\n\n                //"),
             "startup still clears the log");
+    }
+    static void LoggerBatchesAndThrottlesVerboseLogs()
+    {
+        string logger = File.ReadAllText(Path.Combine(Environment.CurrentDirectory,
+            "ADB", "Helpers", "Logger.cs"));
+        string config = File.ReadAllText(Path.Combine(Environment.CurrentDirectory,
+            "ADB", "App.config"));
+        Is(logger.Contains("PendingBuffer") && logger.Contains("FlushTimerCallback")
+            && logger.Contains("AutoFlush = false"),
+            "logger still flushes every individual line");
+        Is(logger.Contains("TryAcceptVerboseInfo")
+            && logger.Contains("SuppressedVerboseInfoCount")
+            && logger.Contains("maximumArchiveBytes"),
+            "verbose observation throttling or archive quota is missing");
+        Is(logger.Contains("LogDirectory = \"Logs\"")
+            && logger.Contains("farm-{DateTime.Today:yyyy-MM-dd}.log"),
+            "logs are not organized in a daily log directory");
+        Is(config.Contains("Operations.LogFlushIntervalMs")
+            && config.Contains("Operations.VerboseLogThrottleMs")
+            && config.Contains("Operations.MaximumLogArchiveBytes"),
+            "log volume controls are not configurable");
     }
 
     static void DiagnosticStoresHonorStorageGate()

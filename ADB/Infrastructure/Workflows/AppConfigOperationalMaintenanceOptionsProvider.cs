@@ -22,8 +22,12 @@ namespace ADB_Tool_Automation_Post_FB.Infrastructure.Workflows
 
         public static IOperationalMaintenanceService Create()
         {
-            Logger.Configure(ReadLong("Operations.LogRotationBytes", 20971520L),
-                ReadInt("Operations.LogRetentionDays", 30));
+            Logger.Configure(ReadLong("Operations.LogRotationBytes", 5242880L),
+                ReadInt("Operations.LogRetentionDays", 7),
+                ReadInt("Operations.LogFlushIntervalMs", 1000),
+                ReadInt("Operations.LogBufferBytes", 65536),
+                ReadInt("Operations.VerboseLogThrottleMs", 5000),
+                ReadLong("Operations.MaximumLogArchiveBytes", 104857600L));
             return new FileSystemOperationalMaintenanceService(Load(),
                 new ApplicationDiagnosticLogger());
         }
