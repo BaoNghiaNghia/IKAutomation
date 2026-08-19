@@ -1,3 +1,4 @@
+using System.Collections.Generic;
 using System.Threading;
 using System.Threading.Tasks;
 
@@ -22,6 +23,7 @@ namespace ADB_Tool_Automation_Post_FB.Core.Abstractions
         Enter = 66,
         Delete = 67,
         Menu = 82,
+        Escape = 111,
         AppSwitch = 187
     }
 
@@ -31,6 +33,8 @@ namespace ADB_Tool_Automation_Post_FB.Core.Abstractions
     /// </summary>
     public interface ILdPlayerClient
     {
+        Task<IReadOnlyList<string>> GetDeviceNamesAsync(CancellationToken cancellationToken);
+
         Task<bool> IsRunningAsync(string deviceName, CancellationToken cancellationToken);
 
         Task OpenAsync(string deviceName, CancellationToken cancellationToken);
@@ -61,5 +65,18 @@ namespace ADB_Tool_Automation_Post_FB.Core.Abstractions
         Task InputTextAsync(string deviceName, string text, CancellationToken cancellationToken);
 
         Task PressKeyAsync(string deviceName, AndroidKeyCode keyCode, CancellationToken cancellationToken);
+    }
+
+    /// <summary>Optional Android-coordinate swipe path for gameplay that has verified screen bounds.</summary>
+    public interface IAbsoluteSwipeLdPlayerClient
+    {
+        Task SwipeAsync(string deviceName, int startX, int startY, int endX, int endY,
+            int durationMilliseconds, CancellationToken cancellationToken);
+    }
+
+    /// <summary>One bounded recovery attempt for a lost LDPlayer ADB endpoint.</summary>
+    public interface IAdbEndpointRefreshable
+    {
+        Task<bool> RefreshAdbEndpointAsync(string deviceName, CancellationToken cancellationToken);
     }
 }

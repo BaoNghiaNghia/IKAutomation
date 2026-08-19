@@ -2,7 +2,12 @@
 
 ADB/bin/Debug/log.txt
 /ADB/bin/Debug/log.txt
+/ADB/bin/Release/log.txt
 ADB/bin/Debug/Shared_images_ldplayer/
 
 Tests/**/bin/
 Tests/**/obj/
+
+# Runtime diagnostic output
+**/Diagnostics/
+**/Logs/

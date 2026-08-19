@@ -1,6 +1,7 @@
 using ADB_Tool_Automation_Post_FB.Core.Abstractions;
 using ADB_Tool_Automation_Post_FB.Core.Diagnostics;
 using System;
+using System.Collections.Generic;
 using System.Diagnostics;
 using System.Drawing;
 using System.IO;
@@ -28,6 +29,12 @@ namespace ADB_Tool_Automation_Post_FB.Infrastructure.Diagnostics
         }
 
         public DeviceDiagnosticOptions Configuration { get; }
+
+        public Task<IReadOnlyList<string>> GetDeviceNamesAsync(CancellationToken cancellationToken)
+        {
+            cancellationToken.ThrowIfCancellationRequested();
+            return ldPlayerClient.GetDeviceNamesAsync(cancellationToken);
+        }
 
         public async Task<DeviceDiagnosticResult> CheckDeviceAsync(
             string deviceName,

@@ -1,10 +1,19 @@
 using ADB_Tool_Automation_Post_FB.Core.Abstractions;
+using ADB_Tool_Automation_Post_FB.Core.Diagnostics;
+using ADB_Tool_Automation_Post_FB.Core.Vision;
 using Auto_LDPlayer;
 using Auto_LDPlayer.Enums;
 using System;
+using System.Collections.Concurrent;
+using System.Collections.Generic;
+using System.Configuration;
+using System.Diagnostics;
 using System.Drawing;
-using System.Drawing.Imaging;
+using System.Globalization;
 using System.IO;
+using System.Linq;
+using System.Net;
+using System.Text.RegularExpressions;
 using System.Threading;
 using System.Threading.Tasks;
 
@@ -15,8 +24,160 @@ namespace ADB_Tool_Automation_Post_FB.Infrastructure.LDPlayer
     /// New automation code must depend on ILdPlayerClient instead of calling
     /// Auto_LDPlayer.LDPlayer directly.
     /// </summary>
-    public sealed class AutoLdPlayerClient : ILdPlayerClient
+    public sealed class AutoLdPlayerClient : ILdPlayerClient, IAbsoluteSwipeLdPlayerClient, IAdbEndpointRefreshable, IFocusedInputValueReader,
+        IFrameCapturingLdPlayerClient
     {
+        private const int InputCommandTimeoutMilliseconds = 3000;
+        // Fruit2048 uses a bounded, visually verified swipe path.  Waiting three
+        // seconds for a short Android input command throttles every move; keep a
+        // small command-acceptance window and let post-swipe board validation
+        // determine whether the game actually changed.
+        private const int FruitSwipeCommandTimeoutMilliseconds = 500;
+        private const int FocusedInputReadAttempts = 3;
+        private const int FocusedInputRetryDelayMilliseconds = 150;
+
+        private const int ScreenshotReadyAttempts = 3;
+        private const int ScreenshotCaptureAttempts = 4;
+        private const int ScreenshotCaptureRetryDelayMilliseconds = 500;
+        private static readonly ConcurrentDictionary<string, SemaphoreSlim> ScreenshotLocks =
+            new ConcurrentDictionary<string, SemaphoreSlim>(StringComparer.OrdinalIgnoreCase);
+        private static readonly ConcurrentDictionary<string, DateTimeOffset> HealthyDevices =
+            new ConcurrentDictionary<string, DateTimeOffset>(StringComparer.OrdinalIgnoreCase);
+        private static readonly int ScreenshotConcurrencyLimit =
+            ReadPositiveSetting("Operations.MaxConcurrentScreenshots", 10);
+        private static readonly SemaphoreSlim ScreenshotGate = new SemaphoreSlim(
+            ScreenshotConcurrencyLimit, ScreenshotConcurrencyLimit);
+        private static readonly int AdbHealthTtlMilliseconds =
+            ReadPositiveSetting("Operations.AdbHealthTtlMs", 3000);
+        private static long framesCaptured;
+        private static long framesEncodedToPng;
+        private static long screenshotGateWaitMs;
+        private static long screenShootDurationMs;
+        private static long adbHealthChecks;
+        private static long adbHealthCacheHits;
+        private static long normalBitmapCaptures;
+        private static long recoveredFileCaptures;
+        private static long recoveryDirectoryScans;
+        private static long screenshotRetries;
+        private static long screenshotFailures;
+        private static long screenshotTotalDurationMs;
+        private static int screenshotQueueDepth;
+        private static int activeScreenshotOperations;
+        private static int peakActiveScreenshotOperations;
+        private static long maxScreenshotGateWaitMs;
+        private static string lastScreenshotDeviceName;
+        private static string lastScreenshotWorkflowStage;
+        private static int lastScreenshotDeviceIndex = -1;
+        private static int lastScreenshotAttemptNumber;
+
+        public static ScreenshotCaptureMetrics GetScreenshotCaptureMetrics()
+        {
+            return new ScreenshotCaptureMetrics
+            {
+                FramesCaptured = Interlocked.Read(ref framesCaptured),
+                FramesEncodedToPng = Interlocked.Read(ref framesEncodedToPng),
+                PngEncodes = Interlocked.Read(ref framesEncodedToPng),
+                ScreenshotGateWaitMs = Interlocked.Read(ref screenshotGateWaitMs),
+                ScreenShootDurationMs = Interlocked.Read(ref screenShootDurationMs),
+                ScreenshotCaptureDurationMs = Interlocked.Read(ref screenShootDurationMs),
+                ScreenshotTotalDurationMs = Interlocked.Read(ref screenshotTotalDurationMs),
+                AdbHealthChecks = Interlocked.Read(ref adbHealthChecks),
+                AdbHealthCacheHits = Interlocked.Read(ref adbHealthCacheHits),
+                NormalBitmapCaptures = Interlocked.Read(ref normalBitmapCaptures),
+                RecoveredFileCaptures = Interlocked.Read(ref recoveredFileCaptures),
+                RecoveryDirectoryScans = Interlocked.Read(ref recoveryDirectoryScans),
+                ScreenshotRetries = Interlocked.Read(ref screenshotRetries),
+                ScreenshotFailures = Interlocked.Read(ref screenshotFailures),
+                ScreenshotRetryCount = Interlocked.Read(ref screenshotRetries),
+                ScreenshotFailureCount = Interlocked.Read(ref screenshotFailures),
+                ScreenshotQueueDepth = Volatile.Read(ref screenshotQueueDepth),
+                ActiveScreenshotOperations = Volatile.Read(ref activeScreenshotOperations),
+                ScreenshotGateLimit = ScreenshotConcurrencyLimit,
+                PeakActiveScreenshotOperations = Volatile.Read(ref peakActiveScreenshotOperations),
+                MaxScreenshotGateWaitMs = Interlocked.Read(ref maxScreenshotGateWaitMs),
+                LastDeviceName = Volatile.Read(ref lastScreenshotDeviceName),
+                LastDeviceIndex = Volatile.Read(ref lastScreenshotDeviceIndex),
+                LastWorkflowStage = Volatile.Read(ref lastScreenshotWorkflowStage)
+                    ?? "Unspecified",
+                LastAttemptNumber = Volatile.Read(ref lastScreenshotAttemptNumber)
+            };
+        }
+
+        private static int ReadPositiveSetting(string key, int fallback)
+        {
+            int value;
+            return int.TryParse(ConfigurationManager.AppSettings[key], out value) && value > 0
+                ? value : fallback;
+        }
+
+        private static void UpdateMaximum(ref int target, int value)
+        {
+            int observed;
+            while ((observed = Volatile.Read(ref target)) < value
+                && Interlocked.CompareExchange(ref target, value, observed) != observed) { }
+        }
+
+        private static void UpdateMaximum(ref long target, long value)
+        {
+            long observed;
+            while ((observed = Interlocked.Read(ref target)) < value
+                && Interlocked.CompareExchange(ref target, value, observed) != observed) { }
+        }
+
+        public static string ConfigureLdConsolePath(string configuredPath)
+        {
+            string expandedPath = string.IsNullOrWhiteSpace(configuredPath)
+                ? null
+                : Environment.ExpandEnvironmentVariables(configuredPath.Trim());
+            string[] candidates =
+            {
+                expandedPath,
+                @"C:\LDPlayer\LDPlayer9\ldconsole.exe",
+                @"D:\LDPlayer\LDPlayer9\ldconsole.exe"
+            };
+
+            string resolvedPath = candidates.FirstOrDefault(path =>
+                !string.IsNullOrWhiteSpace(path) && File.Exists(path));
+            if (resolvedPath == null)
+            {
+                throw new FileNotFoundException(
+                    "LDPlayer console was not found. Configure 'LDCONSOLE_PATH' in App.config.",
+                    expandedPath);
+            }
+
+            string ldPlayerDirectory = Path.GetDirectoryName(resolvedPath);
+            string adbPath = Path.Combine(ldPlayerDirectory, "adb.exe");
+            if (!File.Exists(adbPath))
+            {
+                throw new FileNotFoundException(
+                    $"LDPlayer ADB was not found beside '{resolvedPath}'.",
+                    adbPath);
+            }
+
+            Auto_LDPlayer.LDPlayer.PathLD = resolvedPath;
+            KAutoHelper.ADBHelper.SetADBFolderPath(ldPlayerDirectory);
+            return resolvedPath;
+        }
+
+        public Task<IReadOnlyList<string>> GetDeviceNamesAsync(CancellationToken cancellationToken)
+        {
+            cancellationToken.ThrowIfCancellationRequested();
+
+            var runningDevices = Auto_LDPlayer.LDPlayer.GetDevicesRunning()
+                ?? new List<string>();
+            var allDevices = Auto_LDPlayer.LDPlayer.GetDevices()
+                ?? new List<string>();
+
+            cancellationToken.ThrowIfCancellationRequested();
+            IReadOnlyList<string> deviceNames = runningDevices
+                .Concat(allDevices)
+                .Where(name => !string.IsNullOrWhiteSpace(name))
+                .Select(name => name.Trim())
+                .Distinct(StringComparer.OrdinalIgnoreCase)
+                .ToArray();
+            return Task.FromResult(deviceNames);
+        }
+
         public Task<bool> IsRunningAsync(string deviceName, CancellationToken cancellationToken)
         {
             cancellationToken.ThrowIfCancellationRequested();
@@ -24,6 +185,15 @@ namespace ADB_Tool_Automation_Post_FB.Infrastructure.LDPlayer
 
             bool isRunning = Auto_LDPlayer.LDPlayer.IsDeviceRunning(LDType.Name, deviceName);
             return Task.FromResult(isRunning);
+        }
+
+        public async Task<bool> RefreshAdbEndpointAsync(string deviceName, CancellationToken cancellationToken)
+        {
+            cancellationToken.ThrowIfCancellationRequested();
+            ValidateDeviceName(deviceName);
+            HealthyDevices.TryRemove(deviceName.Trim(), out DateTimeOffset ignored);
+            IReadOnlyList<string> devices = await GetDeviceNamesAsync(cancellationToken);
+            return devices.Any(name => string.Equals(name, deviceName.Trim(), StringComparison.OrdinalIgnoreCase));
         }
 
         public Task OpenAsync(string deviceName, CancellationToken cancellationToken)
@@ -56,25 +226,171 @@ namespace ADB_Tool_Automation_Post_FB.Infrastructure.LDPlayer
             return Task.CompletedTask;
         }
 
-        public Task<byte[]> CaptureScreenshotPngAsync(string deviceName, CancellationToken cancellationToken)
+        public async Task<byte[]> CaptureScreenshotPngAsync(string deviceName, CancellationToken cancellationToken)
+        {
+            using (CapturedFrame frame = await CaptureFrameAsync(deviceName, cancellationToken))
+                return frame.GetPngBytes();
+        }
+
+        public async Task<CapturedFrame> CaptureFrameAsync(string deviceName, CancellationToken cancellationToken)
         {
             cancellationToken.ThrowIfCancellationRequested();
             ValidateDeviceName(deviceName);
 
+            string normalizedDeviceName = deviceName.Trim();
+            var totalWatch = Stopwatch.StartNew();
+            Volatile.Write(ref lastScreenshotDeviceName, normalizedDeviceName);
+            Volatile.Write(ref lastScreenshotDeviceIndex, ParseDeviceIndex(normalizedDeviceName));
+            Volatile.Write(ref lastScreenshotWorkflowStage,
+                ScreenshotCaptureContext.WorkflowStage);
+            SemaphoreSlim screenshotLock = ScreenshotLocks.GetOrAdd(
+                normalizedDeviceName,
+                _ => new SemaphoreSlim(1, 1));
+
             try
             {
-                using (Bitmap screenshot = Auto_LDPlayer.LDPlayer.ScreenShoot(LDType.Name, deviceName))
+                await screenshotLock.WaitAsync(cancellationToken);
+                try
                 {
-                    if (screenshot == null)
-                        throw new InvalidOperationException($"Screenshot returned null for LDPlayer device '{deviceName}'.");
-
-                    cancellationToken.ThrowIfCancellationRequested();
-
-                    using (var stream = new MemoryStream())
+                string adbState = "device";
+                if (!IsRecentlyHealthy(normalizedDeviceName))
+                {
+                    adbState = null;
+                    for (int attempt = 1; attempt <= ScreenshotReadyAttempts; attempt++)
                     {
-                        screenshot.Save(stream, ImageFormat.Png);
-                        return Task.FromResult(stream.ToArray());
+                        cancellationToken.ThrowIfCancellationRequested();
+                        Interlocked.Increment(ref adbHealthChecks);
+                        adbState = Auto_LDPlayer.LDPlayer.Adb(
+                            LDType.Name, normalizedDeviceName, "get-state", 3000, 1);
+
+                        if (string.Equals(adbState?.Trim(), "device", StringComparison.OrdinalIgnoreCase))
+                            break;
+
+                        if (attempt < ScreenshotReadyAttempts)
+                            await Task.Delay(300, cancellationToken);
                     }
+                }
+                else
+                    Interlocked.Increment(ref adbHealthCacheHits);
+
+                if (!string.Equals(adbState?.Trim(), "device", StringComparison.OrdinalIgnoreCase))
+                {
+                    string response = string.IsNullOrWhiteSpace(adbState)
+                        ? "no response"
+                        : adbState.Trim();
+                    throw new InvalidOperationException(
+                        $"LDPlayer device '{normalizedDeviceName}' is not available through ADB. "
+                        + "In LDPlayer, open Settings > Other settings, set ADB debugging to "
+                        + $"Open local connection, save, and restart the emulator. ADB response: {response}");
+                }
+                HealthyDevices[normalizedDeviceName] = DateTimeOffset.UtcNow;
+
+                for (int attempt = 1; attempt <= ScreenshotCaptureAttempts; attempt++)
+                {
+                    Volatile.Write(ref lastScreenshotAttemptNumber, attempt);
+                    cancellationToken.ThrowIfCancellationRequested();
+                    if (attempt > 1)
+                    {
+                        Interlocked.Increment(ref screenshotRetries);
+                        Interlocked.Increment(ref adbHealthChecks);
+                        string retryAdbState = Auto_LDPlayer.LDPlayer.Adb(
+                            LDType.Name,
+                            normalizedDeviceName,
+                            "get-state",
+                            InputCommandTimeoutMilliseconds,
+                            1);
+                        if (!string.Equals(retryAdbState?.Trim(), "device",
+                            StringComparison.OrdinalIgnoreCase))
+                        {
+                            string response = string.IsNullOrWhiteSpace(retryAdbState)
+                                ? "no response"
+                                : retryAdbState.Trim();
+                            throw new InvalidOperationException(
+                                $"LDPlayer device '{normalizedDeviceName}' is not available through ADB "
+                                + $"after screenshot attempt {attempt - 1}. ADB response: {response}");
+                        }
+                        HealthyDevices[normalizedDeviceName] = DateTimeOffset.UtcNow;
+                    }
+
+                    string screenshotFileName = $"ikautomation_{Guid.NewGuid():N}.png";
+                    string generatedFilePrefix = Path.GetFileNameWithoutExtension(
+                        screenshotFileName);
+                    Bitmap screenshot = null;
+                    var gateWait = Stopwatch.StartNew();
+                    Interlocked.Increment(ref screenshotQueueDepth);
+                    try { await ScreenshotGate.WaitAsync(cancellationToken); }
+                    finally { Interlocked.Decrement(ref screenshotQueueDepth); }
+                    gateWait.Stop();
+                    Interlocked.Increment(ref activeScreenshotOperations);
+                    Interlocked.Add(ref screenshotGateWaitMs, gateWait.ElapsedMilliseconds);
+                    UpdateMaximum(ref peakActiveScreenshotOperations,
+                        Volatile.Read(ref activeScreenshotOperations));
+                    UpdateMaximum(ref maxScreenshotGateWaitMs, gateWait.ElapsedMilliseconds);
+                    try
+                    {
+                        var screenShootWatch = Stopwatch.StartNew();
+                        try
+                        {
+                            screenshot = Auto_LDPlayer.LDPlayer.ScreenShoot(
+                                LDType.Name, normalizedDeviceName, true, screenshotFileName);
+                        }
+                        finally
+                        {
+                            screenShootWatch.Stop();
+                            Interlocked.Add(ref screenShootDurationMs,
+                                screenShootWatch.ElapsedMilliseconds);
+                        }
+                    }
+                    finally
+                    {
+                        Interlocked.Decrement(ref activeScreenshotOperations);
+                        ScreenshotGate.Release();
+                        RuntimePressureMetrics.ReportScreenshot(gateWait.ElapsedMilliseconds,
+                            screenshot == null, Volatile.Read(ref screenshotQueueDepth),
+                            Volatile.Read(ref activeScreenshotOperations),
+                            ScreenshotConcurrencyLimit);
+                    }
+                    if (screenshot != null)
+                    {
+                        // ScreenShoot returns a Bitmap but also leaves a PNG beside the
+                        // executable. Delete the known temporary artifact immediately;
+                        // scanning the directory on every healthy capture would add
+                        // needless I/O to a multi-device farm.
+                        DeleteGeneratedScreenshotArtifact(generatedFilePrefix,
+                            normalizedDeviceName);
+                        Interlocked.Increment(ref framesCaptured);
+                        Interlocked.Increment(ref normalBitmapCaptures);
+                        return new CapturedFrame(screenshot, DateTimeOffset.UtcNow,
+                            OnFrameEncodedToPng);
+                    }
+
+                    // Auto_LDPlayer can pull a valid artifact but return null when an
+                    // instance name contains spaces. Recovery is deliberately outside
+                    // ScreenshotGate and is never attempted after a normal Bitmap capture.
+                    CapturedFrame recovered = TryRecoverGeneratedScreenshot(
+                        generatedFilePrefix, cancellationToken);
+                    if (recovered != null)
+                    {
+                        Interlocked.Increment(ref framesCaptured);
+                        Interlocked.Increment(ref recoveredFileCaptures);
+                        return recovered;
+                    }
+
+                    if (attempt < ScreenshotCaptureAttempts)
+                    {
+                        HealthyDevices.TryRemove(normalizedDeviceName, out DateTimeOffset ignoredHealth);
+                        await Task.Delay(ScreenshotCaptureRetryDelayMilliseconds,
+                            cancellationToken);
+                    }
+                }
+
+                throw new InvalidOperationException(
+                    $"Auto_LDPlayer returned no screenshot for LDPlayer device '{normalizedDeviceName}' "
+                    + $"after ADB reported ready and {ScreenshotCaptureAttempts} capture attempts.");
+                }
+                finally
+                {
+                    screenshotLock.Release();
                 }
             }
             catch (OperationCanceledException)
@@ -83,9 +399,96 @@ namespace ADB_Tool_Automation_Post_FB.Infrastructure.LDPlayer
             }
             catch (Exception ex)
             {
+                Interlocked.Increment(ref screenshotFailures);
+                RuntimePressureMetrics.ReportScreenshot(0, true,
+                    Volatile.Read(ref screenshotQueueDepth),
+                    Volatile.Read(ref activeScreenshotOperations));
+                HealthyDevices.TryRemove(normalizedDeviceName, out DateTimeOffset ignoredHealth);
                 throw new InvalidOperationException(
-                    $"Failed to capture PNG screenshot from LDPlayer device '{deviceName}'.",
+                    $"Failed to capture PNG screenshot from LDPlayer device '{deviceName}': {ex.Message}",
                     ex);
+            }
+            finally
+            {
+                totalWatch.Stop();
+                Interlocked.Add(ref screenshotTotalDurationMs, totalWatch.ElapsedMilliseconds);
+            }
+        }
+
+        private static int ParseDeviceIndex(string deviceName)
+        {
+            int start = deviceName?.Length ?? 0;
+            while (start > 0 && char.IsDigit(deviceName[start - 1])) start--;
+            return start < (deviceName?.Length ?? 0)
+                && int.TryParse(deviceName.Substring(start), out int value) ? value : -1;
+        }
+
+        private static bool IsRecentlyHealthy(string deviceName)
+        {
+            DateTimeOffset confirmedAt;
+            return HealthyDevices.TryGetValue(deviceName, out confirmedAt)
+                && DateTimeOffset.UtcNow - confirmedAt
+                    < TimeSpan.FromMilliseconds(AdbHealthTtlMilliseconds);
+        }
+
+        private static void OnFrameEncodedToPng()
+        {
+            Interlocked.Increment(ref framesEncodedToPng);
+        }
+
+        private static CapturedFrame TryRecoverGeneratedScreenshot(string filePrefix,
+            CancellationToken cancellationToken)
+        {
+            cancellationToken.ThrowIfCancellationRequested();
+            string currentDirectory = Environment.CurrentDirectory;
+            string[] matches;
+            try
+            {
+                Interlocked.Increment(ref recoveryDirectoryScans);
+                matches = Directory.GetFiles(currentDirectory, filePrefix + "*");
+            }
+            catch (IOException) { return null; }
+            catch (UnauthorizedAccessException) { return null; }
+
+            try
+            {
+                foreach (string path in matches.OrderByDescending(File.GetLastWriteTimeUtc))
+                {
+                    cancellationToken.ThrowIfCancellationRequested();
+                    try
+                    {
+                        using (var screenshot = new Bitmap(path))
+                            return new CapturedFrame(new Bitmap(screenshot),
+                                DateTimeOffset.UtcNow, OnFrameEncodedToPng);
+                    }
+                    catch (ArgumentException) { }
+                    catch (IOException) { }
+                    catch (UnauthorizedAccessException) { }
+                }
+            }
+            finally { DeleteGeneratedScreenshotArtifacts(matches); }
+            return null;
+        }
+
+        private static void DeleteGeneratedScreenshotArtifact(string filePrefix,
+            string deviceName)
+        {
+            try
+            {
+                string fileName = Path.GetFileName(filePrefix + "Name_" + deviceName + ".png");
+                File.Delete(Path.Combine(Environment.CurrentDirectory, fileName));
+            }
+            catch (IOException) { }
+            catch (UnauthorizedAccessException) { }
+        }
+
+        private static void DeleteGeneratedScreenshotArtifacts(IEnumerable<string> artifacts)
+        {
+            foreach (string path in artifacts ?? Enumerable.Empty<string>())
+            {
+                try { File.Delete(path); }
+                catch (IOException) { }
+                catch (UnauthorizedAccessException) { }
             }
         }
 
@@ -94,7 +497,20 @@ namespace ADB_Tool_Automation_Post_FB.Infrastructure.LDPlayer
             cancellationToken.ThrowIfCancellationRequested();
             ValidateDeviceName(deviceName);
 
-            Auto_LDPlayer.LDPlayer.Tap(LDType.Name, deviceName, x, y);
+            // LDPlayer.Tap uses a 200 ms process timeout and retries once. The first
+            // command can reach Android even when ldnconsole has not exited yet, so
+            // its retry may become a delayed second tap after the current panel has
+            // closed. Input commands have side effects and must never be retried.
+            string output = Auto_LDPlayer.LDPlayer.Adb(
+                LDType.Name,
+                deviceName,
+                $"shell input tap {x} {y}",
+                InputCommandTimeoutMilliseconds,
+                0);
+            if (output == null)
+                throw new InvalidOperationException(
+                    $"Failed to send a single tap to LDPlayer device '{deviceName}' at ({x}, {y}).");
+
             return Task.CompletedTask;
         }
 
@@ -145,6 +561,26 @@ namespace ADB_Tool_Automation_Post_FB.Infrastructure.LDPlayer
             return Task.CompletedTask;
         }
 
+        public Task SwipeAsync(string deviceName, int startX, int startY, int endX, int endY,
+            int durationMilliseconds, CancellationToken cancellationToken)
+        {
+            cancellationToken.ThrowIfCancellationRequested();
+            ValidateDeviceName(deviceName);
+            if (durationMilliseconds <= 0) throw new ArgumentOutOfRangeException(nameof(durationMilliseconds));
+            string output = Auto_LDPlayer.LDPlayer.Adb(LDType.Name, deviceName,
+                $"shell input swipe {startX} {startY} {endX} {endY} {durationMilliseconds}",
+                FruitSwipeCommandTimeoutMilliseconds, 0);
+            if (output == null)
+                throw new InvalidOperationException($"Failed to send swipe to LDPlayer device '{deviceName}'.");
+            string normalized = output.Trim();
+            if (normalized.IndexOf("not found", StringComparison.OrdinalIgnoreCase) >= 0
+                || normalized.IndexOf("offline", StringComparison.OrdinalIgnoreCase) >= 0
+                || normalized.IndexOf("no devices", StringComparison.OrdinalIgnoreCase) >= 0
+                || normalized.IndexOf("error:", StringComparison.OrdinalIgnoreCase) >= 0)
+                throw new InvalidOperationException($"ADB rejected swipe for LDPlayer device '{deviceName}': {normalized}");
+            return Task.CompletedTask;
+        }
+
         public Task BackAsync(string deviceName, CancellationToken cancellationToken)
         {
             cancellationToken.ThrowIfCancellationRequested();
@@ -164,6 +600,98 @@ namespace ADB_Tool_Automation_Post_FB.Infrastructure.LDPlayer
 
             Auto_LDPlayer.LDPlayer.InputText(LDType.Name, deviceName, text);
             return Task.CompletedTask;
+        }
+
+        public async Task<int> ReadFocusedIntegerAsync(
+            string deviceName,
+            CancellationToken cancellationToken)
+        {
+            cancellationToken.ThrowIfCancellationRequested();
+            ValidateDeviceName(deviceName);
+
+            for (int attempt = 1; attempt <= FocusedInputReadAttempts; attempt++)
+            {
+                cancellationToken.ThrowIfCancellationRequested();
+                string hierarchy = Auto_LDPlayer.LDPlayer.Adb(
+                    LDType.Name,
+                    deviceName,
+                    "shell uiautomator dump /dev/tty",
+                    InputCommandTimeoutMilliseconds,
+                    0);
+                cancellationToken.ThrowIfCancellationRequested();
+
+                int value;
+                if (TryReadFocusedInteger(hierarchy, out value))
+                    return value;
+
+                cancellationToken.ThrowIfCancellationRequested();
+                Auto_LDPlayer.LDPlayer.Adb(
+                    LDType.Name,
+                    deviceName,
+                    "shell uiautomator dump /sdcard/ikautomation_focused_input.xml",
+                    InputCommandTimeoutMilliseconds,
+                    0);
+                cancellationToken.ThrowIfCancellationRequested();
+                hierarchy = Auto_LDPlayer.LDPlayer.Adb(
+                    LDType.Name,
+                    deviceName,
+                    "shell cat /sdcard/ikautomation_focused_input.xml",
+                    InputCommandTimeoutMilliseconds,
+                    0);
+                cancellationToken.ThrowIfCancellationRequested();
+                if (TryReadFocusedInteger(hierarchy, out value))
+                    return value;
+
+                if (attempt < FocusedInputReadAttempts)
+                    await Task.Delay(
+                        FocusedInputRetryDelayMilliseconds,
+                        cancellationToken);
+            }
+
+            throw new InvalidOperationException(
+                $"Focused numeric coordinate input could not be read from "
+                + $"LDPlayer device '{deviceName}'.");
+        }
+
+        private static bool TryReadFocusedInteger(string hierarchy, out int value)
+        {
+            value = 0;
+            if (string.IsNullOrWhiteSpace(hierarchy))
+                return false;
+
+            foreach (Match nodeMatch in Regex.Matches(
+                hierarchy,
+                @"<node\b[^>]*>",
+                RegexOptions.IgnoreCase))
+            {
+                string node = nodeMatch.Value;
+                if (!Regex.IsMatch(
+                        node,
+                        @"\bclass=""android\.widget\.EditText""",
+                        RegexOptions.IgnoreCase)
+                    || !Regex.IsMatch(
+                        node,
+                        @"\bfocused=""true""",
+                        RegexOptions.IgnoreCase))
+                    continue;
+
+                Match textMatch = Regex.Match(
+                    node,
+                    @"\btext=""([^""]*)""",
+                    RegexOptions.IgnoreCase);
+                if (!textMatch.Success)
+                    continue;
+
+                string text = WebUtility.HtmlDecode(textMatch.Groups[1].Value);
+                if (int.TryParse(
+                    text,
+                    NumberStyles.Integer,
+                    CultureInfo.InvariantCulture,
+                    out value))
+                    return true;
+            }
+
+            return false;
         }
 
         public Task PressKeyAsync(

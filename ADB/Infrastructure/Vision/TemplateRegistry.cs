@@ -2,30 +2,94 @@ using ADB_Tool_Automation_Post_FB.Core.Vision;
 using System;
 using System.Collections.Generic;
 using System.IO;
+using System.Collections.Concurrent;
 
 namespace ADB_Tool_Automation_Post_FB.Infrastructure.Vision
 {
     public sealed class TemplateRegistry : ITemplateRegistry
     {
         private const double DefaultThreshold = 0.80;
+        private readonly ConcurrentDictionary<TemplateId, Lazy<byte[]>> byteCache =
+            new ConcurrentDictionary<TemplateId, Lazy<byte[]>>();
 
         private static readonly IReadOnlyDictionary<TemplateId, TemplateDefinition> Definitions =
             new Dictionary<TemplateId, TemplateDefinition>
             {
+                { TemplateId.CityToWorldMapButton, Define(TemplateId.CityToWorldMapButton, "Global/city_to_world_map_button.png") },
                 { TemplateId.WorldMapAnchor, Define(TemplateId.WorldMapAnchor, "Global/world_map_anchor.png") },
-                { TemplateId.ResourceSearchPanel, Define(TemplateId.ResourceSearchPanel, "Search/resource_search_panel.png") },
-                { TemplateId.SearchButton, Define(TemplateId.SearchButton, "Search/search_button.png") },
+                { TemplateId.WorldMapPinButton, Define(TemplateId.WorldMapPinButton, "Global/world_map_pin_button.png") },
+                { TemplateId.ContinentMapTitle, Define(TemplateId.ContinentMapTitle, "Global/continent_map_title.png") },
+                { TemplateId.ContinentMapHomeTerritoryAnchor, Define(TemplateId.ContinentMapHomeTerritoryAnchor, "Global/continent_map_home_territory_anchor.png") },
+                { TemplateId.ContinentMapPinButton, Define(TemplateId.ContinentMapPinButton, "Global/continent_map_pin_button.png") },
+                { TemplateId.ContinentMapHomeLocationPin, Define(TemplateId.ContinentMapHomeLocationPin, "Global/continent_map_home_location_pin.png") },
+                { TemplateId.ContinentMapSearchTargetPin, Define(TemplateId.ContinentMapSearchTargetPin, "Global/continent_map_search_target_pin.png") },
+                { TemplateId.ResourceSearchPanelAnchor, Define(TemplateId.ResourceSearchPanelAnchor, "Search/resource_search_panel_anchor.png") },
+                { TemplateId.SearchButtonEnabled, Define(TemplateId.SearchButtonEnabled, "Search/search_button_enabled.png") },
+                { TemplateId.ResourceTabSelected, Define(TemplateId.ResourceTabSelected, "Search/resource_tab_selected.png") },
+                { TemplateId.ResourceTabUnselected, Define(TemplateId.ResourceTabUnselected, "Search/resource_tab_unselected.png") },
+                { TemplateId.ResourceIronSelected, Define(TemplateId.ResourceIronSelected, "Search/resource_iron_selected.png") },
+                { TemplateId.ResourceIronUnselected, Define(TemplateId.ResourceIronUnselected, "Search/resource_iron_unselected.png") },
+                { TemplateId.LevelMinusButton, Define(TemplateId.LevelMinusButton, "Search/level_minus_button.png") },
+                { TemplateId.LevelPlusButton, Define(TemplateId.LevelPlusButton, "Search/level_plus_button.png") },
+                { TemplateId.LevelValue5, Define(TemplateId.LevelValue5, "Search/level_value_5.png") },
+                { TemplateId.LevelValue6, Define(TemplateId.LevelValue6, "Search/level_value_6.png") },
+                { TemplateId.LevelValue7, Define(TemplateId.LevelValue7, "Search/level_value_7.png") },
+                { TemplateId.UnoccupiedFilterChecked, Define(TemplateId.UnoccupiedFilterChecked, "Search/unoccupied_filter_checked.png") },
+                { TemplateId.UnoccupiedFilterUnchecked, Define(TemplateId.UnoccupiedFilterUnchecked, "Search/unoccupied_filter_unchecked.png") },
                 { TemplateId.CheckboxChecked, Define(TemplateId.CheckboxChecked, "Search/checkbox_checked.png") },
                 { TemplateId.CheckboxUnchecked, Define(TemplateId.CheckboxUnchecked, "Search/checkbox_unchecked.png") },
                 { TemplateId.ResourceNotFoundToast, Define(TemplateId.ResourceNotFoundToast, "Errors/resource_not_found_toast.png") },
+                { TemplateId.ResourceNotFoundToastAnchor, Define(TemplateId.ResourceNotFoundToastAnchor, "Search/resource_not_found_toast_anchor.png") },
+                { TemplateId.ResourceNotFoundToastActionAnchor, Define(TemplateId.ResourceNotFoundToastActionAnchor, "Search/resource_not_found_toast_action_anchor.png") },
+                { TemplateId.ResourceNotFoundToastShortAnchor, Define(TemplateId.ResourceNotFoundToastShortAnchor, "Search/resource_not_found_toast_short_anchor.png") },
+                { TemplateId.ResourceNotFoundToastOtherRegionAnchor, Define(TemplateId.ResourceNotFoundToastOtherRegionAnchor, "Search/resource_not_found_toast_other_region_anchor.png") },
+                { TemplateId.ResourceTargetLevelTooLowToastAnchor, Define(TemplateId.ResourceTargetLevelTooLowToastAnchor, "Search/resource_target_level_too_low_toast_anchor.png") },
+                { TemplateId.ResourceTargetLevelSeasonMapToastAnchor, Define(TemplateId.ResourceTargetLevelSeasonMapToastAnchor, "Search/resource_target_level_season_map_toast_anchor.png") },
+                { TemplateId.ResourceAreaLv2RedirectAnchor, Define(TemplateId.ResourceAreaLv2RedirectAnchor, "Search/resource_target_level_season_map_toast_anchor.png") },
+                { TemplateId.ResourceAreaPhraseAnchor, Define(TemplateId.ResourceAreaPhraseAnchor, "Search/resource_area_phrase_anchor.png", 0.72) },
+                { TemplateId.ResourceAreaLv2Anchor, Define(TemplateId.ResourceAreaLv2Anchor, "Search/resource_area_lv2_anchor.png", 0.72) },
+                // Keep the existing deployed Lv2 crop as the ending-anchor slot until
+                // the tighter "Lv2 để tìm." crop is supplied. This preserves the
+                // canonical two-anchor decision without a missing runtime asset.
+                { TemplateId.ResourceAreaLv2EndingAnchor, Define(TemplateId.ResourceAreaLv2EndingAnchor, "Search/resource_area_lv2_anchor.png", 0.72) },
                 { TemplateId.ResourcePopup, Define(TemplateId.ResourcePopup, "Resources/resource_popup.png") },
                 { TemplateId.GatherButton, Define(TemplateId.GatherButton, "Resources/gather_button.png") },
+                { TemplateId.ResourcePopupInfoAnchor, Define(TemplateId.ResourcePopupInfoAnchor, "Resources/resource_popup_info_anchor.png") },
+                { TemplateId.ResourcePopupIronTitle, Define(TemplateId.ResourcePopupIronTitle, "Resources/resource_popup_iron_title.png") },
+                { TemplateId.ResourcePopupStoneTitle, Define(TemplateId.ResourcePopupStoneTitle, "Resources/resource_popup_stone_title.png") },
+                { TemplateId.GatherButtonEnabled, Define(TemplateId.GatherButtonEnabled, "Resources/gather_button_enabled.png") },
+                { TemplateId.ResourceStoneSelected, Define(TemplateId.ResourceStoneSelected, "Search/resource_stone_selected.png") },
+                { TemplateId.ResourceStoneUnselected, Define(TemplateId.ResourceStoneUnselected, "Search/resource_stone_unselected.png") },
+                { TemplateId.ResourceWoodSelected, Define(TemplateId.ResourceWoodSelected, "Search/resource_wood_selected.png") },
+                { TemplateId.ResourceWoodUnselected, Define(TemplateId.ResourceWoodUnselected, "Search/resource_wood_unselected.png") },
+                { TemplateId.ResourceFoodSelected, Define(TemplateId.ResourceFoodSelected, "Search/resource_food_selected.png") },
+                { TemplateId.ResourceFoodUnselected, Define(TemplateId.ResourceFoodUnselected, "Search/resource_food_unselected.png") },
+                { TemplateId.ResourcePopupWoodTitle, Define(TemplateId.ResourcePopupWoodTitle, "Resources/resource_popup_wood_title.png") },
+                { TemplateId.ResourcePopupFoodTitle, Define(TemplateId.ResourcePopupFoodTitle, "Resources/resource_popup_food_title.png") },
+                { TemplateId.StorageLimitDialogAnchor, Define(TemplateId.StorageLimitDialogAnchor, "Dialogs/storage_limit_dialog_anchor.png") },
+                { TemplateId.StorageLimitConfirmButton, Define(TemplateId.StorageLimitConfirmButton, "Dialogs/storage_limit_confirm_button.png") },
+                { TemplateId.StorageLimitCancelButton, Define(TemplateId.StorageLimitCancelButton, "Dialogs/storage_limit_cancel_button.png") },
+                { TemplateId.ResourceExpiryDialogAnchor, Define(TemplateId.ResourceExpiryDialogAnchor, "Dialogs/resource_expiry_dialog_anchor.png") },
+                { TemplateId.TeamSelectionPanelAnchor, Define(TemplateId.TeamSelectionPanelAnchor, "Teams/team_selection_panel_anchor.png") },
+                { TemplateId.TeamAdjustFormationButton, Define(TemplateId.TeamAdjustFormationButton, "Teams/team_adjust_formation_button.png") },
+                { TemplateId.TeamActionButtonEnabled, Define(TemplateId.TeamActionButtonEnabled, "Teams/team_action_button_enabled.png") },
+                { TemplateId.Team1Badge, Define(TemplateId.Team1Badge, "Teams/team_1_badge.png") },
+                { TemplateId.Team2Badge, Define(TemplateId.Team2Badge, "Teams/team_2_badge.png") },
+                { TemplateId.Team3Badge, Define(TemplateId.Team3Badge, "Teams/team_3_badge.png") },
+                { TemplateId.Team4Badge, Define(TemplateId.Team4Badge, "Teams/team_4_badge.png") },
+                { TemplateId.TeamSelectedBorderAnchor, Define(TemplateId.TeamSelectedBorderAnchor, "Teams/team_selected_border_anchor.png") },
+                { TemplateId.TeamDisabledAnchor, Define(TemplateId.TeamDisabledAnchor, "Teams/team_disabled_anchor.png") },
+                { TemplateId.TeamBusyStatusAnchor, Define(TemplateId.TeamBusyStatusAnchor, "Teams/team_busy_status_anchor.png") },
+                { TemplateId.TeamMarchTimerAnchor, Define(TemplateId.TeamMarchTimerAnchor, "Teams/team_march_timer_anchor.png") },
                 { TemplateId.TeamPanel, Define(TemplateId.TeamPanel, "Teams/team_panel.png") },
                 { TemplateId.TeamFree, Define(TemplateId.TeamFree, "Teams/team_free.png") },
                 { TemplateId.TeamBusy, Define(TemplateId.TeamBusy, "Teams/team_busy.png") },
                 { TemplateId.TeamSelected, Define(TemplateId.TeamSelected, "Teams/team_selected.png") },
+                { TemplateId.WorldMapTeamReadyAnchor, Define(TemplateId.WorldMapTeamReadyAnchor, "Teams/world_map_team_ready_anchor.png") },
                 { TemplateId.NetworkError, Define(TemplateId.NetworkError, "Errors/network_error.png") },
-                { TemplateId.ReconnectButton, Define(TemplateId.ReconnectButton, "Errors/reconnect_button.png") }
+                { TemplateId.ReconnectButton, Define(TemplateId.ReconnectButton, "Errors/reconnect_button.png") },
+                { TemplateId.Fruit2048TileEmpty, Define(TemplateId.Fruit2048TileEmpty, "Fruit2048/tile_empty.png") },
+                { TemplateId.Fruit2048TileTier1, Define(TemplateId.Fruit2048TileTier1, "Fruit2048/tile_1.png") }
             };
 
         private readonly string rootDirectory;
@@ -68,18 +132,25 @@ namespace ADB_Tool_Automation_Post_FB.Infrastructure.Vision
             string path = GetPath(id);
             if (!File.Exists(path))
                 throw new FileNotFoundException($"Template file for '{id}' was not found at '{path}'.", path);
-
-            return File.ReadAllBytes(path);
+            Lazy<byte[]> cached = byteCache.GetOrAdd(id, _ => new Lazy<byte[]>(
+                () => File.ReadAllBytes(path), true));
+            return cached.Value;
         }
 
         public bool Exists(TemplateId id)
         {
+            if (byteCache.ContainsKey(id)) return true;
             return File.Exists(GetPath(id));
         }
 
         private static TemplateDefinition Define(TemplateId id, string relativePath)
         {
             return new TemplateDefinition(id, relativePath, DefaultThreshold);
+        }
+
+        private static TemplateDefinition Define(TemplateId id, string relativePath, double threshold)
+        {
+            return new TemplateDefinition(id, relativePath, threshold);
         }
     }
 }

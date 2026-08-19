@@ -196,6 +196,9 @@ namespace IKAutomation.DeviceDiagnostics.Tests
             public CancellationToken IsRunningToken { get; private set; }
             public CancellationToken CaptureToken { get; private set; }
 
+            public Task<IReadOnlyList<string>> GetDeviceNamesAsync(CancellationToken token)
+                => Task.FromResult<IReadOnlyList<string>>(new[] { "LDPlayer" });
+
             public Task<bool> IsRunningAsync(string deviceName, CancellationToken token)
             { IsRunningToken = token; return Task.FromResult(IsRunning); }
             public Task<byte[]> CaptureScreenshotPngAsync(string deviceName, CancellationToken token)

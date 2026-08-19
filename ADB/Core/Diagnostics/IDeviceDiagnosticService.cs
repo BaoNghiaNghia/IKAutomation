@@ -1,3 +1,4 @@
+using System.Collections.Generic;
 using System.Threading;
 using System.Threading.Tasks;
 
@@ -6,6 +7,8 @@ namespace ADB_Tool_Automation_Post_FB.Core.Diagnostics
     public interface IDeviceDiagnosticService
     {
         DeviceDiagnosticOptions Configuration { get; }
+
+        Task<IReadOnlyList<string>> GetDeviceNamesAsync(CancellationToken cancellationToken);
 
         Task<DeviceDiagnosticResult> CheckDeviceAsync(string deviceName, CancellationToken cancellationToken);
         Task LaunchGameAsync(string deviceName, CancellationToken cancellationToken);

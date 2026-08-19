@@ -1,0 +1,23 @@
+﻿[2026-08-02 10:28:46] [INFO] [Build Provenance] BuildCommitSha='cbcba167c81365a9442261b11973c891c6a1783b-dirty', BuildTimestampUtc='2026-08-02T03:27:22.2666434Z', AssemblyVersion='1.0.0.0', ExecutablePath='D:\Bot_Tool_Auto_Game\IKAutomation\ADB\bin\Release\ADB_Tool_Automation_Post_FB.exe', ConfigurationPath='D:\Bot_Tool_Auto_Game\IKAutomation\ADB\bin\Release\ADB_Tool_Automation_Post_FB.exe.Config'
+[2026-08-02 10:28:47] [WARNING] Legacy Facebook image data could not be loaded. The application will continue without Facebook image automation. Could not find a part of the path 'D:\Bot_Tool_Auto_Game\IKAutomation\Data\proxy_ok_button.png'.
+[2026-08-02 10:28:47] [INFO] LDPlayer console configured: C:\LDPlayer\LDPlayer9\ldconsole.exe
+[2026-08-02 10:34:55] [INFO] [Build Provenance] BuildCommitSha='cbcba167c81365a9442261b11973c891c6a1783b-dirty', BuildTimestampUtc='2026-08-02T03:34:04.9704133Z', AssemblyVersion='1.0.0.0', ExecutablePath='D:\Bot_Tool_Auto_Game\IKAutomation\ADB\bin\Release\ADB_Tool_Automation_Post_FB.exe', ConfigurationPath='D:\Bot_Tool_Auto_Game\IKAutomation\ADB\bin\Release\ADB_Tool_Automation_Post_FB.exe.Config'
+[2026-08-02 10:34:56] [WARNING] Legacy Facebook image data could not be loaded. The application will continue without Facebook image automation. Could not find a part of the path 'D:\Bot_Tool_Auto_Game\IKAutomation\Data\proxy_ok_button.png'.
+[2026-08-02 10:34:56] [INFO] LDPlayer console configured: C:\LDPlayer\LDPlayer9\ldconsole.exe
+[2026-08-02 10:43:37] [INFO] [Build Provenance] BuildCommitSha='cbcba167c81365a9442261b11973c891c6a1783b-dirty', BuildTimestampUtc='2026-08-02T03:42:50.9295910Z', AssemblyVersion='1.0.0.0', ExecutablePath='D:\Bot_Tool_Auto_Game\IKAutomation\ADB\bin\Debug\ADB_Tool_Automation_Post_FB.exe', ConfigurationPath='D:\Bot_Tool_Auto_Game\IKAutomation\ADB\bin\Debug\ADB_Tool_Automation_Post_FB.exe.Config'
+[2026-08-02 10:43:38] [WARNING] Legacy Facebook image data could not be loaded. The application will continue without Facebook image automation. Could not find a part of the path 'D:\Bot_Tool_Auto_Game\IKAutomation\Data\proxy_ok_button.png'.
+[2026-08-02 10:43:38] [INFO] LDPlayer console configured: C:\LDPlayer\LDPlayer9\ldconsole.exe
+[2026-08-02 10:44:05] [INFO] [Device Diagnostic] Device='May_2', Operation='CheckDevice', StartTime='2026-08-02T10:44:05.0128683+07:00', Result='Started'
+[2026-08-02 10:44:05] [INFO] [Device Diagnostic] Device='May_3', Operation='CheckDevice', StartTime='2026-08-02T10:44:05.0128683+07:00', Result='Started'
+[2026-08-02 10:44:05] [INFO] [Device Diagnostic] Device='May_1', Operation='CheckDevice', StartTime='2026-08-02T10:44:05.0128683+07:00', Result='Started'
+[2026-08-02 10:44:05] [INFO] [Device Diagnostic] Device='May_4', Operation='CheckDevice', StartTime='2026-08-02T10:44:05.0153937+07:00', Result='Started'
+[2026-08-02 10:44:05] [INFO] [Device Diagnostic] Device='May_1', Operation='CheckDevice', Result='NotRunning', DurationMs=455, ScreenshotPath='', Error=''
+[2026-08-02 10:44:05] [INFO] [Device Diagnostic] Device='May_4', Operation='CheckDevice', Result='NotRunning', DurationMs=455, ScreenshotPath='', Error=''
+[2026-08-02 10:44:05] [INFO] [Device Diagnostic] Device='May_3', Operation='CheckDevice', Result='NotRunning', DurationMs=456, ScreenshotPath='', Error=''
+[2026-08-02 10:44:05] [INFO] [Device Diagnostic] Device='May_5', Operation='CheckDevice', StartTime='2026-08-02T10:44:05.4743031+07:00', Result='Started'
+[2026-08-02 10:44:05] [INFO] [Device Diagnostic] Device='May_6', Operation='CheckDevice', StartTime='2026-08-02T10:44:05.4752853+07:00', Result='Started'
+[2026-08-02 10:44:05] [INFO] [Device Diagnostic] Device='May_7', Operation='CheckDevice', StartTime='2026-08-02T10:44:05.4752853+07:00', Result='Started'
+[2026-08-02 10:44:05] [INFO] [Device Diagnostic] Device='May_5', Operation='CheckDevice', Result='NotRunning', DurationMs=403, ScreenshotPath='', Error=''
+[2026-08-02 10:44:05] [INFO] [Device Diagnostic] Device='May_7', Operation='CheckDevice', Result='NotRunning', DurationMs=402, ScreenshotPath='', Error=''
+[2026-08-02 10:44:05] [INFO] [Device Diagnostic] Device='May_6', Operation='CheckDevice', Result='NotRunning', DurationMs=402, ScreenshotPath='', Error=''
+[2026-08-02 10:44:07] [INFO] [Device Diagnostic] Device='May_2', Operation='CheckDevice', Result='Success; Resolution=1280x720; PackageCheck=Unavailable', DurationMs=2519, ScreenshotPath='', Error=''

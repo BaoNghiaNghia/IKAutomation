@@ -5,6 +5,8 @@ using System.Collections.Generic;
 using System.Drawing;
 using System.Drawing.Imaging;
 using System.IO;
+using System.Threading.Tasks;
+using System.Threading;
 
 namespace IKAutomation.Vision.Tests
 {
@@ -15,12 +17,19 @@ namespace IKAutomation.Vision.Tests
             var tests = new List<KeyValuePair<string, Action>>
             {
                 Test("Registry returns relative path", RegistryReturnsRelativePath),
+                Test("Registry maps level 5 and 6 templates", RegistryMapsFallbackLevels),
                 Test("Registry reports missing file", RegistryReportsMissingFile),
+                Test("Registry shares one template byte instance", RegistrySharesTemplateBytes),
                 Test("Matcher finds generated template", MatcherFindsGeneratedTemplate),
+                Test("Frame matcher reuses decoded screenshot", FrameMatcherReusesDecodedScreenshot),
+                Test("Captured frame encodes PNG once on demand", CapturedFrameEncodesPngOnce),
                 Test("Matcher translates ROI coordinates", MatcherTranslatesRoiCoordinates),
                 Test("Matcher returns not found", MatcherReturnsNotFound),
                 Test("Matcher rejects empty bytes", MatcherRejectsEmptyBytes),
                 Test("Matching and registry do not lock files", MatchingDoesNotLockFiles)
+                ,Test("Vision admission waits asynchronously and cancels", AsyncVisionAdmissionCancels)
+                ,Test("Vision exception does not leak admission", VisionExceptionDoesNotLeak)
+                ,Test("Concurrent matches safely share one frame and template", ConcurrentMatchesShareFrameAndTemplate)
             };
 
             int failed = 0;
@@ -77,19 +86,50 @@ namespace IKAutomation.Vision.Tests
 
                 try
                 {
-                    registry.LoadBytes(TemplateId.SearchButton);
+                    registry.LoadBytes(TemplateId.SearchButtonEnabled);
                     throw new Exception("Expected FileNotFoundException was not thrown.");
                 }
                 catch (FileNotFoundException ex)
                 {
-                    AssertTrue(ex.Message.Contains(nameof(TemplateId.SearchButton)), "Error must contain TemplateId.");
-                    AssertTrue(ex.Message.Contains(registry.GetPath(TemplateId.SearchButton)), "Error must contain path.");
+                    AssertTrue(ex.Message.Contains(nameof(TemplateId.SearchButtonEnabled)), "Error must contain TemplateId.");
+                    AssertTrue(ex.Message.Contains(registry.GetPath(TemplateId.SearchButtonEnabled)), "Error must contain path.");
                 }
             }
             finally
             {
                 Directory.Delete(root, true);
             }
+        }
+
+        private static void RegistryMapsFallbackLevels()
+        {
+            string root = CreateTemporaryDirectory();
+            try
+            {
+                var registry = new TemplateRegistry(root);
+                AssertEqual("Search/level_value_5.png", registry.GetDefinition(TemplateId.LevelValue5).RelativePath, "Level 5 path.");
+                AssertEqual("Search/level_value_6.png", registry.GetDefinition(TemplateId.LevelValue6).RelativePath, "Level 6 path.");
+            }
+            finally { Directory.Delete(root, true); }
+        }
+
+        private static void RegistrySharesTemplateBytes()
+        {
+            string root = CreateTemporaryDirectory();
+            try
+            {
+                string global = Path.Combine(root, "Global");
+                Directory.CreateDirectory(global);
+                File.WriteAllBytes(Path.Combine(global, "world_map_anchor.png"), new byte[] { 1, 2, 3 });
+                var registry = new TemplateRegistry(root);
+                var results = new byte[16][];
+                Parallel.For(0, results.Length,
+                    index => results[index] = registry.LoadBytes(TemplateId.WorldMapAnchor));
+                for (int index = 1; index < results.Length; index++)
+                    AssertTrue(ReferenceEquals(results[0], results[index]),
+                        "Concurrent callers must share the cached template bytes.");
+            }
+            finally { Directory.Delete(root, true); }
         }
 
         private static void MatcherFindsGeneratedTemplate()
@@ -105,6 +145,40 @@ namespace IKAutomation.Vision.Tests
             AssertEqual(images.TemplateWidth, result.Width, "Unexpected match width.");
             AssertEqual(images.TemplateHeight, result.Height, "Unexpected match height.");
             AssertTrue(!result.Confidence.HasValue, "KAutoHelper confidence should be unavailable.");
+        }
+
+        private static void FrameMatcherReusesDecodedScreenshot()
+        {
+            GeneratedImages images = CreateGeneratedImages(47, 31);
+            var matcher = new KAutoImageMatcher();
+            using (var stream = new MemoryStream(images.ScreenshotPng, writable: false))
+            using (var source = new Bitmap(stream))
+            using (var frame = new CapturedFrame(new Bitmap(source), DateTimeOffset.UtcNow))
+            {
+                AssertTrue(!frame.HasEncodedPng, "Frame construction must not encode PNG.");
+                ImageMatchResult result = ((IFrameImageMatcher)matcher).Find(
+                    frame, images.TemplatePng, new ImageRegion(40, 25, 90, 70));
+                AssertTrue(result.Found, "Expected direct frame match.");
+                AssertNear(47, result.X, 1, "Direct frame ROI X offset was not applied.");
+                AssertNear(31, result.Y, 1, "Direct frame ROI Y offset was not applied.");
+                AssertTrue(!frame.HasEncodedPng, "Direct matching must not encode PNG.");
+            }
+        }
+
+        private static void CapturedFrameEncodesPngOnce()
+        {
+            int encoded = 0;
+            using (var frame = new CapturedFrame(new Bitmap(16, 16), DateTimeOffset.UtcNow,
+                () => encoded++))
+            {
+                AssertTrue(!frame.HasEncodedPng, "Frame must begin without PNG bytes.");
+                byte[] first = frame.GetPngBytes();
+                byte[] second = frame.GetPngBytes();
+                AssertTrue(first.Length > 8 && first[0] == 137 && first[1] == 80,
+                    "PNG compatibility bytes are invalid.");
+                AssertTrue(ReferenceEquals(first, second), "PNG bytes must be cached.");
+                AssertEqual(1, encoded, "PNG encoding callback count.");
+            }
         }
 
         private static void MatcherTranslatesRoiCoordinates()
@@ -177,6 +251,90 @@ namespace IKAutomation.Vision.Tests
             {
                 Directory.Delete(root, true);
             }
+        }
+
+        private static void AsyncVisionAdmissionCancels()
+        {
+            GeneratedImages images = CreateGeneratedImages(47, 31);
+            var entered = new TaskCompletionSource<bool>(TaskCreationOptions.RunContinuationsAsynchronously);
+            var release = new TaskCompletionSource<bool>(TaskCreationOptions.RunContinuationsAsynchronously);
+            var matcher = new KAutoImageMatcher(1, async token =>
+            {
+                entered.TrySetResult(true);
+                using (token.Register(() => release.TrySetCanceled())) await release.Task;
+            });
+            using (CapturedFrame frame = DecodeFrame(images.ScreenshotPng))
+            {
+                Task<ImageMatchResult> first = matcher.FindAsync(frame, images.TemplatePng,
+                    null, CancellationToken.None);
+                AssertTrue(entered.Task.Wait(TimeSpan.FromSeconds(2)), "first vision job did not enter");
+                using (var cancellation = new CancellationTokenSource())
+                {
+                    Task<ImageMatchResult> second = matcher.FindAsync(frame, images.TemplatePng,
+                        null, cancellation.Token);
+                    AssertTrue(!second.IsCompleted, "vision admission blocked the caller synchronously");
+                    cancellation.Cancel();
+                    AssertThrows<OperationCanceledException>(() => second.GetAwaiter().GetResult());
+                }
+                release.TrySetResult(true);
+                AssertTrue(first.GetAwaiter().GetResult().Found, "first vision result");
+            }
+        }
+
+        private static void VisionExceptionDoesNotLeak()
+        {
+            GeneratedImages images = CreateGeneratedImages(47, 31);
+            int calls = 0;
+            var matcher = new KAutoImageMatcher(1, token =>
+            {
+                if (Interlocked.Increment(ref calls) == 1)
+                    throw new InvalidOperationException("synthetic vision failure");
+                return Task.CompletedTask;
+            });
+            using (CapturedFrame frame = DecodeFrame(images.ScreenshotPng))
+            {
+                AssertThrows<InvalidOperationException>(() => matcher.FindAsync(frame,
+                    images.TemplatePng, null, CancellationToken.None).GetAwaiter().GetResult());
+                AssertTrue(matcher.FindAsync(frame, images.TemplatePng, null,
+                    CancellationToken.None).GetAwaiter().GetResult().Found,
+                    "vision permit leaked after exception");
+            }
+        }
+
+        private static void ConcurrentMatchesShareFrameAndTemplate()
+        {
+            GeneratedImages images = CreateGeneratedImages(47, 31);
+            var matcher = new KAutoImageMatcher(8);
+            using (CapturedFrame frame = DecodeFrame(images.ScreenshotPng))
+            {
+                var tasks = new Task<ImageMatchResult>[32];
+                for (int index = 0; index < tasks.Length; index++)
+                    tasks[index] = matcher.FindAsync(frame, images.TemplatePng,
+                        new ImageRegion(30, 20, 100, 80), CancellationToken.None);
+
+                Task.WaitAll(tasks);
+                foreach (Task<ImageMatchResult> task in tasks)
+                {
+                    AssertTrue(task.Result.Found, "Concurrent match was not found.");
+                    AssertNear(47, task.Result.X, 1, "Concurrent match X.");
+                    AssertNear(31, task.Result.Y, 1, "Concurrent match Y.");
+                }
+            }
+
+            Parallel.For(0, 32, index =>
+            {
+                ImageMatchResult result = matcher.Find(images.ScreenshotPng,
+                    images.TemplatePng, new ImageRegion(30, 20, 100, 80));
+                AssertTrue(result.Found,
+                    "Concurrent cached-template match was not found.");
+            });
+        }
+
+        private static CapturedFrame DecodeFrame(byte[] png)
+        {
+            using (var stream = new MemoryStream(png, writable: false))
+            using (var source = new Bitmap(stream))
+                return new CapturedFrame(new Bitmap(source), DateTimeOffset.UtcNow);
         }
 
         private static GeneratedImages CreateGeneratedImages(int targetX, int targetY)

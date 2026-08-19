@@ -1,0 +1,24 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <OutputType>Exe</OutputType>
+    <TargetFramework>net481</TargetFramework>
+    <AssemblyName>IKAutomation.ResourcePopup.Tests</AssemblyName>
+  </PropertyGroup>
+  <ItemGroup>
+    <Reference Include="System.Drawing" />
+    <Compile Include="..\..\ADB\Core\Abstractions\ILdPlayerClient.cs" Link="Production\ILdPlayerClient.cs" />
+    <Compile Include="..\..\ADB\Core\Diagnostics\IDiagnosticLogger.cs" Link="Production\IDiagnosticLogger.cs" />
+    <Compile Include="..\..\ADB\Core\GameDetection\*.cs" Link="Production\GameDetection\%(Filename)%(Extension)" />
+    <Compile Include="..\..\ADB\Core\ResourcePopup\*.cs" Link="Production\ResourcePopup\%(Filename)%(Extension)" />
+    <Compile Include="..\..\ADB\Core\ResourceSearch\ResourceType.cs" Link="Production\ResourceSearch\ResourceType.cs" />
+    <Compile Include="..\..\ADB\Core\ResourceSearch\ResourceTemplateMap.cs" Link="Production\ResourceSearch\ResourceTemplateMap.cs" />
+    <Compile Include="..\..\ADB\Core\ResourceSearch\ResourceTemplateProfile.cs" Link="Production\ResourceSearch\ResourceTemplateProfile.cs" />
+    <Compile Include="..\..\ADB\Core\ResourceSearch\IResourceTemplateProfileProvider.cs" Link="Production\ResourceSearch\IResourceTemplateProfileProvider.cs" />
+    <Compile Include="..\..\ADB\Core\Vision\*.cs" Link="Production\Vision\%(Filename)%(Extension)" />
+    <Compile Include="..\..\ADB\Infrastructure\Diagnostics\ScreenshotPathPolicy.cs" Link="Production\ScreenshotPathPolicy.cs" />
+    <Compile Include="..\..\ADB\Infrastructure\ResourcePopup\ResourcePopupDiagnosticStore.cs" Link="Production\ResourcePopupDiagnosticStore.cs" />
+    <Compile Include="..\..\ADB\Infrastructure\ResourcePopup\ResourcePopupTitleTemplateCropper.cs" Link="Production\ResourcePopupTitleTemplateCropper.cs" />
+    <Compile Include="..\..\ADB\Infrastructure\ResourcePopup\ResourcePopupVerificationService.cs" Link="Production\ResourcePopupVerificationService.cs" />
+    <Compile Include="..\..\ADB\Infrastructure\ResourceSearch\ResourceTemplateProfileProvider.cs" Link="Production\ResourceTemplateProfileProvider.cs" />
+  </ItemGroup>
+</Project>

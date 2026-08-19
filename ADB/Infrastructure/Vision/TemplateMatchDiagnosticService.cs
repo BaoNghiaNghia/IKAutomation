@@ -1,4 +1,5 @@
 using ADB_Tool_Automation_Post_FB.Core.Abstractions;
+using ADB_Tool_Automation_Post_FB.Core.Diagnostics;
 using ADB_Tool_Automation_Post_FB.Core.Vision;
 using ADB_Tool_Automation_Post_FB.Helpers;
 using System;
@@ -75,6 +76,7 @@ namespace ADB_Tool_Automation_Post_FB.Infrastructure.Vision
             CancellationToken cancellationToken)
         {
             cancellationToken.ThrowIfCancellationRequested();
+            if (!DiagnosticStorageGate.IsWriteEnabled) return;
 
             string fullDirectory = Path.GetFullPath(diagnosticDirectory);
             Directory.CreateDirectory(fullDirectory);

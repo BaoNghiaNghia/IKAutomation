@@ -1,4 +1,5 @@
 using ADB_Tool_Automation_Post_FB.Core.Abstractions;
+using ADB_Tool_Automation_Post_FB.Core.Diagnostics;
 using ADB_Tool_Automation_Post_FB.Helpers;
 using System;
 using System.IO;
@@ -27,6 +28,7 @@ namespace ADB_Tool_Automation_Post_FB.Infrastructure.LDPlayer
             CancellationToken cancellationToken)
         {
             cancellationToken.ThrowIfCancellationRequested();
+            if (!DiagnosticStorageGate.IsWriteEnabled) return null;
 
             if (string.IsNullOrWhiteSpace(diagnosticDirectory))
                 throw new ArgumentException("Diagnostic directory is required.", nameof(diagnosticDirectory));
