@@ -616,6 +616,8 @@ namespace ADB_Tool_Automation_Post_FB.UI
             }
             updates = updates
                 .OrderByDescending(update => IsCriticalContinuousUpdate(update.Progress))
+                .ThenByDescending(update => IsFirstContinuousUiUpdate(
+                    update.Progress?.Device?.DeviceName))
                 .ThenByDescending(update => IsFarmProgressVisible(
                     update.Progress?.Device?.DeviceName))
                 .ThenBy(update => GetLastContinuousUiAppliedAt(
@@ -632,20 +634,26 @@ namespace ADB_Tool_Automation_Post_FB.UI
                     if (!IsCurrentContinuousUpdate(update)) continue;
                     string deviceName = update.Progress.Device.DeviceName;
                     bool critical = IsCriticalContinuousUpdate(update.Progress);
+                    bool firstUiUpdate = IsFirstContinuousUiUpdate(deviceName);
                     string previousFingerprint;
                     if (lastContinuousUiFingerprints.TryGetValue(deviceName,
                         out previousFingerprint)
                         && string.Equals(previousFingerprint, update.UiFingerprint,
                             StringComparison.Ordinal))
                         continue;
-                    if (!drainAll && !critical && !IsFarmProgressVisible(deviceName)
+                    if (!drainAll && !critical && !firstUiUpdate
+                        && !IsFarmProgressVisible(deviceName)
                         && now - GetLastContinuousUiAppliedAt(deviceName)
                             < OffscreenContinuousUiInterval)
                     {
                         RequeueContinuousUpdate(update);
                         continue;
                     }
-                    if (!drainAll && (appliedCount >= MaxContinuousDeviceUpdatesPerFlush
+                    // The first snapshot is the only exception to the time slice.
+                    // At most 25 cards are initialized once, so each selected device
+                    // becomes visible promptly before off-screen throttling starts.
+                    if (!drainAll && !critical && !firstUiUpdate
+                        && (appliedCount >= MaxContinuousDeviceUpdatesPerFlush
                         || stopwatch.ElapsedMilliseconds >= ContinuousUiTimeBudgetMs))
                     {
                         RequeueContinuousUpdate(update);
@@ -698,6 +706,10 @@ namespace ADB_Tool_Automation_Post_FB.UI
                 .ContainerFromItem(item) as FrameworkElement;
             return container != null && container.IsVisible;
         }
+
+        private bool IsFirstContinuousUiUpdate(string deviceName) =>
+            !string.IsNullOrWhiteSpace(deviceName)
+            && !lastContinuousUiAppliedAt.ContainsKey(deviceName);
 
         private DateTimeOffset GetLastContinuousUiAppliedAt(string deviceName)
         {

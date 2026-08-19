@@ -182,6 +182,7 @@ internal static class Program
         Run("Initial Farm Control spinner remains animated while loading", InitialLoadingSpinnerAnimates);
         Run("Continuous UI coalesces per-device progress", ContinuousUiCoalescesProgress);
         Run("Continuous UI pre-populates cards before supervisor progress", ContinuousUiPrepopulatesCards);
+        Run("Continuous UI renders every first supervisor snapshot", ContinuousUiRendersInitialSnapshots);
         Run("Critical continuous UI states use bounded coalescing", ContinuousUiBoundsCriticalProgress);
         Run("Farm progress list virtualizes off-screen devices", FarmProgressListIsVirtualized);
         Run("Continuous UI uses a bounded render time slice", ContinuousUiUsesTimeSlice);
@@ -2132,6 +2133,15 @@ internal static class Program
         Is(start >= 0 && end > start && code.Substring(start, end - start)
             .Contains("GetOrCreateFarmProgress(deviceName).SetQueued()"),
             "continuous progress cards are not initialized before supervisor updates");
+    }
+    static void ContinuousUiRendersInitialSnapshots()
+    {
+        string code = File.ReadAllText(Path.Combine(Environment.CurrentDirectory,
+            "ADB", "UI", "DeviceDiagnosticWindow.xaml.cs"));
+        Is(code.Contains("IsFirstContinuousUiUpdate(deviceName)")
+            && code.Contains("!critical && !firstUiUpdate")
+            && code.Contains("ThenByDescending(update => IsFirstContinuousUiUpdate"),
+            "initial supervisor snapshots can still be throttled as off-screen cards");
     }
     static void ContinuousUiBoundsCriticalProgress()
     {
