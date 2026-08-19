@@ -46,23 +46,23 @@ namespace IK_Auto_ADB.Infrastructure.Workflows
 
             if (await TryScreenshotAsync(deviceName, DeviceRecoveryStep.ScreenshotRetry,
                 steps, cancellationToken))
-                return Success(DeviceRecoveryStep.ScreenshotRetry, steps,
-                    "Screenshot capture recovered.");
+                return await CompleteRecoveryAsync(deviceName, steps,
+                    "Screenshot capture recovered.", cancellationToken);
 
             bool running = await TryIsRunningAsync(deviceName, steps, cancellationToken);
             if (running && await TryRelaunchAsync(deviceName, steps, cancellationToken))
             {
                 if (await TryScreenshotAsync(deviceName, DeviceRecoveryStep.Preflight,
                     steps, cancellationToken))
-                    return Success(DeviceRecoveryStep.Preflight, steps,
-                        "Game relaunch and screenshot preflight succeeded.");
+                    return await CompleteRecoveryAsync(deviceName, steps,
+                        "Game relaunch and screenshot preflight succeeded.", cancellationToken);
             }
 
             if (await TryRestartAsync(deviceName, steps, cancellationToken)
                 && await TryScreenshotAsync(deviceName, DeviceRecoveryStep.Preflight,
                     steps, cancellationToken))
-                return Success(DeviceRecoveryStep.Preflight, steps,
-                    "LDPlayer restart and screenshot preflight succeeded.");
+                return await CompleteRecoveryAsync(deviceName, steps,
+                    "LDPlayer restart and screenshot preflight succeeded.", cancellationToken);
 
             DeviceRecoveryStep last = steps.Count == 0
                 ? DeviceRecoveryStep.ScreenshotRetry : steps[steps.Count - 1].Step;
@@ -76,6 +76,52 @@ namespace IK_Auto_ADB.Infrastructure.Workflows
                 Message = "Device recovery ladder was exhausted.",
                 ErrorMessage = error
             };
+        }
+
+        private async Task<DeviceRecoveryResult> CompleteRecoveryAsync(string deviceName,
+            List<DeviceRecoveryStepResult> steps, string message,
+            CancellationToken cancellationToken)
+        {
+            if (!await TryDismissTransientUiAsync(deviceName, steps, cancellationToken)
+                || !await TryScreenshotAsync(deviceName, DeviceRecoveryStep.Preflight,
+                    steps, cancellationToken))
+            {
+                DeviceRecoveryStep lastStep = steps[steps.Count - 1].Step;
+                DeviceRecoveryStepResult lastResult = steps[steps.Count - 1];
+                return new DeviceRecoveryResult
+                {
+                    Success = false,
+                    LastStep = lastStep,
+                    Steps = steps,
+                    Message = "Recovery completed but the screen could not be safely reset.",
+                    ErrorMessage = lastResult.ErrorMessage ?? lastResult.Message
+                };
+            }
+
+            return Success(DeviceRecoveryStep.Preflight, steps,
+                message + " Escape was sent and the post-recovery screenshot succeeded.");
+        }
+
+        private async Task<bool> TryDismissTransientUiAsync(string deviceName,
+            List<DeviceRecoveryStepResult> steps, CancellationToken cancellationToken)
+        {
+            try
+            {
+                await client.PressKeyAsync(deviceName, AndroidKeyCode.Escape, cancellationToken);
+                steps.Add(new DeviceRecoveryStepResult
+                {
+                    Step = DeviceRecoveryStep.DismissTransientUi,
+                    Success = true,
+                    Message = "Escape was sent to close any transient game screen."
+                });
+                return true;
+            }
+            catch (OperationCanceledException) { throw; }
+            catch (Exception exception)
+            {
+                steps.Add(Failure(DeviceRecoveryStep.DismissTransientUi, exception));
+                return false;
+            }
         }
 
         private async Task<bool> TryScreenshotAsync(string deviceName,

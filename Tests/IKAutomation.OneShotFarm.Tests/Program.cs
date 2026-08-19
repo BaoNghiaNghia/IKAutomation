@@ -263,6 +263,7 @@ internal static class Program
         Run("Checkpoint persistence honors cancellation", CheckpointHonorsCancellation);
         Run("Checkpoint code has no default token bypass", CheckpointHasNoNone);
         Run("Recovery ladder restarts only after softer steps fail", RecoveryLadderEscalatesInOrder);
+        Run("Recovery dismisses transient UI before returning to farm", RecoveryDismissesTransientUiBeforeReturn);
         Run("Operational maintenance removes expired screenshots", MaintenanceRemovesExpiredScreenshots);
         Run("Operational maintenance enforces diagnostic quota", MaintenanceEnforcesDiagnosticQuota);
         Run("Disk pressure gate uses resume hysteresis", MaintenanceDiskGateUsesHysteresis);
@@ -715,7 +716,25 @@ internal static class Program
         Is(result.Success, "recovery ladder did not recover");
         Is(client.RunAppCalls >= 1, "game was not relaunched");
         Is(client.CloseCalls == 0, "instance restart should not run after relaunch recovery");
+        Eq(1, client.PressKeyCalls, "Escape should be sent exactly once after recovery");
+        Eq(AndroidKeyCode.Escape, client.LastPressedKey, "recovery should send Escape");
         Eq(DeviceRecoveryStep.Preflight, result.LastStep, "last recovery step");
+    }
+
+    static void RecoveryDismissesTransientUiBeforeReturn()
+    {
+        var client = new RecoveryClient { Running = true };
+        var service = new LdPlayerDeviceRecoveryService(client,
+            new LdPlayerDeviceRecoveryOptions("com.gtarcade.ioe.global", 1, 1));
+        DeviceRecoveryResult result = service.RecoverAsync("May 1",
+            new CancellationTokenSource(TimeSpan.FromSeconds(5)).Token)
+            .GetAwaiter().GetResult();
+        Is(result.Success, "screenshot recovery should succeed");
+        Eq(1, client.PressKeyCalls, "Escape should be sent before recovery returns");
+        Eq(DeviceRecoveryStep.DismissTransientUi, result.Steps[1].Step,
+            "Escape should be recorded before the post-recovery preflight");
+        Eq(DeviceRecoveryStep.Preflight, result.LastStep,
+            "post-Escape screenshot should be the final recovery step");
     }
 
     static void ContinuousSupervisorUsesTechnicalBackoff()
@@ -2546,7 +2565,7 @@ internal static class Program
     }
     sealed class RecoveryClient:ILdPlayerClient
     {
-        public int ScreenshotFailures;public bool Running;public int RunAppCalls,CloseCalls,OpenCalls;
+        public int ScreenshotFailures;public bool Running;public int RunAppCalls,CloseCalls,OpenCalls,PressKeyCalls;public AndroidKeyCode LastPressedKey;
         public Task<byte[]> CaptureScreenshotPngAsync(string d,CancellationToken t){t.ThrowIfCancellationRequested();if(ScreenshotFailures-->0)throw new InvalidOperationException("capture failed");return Task.FromResult(new byte[]{1});}
         public Task<bool> IsRunningAsync(string d,CancellationToken t){t.ThrowIfCancellationRequested();return Task.FromResult(Running);}
         public Task RunAppAsync(string d,string p,CancellationToken t){t.ThrowIfCancellationRequested();RunAppCalls++;return Task.CompletedTask;}
@@ -2555,7 +2574,7 @@ internal static class Program
         public Task<IReadOnlyList<string>> GetDeviceNamesAsync(CancellationToken t)=>Task.FromResult<IReadOnlyList<string>>(new[]{"May 1"});
         public Task TapAsync(string d,int x,int y,CancellationToken t)=>Task.CompletedTask;public Task TapByPercentAsync(string d,double x,double y,CancellationToken t)=>Task.CompletedTask;
         public Task LongPressAsync(string d,int x,int y,int ms,CancellationToken t)=>Task.CompletedTask;public Task SwipeByPercentAsync(string d,double sx,double sy,double ex,double ey,int ms,CancellationToken t)=>Task.CompletedTask;
-        public Task BackAsync(string d,CancellationToken t)=>Task.CompletedTask;public Task InputTextAsync(string d,string v,CancellationToken t)=>Task.CompletedTask;public Task PressKeyAsync(string d,AndroidKeyCode k,CancellationToken t)=>Task.CompletedTask;
+        public Task BackAsync(string d,CancellationToken t)=>Task.CompletedTask;public Task InputTextAsync(string d,string v,CancellationToken t)=>Task.CompletedTask;public Task PressKeyAsync(string d,AndroidKeyCode k,CancellationToken t){t.ThrowIfCancellationRequested();PressKeyCalls++;LastPressedKey=k;return Task.CompletedTask;}
     }
     sealed class TechnicalFailureRunner:IMultiDeviceOneShotFarmRunner
     {

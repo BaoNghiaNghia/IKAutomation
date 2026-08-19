@@ -16,6 +16,7 @@ namespace IK_Auto_ADB.Core.Workflows
         ValidateDevice,
         RelaunchGame,
         RestartInstance,
+        DismissTransientUi,
         Preflight
     }
 
