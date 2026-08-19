@@ -1327,6 +1327,10 @@ internal static class Program
         Is(client.Contains("DeleteGeneratedScreenshotArtifact(generatedFilePrefix")
             && client.Contains("filePrefix + \"Name_\" + deviceName + \".png\""),
             "successful bitmap screenshots leave Auto_LDPlayer temporary PNG files behind");
+        Is(client.Contains("CaptureFrameUsingLdConsoleAsync")
+            && client.Contains("adb --index ")
+            && client.Contains("screencap --index "),
+            "screenshot capture still depends on a guessed emulator serial");
     }
 
     static void AdaptiveStaggerHonorsCancellation()

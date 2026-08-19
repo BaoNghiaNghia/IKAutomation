@@ -28,6 +28,7 @@ namespace ADB_Tool_Automation_Post_FB.Infrastructure.LDPlayer
         IFrameCapturingLdPlayerClient
     {
         private const int InputCommandTimeoutMilliseconds = 3000;
+        private const int LdConsoleCommandTimeoutMilliseconds = 15000;
         // Fruit2048 uses a bounded, visually verified swipe path.  Waiting three
         // seconds for a short Android input command throttles every move; keep a
         // small command-acceptance window and let post-swipe board validation
@@ -43,12 +44,16 @@ namespace ADB_Tool_Automation_Post_FB.Infrastructure.LDPlayer
             new ConcurrentDictionary<string, SemaphoreSlim>(StringComparer.OrdinalIgnoreCase);
         private static readonly ConcurrentDictionary<string, DateTimeOffset> HealthyDevices =
             new ConcurrentDictionary<string, DateTimeOffset>(StringComparer.OrdinalIgnoreCase);
+        private static readonly ConcurrentDictionary<string, int> LdConsoleIndexes =
+            new ConcurrentDictionary<string, int>(StringComparer.OrdinalIgnoreCase);
         private static readonly int ScreenshotConcurrencyLimit =
             ReadPositiveSetting("Operations.MaxConcurrentScreenshots", 10);
         private static readonly SemaphoreSlim ScreenshotGate = new SemaphoreSlim(
             ScreenshotConcurrencyLimit, ScreenshotConcurrencyLimit);
         private static readonly int AdbHealthTtlMilliseconds =
             ReadPositiveSetting("Operations.AdbHealthTtlMs", 3000);
+        private static readonly bool UseLdConsoleCapture =
+            ReadBooleanSetting("Operations.UseLdConsoleCapture", true);
         private static long framesCaptured;
         private static long framesEncodedToPng;
         private static long screenshotGateWaitMs;
@@ -108,6 +113,12 @@ namespace ADB_Tool_Automation_Post_FB.Infrastructure.LDPlayer
             int value;
             return int.TryParse(ConfigurationManager.AppSettings[key], out value) && value > 0
                 ? value : fallback;
+        }
+
+        private static bool ReadBooleanSetting(string key, bool fallback)
+        {
+            bool value;
+            return bool.TryParse(ConfigurationManager.AppSettings[key], out value) ? value : fallback;
         }
 
         private static void UpdateMaximum(ref int target, int value)
@@ -252,6 +263,9 @@ namespace ADB_Tool_Automation_Post_FB.Infrastructure.LDPlayer
                 await screenshotLock.WaitAsync(cancellationToken);
                 try
                 {
+                if (UseLdConsoleCapture)
+                    return await CaptureFrameUsingLdConsoleAsync(normalizedDeviceName,
+                        cancellationToken);
                 string adbState = "device";
                 if (!IsRecentlyHealthy(normalizedDeviceName))
                 {
@@ -421,6 +435,112 @@ namespace ADB_Tool_Automation_Post_FB.Infrastructure.LDPlayer
             while (start > 0 && char.IsDigit(deviceName[start - 1])) start--;
             return start < (deviceName?.Length ?? 0)
                 && int.TryParse(deviceName.Substring(start), out int value) ? value : -1;
+        }
+
+        private static async Task<CapturedFrame> CaptureFrameUsingLdConsoleAsync(
+            string deviceName, CancellationToken cancellationToken)
+        {
+            int index = await ResolveLdConsoleIndexAsync(deviceName, cancellationToken);
+            for (int attempt = 1; attempt <= ScreenshotCaptureAttempts; attempt++)
+            {
+                cancellationToken.ThrowIfCancellationRequested();
+                string bootCompleted = await RunLdConsoleAsync("adb --index " + index
+                    + " --command \"shell getprop sys.boot_completed\"",
+                    InputCommandTimeoutMilliseconds, cancellationToken);
+                if (!bootCompleted.Split(new[] { '\r', '\n' }, StringSplitOptions.RemoveEmptyEntries)
+                    .Any(value => string.Equals(value.Trim(), "1", StringComparison.Ordinal)))
+                {
+                    if (attempt < ScreenshotCaptureAttempts)
+                    {
+                        await Task.Delay(ScreenshotCaptureRetryDelayMilliseconds, cancellationToken);
+                        continue;
+                    }
+                    throw new InvalidOperationException("LDPlayer instance '" + deviceName
+                        + "' is running but its ADB service has not completed boot.");
+                }
+
+                string screenshotPath = Path.Combine(Path.GetTempPath(), "ikautomation-"
+                    + Guid.NewGuid().ToString("N") + ".png");
+                try
+                {
+                    await ScreenshotGate.WaitAsync(cancellationToken);
+                    try
+                    {
+                        await RunLdConsoleAsync("screencap --index " + index + " --filename \""
+                            + screenshotPath + "\"", LdConsoleCommandTimeoutMilliseconds,
+                            cancellationToken);
+                    }
+                    finally { ScreenshotGate.Release(); }
+                    cancellationToken.ThrowIfCancellationRequested();
+                    if (!File.Exists(screenshotPath))
+                        throw new InvalidOperationException("ldconsole did not create a screenshot for '"
+                            + deviceName + "'.");
+                    using (var source = new Bitmap(screenshotPath))
+                    {
+                        Interlocked.Increment(ref framesCaptured);
+                        Interlocked.Increment(ref normalBitmapCaptures);
+                        return new CapturedFrame(new Bitmap(source), DateTimeOffset.UtcNow,
+                            OnFrameEncodedToPng);
+                    }
+                }
+                finally
+                {
+                    try { if (File.Exists(screenshotPath)) File.Delete(screenshotPath); }
+                    catch (IOException) { }
+                    catch (UnauthorizedAccessException) { }
+                }
+            }
+            throw new InvalidOperationException("Unable to capture LDPlayer screenshot.");
+        }
+
+        private static async Task<int> ResolveLdConsoleIndexAsync(string deviceName,
+            CancellationToken cancellationToken)
+        {
+            int cachedIndex;
+            if (LdConsoleIndexes.TryGetValue(deviceName, out cachedIndex)) return cachedIndex;
+
+            string output = await RunLdConsoleAsync("list2", LdConsoleCommandTimeoutMilliseconds,
+                cancellationToken);
+            foreach (string line in output.Split(new[] { '\r', '\n' }, StringSplitOptions.RemoveEmptyEntries))
+            {
+                string[] values = line.Split(',');
+                int index;
+                if (values.Length >= 2 && int.TryParse(values[0], out index)
+                    && string.Equals(values[1].Trim(), deviceName, StringComparison.OrdinalIgnoreCase))
+                {
+                    LdConsoleIndexes[deviceName] = index;
+                    return index;
+                }
+            }
+            throw new InvalidOperationException("LDPlayer instance '" + deviceName
+                + "' was not found in ldconsole list2.");
+        }
+
+        private static async Task<string> RunLdConsoleAsync(string arguments,
+            int timeoutMilliseconds, CancellationToken cancellationToken)
+        {
+            string consolePath = ConfigureLdConsolePath(ConfigurationManager.AppSettings["LDCONSOLE_PATH"]);
+            using (var process = new Process { StartInfo = new ProcessStartInfo(consolePath, arguments)
+                { UseShellExecute = false, CreateNoWindow = true, RedirectStandardOutput = true,
+                  RedirectStandardError = true } })
+            {
+                process.Start();
+                Task<string> stdout = process.StandardOutput.ReadToEndAsync();
+                Task<string> stderr = process.StandardError.ReadToEndAsync();
+                Task outputCompleted = Task.WhenAll(stdout, stderr);
+                Task completed = await Task.WhenAny(outputCompleted,
+                    Task.Delay(timeoutMilliseconds, cancellationToken));
+                if (completed != outputCompleted)
+                {
+                    if (!process.HasExited) process.Kill();
+                    cancellationToken.ThrowIfCancellationRequested();
+                    throw new TimeoutException("ldconsole command timed out: " + arguments);
+                }
+                process.WaitForExit();
+                string output = (await stdout) + (await stderr);
+                if (process.ExitCode != 0) throw new InvalidOperationException(output.Trim());
+                return output;
+            }
         }
 
         private static bool IsRecentlyHealthy(string deviceName)
