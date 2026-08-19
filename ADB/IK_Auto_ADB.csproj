@@ -52,6 +52,12 @@
     <Reference Include="System.Core" />
     <Reference Include="System.Xml.Linq" />
     <Reference Include="System.Data.DataSetExtensions" />
+    <Reference Include="Auto_LDPlayer">
+      <HintPath>$(NuGetPackageRoot)auto_ldplayer\1.1.0\lib\net471\Auto_LDPlayer.dll</HintPath>
+    </Reference>
+    <Reference Include="KAutoHelper">
+      <HintPath>$(NuGetPackageRoot)kautohelper_kteam\1.0.1.2\lib\net471\KAutoHelper.dll</HintPath>
+    </Reference>
     <Reference Include="System.Xaml">
       <RequiredTargetFramework>4.0</RequiredTargetFramework>
     </Reference>

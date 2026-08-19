@@ -1,3 +1,11 @@
+D:\Bot_Tool_Auto_Game\IKAutomation\ADB\bin\Release\Data\InfinityKingdom\1280x720\vi\Teams\team_selection_panel_anchor.png
+D:\Bot_Tool_Auto_Game\IKAutomation\ADB\bin\Release\x64\cvextern.dll
+D:\Bot_Tool_Auto_Game\IKAutomation\ADB\bin\Release\x64\opencv_videoio_ffmpeg411_64.dll
+D:\Bot_Tool_Auto_Game\IKAutomation\ADB\bin\Release\x86\cvextern.dll
+D:\Bot_Tool_Auto_Game\IKAutomation\ADB\bin\Release\x86\opencv_videoio_ffmpeg411.dll
+D:\Bot_Tool_Auto_Game\IKAutomation\ADB\bin\Release\IK Auto ADB.exe
+D:\Bot_Tool_Auto_Game\IKAutomation\ADB\bin\Release\Auto_LDPlayer.dll
+D:\Bot_Tool_Auto_Game\IKAutomation\ADB\bin\Release\KAutoHelper.dll
 D:\Bot_Tool_Auto_Game\IKAutomation\ADB\bin\Release\Data\InfinityKingdom\1280x720\vi\Dialogs\resource_expiry_dialog_anchor.png
 D:\Bot_Tool_Auto_Game\IKAutomation\ADB\bin\Release\Data\InfinityKingdom\1280x720\vi\Dialogs\storage_limit_cancel_button.png
 D:\Bot_Tool_Auto_Game\IKAutomation\ADB\bin\Release\Data\InfinityKingdom\1280x720\vi\Dialogs\storage_limit_confirm_button.png
@@ -57,40 +65,16 @@ D:\Bot_Tool_Auto_Game\IKAutomation\ADB\bin\Release\Data\InfinityKingdom\1280x720
 D:\Bot_Tool_Auto_Game\IKAutomation\ADB\bin\Release\Data\InfinityKingdom\1280x720\vi\Teams\team_action_button_enabled.png
 D:\Bot_Tool_Auto_Game\IKAutomation\ADB\bin\Release\Data\InfinityKingdom\1280x720\vi\Teams\team_adjust_formation_button.png
 D:\Bot_Tool_Auto_Game\IKAutomation\ADB\bin\Release\Data\InfinityKingdom\1280x720\vi\Teams\team_selected_border_anchor.png
-D:\Bot_Tool_Auto_Game\IKAutomation\ADB\bin\Release\Data\InfinityKingdom\1280x720\vi\Teams\team_selection_panel_anchor.png
 D:\Bot_Tool_Auto_Game\IKAutomation\ADB\bin\Release\Data\InfinityKingdom\1280x720\vi\Teams\world_map_team_ready_anchor.png
 D:\Bot_Tool_Auto_Game\IKAutomation\ADB\bin\Release\x64\concrt140.dll
-D:\Bot_Tool_Auto_Game\IKAutomation\ADB\bin\Release\x64\cvextern.dll
 D:\Bot_Tool_Auto_Game\IKAutomation\ADB\bin\Release\x64\msvcp140.dll
-D:\Bot_Tool_Auto_Game\IKAutomation\ADB\bin\Release\x64\opencv_videoio_ffmpeg411_64.dll
 D:\Bot_Tool_Auto_Game\IKAutomation\ADB\bin\Release\x64\vcruntime140.dll
 D:\Bot_Tool_Auto_Game\IKAutomation\ADB\bin\Release\x86\concrt140.dll
-D:\Bot_Tool_Auto_Game\IKAutomation\ADB\bin\Release\x86\cvextern.dll
 D:\Bot_Tool_Auto_Game\IKAutomation\ADB\bin\Release\x86\msvcp140.dll
-D:\Bot_Tool_Auto_Game\IKAutomation\ADB\bin\Release\x86\opencv_videoio_ffmpeg411.dll
 D:\Bot_Tool_Auto_Game\IKAutomation\ADB\bin\Release\x86\vcruntime140.dll
 D:\Bot_Tool_Auto_Game\IKAutomation\ADB\bin\Release\MainWindow.xaml.cs
 D:\Bot_Tool_Auto_Game\IKAutomation\ADB\bin\Release\IK Auto ADB.exe.config
-D:\Bot_Tool_Auto_Game\IKAutomation\ADB\bin\Release\IK Auto ADB.exe
-D:\Bot_Tool_Auto_Game\IKAutomation\ADB\bin\Release\IK Auto ADB.pdb
-D:\Bot_Tool_Auto_Game\IKAutomation\ADB\bin\Release\Auto_LDPlayer.dll
-D:\Bot_Tool_Auto_Game\IKAutomation\ADB\bin\Release\Emgu.CV.UI.dll
 D:\Bot_Tool_Auto_Game\IKAutomation\ADB\bin\Release\Emgu.CV.World.dll
-D:\Bot_Tool_Auto_Game\IKAutomation\ADB\bin\Release\KAutoHelper.dll
-D:\Bot_Tool_Auto_Game\IKAutomation\ADB\bin\Release\ZedGraph.dll
-D:\Bot_Tool_Auto_Game\IKAutomation\ADB\bin\Release\de\ZedGraph.resources.dll
-D:\Bot_Tool_Auto_Game\IKAutomation\ADB\bin\Release\es\ZedGraph.resources.dll
-D:\Bot_Tool_Auto_Game\IKAutomation\ADB\bin\Release\fr\ZedGraph.resources.dll
-D:\Bot_Tool_Auto_Game\IKAutomation\ADB\bin\Release\hu\ZedGraph.resources.dll
-D:\Bot_Tool_Auto_Game\IKAutomation\ADB\bin\Release\it\ZedGraph.resources.dll
-D:\Bot_Tool_Auto_Game\IKAutomation\ADB\bin\Release\ja\ZedGraph.resources.dll
-D:\Bot_Tool_Auto_Game\IKAutomation\ADB\bin\Release\pt\ZedGraph.resources.dll
-D:\Bot_Tool_Auto_Game\IKAutomation\ADB\bin\Release\ru\ZedGraph.resources.dll
-D:\Bot_Tool_Auto_Game\IKAutomation\ADB\bin\Release\sk\ZedGraph.resources.dll
-D:\Bot_Tool_Auto_Game\IKAutomation\ADB\bin\Release\sv\ZedGraph.resources.dll
-D:\Bot_Tool_Auto_Game\IKAutomation\ADB\bin\Release\tr\ZedGraph.resources.dll
-D:\Bot_Tool_Auto_Game\IKAutomation\ADB\bin\Release\zh-cn\ZedGraph.resources.dll
-D:\Bot_Tool_Auto_Game\IKAutomation\ADB\bin\Release\zh-tw\ZedGraph.resources.dll
 D:\Bot_Tool_Auto_Game\IKAutomation\ADB\obj\Release\IK_Auto_ADB.csproj.AssemblyReference.cache
 D:\Bot_Tool_Auto_Game\IKAutomation\ADB\obj\Release\MainWindow.baml
 D:\Bot_Tool_Auto_Game\IKAutomation\ADB\obj\Release\UI\DeviceDiagnosticWindow.baml
@@ -110,3 +94,19 @@ D:\Bot_Tool_Auto_Game\IKAutomation\ADB\obj\Release\IK_Auto_ADB.csproj.CoreCompil
 D:\Bot_Tool_Auto_Game\IKAutomation\ADB\obj\Release\IK_Auto_.D8182676.Up2Date
 D:\Bot_Tool_Auto_Game\IKAutomation\ADB\obj\Release\IK Auto ADB.exe
 D:\Bot_Tool_Auto_Game\IKAutomation\ADB\obj\Release\IK Auto ADB.pdb
+D:\Bot_Tool_Auto_Game\IKAutomation\ADB\bin\Release\IK Auto ADB.pdb
+D:\Bot_Tool_Auto_Game\IKAutomation\ADB\bin\Release\Emgu.CV.UI.dll
+D:\Bot_Tool_Auto_Game\IKAutomation\ADB\bin\Release\ZedGraph.dll
+D:\Bot_Tool_Auto_Game\IKAutomation\ADB\bin\Release\de\ZedGraph.resources.dll
+D:\Bot_Tool_Auto_Game\IKAutomation\ADB\bin\Release\es\ZedGraph.resources.dll
+D:\Bot_Tool_Auto_Game\IKAutomation\ADB\bin\Release\fr\ZedGraph.resources.dll
+D:\Bot_Tool_Auto_Game\IKAutomation\ADB\bin\Release\hu\ZedGraph.resources.dll
+D:\Bot_Tool_Auto_Game\IKAutomation\ADB\bin\Release\it\ZedGraph.resources.dll
+D:\Bot_Tool_Auto_Game\IKAutomation\ADB\bin\Release\ja\ZedGraph.resources.dll
+D:\Bot_Tool_Auto_Game\IKAutomation\ADB\bin\Release\pt\ZedGraph.resources.dll
+D:\Bot_Tool_Auto_Game\IKAutomation\ADB\bin\Release\ru\ZedGraph.resources.dll
+D:\Bot_Tool_Auto_Game\IKAutomation\ADB\bin\Release\sk\ZedGraph.resources.dll
+D:\Bot_Tool_Auto_Game\IKAutomation\ADB\bin\Release\sv\ZedGraph.resources.dll
+D:\Bot_Tool_Auto_Game\IKAutomation\ADB\bin\Release\tr\ZedGraph.resources.dll
+D:\Bot_Tool_Auto_Game\IKAutomation\ADB\bin\Release\zh-cn\ZedGraph.resources.dll
+D:\Bot_Tool_Auto_Game\IKAutomation\ADB\bin\Release\zh-tw\ZedGraph.resources.dll

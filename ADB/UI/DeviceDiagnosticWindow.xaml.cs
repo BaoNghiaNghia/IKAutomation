@@ -258,7 +258,9 @@ namespace IK_Auto_ADB.UI
                             item.IsSelected = false;
                         if (!activeDeviceNames.Contains(deviceName))
                             item.Status = !item.IsRunning ? "Đã tắt"
-                                : item.IsInGame ? "Trong game" : "Chưa vào game";
+                                : item.IsInGame ? "Đã mở"
+                                : IsAdbUnavailable(result.ErrorMessage)
+                                    ? "ADB chưa kết nối" : "Chưa vào game";
                     }
                     finally
                     {
@@ -268,6 +270,14 @@ namespace IK_Auto_ADB.UI
 
                 await Task.WhenAll(checks);
             }
+        }
+
+        private static bool IsAdbUnavailable(string errorMessage)
+        {
+            return !string.IsNullOrWhiteSpace(errorMessage)
+                && (errorMessage.IndexOf("device offline", StringComparison.OrdinalIgnoreCase) >= 0
+                    || errorMessage.IndexOf("device not found", StringComparison.OrdinalIgnoreCase) >= 0
+                    || errorMessage.IndexOf("no devices", StringComparison.OrdinalIgnoreCase) >= 0);
         }
 
         private void UpdateDeviceSummary()
@@ -1666,7 +1676,8 @@ namespace IK_Auto_ADB.UI
                 || value.StartsWith("Hoàn tất", StringComparison.Ordinal)
                 || value.StartsWith("Đã tìm thấy đội", StringComparison.Ordinal))
                 return "✓";
-            if (value.StartsWith("Đang mở", StringComparison.Ordinal))
+            if (value.StartsWith("Đang mở", StringComparison.Ordinal)
+                || value.StartsWith("Đã mở", StringComparison.Ordinal))
                 return "●";
             if (value.StartsWith("Đã dừng", StringComparison.Ordinal)
                 || value.StartsWith("Đã tắt", StringComparison.Ordinal))
@@ -1691,7 +1702,8 @@ namespace IK_Auto_ADB.UI
             if (value.StartsWith("Sẵn sàng", StringComparison.Ordinal)
                 || value.StartsWith("Hoàn tất", StringComparison.Ordinal)
                 || value.StartsWith("Đã tìm thấy đội", StringComparison.Ordinal)
-                || value.StartsWith("Đang mở", StringComparison.Ordinal))
+                || value.StartsWith("Đang mở", StringComparison.Ordinal)
+                || value.StartsWith("Đã mở", StringComparison.Ordinal))
                 return ReadyColors;
             if (value.StartsWith("Đang kiểm tra", StringComparison.Ordinal)
                 || value.StartsWith("Đang chuẩn bị", StringComparison.Ordinal))

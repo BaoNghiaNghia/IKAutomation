@@ -207,30 +207,53 @@ namespace IK_Auto_ADB.Infrastructure.LDPlayer
             return devices.Any(name => string.Equals(name, deviceName.Trim(), StringComparison.OrdinalIgnoreCase));
         }
 
-        public Task<string> GetForegroundPackageAsync(string deviceName,
+        public async Task<string> GetForegroundPackageAsync(string deviceName,
             CancellationToken cancellationToken)
         {
             cancellationToken.ThrowIfCancellationRequested();
             ValidateDeviceName(deviceName);
 
-            string output = Auto_LDPlayer.LDPlayer.Adb(
-                LDType.Name,
-                deviceName,
-                "shell dumpsys window windows",
-                InputCommandTimeoutMilliseconds,
-                0);
-            cancellationToken.ThrowIfCancellationRequested();
+            int index = await ResolveLdConsoleIndexAsync(deviceName, cancellationToken);
+            string output = await RunLdConsoleAsync("adb --index " + index
+                + " --command \"shell dumpsys window windows\"",
+                InputCommandTimeoutMilliseconds, cancellationToken);
+            ThrowIfAdbUnavailable(output, deviceName);
+            string packageName = TryExtractForegroundPackage(output);
+            if (packageName != null)
+                return packageName;
+
+            output = await RunLdConsoleAsync("adb --index " + index
+                + " --command \"shell dumpsys activity activities\"",
+                InputCommandTimeoutMilliseconds, cancellationToken);
+            ThrowIfAdbUnavailable(output, deviceName);
+            packageName = TryExtractForegroundPackage(output);
+            return packageName;
+        }
+
+        private static void ThrowIfAdbUnavailable(string output, string deviceName)
+        {
             if (string.IsNullOrWhiteSpace(output))
                 throw new InvalidOperationException(
                     $"Could not read the foreground Android package from LDPlayer device '{deviceName}'.");
 
-            Match match = Regex.Match(output,
-                @"(?:mCurrentFocus|mFocusedApp)=[^\r\n]*?\bu\d+\s+([A-Za-z0-9_.$]+)(?:/[^\s}\]]+)?",
-                RegexOptions.IgnoreCase);
-            if (!match.Success)
-                return Task.FromResult<string>(null);
+            string normalized = output.Trim();
+            if (normalized.IndexOf("device offline", StringComparison.OrdinalIgnoreCase) >= 0
+                || normalized.IndexOf("device not found", StringComparison.OrdinalIgnoreCase) >= 0
+                || normalized.IndexOf("no devices", StringComparison.OrdinalIgnoreCase) >= 0)
+            {
+                throw new InvalidOperationException(
+                    $"ADB is unavailable for LDPlayer device '{deviceName}': {normalized}");
+            }
+        }
 
-            return Task.FromResult(match.Groups[1].Value);
+        private static string TryExtractForegroundPackage(string output)
+        {
+            if (string.IsNullOrWhiteSpace(output)) return null;
+
+            Match match = Regex.Match(output,
+                @"(?:mCurrentFocus|mFocusedApp|mResumedActivity)=[^\r\n]*?\b([A-Za-z0-9_.$]+)/(?:[A-Za-z0-9_.$]+)",
+                RegexOptions.IgnoreCase);
+            return match.Success ? match.Groups[1].Value : null;
         }
 
         public Task OpenAsync(string deviceName, CancellationToken cancellationToken)
@@ -485,38 +508,53 @@ namespace IK_Auto_ADB.Infrastructure.LDPlayer
                         + "' is running but its ADB service has not completed boot.");
                 }
 
-                string screenshotPath = Path.Combine(Path.GetTempPath(), "ikautomation-"
-                    + Guid.NewGuid().ToString("N") + ".png");
+                await ScreenshotGate.WaitAsync(cancellationToken);
                 try
                 {
-                    await ScreenshotGate.WaitAsync(cancellationToken);
-                    try
-                    {
-                        await RunLdConsoleAsync("screencap --index " + index + " --filename \""
-                            + screenshotPath + "\"", LdConsoleCommandTimeoutMilliseconds,
-                            cancellationToken);
-                    }
-                    finally { ScreenshotGate.Release(); }
-                    cancellationToken.ThrowIfCancellationRequested();
-                    if (!File.Exists(screenshotPath))
-                        throw new InvalidOperationException("ldconsole did not create a screenshot for '"
-                            + deviceName + "'.");
-                    using (var source = new Bitmap(screenshotPath))
-                    {
-                        Interlocked.Increment(ref framesCaptured);
-                        Interlocked.Increment(ref normalBitmapCaptures);
-                        return new CapturedFrame(new Bitmap(source), DateTimeOffset.UtcNow,
-                            OnFrameEncodedToPng);
-                    }
+                    CapturedFrame frame = await CaptureFrameUsingLocalAdbAsync(index,
+                        deviceName, cancellationToken);
+                    Interlocked.Increment(ref framesCaptured);
+                    Interlocked.Increment(ref normalBitmapCaptures);
+                    return frame;
                 }
-                finally
-                {
-                    try { if (File.Exists(screenshotPath)) File.Delete(screenshotPath); }
-                    catch (IOException) { }
-                    catch (UnauthorizedAccessException) { }
-                }
+                finally { ScreenshotGate.Release(); }
             }
             throw new InvalidOperationException("Unable to capture LDPlayer screenshot.");
+        }
+
+        private static async Task<CapturedFrame> CaptureFrameUsingLocalAdbAsync(int index,
+            string deviceName, CancellationToken cancellationToken)
+        {
+            string consolePath = ConfigureLdConsolePath(
+                ConfigurationManager.AppSettings["LDCONSOLE_PATH"]);
+            string adbPath = Path.Combine(Path.GetDirectoryName(consolePath), "adb.exe");
+            string serial = "emulator-" + (5554 + index * 2).ToString(CultureInfo.InvariantCulture);
+            using (var process = new Process { StartInfo = new ProcessStartInfo(adbPath,
+                "-s " + serial + " exec-out screencap -p")
+            {
+                UseShellExecute = false,
+                CreateNoWindow = true,
+                RedirectStandardOutput = true,
+                RedirectStandardError = true
+            } })
+            using (var png = new MemoryStream())
+            {
+                process.Start();
+                Task copy = process.StandardOutput.BaseStream.CopyToAsync(png, 81920,
+                    cancellationToken);
+                Task<string> stderr = process.StandardError.ReadToEndAsync();
+                await Task.WhenAll(copy, stderr);
+                await Task.Run(() => process.WaitForExit(), cancellationToken);
+                cancellationToken.ThrowIfCancellationRequested();
+                if (process.ExitCode != 0 || png.Length == 0)
+                    throw new InvalidOperationException("Failed to capture screenshot through ADB for '"
+                        + deviceName + "' (" + serial + "): " + (await stderr).Trim());
+
+                png.Position = 0;
+                using (var source = new Bitmap(png))
+                    return new CapturedFrame(new Bitmap(source), DateTimeOffset.UtcNow,
+                        OnFrameEncodedToPng);
+            }
         }
 
         private static async Task<int> ResolveLdConsoleIndexAsync(string deviceName,
