@@ -1324,6 +1324,9 @@ internal static class Program
         Eq("Unspecified", ScreenshotCaptureContext.WorkflowStage, "workflow stage leaked");
         Is(client.Contains("ScreenshotCaptureContext.WorkflowStage"),
             "screenshot sample does not include the active workflow stage");
+        Is(client.Contains("DeleteGeneratedScreenshotArtifact(generatedFilePrefix")
+            && client.Contains("filePrefix + \"Name_\" + deviceName + \".png\""),
+            "successful bitmap screenshots leave Auto_LDPlayer temporary PNG files behind");
     }
 
     static void AdaptiveStaggerHonorsCancellation()

@@ -352,6 +352,12 @@ namespace ADB_Tool_Automation_Post_FB.Infrastructure.LDPlayer
                     }
                     if (screenshot != null)
                     {
+                        // ScreenShoot returns a Bitmap but also leaves a PNG beside the
+                        // executable. Delete the known temporary artifact immediately;
+                        // scanning the directory on every healthy capture would add
+                        // needless I/O to a multi-device farm.
+                        DeleteGeneratedScreenshotArtifact(generatedFilePrefix,
+                            normalizedDeviceName);
                         Interlocked.Increment(ref framesCaptured);
                         Interlocked.Increment(ref normalBitmapCaptures);
                         return new CapturedFrame(screenshot, DateTimeOffset.UtcNow,
@@ -462,6 +468,18 @@ namespace ADB_Tool_Automation_Post_FB.Infrastructure.LDPlayer
             }
             finally { DeleteGeneratedScreenshotArtifacts(matches); }
             return null;
+        }
+
+        private static void DeleteGeneratedScreenshotArtifact(string filePrefix,
+            string deviceName)
+        {
+            try
+            {
+                string fileName = Path.GetFileName(filePrefix + "Name_" + deviceName + ".png");
+                File.Delete(Path.Combine(Environment.CurrentDirectory, fileName));
+            }
+            catch (IOException) { }
+            catch (UnauthorizedAccessException) { }
         }
 
         private static void DeleteGeneratedScreenshotArtifacts(IEnumerable<string> artifacts)
